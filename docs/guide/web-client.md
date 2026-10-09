@@ -54,7 +54,8 @@ devices and `xi clients revoke <name>` removes one.
   footer) to keep them open.
 - **Review changes.** An edit shows a diff where it happened. Right-click (or
   long-press) a code block to copy it, open the file, or open the diff as a
-  buffer (below).
+  buffer (below). In a diff buffer, right-click a file's header to open that
+  file or copy its path.
 - **Read Markdown changes as Markdown.** A diff of a Markdown file (an edit,
   a permission ask, the diff buffer, Git status) is shown rendered: changed
   paragraphs, list items, and code blocks get a red (removed) or green

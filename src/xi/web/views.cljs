@@ -2379,24 +2379,32 @@
           (recur (next gs) 0 (conj out left))))
       out)))
 
+(defn- diff-file-menu-items
+  "ui.context-menu entries for a file header in the diff viewer: View file
+   (:file/open — not for deleted files, which are gone from disk) and Copy
+   path."
+  [dispatch! filename status]
+  (cond-> []
+    (not= status :deleted)
+    (conj {:label    "View file"
+           :icon     :file-text
+           :on-click #(dispatch! {:type :file/open :path filename})})
+    true
+    (conj {:label    "Copy path"
+           :icon     :copy
+           :on-click #(copy! dispatch! filename)})))
+
 (defn diff-rows-view
-  "Render flattened diff rows as a scrollable view with selection highlight.
-   Rows are grouped by file: each file gets a sticky header and a horizontally
-   scrollable body so long lines don't push the whole view. The selection
-   toolbar, when present, is anchored to the bottom of the selected range.
-   Optional opts: :highlight — a set of :sel-idx to spotlight (review canvas);
-   :reviewed — a set of :sel-idx marked as already-reviewed (review canvas);
-   :line-suffix — (fn [sel-idx]) → hiccup|nil, rendered right after that line
-   (review canvas inline comment threads);
-   :collapsed — a set of filenames whose bodies are collapsed. When this opt is
-   present (even as an empty set) file headers become clickable and dispatch
-   :diff/toggle-file to fold/unfold their body;
-   :expanded — a set of filenames shown in full. When this opt is present
-   (even as an empty set) the view is size-limited (diff-row-budget): files
-   past the budget are cut off behind a button dispatching :diff/show-all;
-   :md-code — the :web/md-diff-code set. When this opt is present (even as an
-   empty set) markdown files render as a rendered markdown diff, with a
-   Rendered ⇄ Code toggle in their header (key [:diff filename])."
+  "Flattened diff rows as a scrollable view grouped by file (sticky header
+   with a right-click / long-press menu, diff-file-menu-items,
+   horizontally scrollable body), the selection `toolbar` anchored to the
+   selected range. Opts: :highlight / :reviewed (sets of :sel-idx, review
+   canvas), :line-suffix ((fn [sel-idx]) → hiccup, inline comment threads),
+   :collapsed (folded filenames; present ⇒ headers toggle :diff/toggle-file),
+   :expanded (filenames shown in full; present ⇒ size-limited by
+   diff-row-budget with :diff/show-all), :md-code (the :web/md-diff-code set;
+   present ⇒ markdown files render as a rendered diff with a toggle keyed
+   [:diff filename])."
   ([dispatch! rows range toolbar] (diff-rows-view dispatch! rows range toolbar nil))
   ([dispatch! rows range toolbar {:keys [highlight reviewed line-suffix collapsed expanded md-code]}]
   (let [grammar-cache (atom {})
@@ -2429,22 +2437,27 @@
             [:div {:class ["diff-file"
                            (when folded? "diff-file--collapsed")]
                    :replicant/key filename}
-             [:div (cond-> {:class ["diff-file-header"
-                                    (when collapse? "diff-file-header--clickable")]}
-                     collapse?
-                     (assoc :on {:click (fn [_] (dispatch! {:type :diff/toggle-file
-                                                            :filename filename}))}))
-              (when collapse?
-                [:span {:class ["diff-file-caret"]}
-                 (icon/icon {:icon-name (if folded? :chevron-right :chevron-down)
-                             :size :sm})])
-              [:span {:class ["diff-file-name"]} filename]
-              (when status-label
-                [:span {:class ["diff-file-status"
-                                (str "diff-file-status--" (name status))]}
-                 status-label])
-              (when md-body
-                (md-diff-toggle dispatch! md-key md-code?))]
+             ;; The trigger is the sticky element: wrapping the header in a
+             ;; plain div would confine its stickiness to the wrapper's height.
+             (context-menu/context-menu-trigger
+              {:items (diff-file-menu-items dispatch! filename status)
+               :class "diff-file-header-wrap"}
+              [:div (cond-> {:class ["diff-file-header"
+                                     (when collapse? "diff-file-header--clickable")]}
+                      collapse?
+                      (assoc :on {:click (fn [_] (dispatch! {:type :diff/toggle-file
+                                                             :filename filename}))}))
+               (when collapse?
+                 [:span {:class ["diff-file-caret"]}
+                  (icon/icon {:icon-name (if folded? :chevron-right :chevron-down)
+                              :size :sm})])
+               [:span {:class ["diff-file-name"]} filename]
+               (when status-label
+                 [:span {:class ["diff-file-status"
+                                 (str "diff-file-status--" (name status))]}
+                  status-label])
+               (when md-body
+                 (md-diff-toggle dispatch! md-key md-code?))])
              (when (and md-body (not md-code?) (not folded?))
                [:div {:class ["diff-file-md"]} md-body])
              (when-not (or folded? (and md-body (not md-code?)))

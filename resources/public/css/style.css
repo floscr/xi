@@ -4220,10 +4220,14 @@ code a:hover,
   display: grid;
 }
 
-.diff-file-header {
+/* The context-menu trigger around the header carries the stickiness. */
+.diff-file-header-wrap {
   position: sticky;
   top: 0;
   z-index: 1;
+}
+
+.diff-file-header {
   display: flex;
   align-items: center;
   gap: var(--size-2);

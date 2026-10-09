@@ -97,7 +97,11 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   (`:ui/diff-open`, no git run). Blocks carry
   `data-file-path` / `data-diff-path` / `data-diff-text` for the delegated
   listener in `xi.web.core`; `xi.diff/tool-diff->unified` converts the tool
-  diff format.
+  diff format. A diff viewer's file header is a `ui.context-menu` trigger
+  (`diff-file-menu-items`: View file via `:file/open`, Copy path); the
+  trigger wrapper is the sticky element. git prints root-relative paths, so
+  the file-view extension resolves against the room cwd and then its git
+  root.
   The diff viewer (`diff-rows-view`) stays responsive on huge diffs three
   ways: rows / file groups / per-file body hiccup are memoized on identity
   (`diff-rows-for-text`, WeakMaps), so re-renders reuse the identical hiccup and

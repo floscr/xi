@@ -5,7 +5,8 @@
 
    The web client dispatches :file/open (with the file path) which forwards to
    the server. This node half reads the file from disk relative to the room's
-   cwd (the server owns the I/O, so this works for both Write and Edit), then
+   cwd, falling back to the cwd's git root for the repository-relative paths
+   git prints (the diff viewer's file headers), then
    installs it via the generic :ui/buffer-set / :ui/buffer-switch core handlers,
    which broadcast + mirror to clients: every client gets the buffer, only the
    one that asked switches to it (the switch carries its :client-id).
@@ -13,7 +14,22 @@
   (:require ["node:fs" :as fs]
             [xi.buffers :as buffers]
             [xi.core.state :as state]
-            [xi.tools.fs :as tfs]))
+            [xi.tools.fs :as tfs]
+            [xi.tools.util :as tools-util]))
+
+(defn- locate-file
+  "Absolute path of `path` for a room at `cwd`: relative to cwd when that
+   exists, else relative to cwd's git root (git diff paths are root-relative).
+   Falls back to the cwd resolution so the caller reports that path."
+  [path cwd]
+  (let [at-cwd (tfs/resolve-path path cwd)]
+    (if (fs/existsSync at-cwd)
+      at-cwd
+      (let [at-root (when-let [root (tools-util/git-root cwd)]
+                      (tfs/resolve-path path root))]
+        (if (and at-root (fs/existsSync at-root))
+          at-root
+          at-cwd)))))
 
 (defn- file-open
   "A client asked to view a file — defer the read to the :file/load effect."
@@ -30,7 +46,7 @@
   [{:keys [dispatch! state]} {:keys [room-id path client-id]}]
   (let [room     (state/get-room state room-id)
         cwd      (or (:cwd room) (.cwd js/process))
-        resolved (tfs/resolve-path path cwd)
+        resolved (locate-file path cwd)
         text     (try
                    (if (fs/existsSync resolved)
                      (fs/readFileSync resolved "utf8")
