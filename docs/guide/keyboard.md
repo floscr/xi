@@ -60,7 +60,8 @@ Web client:
 | --- | --- | --- | --- |
 | `Alt+\` | Show / hide the sidebar | `:sidebar/toggle` | `:global` |
 | `Alt+u` | Jump to the chat that needs you most: one waiting on a permission request, then the newest finished chat with unread output, then the newest running one. Press again to move on | `:session/jump-attention` | `:global` |
-| `Alt+j` / `Alt+k` | Next / previous chat | `:session/next` / `:session/prev` | `:global` |
+| `Alt+j` / `Alt+k` | Next / previous sidebar row: projects, chats, a chat's open buffers, extension pages. Skips collapsed groups | `:session/next` / `:session/prev` | `:global` |
+| `Alt+Shift+J` / `Alt+Shift+K` | Next / previous row in the same group, or among a chat's buffers when on one | `:session/next-sibling` / `:session/prev-sibling` | `:global` |
 | `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would | `:sessions/prune` | `:global` |
 | `Ctrl+p` / `Cmd+p` | Find a file | `:files/find` | `:global` |
 | `Alt+b` | Switch buffer: the chat's open diffs and files as a filterable list, Enter opens one | `:buffers/switch` | `:global` |

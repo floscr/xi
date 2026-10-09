@@ -222,10 +222,13 @@
    ;; web
    :sidebar/toggle          {:label "Toggle the sidebar" :surface #{:web}}
    :session/jump-attention  {:label "Jump to the chat that needs you" :surface #{:web}}
-   :session/next            {:label "Next chat" :surface #{:web}}
-   :session/prev            {:label "Previous chat" :surface #{:web}}
+   :session/next            {:label "Next sidebar item" :surface #{:web}}
+   :session/prev            {:label "Previous sidebar item" :surface #{:web}}
+   :session/next-sibling    {:label "Next sidebar item in the same group" :surface #{:web}}
+   :session/prev-sibling    {:label "Previous sidebar item in the same group" :surface #{:web}}
    :sessions/prune          {:label "Prune: run every sidebar cleanup" :surface #{:web}}
    :files/find              {:label "Find a file" :surface #{:web}}
+   :files/find-edited       {:label "Find a file edited in this chat" :surface #{:web}}
    :git/status              {:label "Git status" :surface #{:web}}
    :git/log                 {:label "Git log" :surface #{:web}}
    :palette/open            {:label "Command palette" :surface #{:web}}
@@ -322,6 +325,8 @@
                               "alt+b"       :buffers/switch
                               "alt+j"       :session/next
                               "alt+k"       :session/prev
+                              "alt+shift+j" :session/next-sibling
+                              "alt+shift+k" :session/prev-sibling
                               "escape"      :dialog/close}
          :permission-pending {"alt+a"       :permission/allow
                               "alt+s"       :permission/always

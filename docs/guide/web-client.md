@@ -184,7 +184,8 @@ are. The common ones:
 | `Tab` (in the message box) | Expand the snippet word before the cursor: `c` becomes `continue`, `rec` becomes `in a recent change`. Anywhere else Tab moves focus as usual. |
 | `↑`/`↓`, `Alt+k`/`Alt+j` or `Ctrl+p`/`Ctrl+n` (in the `/` command list) | Move through the matching commands; `Enter` or `Tab` runs the selected one |
 | `G` | Scroll to the bottom |
-| `Alt+j` / `Alt+k` | Next / previous chat |
+| `Alt+j` / `Alt+k` | Next / previous sidebar row, skipping collapsed groups |
+| `Alt+Shift+J` / `Alt+Shift+K` | Next / previous row in the same sidebar group, or among a chat's buffers |
 | `Alt+n` | New chat |
 | `Alt+u` | Jump to the chat that needs you most: one waiting on a permission request, then the newest finished chat with unread output, then the newest running one. Press again to move on to the next |
 | `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would (mark all as read, hide all from Recent — pinned chats are skipped — close idle rooms) |

@@ -39,6 +39,7 @@
             [xi.web.title :as title]
             [xi.web.user-ext :as user-ext]
             [xi.session.sidebar :as sidebar]
+            [xi.web.sidebar-nav :as sidebar-nav]
             [xi.web.views :as views]))
 
 ;; ── Base handlers (browser-safe merge) ───────────────────────────────────────
@@ -2526,10 +2527,16 @@
                                    (dispatch! {:type :diff/reopen
                                                :room-id (:id (state/active-room st))
                                                :method "git" :engine :git}))})
-  (keymap/register-action! {:id :session/next
-                            :run (fn [st dispatch! _] (session-step! st dispatch! :next))})
-  (keymap/register-action! {:id :session/prev
-                            :run (fn [st dispatch! _] (session-step! st dispatch! :prev))})
+  ;; Walk the visible sidebar rows; a closed mobile drawer renders none, so
+  ;; fall back to the plain session order.
+  (doseq [[id dir sibling?] [[:session/next :next false]
+                             [:session/prev :prev false]
+                             [:session/next-sibling :next true]
+                             [:session/prev-sibling :prev true]]]
+    (keymap/register-action! {:id id
+                              :run (fn [st dispatch! _]
+                                     (when-not (sidebar-nav/step! st dir sibling?)
+                                       (session-step! st dispatch! dir)))}))
   (doseq [[id option] [[:permission/allow      :yes]
                        [:permission/always     :always]
                        [:permission/allow-repo :allow-repo]

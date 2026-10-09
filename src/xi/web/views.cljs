@@ -3564,6 +3564,7 @@
                          (when (= id active) "session-buffer-row--active")
                          (when sub? (str "session-buffer-row--sub-" (name (or status :running))))]
                  :replicant/key (str id)
+                 :data-nav (str "b:" session-id ":" id)
                  :title (if sub?
                           (str title " · " (get subagent-status-label status (name (or status :running))))
                           title)
@@ -3615,6 +3616,7 @@
                  (when has-dialog? "project-card--dialog")
                  (when current? "project-card--current")]
          :replicant/key (or session-id (str "card-" name))
+         :data-nav (when session-id (str "s:" session-id))
          :on {:pointerdown (fn [_] (when session-id
                                      (dispatch! {:type :cache/prefetch
                                                  :session-id session-id})))
@@ -3685,6 +3687,7 @@
     [:div {:class ["project-card"]
            :replicant/key (str "draft-" id)
            :data-flip (str "draft:" id)
+           :data-nav (str "draft:" id)
            :title text
            :on {:click (fn [_] (dispatch! {:type :draft-chat/open :id id}))}}
      [:div {:class ["project-card-icon" "project-card-icon--idle"]}
@@ -3705,6 +3708,7 @@
   [:div {:class ["project-card" "project-card--dir"
                  (when current? "project-card--current")]
          :replicant/key (str "dir-" path)
+         :data-nav (str "dir:" path)
          :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd path}))}}
    [:div {:class ["project-card-icon" (when dirty? "project-card-icon--dirty")]}
     (icon/icon {:icon-name :folder :size :sm})
@@ -4392,8 +4396,9 @@
              (sidebar/sidebar-menu-item
               {:icon-name :layout-dashboard
                :class     "sidebar-row"
-               :attrs     {:replicant/key "all-projects" :data-flip "all-projects"}
                :active    (and (= :home route-page) (contains? #{:projects :all} route-dir))
+               :attrs     {:replicant/key "all-projects" :data-flip "all-projects"
+                           :data-nav "projects"}
                :on-click  (fn [_] (dispatch! {:type :route/navigate :page :home :dir :projects}))}
               "All projects")))
          (when (seq drafts)
@@ -4410,7 +4415,8 @@
                 {:icon-name (:icon more)
                  :class     "sidebar-row"
                  :attrs     {:replicant/key (str "more-" (subs (str id) 1))
-                             :data-flip (str "more-" (subs (str id) 1))}
+                             :data-flip (str "more-" (subs (str id) 1))
+                             :data-nav (str "more:" (subs (str id) 1))}
                  :on-click  (fn [_] (dispatch! (:event more)))}
                 (:label more)))))
          (when (seq recent)
@@ -4436,7 +4442,8 @@
                                    (= route-page (get-in item [:event :page])))
                    :badge     (nav-badge state item)
                    :attrs     {:replicant/key (str "nav-" (:label item))
-                               :data-flip (str "nav-" (:label item))}
+                               :data-flip (str "nav-" (:label item))
+                               :data-nav (str "nav:" (:label item))}
                    :on-click  (fn [_] (dispatch! (:event item)))}
                   (:label item)))))))))
      ;; Every state read here must be in recent-sidebar's memo key.
