@@ -4,6 +4,7 @@
             [xi.dialog :as dialog]
             [xi.ext.clj :as clj-ext]
             [xi.ext.rules :as rules-ext]
+            [xi.paths :as paths]
             ["node:child_process" :as cp]
             ["node:fs" :as fs]
             ["node:os" :as os]
@@ -843,6 +844,48 @@
           (.then (fn [r]
                    (is (not (:intercepted r)) "ordinary headless outside read auto-approves")
                    (is (seq (get-in r [:arguments :_allowed-reads])))
+                   (done)))))))
+
+(defn- runtime-gate!
+  "Drive the main-thread runtime path gate (on-gate-request) for `path` the
+   way a worker blocked in resolve-read does, after `gate` registered `ctx`
+   for room \"r\": promise of [status payload] from the request's
+   SharedArrayBuffer (1 = approved root, 2 = deny reason)."
+  [ctx path]
+  (let [sab (js/SharedArrayBuffer. 4096)
+        i32 (js/Int32Array. sab 0 2)
+        on-gate-request @#'clj-ext/on-gate-request]
+    (-> (js/Promise.resolve
+         (gate {:name "clj" :arguments {:code "(ls (str (env \"HOME\") \"/x\"))"}} ctx))
+        (.then (fn [_]
+                 (on-gate-request #js {:gateRequest "read" :path path :roomKey "r"
+                                       :sab sab :op "ls" :raw path})))
+        (.then (fn [_]
+                 (let [len (js/Atomics.load i32 1)]
+                   [(js/Atomics.load i32 0)
+                    (.decode (js/TextDecoder.) (.slice (js/Uint8Array. sab 8 len)))]))))))
+
+(deftest runtime-gate-engine-allow-lifts-xi-sessions-read
+  ;; A dynamic path — (str (env "HOME") "/.config/xi/sessions") — never reaches
+  ;; the static scan: the worker's resolve-read asks the main thread mid-eval.
+  ;; ~/.config/xi is a hidden credential dir, but the default xi-sessions rule
+  ;; allows its sessions subtree, so the runtime gate approves it even headless.
+  (async done
+    (let [path (str (os/homedir) "/.config/xi/sessions")]
+      (-> (runtime-gate! (assoc (gate-ctx) :cwd (os/tmpdir)) path)
+          (.then (fn [[status root]]
+                   (is (= 1 status) "the engine allow lifts the credential block")
+                   (is (paths/path-within? (paths/real-resolve (os/tmpdir) path) root))
+                   (done)))))))
+
+(deftest runtime-gate-headless-credential-read-denied
+  ;; Same runtime gate, another credential path: still refused when nobody can
+  ;; answer, so routing hidden paths through the gate opens nothing else.
+  (async done
+    (let [path (str (os/homedir) "/.ssh/xi-gate-cred.txt")]
+      (-> (runtime-gate! (assoc (gate-ctx) :cwd (os/tmpdir)) path)
+          (.then (fn [[status _]]
+                   (is (= 2 status) "headless credential read is denied, not auto-approved")
                    (done)))))))
 
 (deftest gate-engine-allow-rule-skips-outside-read-dialog

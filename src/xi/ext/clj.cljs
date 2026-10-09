@@ -22,8 +22,10 @@
    commands; dynamically computed command names that were never approved fail
    at runtime.
 
-   Paths: reads are blocked from credential paths (xi.paths/hidden-paths);
-   writes are limited to the room cwd and the OS tmp dir.
+   Paths: reads of credential paths (xi.paths/hidden-paths) always go through
+   the rules engine, which blocks them unless a rule allows (the default
+   xi-sessions rule lifts ~/.config/xi/sessions); writes are limited to the
+   room cwd and the OS tmp dir.
 
    Session-allowed CLIs live as session rules in the rules store (shape
    {:tool :sh :cli \"…\"}), visible in /rules. `/clj` shows status;
@@ -165,20 +167,22 @@
   "Canonicalize p against cwd. Reads are confined to the working dir, the OS
    tmp dir and gate-approved roots (:allowed-reads, :allowed-writes); an
    unapproved out-of-repo path asks at runtime via runtime-gate! and the
-   approved root is remembered. Credential paths are hard-blocked unless
-   explicitly approved. `op` names the helper asking."
+   approved root is remembered. A credential path (xi.paths/hidden-paths)
+   never counts as in-repo or tmp: it goes to the gate too, so the engine
+   decides (the xi-sessions allow lifts ~/.config/xi/sessions, secret-reads
+   asks for the rest), and is blocked when nothing approves it. `op` names
+   the helper asking."
   [opts p & [op]]
   (let [cwd      (opts-cwd opts)
         resolved (paths/real-resolve cwd (str p))
         real-cwd (paths/real-resolve cwd ".")
         allowed  (into (set (:allowed-reads @opts)) (:allowed-writes @opts))
-        approved? (some #(paths/path-within? resolved %) allowed)]
-    (when (and (not approved?)
-               (some #(paths/path-within? resolved %) (paths/hidden-paths)))
-      (throw (ex-info (str "clj: reading credential paths is blocked: " p) {})))
-    (if (or (paths/path-within? resolved real-cwd)
-            (paths/within-tmp? cwd resolved)
-            approved?)
+        approved? (some #(paths/path-within? resolved %) allowed)
+        hidden?   (some #(paths/path-within? resolved %) (paths/hidden-paths))]
+    (if (or approved?
+            (and (not hidden?)
+                 (or (paths/path-within? resolved real-cwd)
+                     (paths/within-tmp? cwd resolved))))
       resolved
       (let [verdict (runtime-gate! opts :read resolved {:op op :raw p})]
         (cond
@@ -188,9 +192,15 @@
 
           (:denied verdict)
           (throw (ex-info (dialog/with-deny-reason
-                           (str "clj: user denied reading outside the repo: " p)
+                           (str (if hidden?
+                                  "clj: reading credential paths is blocked: "
+                                  "clj: user denied reading outside the repo: ")
+                                p)
                            (:denied verdict))
                           {}))
+
+          hidden?
+          (throw (ex-info (str "clj: reading credential paths is blocked: " p) {}))
 
           :else
           (throw (ex-info (str "clj: reads are limited to the working dir and "
