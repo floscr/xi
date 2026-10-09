@@ -229,7 +229,10 @@
     (is (= :allow (action-type {:tool :sh :cli "grep" :command "grep x y"})))
     (is (= :allow (action-type {:tool :sh :cli "rm"  :command "rm -rf build"}))
         "rm auto-runs from clj (bash's rm -rf stays guarded via the :bash rule)")
-    (is (= :allow (action-type {:tool :sh :cli "git" :command "git status"}))))
+    (is (= :allow (action-type {:tool :sh :cli "git" :command "git status"})))
+    (is (= :allow (action-type {:tool :sh :cli "true" :command "true"}))))
+  (testing "the program name is matched verbatim: a path-qualified one still asks"
+    (is (= :ask (action-type {:tool :sh :cli "./true" :command "./true"}))))
   (testing "an unknown CLI hits the base ask (disallow * then soften)"
     (is (= :ask (action-type {:tool :sh :cli "terraform" :command "terraform apply"})))
     (is (= :ask (action-type {:tool :sh :cli "npm" :command "npm run dev"}))))

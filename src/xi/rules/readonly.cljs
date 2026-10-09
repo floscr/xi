@@ -403,7 +403,7 @@
    — no parser needed."
   #{"ls" "cat" "head" "tail" "grep" "pwd" "echo" "mktemp" "stat" "du"
     "readlink" "realpath" "which" "basename" "dirname" "date" "wc" "uniq"
-    "cut" "tr" "netstat" "lsof"})
+    "cut" "tr" "netstat" "lsof" "true" "false"})
 
 (def clis
   "Every program the `:read-only` rule key can vouch for: the parsed ones

@@ -72,7 +72,7 @@ decides each one:
 1. A read-only program with read-only arguments runs: `ls` `cat` `head`
    `tail` `grep` `rg` `find` `fd` `pwd` `echo` `mktemp` `git` `stat` `du`
    `readlink` `realpath` `which` `basename` `dirname` `date` `ss` `netstat`
-   `lsof` `wc` `sort` `uniq` `cut` `tr`, and `rm`. The arguments of `find`,
+   `lsof` `wc` `sort` `uniq` `cut` `tr` `true` `false`, and `rm`. The arguments of `find`,
    `fd`, `rg`, `sort`, `ss` and `git` are parsed (the `:read-only`
    [rule field](rules-reference.md#match) lists what is refused: `find
    -exec`, `fd -x`, `rg --pre`, `sort -o`, `ss -K`, `git -c …`, `git push`,
