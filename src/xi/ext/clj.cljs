@@ -58,6 +58,10 @@
 
 (def ^:private MAX_RESULT 30000)
 (def ^:private MAX_SH_OUTPUT 20000)
+;; Cap on data a helper hands back into the REPL ((sh …) stdout, (curl …)
+;; bodies). Only the final tool result is truncated (MAX_RESULT): a truncated
+;; intermediate value would silently corrupt JSON or EDN before it is parsed.
+(def ^:private MAX_DATA (* 64 1024 1024))
 (def ^:private SH_TIMEOUT 120000)
 
 ;; ── Global config ────────────────────────────────────────────────────────────
@@ -266,11 +270,13 @@
 (defn- spawn-sync!
   "Run argv synchronously under setsid (no tty). Opts: :input (stdin string),
    :env (validated overlay), :scrubbed? (allowlisted environment only,
-   xi.paths/scrub-env). Returns {:exit :out :err}, output truncated."
+   xi.paths/scrub-env). Returns {:exit :out :err}: :out complete (up to
+   MAX_DATA), :err truncated."
   [argv cwd & [{:keys [input env scrubbed?]}]]
   (let [opts #js {:cwd cwd
                   :encoding "utf8"
                   :timeout SH_TIMEOUT
+                  :maxBuffer MAX_DATA
                   :stdio (if input #js ["pipe" "pipe" "pipe"] #js ["ignore" "pipe" "pipe"])}
         _    (when input (set! (.-input opts) input))
         _    (cond
@@ -278,7 +284,7 @@
                (seq env) (set! (.-env opts) (proc/child-env env)))
         r    (cp/spawnSync "setsid" (clj->js argv) opts)]
     {:exit (or (.-status r) (if (.-signal r) -1 0))
-     :out  (truncate (or (.-stdout r) "") MAX_SH_OUTPUT)
+     :out  (or (.-stdout r) "")
      :err  (truncate (str (or (.-stderr r) "")
                           (when-let [e (.-error r)] (.-message e)))
                      MAX_SH_OUTPUT)}))
@@ -416,9 +422,13 @@
            res     (spawn-sync! argv (opts-cwd opts))
            status  (js/parseInt (str/trim (:out res)) 10)
            body'   (when (fs/existsSync outfile)
-                     (let [s (fs/readFileSync outfile "utf8")]
-                       (fs/rmSync outfile #js {:force true})
-                       (truncate s MAX_SH_OUTPUT)))]
+                     (try
+                       (when (> (.-size (fs/statSync outfile)) MAX_DATA)
+                         (throw (ex-info (str "clj: curl response exceeds " MAX_DATA
+                                              " bytes; download it with (sh \"curl\" \"-o\" f url)")
+                                         {})))
+                       (fs/readFileSync outfile "utf8")
+                       (finally (fs/rmSync outfile #js {:force true}))))]
        (if (and (zero? (:exit res)) (not (js/isNaN status)))
          {:status status :body (or body' "")}
          (throw (ex-info (str "clj: curl failed: " (:err res)) {})))))))
@@ -962,7 +972,7 @@
           {:content [{:type "text"
                       :text (with-commit-lines
                              (str (when (seq out) (str (truncate out MAX_RESULT) "\n"))
-                                  "Error: " (.-message err)
+                                  "Error: " (truncate (.-message err) MAX_SH_OUTPUT)
                                   (when line (str " (line " line
                                                   (when column (str ":" column)) ")"))
                                   (when-let [hint (interop-hint err)]
@@ -1354,7 +1364,8 @@
       "bb"
       (let [argv (bb-argv {:task (.-task m) :args (js->clj (.-args m))})
             {:keys [exit out err]} (spawn-sync! argv cwd)
-            body (str/trim (str out (when (seq err) (str "\n" err))))
+            body (truncate (str/trim (str out (when (seq err) (str "\n" err))))
+                           MAX_RESULT)
             text (str "$ " (str/join " " argv) "\n"
                       (if (str/blank? body) "(no output)" body)
                       (when-not (zero? exit) (str "\n[exit " exit "]")))]

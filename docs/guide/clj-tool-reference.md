@@ -13,8 +13,10 @@ constructors. `Math`, `Date` and `System/currentTimeMillis` exist;
 error, and `(.getMessage e)` works.
 
 The REPL persists per chat: `def` once, use later. `/clj reset` drops it.
-Output longer than 30k characters (20k for `sh`, `grep`, `curl`) is saved to a
-file under the temp directory and the result names the file.
+A result longer than 30k characters is saved to a file under the temp
+directory and the result names the file. Values inside the REPL are never
+truncated: `(sh …)`, `(curl …)` and `(jq …)` return complete output (up to
+64 MB).
 
 ## Files and directories
 

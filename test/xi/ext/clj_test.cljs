@@ -491,6 +491,11 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "=> \"hi\""))))
 
+(deftest sh-output-is-not-truncated-in-repl
+  (let [res (eval! "(count (str/split-lines (sh \"seq\" \"1\" \"50000\")))" {:allowed ["seq"]})]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "=> 50000"))))
+
 (deftest sh-throws-on-nonzero-exit
   (let [res (eval! "(try (sh \"false\") (catch :default e (:exit (ex-data e))))"
                    {:allowed ["false"]})]
