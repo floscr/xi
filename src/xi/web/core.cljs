@@ -1025,6 +1025,14 @@
           (fn [st _] {:state (dissoc st :web/prompt-nav
                                      :web/scrolled-up? :web/frozen-window-start)
                       :effects [[:timeline/scroll-bottom {}]]})
+          ;; The top of the chat is its first entry, so the render window grows
+          ;; to the whole history before the snap.
+          :timeline/scroll-to-top
+          (fn [st _] {:state (-> st
+                                 (dissoc :web/prompt-nav)
+                                 (assoc :web/timeline-window
+                                        (count (:history (state/active-room st)))))
+                      :effects [[:timeline/scroll-top {}]]})
           ;; Reflect the timeline's scroll position into state so the
           ;; scroll-to-bottom down-arrow can appear only while scrolled up.
           ;; On the transition INTO scrolled-up, freeze the render window's top
@@ -1652,6 +1660,20 @@
                                2))
                    (js/requestAnimationFrame #(snap (dec n))))))]
        (snap 30)))
+  ;; The entries the grown window reveals lay out above the viewport over the
+  ;; next frames (and scroll anchoring may hold the old spot), so the top is
+  ;; re-asserted for a few frames.
+  :timeline/scroll-top
+   (fn [_ _]
+     (reset! auto-scroll? false)
+     (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
+       (.remove (.-classList el) "post--nav-target"))
+     (letfn [(snap [n]
+               (when-let [timeline (.querySelector js/document ".timeline")]
+                 (set! (.-scrollTop timeline) 0)
+                 (when (pos? n)
+                   (js/requestAnimationFrame #(snap (dec n))))))]
+       (snap 10)))
   ;; Play the sidebar row's leave transition (style.css), then dispatch :then;
   ;; at once when no row is in the DOM or motion is reduced.
   :sidebar/animate-leave
@@ -2003,6 +2025,16 @@
                             :raf (if (and raf (identical? pending-el el))
                                    raf
                                    (js/requestAnimationFrame key-scroll-frame!))})))))
+
+;; The chat timeline goes through its event so hidden earlier entries are
+;; revealed first; any other scroller (or a timeline too short to scroll)
+;; just eases to its top.
+(defn- scroll-to-top! [dispatch!]
+  (let [el (active-scroller)]
+    (if (or (nil? el) (.contains (.-classList el) "timeline"))
+      (when (.querySelector js/document ".timeline")
+        (dispatch! {:type :timeline/scroll-to-top}))
+      (animate-scroll-to! el 0))))
 
 (defn- scroll-step!
   ([dir] (scroll-step! dir false))
@@ -2431,6 +2463,8 @@
   (keymap/register-action! {:id :timeline/bottom
                             :when (fn [st] (= :chat (get-in st [:web/route :page])))
                             :event {:type :timeline/scroll-to-bottom}})
+  (keymap/register-action! {:id :scroll/top
+                            :run (fn [_ dispatch! _] (scroll-to-top! dispatch!))})
   (keymap/register-action! {:id :scroll/down
                             :run (fn [_ _ _] (scroll-step! 1))})
   (keymap/register-action! {:id :scroll/up

@@ -161,6 +161,7 @@ are available for `:mode/navigate`:
 | `:scroll/down` / `:scroll/up` | Scroll the visible view (timeline, diff, file, projects page, shortcut list) |
 | `:scroll/half-down` / `:scroll/half-up` | The same, half the view's height at a time |
 | `:timeline/bottom` | Scroll to the bottom |
+| `:scroll/top` | Scroll to the top; in a chat this shows every earlier message first |
 | `:prompt/prev` / `:prompt/next` | Jump between your messages in the chat. The first `:prompt/prev` lands on the newest; `:prompt/next` on the last goes back to the bottom |
 | `:diff/next-hunk` / `:diff/prev-hunk` | Next / previous hunk in a diff |
 
@@ -171,6 +172,7 @@ are available for `:mode/navigate`:
                               "d" :scroll/half-down
                               "u" :scroll/half-up
                               "G" :timeline/bottom
+                              "g g" :scroll/top
                               "[" :prompt/prev
                               "]" :prompt/next}
              :buffer/diff     {"[" :diff/prev-hunk

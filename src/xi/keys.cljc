@@ -241,6 +241,7 @@
    :compose/focus           {:label "Focus the message box" :surface #{:web}}
    :compose/blur            {:label "Leave the text field" :surface #{:web}}
    :timeline/bottom         {:label "Scroll to the bottom" :surface #{:web}}
+   :scroll/top              {:label "Scroll to the top" :surface #{:web}}
    :scroll/down             {:label "Scroll down" :surface #{:web}}
    :scroll/up               {:label "Scroll up" :surface #{:web}}
    :scroll/half-down        {:label "Scroll half a page down" :surface #{:web}}
