@@ -138,6 +138,26 @@ site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:bui
 
 ## Conventions
 
+### Docstrings and comments
+
+- **A docstring says what the name and signature don't.** If it would only
+  restate the name (`mark-read` → "Mark a session read"), write none.
+  Keep it to one to three lines: the relation to other namespaces, the
+  non-obvious constraint, the shape of an option map. No history, no
+  rationale for every branch.
+- **Comments explain architecture and relations, not syntax or every edge
+  case.** `;; Ctrl+U` above `(ctrl? data "U")` is noise; `;; mv and rm act
+  on the directory entry: a final-component symlink is never followed` is
+  not. A paragraph explaining a branch means the branch wants a named
+  function whose name carries the edge case (`never-persisted?`,
+  `pending-for-viewed-room?`).
+- Section headers (`;; ── Name ──`) and one-line notes pointing at the
+  namespace that consumes or produces a value are welcome.
+- `defonce` takes no docstring (shadow-cljs): use `^{:doc …}` metadata or a
+  comment above it.
+- Security policy files (`xi.rules.defaults`) keep their rationale comments:
+  there the reasoning is the content.
+
 - **Editing the user guide (`docs/guide/`)? Read
   [docs/guide/AGENTS.md](docs/guide/AGENTS.md) first:** no troubleshooting
   sections, minimal text, no marketing talk.
