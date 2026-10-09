@@ -434,6 +434,32 @@
   (store/clear-cache!)
   (status! dispatch! room-id "Rules cache cleared — files reloaded on next check."))
 
+(defn clear-session-rules [st {:keys [room-id]}]
+  {:state (assoc-in st [:rooms room-id :ext ext-id :rules] [])})
+
+(defn- save-fx
+  "Move the chat's :session rules into <repo>/.xi/rules.edn: they keep their
+   order on top of the file, ones it already holds are skipped, and the
+   session copies are dropped once written (the repo tier outranks them)."
+  [{:keys [dispatch! get-state]} {:keys [room-id]}]
+  (let [state (get-state)
+        cwd   (get-in state [:rooms room-id :cwd])
+        rules (get-in state [:rooms room-id :ext ext-id :rules])]
+    (if (empty? rules)
+      (status! dispatch! room-id "No session rules to save.")
+      (let [{:keys [file added error]} (store/append-rules-file! :repo cwd rules)]
+        (when file
+          (dispatch! {:type :ext.rules/clear-session :room-id room-id}))
+        (status! dispatch! room-id
+                 (cond
+                   error (str "Rules not saved — " error)
+                   (nil? file) "Rules not saved — this chat isn't inside a git repository."
+                   :else (str "Saved " added " session rule" (when (not= 1 added) "s")
+                              " to " file
+                              (let [dupes (- (count rules) added)]
+                                (when (pos? dupes) (str " (" dupes " already there)")))
+                              ".")))))))
+
 ;; ── Recommendation result → editable save dialog ──────────────────────────
 
 (defn- recommend-sub? [sub-id]
@@ -520,6 +546,7 @@
   (let [sub (str/lower-case (str/trim (or args "")))]
     (case sub
       "reload" {:effects [[:rules/reload {:room-id room-id}]]}
+      "save"   {:effects [[:rules/save {:room-id room-id}]]}
       {:effects [[:rules/list {:room-id room-id}]]})))
 
 (defn create
@@ -535,13 +562,16 @@
    ;; Always-answers are session rules: they ride along with the chat across
    ;; server restarts and reaped rooms.
    :persist-room true
-   :handlers {:ext.rules/add     add-rule
-              :subagent/turn-end on-subagent-turn-end}
+   :handlers {:ext.rules/add           add-rule
+              :ext.rules/clear-session clear-session-rules
+              :subagent/turn-end       on-subagent-turn-end}
    :commands [{:name        "rules"
-               :description "List or reload policy rules"
+               :description "List, reload or save policy rules"
                :handler     rules-command
                :subcommands [{:name "list"   :description "List rules in precedence order"}
-                             {:name "reload" :description "Clear the rules-file cache"}]}]
+                             {:name "reload" :description "Clear the rules-file cache"}
+                             {:name "save"   :description "Move this chat's session rules into <repo>/.xi/rules.edn"}]}]
    :fx       {:rules/list           list-fx
               :rules/reload         reload-fx
+              :rules/save           save-fx
               :rules/recommend-done (partial recommend-done-fx ask!)}})

@@ -662,11 +662,27 @@
     :global (global-file)
     nil))
 
-(defn append-rule-file!
-  "Prepend `rule` to the config file for `scope` (:repo | :global), creating a
-   missing file at the current type + version. → {:file} or {:error msg}
-   (invalid file left untouched), nil when the scope has no file."
-  [scope cwd rule]
+(defn- rule-key
+  "`rule` comparable by value: regex literals are never `=` to each other."
+  [rule]
+  (walk/postwalk #(if (regexp? %) [::regex (.-source %) (.-flags %)] %) rule))
+
+(defn- new-rules
+  "`rules` minus their :scope tag and minus the ones `existing` (or an earlier
+   entry) already holds."
+  [existing rules]
+  (first (reduce (fn [[acc seen] r]
+                   (let [k (rule-key r)]
+                     (if (seen k) [acc seen] [(conj acc r) (conj seen k)])))
+                 [[] (into #{} (map rule-key) existing)]
+                 (map #(dissoc % :scope) rules))))
+
+(defn append-rules-file!
+  "Prepend `rules` (in order, skipping ones the file already holds) to the
+   config file for `scope` (:repo | :global), creating a missing file at the
+   current type + version. → {:file :added n} or {:error msg} (invalid file
+   left untouched), nil when the scope has no file."
+  [scope cwd rules]
   (when-let [file (scope-file scope cwd)]
     (let [data  (if (fs/existsSync file)
                   (read-rules-data file)
@@ -674,7 +690,14 @@
           error (:error (parse-rules-config data))]
       (if error
         {:error (str file " is invalid — " error)}
-        (do (write-rules-file! file (update data :rules
-                                            #(vec (cons (dissoc rule :scope) %))))
-            (clear-cache!)
-            {:file file})))))
+        (let [fresh (new-rules (:rules data) rules)]
+          (when (seq fresh)
+            (write-rules-file! file (update data :rules #(vec (concat fresh %))))
+            (clear-cache!))
+          {:file file :added (count fresh)})))))
+
+(defn append-rule-file!
+  "Prepend `rule` to the config file for `scope`, see `append-rules-file!`.
+   → {:file} or {:error msg}, nil when the scope has no file."
+  [scope cwd rule]
+  (some-> (append-rules-file! scope cwd [rule]) (dissoc :added)))

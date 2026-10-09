@@ -174,6 +174,9 @@ gates, as the built-in order does. `:defaults []` turns the tier off.
 - `/rules` lists the rules in effect, in order, with their source.
 - `/rules reload` re-reads the files (they are otherwise cached by
   modification time).
+- `/rules save` moves the chat's rules (the `a` and `r` answers, `/clj
+  allow`) to the top of `<repo>/.xi/rules.edn` and drops them from the chat.
+  Rules the file already holds are skipped.
 - `/allow`, `/allow always`, `/allow repo`, `/allow block`, `/deny` answer
   the pending dialog.
 - `/clj allow <cli>` and `/clj revoke <cli>` add and remove a chat rule for

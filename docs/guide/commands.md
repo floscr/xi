@@ -31,7 +31,7 @@ message. `/help` lists everything that is available in the current setup.
 | `/allow repo` | Allow writes anywhere in that repository |
 | `/allow block` | Allow this request and the rest of the tool call's requests (offered when one call asks several times) |
 | `/deny` (`/d`) | Deny it (also `Alt+d`). `/deny <reason>` tells the agent why |
-| `/rules` | Show the rules in effect, in order; `/rules reload` re-reads the files |
+| `/rules` | Show the rules in effect, in order; `/rules reload` re-reads the files; `/rules save` moves this chat's rules into `<repo>/.xi/rules.edn` |
 | `/plan` | Toggle plan mode: the agent may read and write a plan, nothing else |
 
 ## Reviewing work

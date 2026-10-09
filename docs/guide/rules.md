@@ -181,6 +181,9 @@ A repository can carry its own rules in `.xi/rules.edn` at its root, with the
 same shape. They apply when the chat runs inside that repository and win over
 the global file.
 
+`/rules save` (also in the `Ctrl`/`Cmd+K` palette) moves the rules you
+granted in the current chat into that file.
+
 ## Changing the defaults
 
 A `:defaults` key replaces the built-in set with the bundles you list. Leave

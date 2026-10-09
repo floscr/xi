@@ -64,6 +64,9 @@
    {:name "review"   :description "Review git changes against the code-review methodology"
     :subcommands [{:name "staged" :description "Review staged changes vs HEAD"}]}
    {:name "debug"    :description "Copy debug info to clipboard" :while-busy? true}
+   {:name "rules"    :description "List, reload or save policy rules"
+    :subcommands [{:name "save"   :description "Save this chat's session rules to the project (.xi/rules.edn)"}
+                  {:name "reload" :description "Clear the rules-file cache"}]}
    ;; Answer the pending permission ask — only ever useful mid-turn.
    {:name "allow"    :aliases ["a"] :description "Allow the pending permission request" :while-busy? true
     :subcommands [{:name "always" :description "Allow and don't ask again"}

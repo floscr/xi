@@ -491,6 +491,23 @@
         (is (= [:ls :read] (map #(get-in % [:match :tool]) (:rules data)))
             "new rule prepended")))))
 
+(deftest append-rules-file-keeps-order-and-skips-known
+  (with-repo-rules
+    "{:type :xi/rules :version 1 :rules [{:action {:type :allow} :match {:path #\"\\.md$\" :tool :read}}]}"
+    (fn [repo file]
+      (is (= {:file file :added 2}
+             (store/append-rules-file!
+              :repo repo
+              [{:match {:tool :ls} :action {:type :allow} :scope :session}
+               {:match {:tool :read :path #"\.md$"} :action {:type :allow} :scope :session}
+               {:match {:tool :grep} :action {:type :allow}}
+               {:match {:tool :ls} :action {:type :allow}}])))
+      (let [data (store/read-rule-edn (str (fs/readFileSync file "utf8")))]
+        (is (= [:ls :grep :read] (map #(get-in % [:match :tool]) (:rules data)))
+            "in order on top; the regex rule the file holds and the repeat are skipped"))
+      (is (= {:file file :added 0}
+             (store/append-rules-file! :repo repo [{:match {:tool :ls} :action {:type :allow}}]))))))
+
 (deftest xi-rules-file-change-detection
   (let [dir        (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-rules-edit-"))
         xi-file    (node-path/join dir "xi" "rules.edn")

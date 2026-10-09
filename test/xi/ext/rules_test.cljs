@@ -437,3 +437,10 @@
           out (rules-ext/add-rule st0 {:room-id "r1" :scope :server
                                        :rule {:s true}})]
       (is (= [{:s true}] (get-in out [:state :ext :rules :rules]))))))
+
+(deftest clear-session-rules-leaves-server-rules
+  (let [st0 {:rooms {"r1" {:ext {:rules {:rules [{:a 1}]}}}}
+             :ext   {:rules {:rules [{:s true}]}}}
+        out (:state (rules-ext/clear-session-rules st0 {:room-id "r1"}))]
+    (is (= [] (get-in out [:rooms "r1" :ext :rules :rules])))
+    (is (= [{:s true}] (get-in out [:ext :rules :rules])))))
