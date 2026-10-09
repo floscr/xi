@@ -1901,6 +1901,14 @@
     (js/cancelAnimationFrame id)
     (reset! smooth-follow-raf nil)))
 
+(defn- snap-scroll-top!
+  "Set scrollTop unless already within a pixel of `top`. scrollHeight and
+   clientHeight are rounded while the real bottom can be fractional, so
+   rewriting it on every render (each keystroke) jitters the view by 1px."
+  [^js el top]
+  (when (>= (js/Math.abs (- top (.-scrollTop el))) 1)
+    (set! (.-scrollTop el) top)))
+
 (defn- smooth-follow-step!
   "One frame of the follow loop: ease scrollTop toward the growing bottom and
    reschedule until within a pixel. Yields to an in-flight user gesture, which
@@ -1912,7 +1920,7 @@
           cur    (.-scrollTop timeline)
           delta  (- target cur)]
       (if (<= delta 1)
-        (set! (.-scrollTop timeline) target)
+        (snap-scroll-top! timeline target)
         (do (set! (.-scrollTop timeline) (+ cur (max 1 (* delta smooth-follow-ease))))
             (reset! smooth-follow-raf
                     (js/requestAnimationFrame #(smooth-follow-step! timeline))))))))
@@ -1937,7 +1945,7 @@
             (reset! smooth-follow-raf
                     (js/requestAnimationFrame #(smooth-follow-step! timeline))))
           (do (cancel-smooth-follow!)
-              (set! (.-scrollTop timeline) target)
+              (snap-scroll-top! timeline target)
               ;; Only live streaming earns the easing: arm once settled and busy.
               (when (and (> (js/Date.now) @smooth-scroll-settle-until)
                          (some-> @app-ref :state deref state/active-room
