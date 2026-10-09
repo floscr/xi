@@ -2,6 +2,81 @@
 
 What changed in each Xi release, newest first.
 
+## 0.3.0 - 2026-10-09
+
+### Added
+
+- Custom color themes in the Appearance dialog, built from a page color
+- Switch color themes from the Ctrl+K palette
+- Set your own keyboard shortcuts with `:keys` in `config.edn`, and see them all in a shortcut list
+- Navigate mode in the web client: `j`/`k` scrolling, `gg`/`G`, and a Doom-style `SPC` leader
+- Hold Alt to see the shortcut on buttons and palette rows
+- Home dashboard that starts a chat in any project
+- `/usage` page for Claude, Codex, Ollama Cloud and OpenCode accounts
+- A chat can keep several buffers open (diffs, files, system prompt) and reopens on the one you left
+- Find the files a chat edited
+- Browse a repo's git log from the palette, or with `/log`
+- Pin chats so they stay in Recent
+- Search all sessions from the bottom of the palette
+- Find files in any project from the palette
+- A chat's sub-agents are listed under it in the sidebar
+- Retry and Switch model buttons on error cards
+- Explain button on permission asks
+- Allow all of a tool call's asks at once
+- `/rules save` moves a chat's granted rules into the repo
+- New rule match keys `:user`, `:host`, `:installed`, and `:path` on shell commands
+- `:hint` rules that add a note to the decision below them
+- Default rules ask before environment variables or secrets reach the model
+- `process/poll-url` waits for a URL without asking for approval
+- Drop files onto a chat to attach them
+- Markdown diffs render as markdown, with a toggle to show code
+- Shortcuts for Always (Alt+S), Allow repo writes (Alt+Shift+A) and Prune all (Alt+Shift+P)
+- Browser tab title shows the chat or page in view
+- Open a file or copy its path from a diff's file header
+- Interrupted chats and their queued prompts continue after a server restart
+- Extensions can keep room state across restarts, add palette items and message other users
+- Demo extensions (notes, ping, hn), turned on with `:demo-extensions`
+- `:agents-ignore` project setting skips a repo's own AGENTS.md files
+- `:projects` can come from a `projects-config.edn` next to `config.edn`
+
+### Changed
+
+- Read-only commands only run without asking when their arguments are safe
+- Alt+U steps through chats waiting on you, then unread, then running ones
+- Alt+J/K moves through every visible sidebar row
+- Opening an older chat leaves it in Earlier
+- Escape closes the palette from any page
+- Switching chats is instant
+- Permission asks show two buttons, Deny and Allow, each with a menu of answers
+- Enter submits the skill form
+
+### Fixed
+
+- `rm` and `mv` on a symlink deleted the target instead of the link
+- Large `sh` and `curl` output was cut off before it could be parsed
+- Several chats running after a reboot logged you out of Claude
+- `--no-store` saved the transcript when `~/.claude` didn't exist yet
+- User extensions didn't load in `xi prompt`
+- Session titles could be set to an error message
+- Reopened chats showed API failures as plain text instead of error cards
+- A denied or interrupted ask lost its tool block and diff
+- The model didn't learn why a mid-script path was denied
+- `/diff` left out edits outside the chat's directory
+- Time spent waiting on a permission ask counted as the tool's run time
+- File finder queries with spaces found nothing
+- Escape in the palette also closed the open buffer
+- Drilling into a project could leave the palette empty
+- Typing lagged on long chats
+- Large diffs froze the browser tab
+- Line breaks in your messages were lost
+- Opening a missing file in the web client failed silently
+- Lua files got no syntax colors
+- A TUI crash left the terminal in raw mode
+
+### Removed
+
+- The viewer-mode setting: tool calls always fold into groups
+
 ## 0.2.0 - 2026-10-06
 
 ### Added
