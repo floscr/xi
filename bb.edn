@@ -1,6 +1,6 @@
 {:paths ["scripts"]
  :deps {tmux-dev/tmux-dev {:git/url "https://github.com/floscr/tmux-dev"
-                            :git/sha "6ef67ed56540a60b6862c656b6098139e1e6e82f"}}
+                            :git/sha "a7296e5a6db91d1c22f52922e5d21bb369e0ad4d"}}
  :tasks
  {:requires ([tmux-dev.core :as td]
              [clojure.edn :as edn]
