@@ -1,6 +1,6 @@
 {:paths ["scripts"]
  :deps {tmux-dev/tmux-dev {:git/url "https://github.com/floscr/tmux-dev"
-                            :git/sha "a7296e5a6db91d1c22f52922e5d21bb369e0ad4d"}}
+                            :git/sha "47d240275fe1c4a7def458c8e3e9b1ecd86784f5"}}
  :tasks
  {:requires ([tmux-dev.core :as td]
              [clojure.edn :as edn]
@@ -32,7 +32,7 @@
                          (catch Exception _ nil)))
                   "localhost")))
           (def config {:session "xi"
-                       :windows [["watch" "npx shadow-cljs watch main web"]]
+                       :windows [["watch" "bb watch:all"]]
                        :print   ["Web: http://localhost:7474"]})
           ;; Persist the headless server's stdout+stderr to a logfile so a
           ;; crash trace survives a `bb serve:restart` (the tmux pane scrollback
@@ -55,7 +55,7 @@
                              ;; together, and bun would otherwise boot the
                              ;; PREVIOUS watch's target/main.js — stale code +
                              ;; a "Stale Output!" devtools token mismatch.
-                             :windows [["watch" "npx shadow-cljs watch main web"]
+                             :windows [["watch" "bb watch:all"]
                                        ["server" (str "bb serve:await-build; "
                                                      (logged "bun target/main.js server --headless" serve-log))]]
                              :env-file ".env"})
@@ -103,11 +103,6 @@
           ;; holding :7476), so a demo:restart's fresh server can't bind.
           (defn reap-stray-demo! []
             (reap! "demo" "target/main.js server --headless --port 7476$"))
-          ;; `bb dev` (session xi) and `bb serve` (session xi-serve) both run
-          ;; `shadow-cljs watch main web`. There is one shadow server per
-          ;; project and a build can only be watched once, so whichever starts
-          ;; second dies with "already started {:build-id :main}". Starting or
-          ;; restarting either one stops the other first.
           ;; Compile + run a :node-test build (autorun). Prints one line when
           ;; every test passes, else only the FAIL/ERROR blocks + summary
           ;; (exit 1); compile errors print the full output. `--full` streams
@@ -143,29 +138,35 @@
                   (do (doseq [b blocks] (println (str/join "\n" b)) (println))
                       (println (str "✗ " failures " failures, " errors " errors (" tests " tests, " assertions " assertions)"))
                       (System/exit 1))))))
-          ;; tmux kill-session does NOT reliably kill the watch window's
-          ;; npm → node → java chain: it reparents to systemd --user and the
-          ;; surviving shadow server keeps owning the :main/:web build
-          ;; workers, so the next `shadow-cljs watch main web` dies with
-          ;; "already started {:build-id :main}" and serve:await-build hangs
-          ;; forever. Once BOTH watch sessions are gone, any remaining watch
-          ;; process is such an orphan: ask the shadow server to shut down
-          ;; gracefully (its clients exit with it), then kill survivors.
+          ;; There is one shadow server per project and a build can be watched
+          ;; only once: a second `watch main web` dies with "already started
+          ;; {:build-id :main}" and serve:await-build waits in vain. `bb dev`
+          ;; (session xi) and `bb serve` (session xi-serve) both run it, so
+          ;; `bb watch:all` first stops whatever server watches main or web —
+          ;; the other session's, or an orphan — gracefully, then by force.
+          ;; The pattern matches the npm/node clients and the java server
+          ;; (`shadow.cljs.devtools.cli --npm watch …`) alike.
+          (def shadow-watch-pattern "shadow.cljs.* watch .*(main|web)")
+          (defn stop-shadow-watch! []
+            (when (seq (stray-pids shadow-watch-pattern))
+              (println "A shadow-cljs watch of main/web is running — stopping the shadow server …")
+              (shell {:continue true} "npx" "shadow-cljs" "stop")
+              (loop [n 0]
+                (when (and (< n 20) (seq (stray-pids shadow-watch-pattern)))
+                  (Thread/sleep 500)
+                  (recur (inc n))))
+              (reap! "shadow watch" shadow-watch-pattern)))
+          ;; `=` forces an exact name match: a bare `-t xi` prefix-matches
+          ;; xi-demo once xi-serve is gone.
           (defn tmux-session? [name]
             (zero? (:exit (shell {:continue true :out :string :err :string}
-                                 "tmux" "has-session" "-t" name))))
+                                 "tmux" "has-session" "-t" (str "=" name)))))
+          ;; Cleanup when stopping: with neither watch session up, any watch
+          ;; left is an orphan.
           (defn reap-stray-shadow! []
             (when-not (or (tmux-session? (:session config))
                           (tmux-session? (:session serve-config)))
-              (when (seq (stray-pids "shadow-cljs watch main web"))
-                (println "Stray shadow-cljs watch (orphaned by a dead session) — stopping the shadow server …")
-                (shell {:continue true} "npx" "shadow-cljs" "stop")
-                (loop [n 0]
-                  (when (and (< n 20) (seq (stray-pids "shadow-cljs watch main web")))
-                    (Thread/sleep 500)
-                    (recur (inc n))))
-                (reap! "shadow watch" "shadow-cljs watch main web")
-                (reap! "shadow server" "shadow.cljs.devtools.cli --npm watch"))))
+              (stop-shadow-watch!)))
           (defn stop-dev-watch! []
             (td/stop config)
             (reap-stray-shadow!))
@@ -213,8 +214,9 @@
    :task (shell "npx shadow-cljs watch web")}
 
   watch:all
-  {:doc "Watch both CLI and web targets simultaneously"
-   :task (shell "npx shadow-cljs watch main web")}
+  {:doc "Watch both CLI and web targets simultaneously. Stops any shadow server already watching main/web first (the dev/serve session's, or an orphan) — the dev and serve sessions run this"
+   :task (do (stop-shadow-watch!)
+             (shell "npx shadow-cljs watch main web"))}
 
   test
   {:doc "Compile and run unit tests once. Prints a single line when they all pass, or only the FAIL/ERROR blocks + summary (exit 1); compile errors print the full output. `bb test --full` streams the raw shadow-cljs/cljs.test output instead."
