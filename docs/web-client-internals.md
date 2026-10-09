@@ -47,8 +47,20 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   `xi.web.appearance` defaults ← `xi.config/appearance` ← the user's
   overrides (per-user state, see below; `localStorage "xi/appearance"` is
   its cache).
+- **Home dashboard** (`/`, `xi.web.dashboard`; the page is
+  `views/dashboard-view`): a composer, then the `:dashboard-cards` of every
+  web half in a grid. The cards hold fns, so they live in a registry beside
+  the state (`register!`: built-in halves at init, user halves once loaded),
+  like `xi.web.palette-items`. `visible-cards` is pure (hidden set, `:when`,
+  `:order`); `load-tap` sends every non-hidden card's `:load` on entering
+  the dashboard and on a reconnect while on it. The composer's `:home/start`
+  (`xi.web.core`) opens a pending room in the picked cwd and runs
+  `submit-pending` on it, the same path as typing into a new chat. The
+  built-in cards are `xi.ext.home.web` (Active, Recent chats, Projects) and
+  `xi.ext.usage.web` (Usage). `/projects` is the project list
+  (`:dir :projects`).
 - **Per-user UI state** (`xi.user-state`, `xi.web.user-state`): theme,
-  appearance, collapsed sidebar groups, preferred model and recent
+  appearance, collapsed sidebar groups, hidden dashboard cards, preferred model and recent
   commands/skills live on the server per user
   (`~/.config/xi/state/users/<user>.edn`, `xi.user-state.store`);
   localStorage is the instant cache. `xi.web.user-state/bindings` maps each
@@ -202,7 +214,7 @@ Never sent over the wire:
 | Key | Contents |
 | --- | --- |
 | `:web/route` | `{:page … :session-id …}` |
-| `:web/drafts` | compose drafts per session (`:new` before the first join) |
+| `:web/drafts` | compose drafts per session (`:new` before the first join, `:home` for the dashboard composer) |
 | `:web/compose-images` | staged attachments |
 | `:web/timeline-window` | virtualization window |
 | `:web/appearance`, `:web/appearance-config`, `:web/appearance-open?` | appearance overrides, the seeded config map, dialog open |
@@ -218,9 +230,10 @@ Never sent over the wire:
 | `:web/nav-items` | extension nav entries, stored at init |
 | `:web/sidebar-groups` | extension sidebar groups (`:sidebar-groups`), stored at init; evaluated by `sidebar/extension-groups` |
 | `:web/session-menu-items` | extension entries of every session card's context menu, stored at init |
+| `:web/dashboard-hidden`, `:web/dashboard-customize?` | dashboard card ids the user switched off (per-user state `:dashboard-hidden`), and the Customize panel open |
+| `:web/home-cwd` | the dashboard composer's picked project (`""`: none; unset: the most recent) |
 | `:user-ext/ui` | per-extension browser-only UI state (`:bind` inputs) |
 | `:user-ext/state` | per-extension slice a user extension's server half pushed to this user (`:user-ext/push`), reduced by the web half's `:handlers` |
-| `:lobby` | rooms + sessions mirror (shared shape with the TUI client) |
 | `:lobby` | rooms + sessions mirror (shared shape with the TUI client); its `:claude-usage` feeds the sidebar ring, its `:usage-at` tells the usage page a poll happened |
 | `:web/usage` | `{:readings :history :fetched-at :loading?}` of the `/usage` page (`xi.ext.usage.web`), the server's `:usage/state` reply |
 
@@ -231,6 +244,7 @@ src/xi/web/
   core.cljs        entry: assembly, Replicant render, auto-scroll, listeners
   views.cljs       pure views: home, chat, compose, lightbox, error cards
   router.cljs      route parsing, :route/navigate, join pacing, History API effect
+  dashboard.cljs   home dashboard: card registry, visible-cards, grid + card frame
   title.cljs       document.title from the route (pure)
   cache.cljs       offline cache: memory tier + localStorage (hydrate + persist tap)
   prefetch.cljs    :session/peek of the viewed session's sidebar neighbours
@@ -241,6 +255,7 @@ src/xi/web/
   user_ext.cljs, user_ext/  browser halves of user extensions (lazy :user-ext module)
   demo.cljs        fabricated data for the static ?demo=<view> render
 src/xi/ext/usage/web.cljs         the /usage page (cards, pace notes, charts) + its dashboard card
+src/xi/ext/home/web.cljs          the dashboard's Active / Recent chats / Projects cards
 src/xi/usage.cljs                 readings, provider parsers, history, pace maths (pure)
 src/xi/client/ws_transport.cljs   shared WS transport (forward+mirror, reconnect)
 src/xi/server/ws.cljs             WS server + static file serving

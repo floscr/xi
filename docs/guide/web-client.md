@@ -37,6 +37,24 @@ devices and `xi clients revoke <name>` removes one.
 > most launches. Serve the client over HTTPS to fix that; see
 > [HTTPS](https.md).
 
+## Home
+
+The home page (`/`) starts chats and shows cards.
+
+- The box at the top starts a chat in the project picked under it, the most
+  recently used one unless you pick another; "No project" uses the server's
+  default directory. Enter sends, Shift+Enter starts a new line. A message
+  that starts with `/` opens the new chat with it typed in, so the command
+  menu completes it.
+- **Active**: chats waiting on a permission answer, failed, with unread
+  replies, or running, in that order.
+- **Recent chats**, **Projects** (+ starts a chat in one) and **Usage** (the
+  [usage](#usage) meters).
+
+**Customize dashboard** in the ⋮ menu switches cards on and off.
+[Extensions](extensions-reference.md#browser-halves) can add cards. **All
+projects** in the sidebar opens the project list (`/projects`).
+
 ## What you can do
 
 - **Chat.** Send messages, attach images and files (paste an image, use the
@@ -64,12 +82,13 @@ devices and `xi clients revoke <name>` removes one.
   of the diff (in the file header, in the diff buffer) flips that diff to the
   line diff and back. A hunk is rendered on its own, so one that starts in the
   middle of a table or code block shows that part as plain text.
-- **Switch projects.** The projects page lists your [projects](projects.md);
-  start a new chat in any of them.
+- **Switch projects.** The projects page (**All projects** in the sidebar)
+  lists your [projects](projects.md); start a new chat in any of them.
 - **Run commands.** Everything from [Slash commands](commands.md) works here
   too. The command palette (Ctrl/Cmd+K) lists them.
 - **Pin a chat.** The sidebar's Recent group shows the chats active in the
-  last couple of days. "Pin session" (right-click a card, long-press, or its
+  last couple of days. Opening an older chat leaves it in Earlier until it
+  gets a new turn. "Pin session" (right-click a card, long-press, or its
   ⋮ menu) keeps a chat there for good: it never ages into Earlier, and "Hide
   all from Recent" / Prune skip it. "Unpin session" in the same menu undoes
   it. A chat is never pinned and hidden at once: pinning a hidden chat shows
@@ -206,7 +225,7 @@ command palette switches between them. Themes are per
 
 These choices belong to your [user](server.md#users), not to the browser:
 the theme and your color themes, the appearance settings, which sidebar
-groups are collapsed, the
+groups are collapsed, which home cards you switched off, the
 model new chats start with, and your recently used commands and skills. So do
 the chats you have read (the unread dots), the chats you hid from Recent and
 the ones you pinned to it: the same chat can be unread for you and read for a

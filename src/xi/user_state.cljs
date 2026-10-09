@@ -156,6 +156,11 @@
                                  (and (sequential? v)
                                       (<= (count v) 32)
                                       (every? keyword? v)))}
+   ;; dashboard card ids the user hid, e.g. [:home/projects]
+   :dashboard-hidden {:valid? (fn [v]
+                                (and (sequential? v)
+                                     (<= (count v) 64)
+                                     (every? keyword? v)))}
    ;; the model a new chat starts with
    :preferred-model  {:valid? (fn [v] (and (string? v) (<= 1 (count v) 200)))}
    ;; most-recent-first command / skill names for the quick bar and palette

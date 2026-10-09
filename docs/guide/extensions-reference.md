@@ -274,19 +274,20 @@ A sibling namespace is loaded from the extension's directory:
 
 `<name>/web.cljs` defines `web-extension` with the same `:id` and only these
 keys: `:routes`, `:pages`, `:nav-items`, `:palette-items`, `:taps`, `:tool-views`,
-`:sidebar-groups`, `:session-menu-items`, `:handlers`.
+`:sidebar-groups`, `:session-menu-items`, `:dashboard-cards`, `:handlers`.
 
 | Key | Shape |
 | --- | --- |
 | `:routes` | `{"segment" {:parse (fn [segments] → {:page kw …}) :path {page-kw (fn [route] → "/url")}}}`. A route may carry a `:params` map (`{:page :chat/thread :params {:conv "c1"}}`): it stays on the route as is, so `:path` and the page read it back from `[:web/route :params]`. |
 | `:pages` | `{page-kw (fn [state dispatch!] → hiccup)}`; page keywords are namespaced with the id |
-| `:nav-items` | `[{:menu :sidebar/:palette/:home-topbar/:overflow :label "…" :icon :kw :event {…}}]`; overflow items may set `:mode :room` or `:project`. A sidebar item may set `:badge-path [:user-ext/state <id> …]`: the positive number at that path of the extension's browser slice shows as a badge (an unread count). |
+| `:nav-items` | `[{:menu :sidebar/:palette/:home-topbar/:overflow :label "…" :icon :kw :event {…}}]`; overflow items may set `:mode :room`, `:project` or `:dashboard` (the home page). A sidebar item may set `:badge-path [:user-ext/state <id> …]`: the positive number at that path of the extension's browser slice shows as a badge (an unread count). |
 | `:palette-items` | `(fn [state] → [{:label "…" :icon :kw :event {…}}])`: entries computed from the app state on every render and listed in the Cmd+K palette's Navigate group (e.g. one row per account stored in the extension's room slice). Events follow the `:nav-items` rule; a throw yields no entries. |
 | `:taps` | `[(fn [dispatch!] → (fn [event state]))]` |
 | `:handlers` | `{:ext.<id>/event (fn [slice event] → slice')}`: pure reducers over the extension's browser slice at `[:user-ext/state <id>]`, run when the server half [pushes](#events-and-effects) that event to this user. They see nothing but the slice and get no `dispatch!`; a throw or a non-map result keeps the slice. |
 | `:tool-views` | `{"tool_name" (fn [call slice] → hiccup or nil)}`; only the extension's own tools |
 | `:sidebar-groups` | `[{:id :<ext>/group :label "…" :where :flag? :limit 5 :more {:label "…" :icon :kw :event {…}}}]`: a drawer group (between Drafts and Recent) of the sessions whose `:where` flag is true, most recent first; `:more` is a closing row shown when there are more than `:limit`. The `:id` is namespaced with the extension's id. |
 | `:session-menu-items` | `[{:label "…" :label-on "…" :flag :flag? :icon :kw :event {…}}]`: entries of every session's context menu and the palette's "Current session" group. The `:event` gets the session's `:session-id`; `:label-on` replaces `:label` while the session's `:flag` is true. |
+| `:dashboard-cards` | `[{:id :<ext>/card :title "…" :render (fn [state dispatch!] → hiccup) :icon :kw :description "…" :order 50 :size :normal/:wide :when (fn [state] → bool) :load {…} :more {:label "…" :event {…}}}]`: cards on the [home page](web-client.md#home). `:render` draws the body (rendered like a page); Xi draws the frame with `:icon`, `:title` and the `:more` link. Cards sort by `:order` (built-in ones use 10–40, default 100); `:wide` takes the whole row; `:when` hides the card while false; `:load` is sent each time the home page opens, so a card can ask its server half for data. `:description` is shown under Customize dashboard. The `:id` is namespaced with the extension's id. |
 
 A tool view replaces the text result in the chat's block for one of the
 extension's own tools. `call` is the finished call, `{:tool :arguments :text

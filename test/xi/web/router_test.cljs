@@ -44,8 +44,9 @@
          (router/parse-path routes "/chat/abc-123"))))
 
 (deftest parse-path-projects
-  (testing "bare /projects is home without dir"
-    (is (= {:page :home} (router/parse-path routes "/projects"))))
+  (testing "bare /projects is the project list"
+    (is (= {:page :home :dir :projects} (router/parse-path routes "/projects")))
+    (is (= "/projects" (router/route->path routes {:page :home :dir :projects}))))
   (testing "all sessions"
     (is (= {:page :home :dir :all} (router/parse-path routes "/projects/all"))))
   (testing "encoded directory"
@@ -218,6 +219,16 @@
     (is (= :all (:web/selected-project-dir state)))
     (is (not (has-dispatch? effects :projects/web-sessions))
         "does NOT fetch sessions (flat list comes from lobby)")))
+
+(deftest navigate-to-project-list
+  (let [st (assoc (state/initial-state)
+                  :web/project-sessions [{:session-id "x"}]
+                  :web/project-sessions-cwd "/old")
+        {:keys [state effects]} (router/navigate roomless st {:page :home :dir :projects})]
+    (is (= :projects (:web/selected-project-dir state)))
+    (is (not (has-dispatch? effects :projects/web-sessions))
+        "the list is not a project directory")
+    (is (not (contains? state :web/project-sessions)))))
 
 (deftest navigate-home-clears-project-state
   (let [st (assoc (state/initial-state)

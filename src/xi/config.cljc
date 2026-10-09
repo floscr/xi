@@ -49,7 +49,9 @@
        [[xi.ext.canvas-review.web :as canvas-review-web]
         [xi.ext.diff.web :as diff-web]
         [xi.ext.file-view.web :as file-view-web]
-        [xi.ext.subagent.web :as subagent-web]])))
+        [xi.ext.home.web :as home-web]
+        [xi.ext.subagent.web :as subagent-web]
+        [xi.ext.usage.web :as usage-web]])))
 
 (def tui
   "TUI display config overrides. Only keys the user wants to change from
@@ -178,4 +180,9 @@
      [diff-web/extension
       file-view-web/extension
       canvas-review-web/extension
-      subagent-web/extension]))
+      subagent-web/extension
+      ;; the dashboard's Active / Recent chats / Projects cards
+      home-web/extension
+      ;; the /usage page (readings polled by xi.server.usage), plus its
+      ;; dashboard card
+      usage-web/extension]))

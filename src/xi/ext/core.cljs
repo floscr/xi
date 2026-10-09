@@ -227,6 +227,7 @@
      :nav-items        (vec (mapcat :nav-items exts))
      :sidebar-groups   (vec (mapcat :sidebar-groups exts))
      :session-menu-items (vec (mapcat :session-menu-items exts))
+     :dashboard-cards  (vec (mapcat :dashboard-cards exts))
      :taps             (vec (mapcat :taps exts))
      :keybindings      (vec (mapcat :keybindings exts))
      :badges           (vec (keep :prompt-badge exts))

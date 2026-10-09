@@ -42,6 +42,11 @@
    :sidebar-collapsed {:path :web/sidebar-collapsed :default #{}
                        :coerce set
                        :fx   (fn [v] [[:cache/sidebar-collapsed {:groups v}]])}
+   ;; dashboard cards the user switched off (xi.web.dashboard); no cache, the
+   ;; dashboard paints once connected
+   :dashboard-hidden  {:path :web/dashboard-hidden :default #{}
+                       :coerce set
+                       :fx   (fn [_] [])}
    :preferred-model   {:path :web/preferred-model :default nil
                        :fx   (fn [v] [[:cache/preferred-model {:model v}]])}
    :recent-commands   {:path :web/command-usage :default []

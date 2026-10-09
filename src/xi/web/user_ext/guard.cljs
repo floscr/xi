@@ -20,7 +20,7 @@
    over the extension's own browser slice only (see `wrap`) — logic lives in
    the server half."
   #{:id :routes :pages :nav-items :palette-items :taps :tool-views :sidebar-groups
-    :session-menu-items :handlers})
+    :session-menu-items :dashboard-cards :handlers})
 
 (def builtin-segments
   "First URL segments the web client routes itself."
@@ -61,6 +61,25 @@
        (or (nil? (:flag m)) (keyword? (:flag m)))
        (map? (:event m))))
 
+(defn- valid-card?
+  "A `:dashboard-cards` entry (xi.web.dashboard): an :id namespaced by the
+   extension (it is the user's hide key), a string :title and a :render fn;
+   the rest optional."
+  [id c]
+  (and (map? c)
+       (own-ns? id (:id c))
+       (string? (:title c))
+       (fn? (:render c))
+       (or (nil? (:when c)) (fn? (:when c)))
+       (or (nil? (:load c)) (map? (:load c)))
+       (or (nil? (:more c)) (and (map? (:more c))
+                                 (string? (:label (:more c)))
+                                 (map? (:event (:more c)))))
+       (or (nil? (:order c)) (number? (:order c)))
+       (contains? #{nil :normal :wide} (:size c))
+       (or (nil? (:icon c)) (keyword? (:icon c)))
+       (or (nil? (:description c)) (string? (:description c)))))
+
 (defn validate
   "→ nil when `ext` is a usable web half, else a rejection reason.
    `own-tools` — the tool names its server half defines; :tool-views may only
@@ -94,6 +113,12 @@
            (not (and (sequential? (:session-menu-items ext))
                      (every? valid-menu-item? (:session-menu-items ext)))))
       ":session-menu-items must be maps {:label str :event {…} [:label-on str] [:flag kw]}"
+      (and (some? (:dashboard-cards ext))
+           (not (and (sequential? (:dashboard-cards ext))
+                     (every? #(valid-card? id %) (:dashboard-cards ext)))))
+      (str ":dashboard-cards must be maps {:id :" (name id) "/… :title str :render fn"
+           " [:when fn] [:load {…}] [:more {:label str :event {…}}] [:order n]"
+           " [:size :normal|:wide] [:icon kw] [:description str]}")
       (and (some? (:palette-items ext)) (not (fn? (:palette-items ext))))
       ":palette-items must be a fn of the app state → [{:label str :icon kw :event {…}}]"
       (and (some? views) (not (map? views)))
@@ -398,7 +423,28 @@
                           (update :more (fn [more]
                                           (when-let [event (forwardable id (:event more))]
                                             (assoc more :event event))))))
-                      groups))))))
+                      groups)))
+
+      ;; rendered like a page; :load and :more are dispatched by the core
+      ;; dashboard, so their events are confined like a nav item's
+      (:dashboard-cards ext)
+      (update :dashboard-cards
+              (fn [cards]
+                (mapv (fn [{:keys [render load more] when-fn :when :as c}]
+                        (cond-> (assoc c :render
+                                       (fn [state dispatch!]
+                                         (try (sanitize (render state (guard-dispatch id dispatch!))
+                                                        (ui-binder id state dispatch!))
+                                              (catch :default e (error-box id (.-message e))))))
+                          when-fn (assoc :when (fn [state]
+                                                 (try (when-fn state)
+                                                      (catch :default e
+                                                        (log-blocked id (str "card :when threw: " (.-message e)))
+                                                        false))))
+                          load    (assoc :load (forwardable id load))
+                          more    (assoc :more (when-let [event (forwardable id (:event more))]
+                                                 (assoc more :event event)))))
+                      cards))))))
 
 (defn forward-event
   "The event a :user-ext/forward wrapper sends to the server: the inner event,

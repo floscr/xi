@@ -27,6 +27,7 @@
             [xi.web.theme :as theme]
             [xi.web.user-state :as user-state]
             [xi.web.cache :as cache]
+            [xi.web.dashboard :as dashboard]
             [xi.web.demo :as demo]
             [xi.web.key-hints :as key-hints]
             [xi.web.flip :as flip]
@@ -936,13 +937,36 @@
                 true     (conj [:ws/send {:type :session/delete :session-id session-id}])
                 viewing? (into effects))}))
 
+(defn- home-start
+  "The dashboard composer (xi.web.views/dashboard-view): a fresh chat in `cwd`
+   (nil: the server default) that submits `text` at once. A slash command
+   opens the new chat with it as the draft instead, where the command menu
+   completes it."
+  [st {:keys [cwd text]}]
+  (let [text    (str/trim (or text ""))
+        pending (fresh-pending-room st cwd)
+        opened  (open-pending-room (update st :web/drafts dissoc :home) pending)]
+    (cond
+      (str/blank? text) nil
+
+      (str/starts-with? text "/")
+      (assoc-in opened [:state :web/drafts (:id pending)] text)
+
+      :else
+      (let [sub (submit-pending (:state opened) {:session-id nil :text text})]
+        {:state   (:state sub)
+         :effects (into (vec (:effects opened)) (:effects sub))}))))
+
 (defn- web-handlers [routes]
   (merge (router/handlers routes)
          user-state/handlers
          prefetch/handlers
          keymap/handlers
          themes-handlers
+         dashboard/handlers
          {:room/new              room-new
+          :home/start            home-start
+          :home/set-cwd          (fn [st {:keys [cwd]}] {:state (assoc st :web/home-cwd cwd)})
           :compose/focus         (fn [_ _] {:effects [[:compose/focus]]})
           :compose/blur          (fn [_ _] {:effects [[:compose/blur]]})
           :room/join             forward
@@ -2324,6 +2348,7 @@
   (js/console.log "[xi-web] demo mode:" view)
   (let [composed (ext/compose (web-extensions))]
     (reset! pages-ref (:pages composed))
+    (dashboard/register! (:dashboard-cards composed))
     (.setProperty (.-style js/document.documentElement) "--app-height" "100dvh")
     (r/render (el "app")
               (views/root-view (assoc (demo/demo-state view)
@@ -2754,6 +2779,7 @@
                                                (:fx composed))
                          :on-render     render!})]
     (reset! pages-ref (:pages composed))
+    (dashboard/register! (:dashboard-cards composed))
     (reset! dispatch-ref dispatch!)
     (reset! app-ref app)
     ((:set-dispatch! transport) dispatch!)
@@ -2770,6 +2796,7 @@
     (add-tap! (record-command-tap dispatch!))
     (add-tap! (prompt-nav-close-tap dispatch!))
     (add-tap! (user-ext/request-tap dispatch!))
+    (add-tap! (dashboard/load-tap dispatch!))
     (doseq [make-tap (:taps composed)]
       (add-tap! (make-tap dispatch!)))
     (router/init! routes dispatch!)

@@ -175,6 +175,57 @@
            (:nav-items ext))
         "own nav events become forwards; foreign ones are dropped")))
 
+(deftest validate-dashboard-cards
+  (let [card {:id :notes/latest :title "Latest" :render (fn [_ _] [:p])}
+        ok   {:id :notes :dashboard-cards [card]}]
+    (is (nil? (guard/validate ok {})))
+    (is (nil? (guard/validate (assoc ok :dashboard-cards
+                                     [(assoc card :when (fn [_] true) :load {:type :ext.notes/load}
+                                             :more {:label "All" :event {:type :route/navigate :page :notes/list}}
+                                             :order 50 :size :wide :icon :clock :description "d")])
+                              {})))
+    (testing "rejected"
+      (doseq [bad [(assoc card :id :home/recent)
+                   (assoc card :id :latest)
+                   (dissoc card :title)
+                   (dissoc card :render)
+                   (assoc card :when true)
+                   (assoc card :size :huge)
+                   (assoc card :more {:label "x"})]]
+        (is (re-find #":dashboard-cards must be"
+                     (guard/validate (assoc ok :dashboard-cards [bad]) {}))
+            (pr-str (dissoc bad :render))))
+      (is (re-find #":dashboard-cards must be"
+                   (guard/validate (assoc ok :dashboard-cards card) {}))))))
+
+(deftest wrapped-dashboard-card-is-sanitized-and-confined
+  (let [seen (atom [])
+        ext  (guard/wrap
+              {:id :notes
+               :dashboard-cards
+               [{:id :notes/latest :title "Latest"
+                 :render (fn [_ dispatch!]
+                           (dispatch! {:type :agent/abort})
+                           (dispatch! {:type :ext.notes/open})
+                           [:div [:script "x"] "hi"])
+                 :when   (fn [_] (throw (js/Error. "no")))
+                 :load   {:type :ext.notes/load}
+                 :more   {:label "All" :event {:type :route/navigate :page :notes/list}}}
+                {:id :notes/evil :title "Evil"
+                 :render (fn [_ _] (throw (js/Error. "kaput")))
+                 :load   {:type :agent/abort}
+                 :more   {:label "x" :event {:type :agent/abort}}}]})
+        [c1 c2] (:dashboard-cards ext)]
+    (is (= [:div nil "hi"] ((:render c1) {} #(swap! seen conj %))))
+    (is (= [{:type :user-ext/forward :event {:type :ext.notes/open}}] @seen)
+        "the render's dispatch! is the guarded one")
+    (is (false? ((:when c1) {})) "a throwing :when hides the card")
+    (is (= {:type :user-ext/forward :event {:type :ext.notes/load}} (:load c1)))
+    (is (= {:type :route/navigate :page :notes/list} (get-in c1 [:more :event])))
+    (is (re-find #"failed to render: kaput" (str ((:render c2) {} identity))))
+    (is (nil? (:load c2)) "a foreign :load event is dropped")
+    (is (nil? (:more c2)) "so is a foreign :more")))
+
 ;; ── the sandboxed evaluator ──────────────────────────────────────────────────
 
 (deftest load!-evaluates-a-bundle-in-the-sandbox

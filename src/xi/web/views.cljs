@@ -25,6 +25,7 @@
             [xi.tui.snippets :as snippets]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
+            [xi.web.dashboard :as dashboard]
             [xi.web.theme :as ctheme]
             [xi.web.keymap :as keymap]
             [xi.web.palette-items :as palette-items]
@@ -43,6 +44,7 @@
             [ui.command :as cmd]
             [ui.context-menu :as context-menu]
             [ui.popover :as popover]
+            [ui.select :as select]
             [ui.color-picker :as color-picker]
             [ui.chip :as chip]
             [xi.clj-result :as clj-result]
@@ -3492,7 +3494,7 @@
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
-(defn- with-projects
+(defn with-projects
   [cards]
   (map #(assoc % :show-project? true) cards))
 
@@ -3591,7 +3593,7 @@
                                                          :session-id session-id :buffer-id id})))}}
          (icon/icon {:icon-name (if running? :circle-x :x) :size :sm})]])]))
 
-(defn- session-card
+(defn session-card
   "Session row with a ui.context-menu of secondary actions (right-click,
    long-press, or the ⋮ button); open buffers unfold under it
    (session-buffer-rows)."
@@ -3695,9 +3697,10 @@
                              (dispatch! {:type :draft-chat/discard :id id}))}}
       (icon/icon {:icon-name :x :size :sm})]]))
 
-(defn- project-dir-card
-  [dispatch! path dirty?]
-  [:div {:class ["project-card" "project-card--dir"]
+(defn project-dir-card
+  [dispatch! path dirty? current?]
+  [:div {:class ["project-card" "project-card--dir"
+                 (when current? "project-card--current")]
          :replicant/key (str "dir-" path)
          :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd path}))}}
    [:div {:class ["project-card-icon" (when dirty? "project-card-icon--dirty")]}
@@ -3884,108 +3887,8 @@
            :else
            (empty-state/empty-state {} [:p "No sessions yet."]))])]]))
 
-(defn- home-view [state dispatch!]
-  (let [selected-dir (:web/selected-project-dir state)]
-    (cond
-      (get-in state [:lobby :agent-id])
-      (personal-agent-home-view state dispatch!)
 
-      (= selected-dir :all)
-      (all-sessions-view state dispatch!)
-
-      selected-dir
-      (project-sessions-view state dispatch!)
-
-      :else
-      (let [dirs       (:web/project-dirs state)
-            raw-query  (get-in state [:web/search :home])
-            query      (str/lower-case (str/trim (or raw-query "")))
-            content?   (boolean (get-in state [:web/content-search :home]))
-            matches    (get-in state [:web/content-matches :home])
-            content-active? (and content? (seq query))
-            matched-sessions (when content-active?
-                               (->> (get-in state [:lobby :sessions])
-                                    (filter #(contains? (or matches #{}) (:session-id %)))))
-            dirs       (if (seq query)
-                         (filter #(str/includes? (str/lower-case %) query) dirs)
-                         dirs)
-            loading?   (:web/projects-loading? state)
-            rooms      (get-in state [:lobby :rooms])
-            connected? (:web/connected? state)
-            ;; Active rooms without a known project
-            orphans    (filter (fn [r] (:session-id r)) rooms)]
-        [:div {:class ["container"] :replicant/key "home"}
-         [:div {:class ["topbar"]}
-          (menu-button dispatch!)
-          [:div {:class ["topbar-title"]} "Xi"]
-          (offline-badge state)
-          (when connected?
-            (for [item (nav-items-for state :home-topbar)]
-              [:button {:class ["icon-btn"]
-                        :title (:label item)
-                        :replicant/key (str "nav-" (:label item))
-                        :on {:click (fn [_] (dispatch! (:event item)))}}
-               (icon/icon {:icon-name (:icon item) :size :md})]))
-          (when connected?
-            [:button {:class ["icon-btn"]
-                      :data-key-action "chat/new"
-                      :on {:click (fn [_] (dispatch! {:type :room/new}))}}
-             (icon/icon {:icon-name :plus :size :md})])
-          (overflow-menu dispatch! state)]
-         [:div {:class ["home"]}
-          (cond
-            (not connected?)
-            (empty-state/empty-state {}
-             (spinner)
-             [:p "Connecting to server…"])
-
-            loading?
-            (empty-state/empty-state {}
-             (spinner)
-             [:p "Loading projects…"])
-
-            content-active?
-            [:div
-             (search-box dispatch! :home "Search projects…" raw-query content?)
-             (if (seq matched-sessions)
-               [:div {:class ["project-list"]}
-                (for [s (with-projects (active-first state matched-sessions))]
-                  (session-card dispatch! state s))]
-               (empty-state/empty-state {} [:p "No matching sessions."]))]
-
-            :else
-            [:div
-             (search-box dispatch! :home "Search projects…" raw-query content?)
-             [:div {:class ["project-list"]}
-              (when-not (seq query)
-                (for [r orphans]
-                  (session-card dispatch! state {:session-id (:session-id r)
-                                          :name (or (:session-name r) "New session")
-                                          :cwd (:cwd r)
-                                          :show-project? true
-                                          :active? true :busy? (:busy? r)
-                                          :has-dialog? (:has-dialog? r)
-                                          :error? (:error? r)
-                                          :people (sb/room-people state (:users r))})))
-              (when-not (seq query)
-                [:div {:class ["project-card"]
-                       :replicant/key "all-sessions"
-                       :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd :all}))}}
-                 [:div {:class ["project-card-icon"]}
-                  (message-circle-icon)]
-                 [:div {:class ["project-card-info"]}
-                  [:span {:class ["project-card-name"]} "All sessions"]]
-                 [:div {:class ["project-card-chevron"]}
-                  (icon/icon {:icon-name :chevron-right :size :sm})]])
-              (if (and (seq query) (empty? dirs))
-                (empty-state/empty-state {} [:p "No matching projects."])
-                (let [dirty (:web/project-dirty state)]
-                  (for [d dirs]
-                    (project-dir-card dispatch! d (contains? dirty d)))))]])]]))))
-
-;; ── Root ─────────────────────────────────────────────────────────────────────
-
-(defn- recent-projects
+(defn recent-projects
   [state]
   (let [room-cwds (->> (get-in state [:lobby :rooms]) (keep :cwd))
         sess-cwds (->> (get-in state [:lobby :sessions])
@@ -3995,6 +3898,213 @@
     (->> (concat room-cwds sess-cwds)
          distinct
          (take 5))))
+
+(defn- home-topbar-actions
+  "The topbar buttons of the dashboard and the project list: extension
+   :home-topbar items and New chat."
+  [state dispatch!]
+  (when (:web/connected? state)
+    (list
+     (for [item (nav-items-for state :home-topbar)]
+       [:button {:class ["icon-btn"]
+                 :title (:label item)
+                 :replicant/key (str "nav-" (:label item))
+                 :on {:click (fn [_] (dispatch! (:event item)))}}
+        (icon/icon {:icon-name (:icon item) :size :md})])
+     [:button {:class ["icon-btn"]
+               :replicant/key "new-chat"
+               :data-key-action "chat/new"
+               :on {:click (fn [_] (dispatch! {:type :room/new}))}}
+      (icon/icon {:icon-name :plus :size :md})])))
+
+(defn- projects-view
+  "/projects: every project directory, the live rooms and All sessions."
+  [state dispatch!]
+  (let [dirs       (:web/project-dirs state)
+        raw-query  (get-in state [:web/search :home])
+        query      (str/lower-case (str/trim (or raw-query "")))
+        content?   (boolean (get-in state [:web/content-search :home]))
+        matches    (get-in state [:web/content-matches :home])
+        content-active? (and content? (seq query))
+        matched-sessions (when content-active?
+                           (->> (get-in state [:lobby :sessions])
+                                (filter #(contains? (or matches #{}) (:session-id %)))))
+        dirs       (if (seq query)
+                     (filter #(str/includes? (str/lower-case %) query) dirs)
+                     dirs)
+        loading?   (:web/projects-loading? state)
+        rooms      (get-in state [:lobby :rooms])
+        connected? (:web/connected? state)
+        ;; Active rooms without a known project
+        orphans    (filter (fn [r] (:session-id r)) rooms)]
+    [:div {:class ["container"] :replicant/key "projects"}
+     [:div {:class ["topbar"]}
+      (menu-button dispatch!)
+      [:div {:class ["topbar-title"]} "Projects"]
+      (offline-badge state)
+      (home-topbar-actions state dispatch!)
+      (overflow-menu dispatch! state)]
+     [:div {:class ["home"]}
+      (cond
+        (not connected?)
+        (empty-state/empty-state {}
+         (spinner)
+         [:p "Connecting to server…"])
+
+        loading?
+        (empty-state/empty-state {}
+         (spinner)
+         [:p "Loading projects…"])
+
+        content-active?
+        [:div
+         (search-box dispatch! :home "Search projects…" raw-query content?)
+         (if (seq matched-sessions)
+           [:div {:class ["project-list"]}
+            (for [s (with-projects (active-first state matched-sessions))]
+              (session-card dispatch! state s))]
+           (empty-state/empty-state {} [:p "No matching sessions."]))]
+
+        :else
+        [:div
+         (search-box dispatch! :home "Search projects…" raw-query content?)
+         [:div {:class ["project-list"]}
+          (when-not (seq query)
+            (for [r orphans]
+              (session-card dispatch! state {:session-id (:session-id r)
+                                             :name (or (:session-name r) "New session")
+                                             :cwd (:cwd r)
+                                             :show-project? true
+                                             :active? true :busy? (:busy? r)
+                                             :has-dialog? (:has-dialog? r)
+                                             :error? (:error? r)
+                                             :people (sb/room-people state (:users r))})))
+          (when-not (seq query)
+            [:div {:class ["project-card"]
+                   :replicant/key "all-sessions"
+                   :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd :all}))}}
+             [:div {:class ["project-card-icon"]}
+              (message-circle-icon)]
+             [:div {:class ["project-card-info"]}
+              [:span {:class ["project-card-name"]} "All sessions"]]
+             [:div {:class ["project-card-chevron"]}
+              (icon/icon {:icon-name :chevron-right :size :sm})]])
+          (if (and (seq query) (empty? dirs))
+            (empty-state/empty-state {} [:p "No matching projects."])
+            (let [dirty (:web/project-dirty state)]
+              (for [d dirs]
+                (project-dir-card dispatch! d (contains? dirty d) false))))]])]]))
+
+(defn composer-projects
+  "The dashboard composer's project choices: recently used first, then every
+   known project directory."
+  [state]
+  (vec (distinct (concat (recent-projects state) (:web/project-dirs state)))))
+
+(defn composer-cwd
+  "The project the dashboard composer starts a chat in: the user's pick
+   (\"\" for none, the server default), else the most recent project."
+  [state projects]
+  (let [picked (:web/home-cwd state)]
+    (cond
+      (= "" picked)  nil
+      (some? picked) picked
+      :else          (first projects))))
+
+(defn- dashboard-composer
+  "Starts a chat in a project from the dashboard (:home/start): Enter sends,
+   Shift+Enter breaks the line."
+  [state dispatch!]
+  (let [draft    (get-in state [:web/drafts :home] "")
+        projects (composer-projects state)
+        cwd      (composer-cwd state projects)
+        submit!  (fn [text]
+                   (when-not (str/blank? text)
+                     (dispatch! {:type :home/start :cwd cwd :text text})))]
+    [:div {:class ["dash-composer"] :replicant/key "dash-composer"}
+     (form/form-textarea-auto
+      {:placeholder (if cwd
+                      (str "Start a chat in " (shorten-path cwd) "…")
+                      "Start a chat…")
+       :value       draft
+       :max-rows    8
+       :class       "dash-composer-input"
+       :attrs {:aria-label "New chat message"
+               :on {:input (fn [^js e]
+                             (dispatch! {:type :compose/set-draft :draft-key :home
+                                         :text (.. e -target -value)}))
+                    ;; iOS Safari's Return key fires no Enter keydown, only a
+                    ;; beforeinput "insertLineBreak".
+                    :beforeinput (fn [^js e]
+                                   (when (= "insertLineBreak" (.-inputType e))
+                                     (.preventDefault e)
+                                     (submit! (.. e -target -value))))
+                    :keydown (fn [^js e]
+                               (when (and (= "Enter" (.-key e)) (not (.-isComposing e)))
+                                 (.preventDefault e)
+                                 (if (.-shiftKey e)
+                                   (let [^js el (.-target e)
+                                         start  (.-selectionStart el)
+                                         v      (.-value el)
+                                         nv     (str (subs v 0 start) "\n" (subs v (.-selectionEnd el)))]
+                                     (set! (.-value el) nv)
+                                     (.setSelectionRange el (inc start) (inc start))
+                                     (dispatch! {:type :compose/set-draft :draft-key :home :text nv}))
+                                   (submit! (.. e -target -value)))))}}})
+     [:div {:class ["dash-composer-bar"]}
+      (select/select
+       {:options   (into [{:value "" :label "No project"}]
+                         (map (fn [p] {:value p :label (shorten-path p)}))
+                         projects)
+        :value     (or cwd "")
+        :class     "dash-composer-project"
+        :attrs     {:aria-label "Project"}
+        :on-change (fn [v] (dispatch! {:type :home/set-cwd :cwd v}))})
+      [:button {:class ["icon-btn" "dash-composer-send"]
+                :title "Start chat"
+                :disabled (str/blank? draft)
+                :on {:click (fn [_] (submit! draft))}}
+       (icon/icon {:icon-name :arrow-up :size :md})]]]))
+
+(defn- dashboard-view
+  "/: the composer above the extension-filled card grid (xi.web.dashboard)."
+  [state dispatch!]
+  [:div {:class ["container"] :replicant/key "home"}
+   [:div {:class ["topbar"]}
+    (menu-button dispatch!)
+    [:div {:class ["topbar-title"]} "Xi"]
+    (offline-badge state)
+    (home-topbar-actions state dispatch!)
+    (overflow-menu dispatch! state {:mode :dashboard})]
+   [:div {:class ["home" "dashboard"]}
+    (if (:web/connected? state)
+      (list
+       (dashboard-composer state dispatch!)
+       (dashboard/grid state dispatch!))
+      (empty-state/empty-state {}
+       (spinner)
+       [:p "Connecting to server…"]))]])
+
+(defn- home-view [state dispatch!]
+  (let [selected-dir (:web/selected-project-dir state)]
+    (cond
+      (get-in state [:lobby :agent-id])
+      (personal-agent-home-view state dispatch!)
+
+      (= selected-dir :all)
+      (all-sessions-view state dispatch!)
+
+      (= selected-dir :projects)
+      (projects-view state dispatch!)
+
+      (string? selected-dir)
+      (project-sessions-view state dispatch!)
+
+      :else
+      (dashboard-view state dispatch!))))
+
+;; ── Root ─────────────────────────────────────────────────────────────────────
+
 
 (defn- claude-usage-meter
   [label pct severity note]
@@ -4252,7 +4362,8 @@
         cards    (concat recent hidden earlier)
         drafts   (:web/draft-chats state)
         collapsed (or (:web/sidebar-collapsed state) #{})
-        section  (partial sidebar-section dispatch! collapsed)]
+        section  (partial sidebar-section dispatch! collapsed)
+        {route-page :page route-dir :dir} (:web/route state)]
     (sidebar/sidebar
      {}
      ;; Keyed by render? so the closed drawer holds no card list and a fresh
@@ -4263,17 +4374,24 @@
       (when render?
         (list
          (sidebar-search dispatch!)
+         (sidebar/sidebar-menu-item
+          {:icon-name :home
+           :class     "sidebar-row"
+           :active    (and (= :home route-page) (nil? route-dir))
+           :attrs     {:replicant/key "home" :data-flip "home" :data-nav "home"}
+           :on-click  (fn [_] (dispatch! {:type :route/navigate :page :home}))}
+          "Home")
          (when (not pa?)
            (section {:id :projects :label "Projects"}
              (let [dirty (:web/project-dirty state)]
                (for [p projects]
-                 (project-dir-card dispatch! p (contains? dirty p))))
+                 (project-dir-card dispatch! p (contains? dirty p) (= p route-dir))))
              (sidebar/sidebar-menu-item
               {:icon-name :layout-dashboard
                :class     "sidebar-row"
-               :active    (= :home (get-in state [:web/route :page]))
                :attrs     {:replicant/key "all-projects" :data-flip "all-projects"}
-               :on-click  (fn [_] (dispatch! {:type :route/navigate :page :home}))}
+               :active    (and (= :home route-page) (contains? #{:projects :all} route-dir))
+               :on-click  (fn [_] (dispatch! {:type :route/navigate :page :home :dir :projects}))}
               "All projects")))
          (when (seq drafts)
            (section {:id :drafts :label "Drafts"}
@@ -4311,6 +4429,8 @@
                  (sidebar/sidebar-menu-item
                   {:icon-name (:icon item)
                    :class     "sidebar-row"
+                   :active    (and (= :route/navigate (get-in item [:event :type]))
+                                   (= route-page (get-in item [:event :page])))
                    :badge     (nav-badge state item)
                    :attrs     {:replicant/key (str "nav-" (:label item))
                                :data-flip (str "nav-" (:label item))}
@@ -4361,6 +4481,7 @@
                 (:web/watched state)
                 (get-in state [:web/route :session-id])
                 (get-in state [:web/route :page])
+                (get-in state [:web/route :dir])
                 (:web/sidebar-collapsed state)
                 (:web/draft-chats state)
                 (:web/project-dirty state)

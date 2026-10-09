@@ -410,7 +410,7 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
 - **`:nav-items`** — data-only entries `{:menu … :label … :icon … :event …}`
   rendered by core views; stored in app state at `:web/nav-items` during
   init. Menus: `:sidebar`, `:palette` (Cmd+K), `:home-topbar`, `:overflow`.
-  Overflow items may carry `:mode` (`:project`, `:room`, …) to show only in
+  Overflow items may carry `:mode` (`:project`, `:room`, `:dashboard`, …) to show only in
   a matching topbar context; the context's `:cwd`/`:room-id` are merged into
   the `:event` on click. A sidebar item may carry `:badge-path`, a state path
   whose positive number is drawn as a badge (`views/nav-badge`; the sidebar
@@ -433,6 +433,14 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
   Remove from favorites). Both are also open to
   user extensions (their web half; the guard confines the events, see
   [extensions-reference.md](guide/extensions-reference.md#browser-halves)).
+- **`:dashboard-cards`** — cards of the home dashboard (`/`,
+  `xi.web.dashboard`, whose ns doc has the full map): `{:id :<ext>/name
+  :title :icon :description :order :size :when :load :render :more}`. Core
+  draws the frame (title, icon, `:more` link, a per-card error box) and calls
+  `(:render card) state dispatch!` for the body; `:load` is dispatched on
+  entering the dashboard (and on a reconnect while on it), `:when` hides the
+  card, and the user's Customize panel hides it by `:id`. The built-in cards
+  are `xi.ext.home.web` and `xi.ext.usage.web`'s Usage card.
 - **`:taps`** — `(fn [dispatch!] → (fn [event state]))` factories, added via
   `add-tap!` at init (e.g. fire a stashed action once `:room/joined` arrives).
 

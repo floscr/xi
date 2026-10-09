@@ -219,6 +219,19 @@
          distinct
          vec)))
 
+(defn active-cards
+  "The dashboard's Active card (xi.ext.home.web): `cards` (session-status maps,
+   newest first) that are waiting on a dialog, failed, finished with unread
+   output or still running, in that order of urgency, newest first within
+   each."
+  [cards]
+  (let [rank (fn [{:keys [has-dialog? error? unread? busy?]}]
+               (cond has-dialog?                  0
+                     error?                       1
+                     (and unread? (not busy?))    2
+                     busy?                        3))]
+    (->> cards (filter rank) (sort-by rank) vec)))
+
 (defn next-attention-jump
   "Where the next press of the jump-to-attention key goes: `{:sid :visited}`,
    or nil when `order` (see `attention-order`) holds nothing but `cur`.

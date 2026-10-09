@@ -61,8 +61,9 @@
                               [(active-buffer-title st nil) "New session"])
                 :git-status ["Git status" (dir-name cwd)]
                 (:home nil) (cond
-                              (= dir :all) ["All sessions"]
-                              dir          [(dir-name dir)])
+                              (= dir :all)      ["All sessions"]
+                              (= dir :projects) ["Projects"]
+                              dir               [(dir-name dir)])
                 ;; an extension page, scoped to a session when its route is
                 [(page-label page) (session-name st session-id)])]
     (str/join sep (concat (remove str/blank? parts) [app-name]))))

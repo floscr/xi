@@ -11,6 +11,7 @@
    Only the surfaces the web client can extend after startup are supported:
    :pages (pages-ref), :routes (routes-ref), :nav-items, :sidebar-groups and
    :session-menu-items (state), :taps and :tool-views (xi.web.tool-views), :palette-items (xi.web.palette-items),
+   :dashboard-cards (xi.web.dashboard),
    and :handlers — reducers over the extension's own browser slice at
    [:user-ext/state <id>], applied when its server half pushes one of its
    events to this user (:user-ext/push, see xi.server.ws). App handlers/fx
@@ -19,6 +20,7 @@
   (:require [clojure.string :as str]
             [shadow.lazy :as lazy]
             [xi.core.state :as state]
+            [xi.web.dashboard :as dashboard]
             [xi.web.palette-items :as palette-items]
             [xi.web.router :as router]
             [xi.web.tool-views :as tool-views]
@@ -60,12 +62,19 @@
    ;; always a state change: tool blocks already on screen re-render with the
    ;; tool views that just registered
    :user-ext/loaded
-   (fn [st {:keys [nav-items sidebar-groups session-menu-items]}]
-     {:state (cond-> (assoc st :user-ext/loaded? true)
-               (seq nav-items)          (update :web/nav-items (fnil into []) nav-items)
-               (seq sidebar-groups)     (update :web/sidebar-groups (fnil into []) sidebar-groups)
-               (seq session-menu-items) (update :web/session-menu-items (fnil into [])
-                                                session-menu-items))})
+   (fn [st {:keys [nav-items sidebar-groups session-menu-items card-ids]}]
+     (let [hidden (or (:web/dashboard-hidden st) #{})
+           loads  (when (and (seq card-ids) (dashboard/dashboard-route? (:web/route st)))
+                    (dashboard/load-events (filter #(contains? (set card-ids) (:id %))
+                                                   (dashboard/cards))
+                                           hidden))]
+       {:state   (cond-> (assoc st :user-ext/loaded? true)
+                   (seq nav-items)          (update :web/nav-items (fnil into []) nav-items)
+                   (seq sidebar-groups)     (update :web/sidebar-groups (fnil into []) sidebar-groups)
+                   (seq session-menu-items) (update :web/session-menu-items (fnil into [])
+                                                    session-menu-items))
+        ;; the dashboard is open: its new cards load now, not on the next visit
+        :effects (mapv (fn [ev] [:app/dispatch ev]) loads)}))
 
    ;; a user extension's room slice changed server-side (xi.ext.user.guard);
    ;; the browser can't replay that extension's server reducer, so the slice
@@ -126,13 +135,15 @@
             (palette-items/register! id palette-items))
           (doseq [{:keys [id handlers]} ok :when handlers]
             (register-handlers! id handlers))
+          (dashboard/register! (mapcat :dashboard-cards ok))
           (when-let [add-tap! (:add-tap! @app-ref)]
             (doseq [make-tap (mapcat :taps ok)]
               (add-tap! (make-tap dispatch!))))
           (dispatch! {:type :user-ext/loaded
                       :nav-items (vec (mapcat :nav-items ok))
                       :sidebar-groups (vec (mapcat :sidebar-groups ok))
-                      :session-menu-items (vec (mapcat :session-menu-items ok))})
+                      :session-menu-items (vec (mapcat :session-menu-items ok))
+                      :card-ids (vec (keep :id (mapcat :dashboard-cards ok)))})
           ;; a deep link into a user page landed before its route existed
           (let [path (.-pathname js/window.location)]
             (when (contains? added (first-segment path))

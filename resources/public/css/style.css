@@ -3191,6 +3191,8 @@ code a:hover,
   color: var(--fg-1);
   font-variant-numeric: tabular-nums;
 }
+.claude-usage-details { align-self: flex-start; margin-top: calc(-1 * var(--size-1)); }
+
 /* ---- Usage page (xi.ext.usage.web): one card per account, a meter per
    window, the current period's chart from the sample history. The meters
    reuse the sidebar popover's track/fill and severity colors. ---- */
@@ -3255,6 +3257,111 @@ code a:hover,
   font-variant-numeric: tabular-nums;
 }
 .usage-note--pace { color: var(--fg-2); }
+/* The usage page's meters, compact, in its dashboard card. */
+.usage-dash { display: flex; flex-direction: column; gap: var(--size-4); }
+.usage-dash-reading { display: flex; flex-direction: column; gap: var(--size-2); }
+.usage-dash-reading + .usage-dash-reading { padding-top: var(--size-3); border-top: var(--border-0); }
+.usage-dash-title { display: flex; align-items: baseline; gap: var(--size-2); min-width: 0; }
+.usage-dash-window { display: flex; flex-direction: column; gap: var(--size-1); }
+
+/* ---- Dashboard (/, xi.web.dashboard): the composer, then the extension cards
+   in an auto-fill grid. A :wide card takes the whole row. ---- */
+.dash-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  align-self: center;
+  width: calc(100% - 2 * var(--size-4));
+  max-width: 48rem;
+  margin: var(--size-6) var(--size-4) var(--size-2);
+  padding: var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-lg);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-1);
+}
+.dash-composer:focus-within { border-color: var(--accent); }
+.dash-composer .dash-composer-input {
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  padding: var(--size-1);
+  resize: none;
+  font-size: var(--font-base);
+}
+.dash-composer .dash-composer-input:focus { outline: none; box-shadow: none; }
+.dash-composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-2);
+}
+.dash-composer-bar .select { min-width: 0; max-width: 70%; }
+.dash-composer-send:disabled { opacity: 0.4; cursor: default; }
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: var(--size-4);
+  padding: var(--size-4);
+  align-items: start;
+}
+/* ui.card's roomy padding is for a lone card; in a grid of lists, less. */
+.dash-card { min-width: 0; padding: var(--size-4); gap: var(--size-2); }
+.dash-card--wide { grid-column: 1 / -1; }
+.dash-card-head {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--size-2);
+}
+.dash-card-icon { color: var(--fg-2); flex-shrink: 0; }
+.dash-card-title { font-weight: 600; color: var(--fg-0); min-width: 0; }
+.dash-card-more {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--fg-1);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+@media (hover: hover) {
+  .dash-card-more:hover { color: var(--fg-0); }
+}
+/* Session and project rows bring their own inset; the card body has one.
+   Their type matches the sidebar's rows, one line per title. */
+.dash-card-body .dash-list { padding: 0; margin-inline: calc(-1 * var(--size-2)); }
+.dash-list .project-card-name {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-list .project-card-path { font-size: var(--font-xs); }
+.dash-card-error { color: var(--danger); font-size: var(--font-sm); }
+
+.dash-customize-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--size-3);
+  padding-block: var(--size-2);
+}
+.dash-customize-row + .dash-customize-row { border-top: var(--border-0); }
+.dash-customize-text { display: flex; flex-direction: column; min-width: 0; }
+.dash-customize-title { color: var(--fg-0); }
+.dash-customize-desc { font-size: var(--font-xs); color: var(--fg-1); }
+.usage-updated {
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  white-space: nowrap;
+}
+
 /* Line chart: the SVG stretches to the box (preserveAspectRatio none), so
    strokes keep their width via vector-effect; labels are HTML below it. */
 .usage-chart { display: flex; flex-direction: column; gap: var(--size-1); margin-top: var(--size-1); }

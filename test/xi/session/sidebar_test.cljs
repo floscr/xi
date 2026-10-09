@@ -182,3 +182,14 @@
     (testing "an orphan room merges the users of its rooms"
       (is (= ["alice"]
              (mapv :id (:people (first (sb/orphan-rooms state [])))))))))
+
+(deftest active-cards-most-urgent-first
+  (let [cards [{:session-id "idle"}
+               {:session-id "run1" :busy? true}
+               {:session-id "unread" :unread? true}
+               {:session-id "ask" :has-dialog? true :busy? true}
+               {:session-id "run2" :busy? true :unread? true}
+               {:session-id "fail" :error? true}]]
+    (is (= ["ask" "fail" "unread" "run1" "run2"]
+           (mapv :session-id (sb/active-cards cards)))
+        "idle chats are left out; a running chat with output so far counts as running")))

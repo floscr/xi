@@ -3,9 +3,10 @@
    single app atom — no separate router atom.
 
    Routes:
-     /                  → {:page :home}
+     /                  → {:page :home} (the dashboard, xi.web.dashboard)
      /chat/:session-id  → {:page :chat :session-id sid}
-     /projects           → {:page :home} (project list)
+     /projects           → {:page :home :dir :projects} (project list)
+     /projects/all       → {:page :home :dir :all} (every session)
      /projects/:cwd      → {:page :home :dir <decoded-cwd>}
 
    `:route/navigate` is a pure handler: it sets `:web/route` and emits a
@@ -37,13 +38,12 @@
       "git-status" (cond-> {:page :git-status}
                      (second segments)
                      (assoc :cwd (js/decodeURIComponent (str/join "/" (rest segments)))))
-      "projects" (let [seg2 (second segments)
-                       dir  (cond
-                              (nil? seg2) nil
-                              (= seg2 "all") :all
-                              :else (js/decodeURIComponent seg2))]
-                   (cond-> {:page :home}
-                     dir (assoc :dir dir)))
+      "projects" (let [seg2 (second segments)]
+                   {:page :home
+                    :dir  (cond
+                            (nil? seg2) :projects
+                            (= seg2 "all") :all
+                            :else (js/decodeURIComponent seg2))})
       {:page :home}))))
 
 (defn route->path
@@ -57,9 +57,10 @@
     :git-status (if cwd (str "/git-status/" (js/encodeURIComponent cwd)) "/git-status")
     ;; :home — use /projects/:cwd when drilling into a directory
     (cond
-      (= dir :all) "/projects/all"
-      dir          (str "/projects/" (js/encodeURIComponent dir))
-      :else        "/"))))
+      (= dir :projects) "/projects"
+      (= dir :all)      "/projects/all"
+      (string? dir)     (str "/projects/" (js/encodeURIComponent dir))
+      :else             "/"))))
 
 (defn roomless-pages
   "Pages that imply leaving the active room on navigation: the built-ins
@@ -207,7 +208,7 @@
                   (conj [:app/dispatch {:type :room/leave}])
 
                   ;; Fetch sessions when drilling into a project directory
-                  (and (= page :home) dir (not= dir :all))
+                  (and (= page :home) (string? dir))
                   (conj [:app/dispatch {:type :projects/web-sessions :cwd dir}])
 
                   ;; The all-sessions view needs the full list — the lobby
@@ -259,14 +260,14 @@
                  (= page :home) (-> (assoc :web/selected-project-dir dir)
                                     (cond->
                                       ;; Clear stale sessions when navigating away
-                                      (nil? dir) (dissoc :web/project-sessions
-                                                         :web/project-sessions-cwd)
+                                      (not (string? dir)) (dissoc :web/project-sessions
+                                                                  :web/project-sessions-cwd)
                                       ;; Leaving the all-sessions view: drop the
                                       ;; full list so it's re-fetched fresh next
                                       ;; time (the capped lobby keeps painting).
                                       (not= dir :all) (dissoc :web/all-sessions)
                                       ;; Clear old data when drilling into a new dir
-                                      (and dir (not= dir :all))
+                                      (string? dir)
                                       (-> (dissoc :web/project-sessions)
                                           (update :web/search dissoc :project-sessions)
                                           (update :web/content-search dissoc :project-sessions)
