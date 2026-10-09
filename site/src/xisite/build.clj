@@ -12,10 +12,17 @@
         pages (docs/pages sections)]
     (merge
      {"/" (pages/home)
+      "/tour/" (pages/tour-page)
       "/changelog/" (pages/changelog)
       "/docs/" (pages/docs-index sections)}
      (into {} (for [page pages]
                 [(:path page) (pages/docs-page sections page)])))))
+
+;; The stage iframe's web client: the release :tour build (`bb tour:build` at
+;; the repo root) and the web client's own stylesheet, served at /tour/.
+(def tour-files
+  {"/tour/main.js"   "../target/tour/main.js"
+   "/tour/style.css" "../resources/public/css/style.css"})
 
 (defn- write-page! [staging path html]
   (let [dir (if (= path "/") staging (str staging path))]
@@ -33,6 +40,10 @@
     (fs/create-dirs (str staging "/js"))
     (spit (str staging "/css/ui.css") (theme/css))
     (spit (str staging "/js/ui-runtime.js") (theme/js))
+    (doseq [[uri src] tour-files]
+      (if (fs/exists? src)
+        (fs/copy src (str staging uri) {:replace-existing true})
+        (println (str "warning: " src " is missing (run `bb tour:build`); the home page tour won't load"))))
     (when (fs/exists? (str docs/guide-dir "/img"))
       (fs/copy-tree (str docs/guide-dir "/img") (str staging "/docs/img") {:replace-existing true}))
     (println (str "Built " (count pages) " pages into " staging "/"))))

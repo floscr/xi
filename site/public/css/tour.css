@@ -1,0 +1,11 @@
+/* The web client inside the home page's tour iframes (/tour/, xisite.pages/tour-page).
+   Desktop layouts run one size smaller than the app: its type and spacing
+   tokens are rem-based, so the root font size scales all of it. The stage
+   iframe renders at 1280×800 and main.css (.stage-frame) scales it down; the
+   phone iframes (390×844) keep the app's own size and scale as a whole. */
+@media (min-width: 600px) {
+  html { font-size: 14px; }
+}
+
+/* the page around the iframe scrolls, never the tour's own body */
+html, body { overflow: hidden; }

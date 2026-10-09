@@ -74,6 +74,27 @@
                                                      " XDG_DATA_HOME=" demo-home "/.local/share"
                                                      " bun target/main.js server --headless --port 7476")]]
                             :print ["Demo web: http://localhost:7476"]})
+          ;; Site tour recording server (port 7479): HOME at /tmp/xi-tour-home
+          ;; (built by scripts/tour-seed.mjs; outside the repo so Xi's own
+          ;; AGENTS.md isn't loaded) and the scripted fake LLM of one tour, so a
+          ;; recorded turn is deterministic and needs no credentials. See
+          ;; site/tours/README.md.
+          (def tour-home "/tmp/xi-tour-home")
+          (defn tour-config [tour]
+            {:session "xi-tour"
+             :windows [["server" (str "HOME=" tour-home
+                                      " XDG_DATA_HOME=" tour-home "/.local/share"
+                                      " XDG_CONFIG_HOME=" tour-home "/.config"
+                                      " XDG_STATE_HOME=" tour-home "/.local/state"
+                                      " XDG_CACHE_HOME=" tour-home "/.cache"
+                                      " OLLAMA_BASE_URL=http://127.0.0.1:9"
+                                      ;; a room joined without a cwd lands here,
+                                      ;; never in the repo the server runs from
+                                      " XI_CWD=" tour-home "/acme-web"
+                                      " XI_FAKE_LLM=" (System/getProperty "user.dir")
+                                      "/site/tours/" tour "/fake-llm.edn"
+                                      " bun target/main.js server --headless --port 7479")]]
+             :print [(str "Tour " tour ": http://localhost:7479")]})
           ;; Reap leaked dev :7474 headless servers. `td/*` only manage the tmux
           ;; session, and the systemd xi-serve unit uses KillMode=process, so
           ;; detached/orphaned `bun target/main.js server --headless` processes
@@ -103,6 +124,8 @@
           ;; holding :7476), so a demo:restart's fresh server can't bind.
           (defn reap-stray-demo! []
             (reap! "demo" "target/main.js server --headless --port 7476$"))
+          (defn reap-stray-tour! []
+            (reap! "tour" "target/main.js server --headless --port 7479$"))
           ;; Compile + run a :node-test build (autorun). Prints one line when
           ;; every test passes, else only the FAIL/ERROR blocks + summary
           ;; (exit 1); compile errors print the full output. `--full` streams
@@ -240,8 +263,13 @@
   {:doc "Serve the home page + docs site (site/, rendered from docs/guide) on :4322 with live reload"
    :task (shell {:dir "site"} "bb" "dev")}
 
+  tour:build
+  {:doc "Release-build the site's tour client (shadow :tour) into target/tour/main.js; the site serves it at /tour/. The dev watch is left alone."
+   :task (shell "npx" "shadow-cljs" "release" "tour")}
+
   site:build
-  {:doc "Build the home page + docs site into site/dist"
+  {:doc "Build the home page + docs site into site/dist (builds the tour client first)"
+   :depends [tour:build]
    :task (shell {:dir "site"} "bb" "build")}
 
   dev:url
@@ -413,6 +441,41 @@
   {:doc "Show recent output from the demo server window"
    :task (td/logs demo-config {:lines 40})}
 
+  tour:seed
+  {:doc "(Re)build the site-tour HOME (/tmp/xi-tour-home): real projects + earlier sessions"
+   :task (shell "bun" "scripts/tour-seed.mjs")}
+
+  tour
+  {:doc "Seed + (re)start the site-tour recording server: port 7479, HOME=/tmp/xi-tour-home, the fake LLM of site/tours/<tour>/ (default desk). `bb tour <tour>`"
+   :task (let [tour (or (first *command-line-args*) "desk")]
+           (td/stop (tour-config tour))
+           (reap-stray-tour!)
+           (shell "bun" "scripts/tour-seed.mjs")
+           (td/start (tour-config tour)))}
+
+  tour:record
+  {:doc "Record a site tour headlessly into site/public/tours/<tour>.json: fresh `bb tour <tour>` server, then scripts/tour-record.mjs plays site/tours/<tour>/record.mjs and bakes the tape. `bb tour:record <tour>` (default desk)"
+   :task (let [tour (or (first *command-line-args*) "desk")]
+           (td/stop (tour-config tour))
+           (reap-stray-tour!)
+           (shell "bun" "scripts/tour-seed.mjs")
+           (td/start (tour-config tour))
+           (loop [n 0]
+             (when-not (try (.close (java.net.Socket. "127.0.0.1" 7479)) true
+                            (catch Exception _ false))
+               (when (> n 60) (throw (ex-info "tour server did not come up on :7479" {})))
+               (Thread/sleep 500)
+               (recur (inc n))))
+           (shell "bun" "scripts/tour-record.mjs" tour))}
+
+  tour:stop
+  {:doc "Stop the site-tour recording server (reaps a leaked :7479 server)"
+   :task (do (td/stop (tour-config "desk")) (reap-stray-tour!))}
+
+  tour:logs
+  {:doc "Show recent output from the site-tour server window"
+   :task (td/logs (tour-config "desk") {:lines 40})}
+
   package
   {:doc "Assemble the npm package in dist/pkg from release builds (the dev watch is left alone) and pack it to dist/<name>-<version>.tgz. `bb package --no-pack` only stages."
    :task (apply shell "bun" "scripts/build-package.mjs" *command-line-args*)}
@@ -502,6 +565,7 @@
            (println "  port 7474  main server      session xi-serve  bb serve   / serve:restart / serve:stop")
            (println "  port 7475  personal agent   session xi-pa     bb serve:personal[:restart|:stop]")
            (println "  port 7476  demo (seed data)  session xi-demo   bb demo / demo:restart / demo:stop")
+           (println "  port 7479  site tours       session xi-tour   bb tour [name] / tour:stop")
            (println "  shadow watch (main+web)     session xi-serve  auto-compiles on save; no manual build")
            (println "  standalone watch (no srv)   session xi        bb dev / dev:restart / dev:stop")
            (println "  (xi and xi-serve both run the shadow watch — starting/restarting one stops the other)")

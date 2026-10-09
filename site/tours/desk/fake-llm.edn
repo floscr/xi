@@ -1,0 +1,43 @@
+;; The hero tour ("desk"): the agent caps the upload client's retry backoff in
+;; acme-web (/tmp/xi-tour-home), writes a test and runs it. The tool calls run for real
+;; against the seeded project (scripts/tour-seed.mjs); `bun run test` goes
+;; through the default rules, so it asks first. Text steps are split, with short
+;; sleeps, so the recording streams. Format: xi.providers.fake.
+{:default
+ [{:thinking "The user wants a ceiling on the retry delay. Read the upload client first."}
+  {:sleep 400}
+  {:text "I'll look at how "}
+  {:text "the upload client retries."}
+  {:tool "read" :args {:path "src/upload.ts"}}
+  {:sleep 700}
+  {:text "`backoffDelay` doubles "}
+  {:text "the wait on every attempt "}
+  {:text "with no ceiling, so attempt 7 "}
+  {:text "already sleeps 64 s. "}
+  {:sleep 250}
+  {:text "I'll add a `maxMs` option, "}
+  {:text "default it to 30 s and clamp the delay."}
+  {:tool "edit" :args {:path "src/upload.ts"
+                       :edits [{:oldText "  baseMs: number;\n}"
+                                :newText "  baseMs: number;\n  maxMs: number;\n}"}
+                               {:oldText "{ attempts: 8, baseMs: 500 }"
+                                :newText "{ attempts: 8, baseMs: 500, maxMs: 30_000 }"}
+                               {:oldText "export function backoffDelay(attempt: number, { baseMs }: RetryOptions): number {\n  return baseMs * 2 ** attempt;\n}"
+                                :newText "export function backoffDelay(attempt: number, { baseMs, maxMs }: RetryOptions): number {\n  return Math.min(maxMs, baseMs * 2 ** attempt);\n}"}]}}
+  {:sleep 500}
+  {:text "Now a test "}
+  {:text "for both the doubling and the cap."}
+  {:tool "write" :args {:path "src/upload.test.ts"
+                        :content "import { expect, test } from \"bun:test\";\nimport { backoffDelay } from \"./upload\";\n\nconst opts = { attempts: 8, baseMs: 500, maxMs: 30_000 };\n\ntest(\"doubles the delay on each attempt\", () => {\n  expect(backoffDelay(0, opts)).toBe(500);\n  expect(backoffDelay(3, opts)).toBe(4_000);\n});\n\ntest(\"never waits longer than maxMs\", () => {\n  expect(backoffDelay(12, opts)).toBe(30_000);\n});\n"}}
+  {:sleep 400}
+  {:tool "clj" :args {:code "(sh \"bun\" \"run\" \"test\")"}}
+  {:sleep 500}
+  {:text "Both tests pass.\n\n"}
+  {:text "**What changed**\n\n"}
+  {:text "- `RetryOptions` has a `maxMs` ceiling, "}
+  {:text "30 s by default.\n"}
+  {:text "- `backoffDelay` clamps to it, "}
+  {:text "so a flaky connection retries at most every 30 s "}
+  {:text "instead of waiting minutes.\n"}
+  {:text "- `src/upload.test.ts` covers the doubling and the cap."}]
+ :side [{:text "Cap upload retry backoff"}]}

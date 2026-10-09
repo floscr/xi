@@ -1,0 +1,35 @@
+{
+  "gates": ["auth/hello", "cwd/agents-files", "room/join", "input/submit", "ui/dialog-response"],
+  "steps": [
+    { "wait": 1200 },
+    { "click": "[data-nav=\"dir:/home/dev/acme-web\"] button[title=\"New chat\"]" },
+    { "wait": 400 },
+    { "type": "textarea[placeholder=\"Message…\"]",
+      "text": "Uploads on a flaky connection wait minutes between retries. Cap the backoff in src/upload.ts and add a test." },
+    { "wait": 300 },
+    { "enter": "textarea" },
+    { "waitText": "Now a test for both" },
+    { "clickText": "edit src/upload.ts", "within": "summary", "contains": true },
+    { "clickText": "edit src/upload.ts", "within": "summary" },
+    { "clickText": "Allow", "after": 2500 }
+  ],
+  "variants": {
+    "phone": {
+      "pointer": "touch",
+      "steps": [
+        { "wait": 1200 },
+        { "click": "main [data-nav=\"dir:/home/dev/acme-web\"] button[title=\"New chat\"]" },
+        { "wait": 400 },
+        { "type": "textarea[placeholder=\"Message…\"]",
+          "text": "Uploads on a flaky connection wait minutes between retries. Cap the backoff in src/upload.ts and add a test." },
+        { "wait": 300 },
+        { "enter": "textarea" },
+        { "waitText": "Now a test for both" },
+        { "clickText": "edit src/upload.ts", "within": "summary", "contains": true },
+        { "clickText": "edit src/upload.ts", "within": "summary" },
+        { "clickText": "Allow", "after": 2500 }
+      ]
+    },
+    "list": { "mirror": true, "steps": [] }
+  }
+}

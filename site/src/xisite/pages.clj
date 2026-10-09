@@ -6,6 +6,7 @@
             [ui.card :as card]
             [xisite.core :as core]
             [xisite.markdown :as md]
+            [xisite.theme :as theme]
             [xisite.ui :as ui]))
 
 ;; --- Home ---
@@ -108,9 +109,15 @@ xi clients user iPhone bob      # pin a paired phone to bob")
         (for [[title text] items]
           [:li [:strong title] " " text])))
 
-(defn- phone [src alt]
+(defn- phone
+  "A phone running the web client on a tour's `variant` (steps.json): live,
+   like the stage. site.js scales the 390×844 iframe to the phone and loops
+   the phones of one .phones group together."
+  [tour variant title]
   [:figure.phone
-   [:img {:src src :alt alt :width "585" :height "1266"}]])
+   [:div.phone-screen
+    [:iframe.phone-frame {:data-src (str "/tour/?tape=" tour "&variant=" variant)
+                          :title title}]]])
 
 ;; --- Architecture diagram (inline SVG; colours come from .arch-* in main.css) ---
 
@@ -173,6 +180,50 @@ xi clients user iPhone bob      # pin a paired phone to bob")
    (arch-arrow 630 279 720 279 :both? true)
    [:text.arch-sub.arch-edge {:x 675 :y 266 :text-anchor "middle"} "tool calls"]])
 
+;; --- Tour stage (a recorded session replayed in the real web client) ---
+
+(defn- stage
+  "The web client in a window frame, replaying site/public/tours/<tour>.json
+   through /tour/. site.js loads the iframe (data-src) once the stage is in
+   view, scales it from 1280×800 to the frame, and shows Replay when the tour
+   posts that it's done. With :phone-variant, small screens get that variant
+   of the tape in a phone frame instead (390×844, looping)."
+  [tour caption & [{:keys [phone-variant]}]]
+  [:section.stage
+   [:figure.stage-figure
+    [:div.stage-window
+     [:div.stage-bar
+      [:span.stage-dots [:i] [:i] [:i]]
+      [:span.stage-url "localhost:7474"]
+      (button/button {:variant :ghost :size :sm :icon-left :refresh :class "stage-replay"
+                      :attrs {:type "button" :hidden true}}
+                     "Replay")]
+     [:div.stage-viewport
+      [:iframe.stage-frame (cond-> {:data-src (str "/tour/?tape=" tour)
+                                    :title "Xi's web client replaying a recorded session"}
+                             phone-variant (assoc :data-phone-src (str "/tour/?tape=" tour "&variant=" phone-variant)))]]]
+    [:figcaption caption]]])
+
+(defn tour-page
+  "/tour/: the web client alone, for the stage iframe. Shares the site's
+   framework CSS, runtime and stored light/dark choice."
+  []
+  (ui/render-page
+   [:html {:lang "en"}
+    [:head
+     [:meta {:charset "utf-8"}]
+     [:meta {:name "viewport" :content "width=device-width,initial-scale=1"}]
+     [:meta {:name "robots" :content "noindex"}]
+     [:script (h/raw theme/head-script)]
+     [:title "Xi tour"]
+     [:link {:rel "stylesheet" :href "/css/ui.css"}]
+     [:link {:rel "stylesheet" :href "/tour/style.css"}]
+     [:link {:rel "stylesheet" :href "/css/tour.css"}]]
+    [:body
+     [:div#app]
+     [:script {:src "/js/ui-runtime.js"}]
+     [:script {:src "/tour/main.js"}]]]))
+
 (defn home []
   (ui/render-page
    (ui/layout
@@ -189,6 +240,8 @@ xi clients user iPhone bob      # pin a paired phone to bob")
        (button/button {:variant :primary :size :lg :href "/docs/getting-started/"} "Get started")
        (button/button {:variant :secondary :size :lg :href "/docs/"} "Read the docs")]
       (code "sh" install-sample)]]
+
+    (stage "desk" "A recorded session, replayed in Xi's web client. Click Allow yourself, or let it run.")
 
     [:section.feature {:id "clj"}
      [:div.wrap.split
@@ -256,8 +309,8 @@ xi clients user iPhone bob      # pin a paired phone to bob")
          ["Review in place." "Diffs, tool calls and permission requests render where they happen. Allow or deny with one tap."]])
        [:p [:a {:href "/docs/web-client/"} "The web client →"]]]
       [:div.phones
-       (phone "/img/web-sessions.png" "The web client's session list on a phone")
-       (phone "/img/web-chat.png" "A chat in the web client, with a diff from an edit")]]]
+       (phone "desk" "list" "The web client's session list on a phone, following a running session")
+       (phone "desk" "phone" "A chat in the web client on a phone, replaying a recorded session")]]]
 
     [:section.feature.alt {:id "outlines"}
      [:div.wrap.split.reverse

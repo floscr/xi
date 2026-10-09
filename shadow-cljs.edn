@@ -37,4 +37,19 @@
    ;; for as long as a warning stands. Warnings still print in the watch output.
    :devtools   {:after-load xi.web.core/reload!
                 :hud #{:errors :progress}}
+   :compiler-options {:reader-features #{:browser}}}
+
+  ;; The site's live tours (site/tours/, `bb tour:build`): the web client in
+  ;; one release file, target/tour/main.js. No user extensions, so no SCI
+  ;; module; :ns-aliases swap out what no tour shows (src/xi/web/tour/stubs/).
+  :tour
+  {:target     :browser
+   :output-dir "target/tour"
+   :asset-path "/tour"
+   :modules    {:main {:init-fn xi.web.core/init!}}
+   :module-loader false
+   :build-options {:ns-aliases {cljs.pprint              xi.web.tour.stubs.pprint
+                                xi.web.user-ext          xi.web.tour.stubs.user-ext
+                                xi.ext.canvas-review.web xi.web.tour.stubs.canvas-review
+                                xi.ext.usage.web         xi.web.tour.stubs.usage}}
    :compiler-options {:reader-features #{:browser}}}}}

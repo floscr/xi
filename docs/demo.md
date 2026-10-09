@@ -123,3 +123,10 @@ To capture them via the Chrome DevTools MCP: emulate `390x844x3,mobile,touch`
 (iPhone size, 3× DPR), navigate to `http://localhost:7474/?demo=<view>`, and
 take a full-page screenshot. The color scheme stays on `auto`, so emulating
 light/dark switches the theme.
+
+## Site tours (`?tape=<tour>`)
+
+A third, separate setup: the web client replays a recorded tape of server
+frames, with no server at all, for the home page's live examples. Tapes are
+recorded headlessly against a fake-LLM server on :7479 (`bb tour:record
+<tour>`, HOME `/tmp/xi-tour-home`). See [site/tours/README.md](../site/tours/README.md).

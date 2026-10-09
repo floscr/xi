@@ -37,6 +37,7 @@
             [xi.web.resubmit :as resubmit]
             [xi.web.router :as router]
             [xi.web.title :as title]
+            [xi.web.tour :as tour]
             [xi.web.user-ext :as user-ext]
             [xi.session.sidebar :as sidebar]
             [xi.web.sidebar-nav :as sidebar-nav]
@@ -2754,7 +2755,10 @@
            (.preventDefault e))))
      #js {:passive false})))
 
-(defn- real-init! []
+(defn- real-init!
+  "Boot the client. opts: :transport replaces the WebSocket one (xi.web.tour);
+   with it the localStorage session cache is neither read nor written."
+  [& [{tour-transport :transport}]]
   (let [composed  (ext/compose (web-extensions))
         _         (reset! routes-ref (:routes composed))
         routes    routes-ref
@@ -2770,17 +2774,18 @@
                              :web/session-menu-items (:session-menu-items composed)
                              ;; Seeded here because views must not require xi.config.
                              :web/appearance-config config/appearance)
-                      (cache/hydrate route))
-        transport (ws-transport/create!
-                   {:url        (ws-url)
-                    :hello      (cond-> {:client-key  (ensure-client-key!)
-                                         :client-name (device-name)
-                                         :platform    "web"}
-                                  (claimed-user) (assoc :user (claimed-user)))
-                    ;; nil: the router drives joins; reconnect replays them.
-                    :target     nil
-                    :reconnect? true
-                    :on-status  on-connection-status})
+                      (cond-> (not tour-transport) (cache/hydrate route)))
+        transport (or tour-transport
+                      (ws-transport/create!
+                       {:url        (ws-url)
+                        :hello      (cond-> {:client-key  (ensure-client-key!)
+                                             :client-name (device-name)
+                                             :platform    "web"}
+                                      (claimed-user) (assoc :user (claimed-user)))
+                        ;; nil: the router drives joins; reconnect replays them.
+                        :target     nil
+                        :reconnect? true
+                        :on-status  on-connection-status}))
         {:keys [dispatch! state add-tap!] :as app}
         (app/create-app {:initial-state initial
                          :handlers      (ws-transport/make-handlers
@@ -2802,7 +2807,8 @@
     (reset! dispatch-ref dispatch!)
     (reset! app-ref app)
     ((:set-dispatch! transport) dispatch!)
-    (add-tap! cache/persist-tap)
+    (when-not tour-transport
+      (add-tap! cache/persist-tap))
     (add-tap! (mark-read-on-turn-tap dispatch!))
     (add-tap! (request-projects-tap dispatch!))
     (add-tap! (fill-url-tap dispatch!))
@@ -2855,13 +2861,52 @@
           (set! (.-textContent style) "#shadow-connection-error{display:none !important;}")
           (.append (.-head js/document) style))))))
 
+(defn- tape-url
+  "?tape=desk → /tours/desk.json; a value with a slash is used as the URL."
+  [tape]
+  (if (str/includes? tape "/") tape (str "/tours/" tape ".json")))
+
+(defn- tour-init!
+  "Replay a recorded tour (xi.web.tour) through the real client, as the
+   tape's ?variant= run if given. Embedded in the site's iframe, it posts
+   {xiTour: \"sent\", type} for each gate it passes and {xiTour: \"done\"} at
+   the end; a mirroring run posts {xiTour: \"ready\"} and takes
+   {xiTourSent: type} from the page."
+  [tape variant-name]
+  (tour/contain-focus!)
+  (-> (js/fetch (tape-url tape))
+      (.then #(.json %))
+      (.then (fn [json]
+               (let [tape (js->clj json :keywordize-keys true)
+                     {:keys [steps mirror? pointer]} (tour/variant tape variant-name)
+                     post!     #(.postMessage js/parent % "*")
+                     transport (tour/create!
+                                tape
+                                {:on-status on-connection-status
+                                 :on-send   #(post! #js {:xiTour "sent" :type %})
+                                 :on-done   #(post! #js {:xiTour "done"})})]
+                 (when mirror?
+                   (.addEventListener
+                    js/window "message"
+                    (fn [^js e]
+                      (let [^js data (.-data e)]
+                        (when-let [t (and (identical? (.-source e) js/parent)
+                                          (some-> data .-xiTourSent))]
+                          ((:mirror! transport) t)))))
+                   ;; the page replays the sends this frame missed while loading
+                   (post! #js {:xiTour "ready"}))
+                 (real-init! {:transport transport})
+                 (tour/autopilot! steps pointer))))))
+
 (defn ^:export init! []
   (js/console.log "[xi-web] starting")
   (hide-shadow-hud-when-remote!)
   (r/set-dispatch! (fn [_ _]))
-  (if-let [view (.get (js/URLSearchParams. (.-search js/window.location)) "demo")]
-    (demo-init! view)
-    (real-init!)))
+  (let [params (js/URLSearchParams. (.-search js/window.location))]
+    (cond
+      (.get params "tape") (tour-init! (.get params "tape") (.get params "variant"))
+      (.get params "demo") (demo-init! (.get params "demo"))
+      :else                (real-init!))))
 
 (defn ^:export reload! []
   (js/console.log "[xi-web] reloaded")

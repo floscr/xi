@@ -17,11 +17,15 @@
    "png" "image/png"
    "jpg" "image/jpeg"
    "webp" "image/webp"
-   "txt" "text/plain; charset=utf-8"})
+   "txt" "text/plain; charset=utf-8"
+   "json" "application/json"})
 
 (defn- static-response [file]
   {:status 200
-   :headers {"Content-Type" (get content-types (fs/extension file) "application/octet-stream")}
+   ;; CORS: the web client's dev build (:8100) loads tour tapes from here
+   ;; (?tape=http://localhost:4322/tours/<tour>.json)
+   :headers {"Content-Type" (get content-types (fs/extension file) "application/octet-stream")
+             "Access-Control-Allow-Origin" "*"}
    :body (fs/file file)})
 
 (defn- handle [{:keys [uri] :as req}]
@@ -37,6 +41,13 @@
         (= uri "/js/ui-runtime.js") {:status 200
                                     :headers {"Content-Type" (content-types "js")}
                                     :body (theme/js)}
+        (contains? build/tour-files uri)
+        (let [src (build/tour-files uri)]
+          (if (fs/exists? src)
+            (static-response src)
+            {:status 404
+             :headers {"Content-Type" "text/plain; charset=utf-8"}
+             :body (str src " is missing: run `bb tour:build` at the repo root")}))
         (and (not= uri "/") (fs/regular-file? static)) (static-response static)
         (and guide-img (fs/regular-file? guide-img)) (static-response guide-img)
         :else
