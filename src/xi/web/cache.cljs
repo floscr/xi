@@ -5,9 +5,9 @@
    when offline). `:room/joined` / `:lobby/state` overwrite it. Serialized
    with transit (the same codec the wire uses), so keywords/nesting survive a
    round-trip while decoding ~40× faster than the EDN reader — the parse cost
-   matters because every chat switch reads a full cached history (with tool
-   results) synchronously on the main thread, twice, which janked switching on
-   mobile when this used cljs.reader.
+   matters because a chat switch to a session not in the memory tier (below)
+   reads a full cached history (with tool results) synchronously on the main
+   thread, which janked switching on mobile when this used cljs.reader.
 
    Keys:
      xi/lobby            last {:rooms :sessions} for an instant home paint
@@ -142,6 +142,39 @@
    :msg-hash  (:msg-hash room)
    :msg-count (:msg-count room)})
 
+(defn live-slice
+  "The cached slice of a live room (xi.core.state room map)."
+  [room]
+  {:history   (:history room)
+   :model     (get-in room [:agent :model])
+   :msg-hash  (:msg-hash room)
+   :msg-count (:msg-count room)})
+
+;; ── In-memory tier ──
+;; Decoded snapshots, least recently used first: sid → slice + :history-hash.
+;; load-room reads here before localStorage, and every save fills it, even for
+;; a room too big for localStorage. A switch back to a session then decodes
+;; nothing, and its entries stay identical, so the timeline memo
+;; (xi.web.views/memo-timeline-items) reuses every post.
+(defonce ^:private mem-rooms (js/Map.))
+
+(def ^:private max-mem-rooms 24)
+
+(defn- mem-put! [session-id entry]
+  (.delete mem-rooms session-id)
+  (.set mem-rooms session-id entry)
+  (when (> (.-size mem-rooms) max-mem-rooms)
+    (.delete mem-rooms (.-value (.next (.keys mem-rooms))))))
+
+(defn remember-room!
+  "Keep a room slice ({:history :model :msg-hash :msg-count}) in the memory
+   tier only. Hashing is cheap here: vectors and maps cache their hash, so only
+   entries new since the last call pay."
+  [session-id slice]
+  (when (and session-id (seq (:history slice)))
+    (mem-put! session-id (assoc (room-slice slice)
+                                :history-hash (hash (:history slice))))))
+
 ;; [session-id payload] of the snapshot last written to (or decoded from)
 ;; localStorage. save-room! fires on every :lobby/state and :room/joined, which
 ;; on a chat switch carry the very history we just loaded from the cache;
@@ -187,11 +220,12 @@
    can elide the history (xi.server.room-manager/joined-payload)."
   [session-id room]
   (when (and session-id (seq (:history room)))
+    (remember-room! session-id room)
     (let [payload (room-slice room)
           n       (count (:history payload))]
       (when-not (or (unchanged-room? session-id payload)
                     (when-let [failed-n (get @too-big session-id)] (>= n failed-n)))
-        (let [raw (transit/write writer (assoc payload :history-hash (hash (:history payload))))
+        (let [raw (transit/write writer (.get mem-rooms session-id))
               lru (->> (load-room-lru)
                        (remove #(= % session-id))
                        (cons session-id)
@@ -210,31 +244,35 @@
                 (js/console.warn "[cache] room snapshot exceeds the storage quota; not caching"
                                  session-id))))))))
 
-;; One-entry memo of the last decoded room: [session-id raw decoded]. A chat
-;; switch reads the same snapshot more than once (paint seed + join hash) and a
-;; tap prefetches it on pointerdown, so only the first read pays the transit
-;; decode. Keyed on the raw string, so a save-room! in between can never serve
-;; stale data — the cheap getItem still runs, only the parse is skipped.
-(defonce ^:private last-room (atom nil))
+(defn- decode-room [session-id]
+  (try
+    (when-let [raw (.getItem js/localStorage (room-key session-id))]
+      (let [decoded (transit/read reader raw)]
+        ;; Storage now holds exactly this; see last-saved.
+        (reset! last-saved [session-id (room-slice decoded)])
+        decoded))
+    (catch :default _ nil)))
 
 (defn load-room
-  "Cached {:history :model :msg-hash :msg-count} for a session, or nil."
+  "Cached {:history :model :msg-hash :msg-count :history-hash} for a session,
+   or nil: the memory tier, else decoded from localStorage into it. Another
+   tab's newer snapshot is not seen, which costs only a longer join reply."
   [session-id]
   (when session-id
-    (try
-      (when-let [raw (.getItem js/localStorage (room-key session-id))]
-        (let [[sid memo-raw decoded] @last-room]
-          (if (and (= sid session-id) (= memo-raw raw))
-            decoded
-            (let [decoded (transit/read reader raw)]
-              (reset! last-room [session-id raw decoded])
-              ;; Storage now holds exactly this; see last-saved.
-              (reset! last-saved [session-id (room-slice decoded)])
-              decoded))))
-      (catch :default _ nil))))
+    (if-let [hit (.get mem-rooms session-id)]
+      (do (mem-put! session-id hit) hit)
+      (when-let [decoded (decode-room session-id)]
+        (mem-put! session-id decoded)
+        decoded))))
+
+(defn cached?
+  "Is there any snapshot of session-id to paint, without decoding it?"
+  [session-id]
+  (or (.has mem-rooms session-id)
+      (boolean (some #{session-id} (load-room-lru)))))
 
 (defn prefetch-room!
-  "Decode a session's cached snapshot ahead of time (see load-room's memo) so
+  "Decode a session's cached snapshot ahead of time (into the memory tier) so
    the tap that follows doesn't pay for it. Returns nil."
   [session-id]
   (load-room session-id)
@@ -440,7 +478,4 @@
       (when-let [lobby (:lobby state)] (save-lobby! lobby))
       (when-let [room (state/active-room state)]
         (when-let [sid (get-in room [:session :id])]
-          (save-room! sid {:history   (:history room)
-                           :model     (get-in room [:agent :model])
-                           :msg-hash  (:msg-hash room)
-                           :msg-count (:msg-count room)}))))))
+          (save-room! sid (live-slice room)))))))

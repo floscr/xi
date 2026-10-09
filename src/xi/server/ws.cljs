@@ -127,7 +127,7 @@
   "Event types processed regardless of room membership (connection-level
    bookkeeping that uses :client-id, not :room-id). Extensions add theirs
    via :roomless-events."
-  #{:client/update :user-state/set :session/counts :sessions/all :models/web-list
+  #{:client/update :user-state/set :session/counts :session/peek :sessions/all :models/web-list
     :cwd/agents-files :session/content-search :session/web-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
     :dismissed/toggle :pinned/toggle :session/delete :session/mark-read
@@ -499,10 +499,7 @@
             ;; :session/current, a clean prefix (sessions are append-only on
             ;; disk; /compact breaks it) gets only the new tail, else the full
             ;; resume. The server mirror always gets the full history.
-            (let [messages (vec (session/truncate-message-results
-                                 (session/read-session-messages summary)))
-                  msg-count (count messages)
-                  msg-hash (hash messages)
+            (let [{:keys [messages msg-count msg-hash]} (session/resume-messages summary)
                   current? (= cached-msg-hash msg-hash)
                   prefix?  (and (not current?)
                                 (integer? cached-msg-count)
@@ -547,6 +544,23 @@
       (fn [{:keys [state]} {:keys [client-id]}]
         (send! client-id (lobby-payload state agent-id (:model server-opts)
                                         (client-user state client-id))))
+
+      ;; A saved session's history without joining it, for the web sidebar's
+      ;; prefetch (xi.web.prefetch). A live room is skipped: its join only
+      ;; attaches, no disk read to hide.
+      :session/peek-reply
+      (fn [{:keys [get-state]} {:keys [client-id session-id]}]
+        (when-not (rm/room-for-session (get-state) session-id)
+          (when-let [summary (if agent?
+                               (session/find-personal-agent-session-by-id session-id agent-id)
+                               (session/find-session-by-id session-id))]
+            (let [{:keys [messages msg-hash msg-count]} (session/resume-messages summary)]
+              (send-event! client-id {:type       :session/peek-result
+                                      :session-id session-id
+                                      :messages   messages
+                                      :msg-hash   msg-hash
+                                      :msg-count  msg-count
+                                      :model      (:model summary)})))))
 
       :session/counts-reply
       (fn [_ {:keys [client-id session-ids]}]

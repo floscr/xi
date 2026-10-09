@@ -32,6 +32,7 @@
             [xi.web.flip :as flip]
             [xi.web.keymap :as keymap]
             [xi.web.models :as models]
+            [xi.web.prefetch :as prefetch]
             [xi.web.resubmit :as resubmit]
             [xi.web.router :as router]
             [xi.web.title :as title]
@@ -283,7 +284,8 @@
    it once :room/joined arrives. A virtual new room (:web/pending-room) is
    created now via :room/join \"new\" with a :join-token the server echoes
    back, so the prompt lands in this room only. A cached session view just
-   waits for the join already in flight. The optimistic bubble is keyed on
+   waits for the join already in flight, or sends the one a sidebar burst
+   deferred (router/flush-pending-join). The optimistic bubble is keyed on
    the nil room and re-keyed by optimistic-tap after the join."
   [st {:keys [session-id text images model]}]
   (let [pending    (:web/pending-room st)
@@ -291,20 +293,21 @@
         cwd        (:cwd pending)
         join-model (or model (:model pending))
         token      (str (:id pending))]
-    (cond-> {:state (-> st
-                        (assoc :web/pending-submit
-                               (cond-> {:session-id session-id :text text}
-                                 virtual?     (assoc :join-token token)
-                                 model        (assoc :model model)
-                                 (seq images) (assoc :images images)))
-                        (assoc :web/optimistic
-                               (cond-> {:room-id nil :session-id session-id :text text}
-                                 (seq images) (assoc :images (vec images))))
-                        (dissoc :web/pending-room))}
-      virtual?
-      (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new" :join-token token}
-                                   cwd        (assoc :cwd cwd)
-                                   join-model (assoc :model join-model))]]))))
+    (-> {:state (-> st
+                    (assoc :web/pending-submit
+                           (cond-> {:session-id session-id :text text}
+                             virtual?     (assoc :join-token token)
+                             model        (assoc :model model)
+                             (seq images) (assoc :images images)))
+                    (assoc :web/optimistic
+                           (cond-> {:room-id nil :session-id session-id :text text}
+                             (seq images) (assoc :images (vec images))))
+                    (dissoc :web/pending-room))}
+        (cond-> virtual?
+          (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new" :join-token token}
+                                       cwd        (assoc :cwd cwd)
+                                       join-model (assoc :model join-model))]]))
+        router/flush-pending-join)))
 
 (defn- dialog-response
   "Web :ui/dialog-response: the transport's forward/clear, plus logging the
@@ -363,16 +366,17 @@
           token    (when virtual? (str (:id pending)))
           cwd      (:cwd pending)
           model    (:model pending)]
-      (cond-> {:state (-> st
-                          (assoc :web/pending-command
-                                 (cond-> {:room-id room-id :session-id sid :name name}
-                                   args  (assoc :args args)
-                                   token (assoc :join-token token)))
-                          (cond-> virtual? (dissoc :web/pending-room)))}
-        virtual?
-        (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new" :join-token token}
-                                     cwd   (assoc :cwd cwd)
-                                     model (assoc :model model))]])))))
+      (-> {:state (-> st
+                      (assoc :web/pending-command
+                             (cond-> {:room-id room-id :session-id sid :name name}
+                               args  (assoc :args args)
+                               token (assoc :join-token token)))
+                      (cond-> virtual? (dissoc :web/pending-room)))}
+          (cond-> virtual?
+            (assoc :effects [[:ws/send (cond-> {:type :room/join :target "new" :join-token token}
+                                         cwd   (assoc :cwd cwd)
+                                         model (assoc :model model))]]))
+          router/flush-pending-join))))
 
 (defn- command-clear-pending [st _]
   {:state (dissoc st :web/pending-command)})
@@ -935,6 +939,7 @@
 (defn- web-handlers [routes]
   (merge (router/handlers routes)
          user-state/handlers
+         prefetch/handlers
          keymap/handlers
          themes-handlers
          {:room/new              room-new
@@ -1727,6 +1732,11 @@
    :cache/prefetch-room
    (fn [_ {:keys [session-id]}]
      (cache/prefetch-room! session-id))
+   ;; A live room being left (:room) or a peeked history (:slice,
+   ;; xi.web.prefetch) into the cache's memory tier.
+   :cache/remember-room
+   (fn [_ {:keys [session-id room slice]}]
+     (cache/remember-room! session-id (or slice (cache/live-slice room))))
    ;; :room/join carrying the cache fingerprints, so the server can answer
    ;; :session/current, :session/resumed-tail, or a history-base join
    ;; (room-joined-from-cache) instead of the full history.
@@ -2730,6 +2740,7 @@
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
     (add-tap! (pending-buffer-tap dispatch!))
+    (add-tap! (prefetch/tap dispatch!))
     (add-tap! (buffer-presence-tap dispatch!))
     (add-tap! (pending-command-tap dispatch!))
     (add-tap! (optimistic-tap dispatch!))

@@ -125,6 +125,64 @@
     (is (has-dispatch? effects :session/mark-read)
         "emits mark-read")))
 
+(defn- joins [effects]
+  (keep (fn [[t ev]] (when (= :room/join-with-cache t) (:session-id ev))) effects))
+
+(defn- burst-end-event [effects]
+  (some (fn [[t {:keys [event]}]]
+          (when (and (= :app/dispatch-after t) (= :room/join-burst-end (:type event)))
+            event))
+        effects))
+
+(deftest join-pacing
+  (let [r1 (router/navigate roomless (state/initial-state) {:page :chat :session-id "a"})
+        r2 (router/navigate roomless (:state r1) {:page :chat :session-id "b"})
+        r3 (router/navigate roomless (:state r2) {:page :chat :session-id "c"})]
+    (testing "the first switch of a burst joins at once"
+      (is (= ["a"] (joins (:effects r1))))
+      (is (burst-end-event (:effects r1))))
+    (testing "later switches in the burst only paint; the last target waits"
+      (is (empty? (joins (:effects r2))))
+      (is (empty? (joins (:effects r3))))
+      (is (not (has-dispatch? (:effects r3) :session/mark-read)))
+      (is (= "c" (get-in r3 [:state :web/pending-join :session-id]))))
+    (testing "a superseded burst end does nothing"
+      (is (nil? (router/join-burst-end (:state r3) (burst-end-event (:effects r2))))))
+    (testing "the burst end joins the last target and grows the timeline"
+      (let [{:keys [state effects]} (router/join-burst-end (:state r3) (burst-end-event (:effects r3)))]
+        (is (= ["c"] (joins effects)))
+        (is (has-dispatch? effects :session/mark-read))
+        (is (nil? (:web/join-burst state)))
+        (is (nil? (:web/pending-join state)))
+        (is (nil? (:web/timeline-window state)))
+        (testing "and the next switch joins at once again"
+          (is (= ["d"] (joins (:effects (router/navigate roomless state {:page :chat :session-id "d"}))))))))
+    (testing "leaving for a roomless page drops the deferred join"
+      (let [{:keys [state]} (router/navigate roomless (:state r3) {:page :home})]
+        (is (nil? (:web/pending-join state)))
+        (is (empty? (joins (:effects (router/join-burst-end state {:seq (:web/join-burst state)})))))))
+    (testing "flush-pending-join sends it now"
+      (let [{:keys [state effects]} (router/flush-pending-join {:state (:state r3) :effects []})]
+        (is (= ["c"] (joins effects)))
+        (is (nil? (:web/pending-join state)))))))
+
+(deftest switch-paints-a-short-tail-first
+  (let [st (-> (state/initial-state)
+               (assoc-in [:rooms "r1" :session :id] "old")
+               (assoc-in [:rooms "r1" :history] [{:kind :user :text "hi"}])
+               (assoc :active-room "r1"))
+        {:keys [state effects]} (router/navigate roomless st {:page :chat :session-id "new"})]
+    (is (= router/first-paint-window (:web/timeline-window state)))
+    (is (some (fn [[t {:keys [session-id room]}]]
+                (and (= :cache/remember-room t) (= "old" session-id)
+                     (= [{:kind :user :text "hi"}] (:history room))))
+              effects)
+        "the left room's live history goes to the cache's memory tier")
+    (testing "a window the user grew in the meantime is kept"
+      (let [st' (assoc state :web/timeline-window 52)]
+        (is (= 52 (:web/timeline-window
+                   (:state (router/join-burst-end st' {:seq (:web/join-burst st')})))))))))
+
 (deftest navigate-to-project-dir
   (let [{:keys [state effects]} (nav {:page :home :dir "/home/user/code"})]
     (is (= "/home/user/code" (:web/selected-project-dir state)))

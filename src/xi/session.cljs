@@ -1056,6 +1056,45 @@
             block))
         messages))
 
+;; ── Resume payload cache ──
+;; A join resumes a session by parsing its whole transcript and hashing the
+;; result; a web sidebar peek (:session/peek, xi.server.ws) and the join right
+;; after it read the same file. session-id → {:stamp [path mtime size]
+;; :payload :at}, a handful of entries, least recently used evicted.
+(defonce ^:private resume-cache (atom {}))
+
+(def ^:private max-resume-cache 8)
+
+(defn- transcript-stamp [summary]
+  (when-let [path (summary->transcript summary)]
+    (try (let [s (fs/statSync path)] [path (.-mtimeMs s) (.-size s)])
+         (catch :default _e nil))))
+
+(defn- cache-resume! [session-id entry]
+  (swap! resume-cache
+         (fn [c]
+           (let [c (assoc c session-id entry)]
+             (if (> (count c) max-resume-cache)
+               (dissoc c (key (apply min-key (comp :at val) c)))
+               c)))))
+
+(defn resume-messages
+  "A session's resume payload {:messages :msg-hash :msg-count}: read-session-
+   messages with clipped tool results, reused while the transcript's mtime and
+   size are unchanged."
+  [summary]
+  (let [sid   (:session-id summary)
+        stamp (transcript-stamp summary)
+        hit   (get @resume-cache sid)]
+    (if (and stamp (= stamp (:stamp hit)))
+      (do (swap! resume-cache assoc-in [sid :at] (js/Date.now))
+          (:payload hit))
+      (let [messages (vec (truncate-message-results (read-session-messages summary)))
+            payload  {:messages messages :msg-hash (hash messages) :msg-count (count messages)}]
+        (when stamp
+          (cache-resume! sid {:stamp stamp :payload payload :at (js/Date.now)}))
+        payload))))
+
 (def ^:private search-text-byte-cap
   "Max bytes of a transcript read for content search; reading whole transcripts
    froze the event loop."

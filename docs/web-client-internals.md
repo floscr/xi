@@ -152,6 +152,18 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   unknown falls back to home but keeps its URL (`pending-extension-path?`,
   `:keep-url?`): a user extension's page is re-routed once its web half has
   loaded (`xi.web.user-ext`).
+- Session switching paints before the server answers. The cached history
+  comes from `xi.web.cache`'s memory tier (decoded snapshots, LRU of 24,
+  filled by every save, by the room being left, and by prefetch), else from
+  localStorage. The first paint renders only `first-paint-window` entries; the
+  timeline grows to the full window once the burst ends. Joins are paced: the
+  first switch of a burst joins at once, and later ones wait until no
+  navigation came for `join-burst-ms`, then join only the last
+  (`:web/pending-join`; a submit flushes it, `router/flush-pending-join`).
+  Once the viewed session's join lands, `xi.web.prefetch` asks the server for
+  the uncached sidebar neighbours with a roomless `:session/peek`. The
+  server's resume cache (`xi.session/resume-messages`) parses each
+  transcript once for the peek and the join that follows.
 - Unread: `:session/counts` → `:session/counts-result` (`:web/response-counts`)
   compared with the lobby's `:read` (the server's markers for *this user*, see
   architecture.md) and `:web/watched` (a localStorage overlay for an instant
@@ -198,6 +210,7 @@ Never sent over the wire:
 | `:web/lightbox` | open image src |
 | `:web/watched`, `:web/response-counts` | unread tracking |
 | `:web/cache` | hydrated per-session history for deep links |
+| `:web/join-seq`, `:web/join-burst`, `:web/pending-join` | join pacing during a sidebar walk (`xi.web.router`): the open burst's seq and the join it deferred |
 | `:web/pending-submit` | message stashed until `:room/joined` |
 | `:web/pending-buffer` | `{:session-id :buffer-id}` a sidebar / palette buffer row asked to open, applied on `:room/joined` |
 | `:web/sidebar-buffers-open` | session ids whose buffer rows are unfolded; this browser's own, cached in localStorage (`xi/sidebar-buffers-open`) |
@@ -215,9 +228,10 @@ Never sent over the wire:
 src/xi/web/
   core.cljs        entry: assembly, Replicant render, auto-scroll, listeners
   views.cljs       pure views: home, chat, compose, lightbox, error cards
-  router.cljs      route parsing, :route/navigate, History API effect
+  router.cljs      route parsing, :route/navigate, join pacing, History API effect
   title.cljs       document.title from the route (pure)
-  cache.cljs       localStorage offline cache (hydrate + persist tap)
+  cache.cljs       offline cache: memory tier + localStorage (hydrate + persist tap)
+  prefetch.cljs    :session/peek of the viewed session's sidebar neighbours
   appearance.cljs  appearance settings layering
   theme.cljs       custom color themes: OKLCH scales → CSS properties, the user's value (pure)
   keymap.cljs      view- and mode-scoped shortcuts

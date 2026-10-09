@@ -258,6 +258,13 @@
   {:effects [[:session/counts-reply {:client-id client-id
                                      :session-ids session-ids}]]})
 
+(defn- session-peek
+  "Roomless: a saved session's history without joining it; reading it hits
+   disk, so the handler just emits an effect."
+  [_st {:keys [client-id session-id]}]
+  (when (string? session-id)
+    {:effects [[:session/peek-reply {:client-id client-id :session-id session-id}]]}))
+
 (defn- sessions-all
   "Roomless: the full (uncapped) saved-session list + counts, for the
    all-sessions view. The lobby broadcast only carries a capped recent list."
@@ -460,6 +467,7 @@
    :room/leave             room-leave
    :room/list              room-list
    :session/counts         session-counts
+   :session/peek           session-peek
    :sessions/all           sessions-all
    :models/web-list        models-web-list
    :cwd/agents-files       cwd-agents-files

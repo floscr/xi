@@ -101,6 +101,61 @@
               #(conj (filterv (fn [r] (not= id (:id r))) %) pending))
       st)))
 
+;; ── Join pacing ──
+;; A join of a session without a live room resumes it on the server (disk
+;; read, room setup) and answers with a snapshot, so flicking through the
+;; sidebar must not join every session it passes. The cache paints each one
+;; at once; the first join of a burst goes out immediately, later ones wait
+;; until no navigation came for join-burst-ms and then join only the last.
+;; State: :web/join-seq (monotonic), :web/join-burst (seq of the open burst),
+;; :web/pending-join ({:target :session-id} waiting for the burst to end).
+
+(def join-burst-ms 150)
+
+;; Timeline entries a switch paints first: enough to fill the viewport, a
+;; fraction of the DOM of the full window (xi.web.views/initial-window-size),
+;; which the timeline grows back to when the burst ends.
+(def first-paint-window 12)
+
+(defn- join-effects [{:keys [target session-id]}]
+  [[:room/join-with-cache {:target target :session-id session-id}]
+   [:app/dispatch {:type :session/mark-read :session-id session-id}]])
+
+(defn- pace-join
+  "Fold `join` ({:target :session-id}, nil when the navigation joins nothing)
+   into the navigate result. Any navigation drops a deferred join."
+  [{:keys [state] :as result} join]
+  (let [st (dissoc state :web/pending-join)]
+    (if-not join
+      (assoc result :state st)
+      (let [burst? (some? (:web/join-burst st))
+            n      (inc (:web/join-seq st 0))]
+        {:state   (cond-> (assoc st :web/join-seq n :web/join-burst n)
+                    burst? (assoc :web/pending-join join))
+         :effects (-> (vec (:effects result))
+                      (into (when-not burst? (join-effects join)))
+                      (conj [:app/dispatch-after
+                             {:ms    join-burst-ms
+                              :event {:type :room/join-burst-end :seq n}}]))}))))
+
+(defn join-burst-end
+  [st {:keys [seq]}]
+  (when (= seq (:web/join-burst st))
+    (let [join (:web/pending-join st)]
+      {:state   (cond-> (dissoc st :web/join-burst :web/pending-join)
+                  (= first-paint-window (:web/timeline-window st))
+                  (dissoc :web/timeline-window))
+       :effects (if join (join-effects join) [])})))
+
+(defn flush-pending-join
+  "Send a burst's deferred join now, for an action that needs the room (a
+   submit): `result` ({:state :effects}) with the join effects appended."
+  [{:keys [state] :as result}]
+  (if-let [join (:web/pending-join state)]
+    {:state   (dissoc state :web/pending-join)
+     :effects (into (vec (:effects result)) (join-effects join))}
+    result))
+
 (defn- navigate*
   "Set the route, push/replace history, and drive the implied room change.
    :page :home | :chat, :session-id (chat only), :params (an extension route's
@@ -137,22 +192,16 @@
                   (and leaving-empty-new? (not (roomless page)))
                   (conj [:app/dispatch {:type :room/leave}])
 
+                  ;; The room we leave keeps its live history in the cache's
+                  ;; memory tier, so coming back paints it as it was.
+                  (and active-sid (not already?))
+                  (conj [:cache/remember-room {:session-id active-sid
+                                               :room       active-room}])
+
+                  ;; Paint the target's cached history immediately; the join
+                  ;; follows via pace-join.
                   (and (= page :chat) session-id (not already?))
-                  (conj ;; Paint the target's cached history immediately while
-                        ;; the join round-trips (slow on mobile).
-                        [:cache/seed-room {:session-id session-id}]
-                        ;; Join through the cache-aware effect so the client
-                        ;; can echo the cached msg-hash and let the server skip
-                        ;; re-sending unchanged history over the (slow) wire.
-                        ;; Always carry :session-id so the server can resume
-                        ;; even when the lobby cache has a stale room-id that
-                        ;; no longer exists on a restarted server.
-                        [:room/join-with-cache
-                         {:target     (or (session->room-id st session-id)
-                                          {:session-id session-id})
-                          :session-id session-id}]
-                        [:app/dispatch {:type :session/mark-read
-                                        :session-id session-id}])
+                  (conj [:cache/seed-room {:session-id session-id}])
 
                   (roomless page)
                   (conj [:app/dispatch {:type :room/leave}])
@@ -177,50 +226,61 @@
                   ;; URL sync (already?), which must not touch the drawer.
                   (and (:web/sidebar-open? st) (not already?))
                   (conj [:sidebar/repaint]))]
-    {:state   (cond-> (assoc st :web/route route
-                            ;; reset the virtualized timeline window on every
-                            ;; navigation so a new session starts compact
-                            :web/timeline-window nil)
-                ;; Close the recent-sessions drawer on a real navigation, but
-                ;; NOT on the post-join URL sync (already? — a virtual new chat
-                ;; getting its real session id after the first message). That
-                ;; sync isn't a user navigation, so it must not yank a sidebar
-                ;; the user left open shut from under them.
-                (not already?)
-                (assoc :web/sidebar-open? false)
-                ;; Leaving a chat we were viewing: remember the session so the
-                ;; next fresh count marks it read (the user saw responses that
-                ;; landed while attached, before counts refreshed). See
-                ;; counts-result.
-                (and (roomless page) active-sid)
-                (assoc :web/pending-read active-sid)
-                ;; Leaving the virtual new chat for a real destination (a
-                ;; session or home): drop its pending-room so its draft
-                ;; can't resurface in another chat — a typed-in one is parked
-                ;; as a sidebar draft first. A fresh virtual chat gets a new
-                ;; pending-room (with a new id) via :room/new.
-                (or (not= page :chat) session-id)
-                (-> stash-draft-chat (dissoc :web/pending-room))
-                ;; Sync the git-status cwd from the route
-                (= page :git-status) (assoc :web/git-status-cwd cwd)
-                ;; Sync project dir drill-down from the route
-                (= page :home) (-> (assoc :web/selected-project-dir dir)
-                                   (cond->
-                                     ;; Clear stale sessions when navigating away
-                                     (nil? dir) (dissoc :web/project-sessions
-                                                        :web/project-sessions-cwd)
-                                     ;; Leaving the all-sessions view: drop the
-                                     ;; full list so it's re-fetched fresh next
-                                     ;; time (the capped lobby keeps painting).
-                                     (not= dir :all) (dissoc :web/all-sessions)
-                                     ;; Clear old data when drilling into a new dir
-                                     (and dir (not= dir :all))
-                                     (-> (dissoc :web/project-sessions)
-                                         (update :web/search dissoc :project-sessions)
-                                         (update :web/content-search dissoc :project-sessions)
-                                         (update :web/content-matches dissoc :project-sessions)
-                                         (assoc :web/project-sessions-loading? true)))))
-     :effects effects}))
+    (pace-join
+     {:state   (cond-> (assoc st :web/route route
+                             ;; reset the virtualized timeline window on every
+                             ;; navigation so a new session starts compact
+                             :web/timeline-window nil)
+                 (and (= page :chat) session-id (not already?))
+                 (assoc :web/timeline-window first-paint-window)
+                 ;; Close the recent-sessions drawer on a real navigation, but
+                 ;; NOT on the post-join URL sync (already? — a virtual new chat
+                 ;; getting its real session id after the first message). That
+                 ;; sync isn't a user navigation, so it must not yank a sidebar
+                 ;; the user left open shut from under them.
+                 (not already?)
+                 (assoc :web/sidebar-open? false)
+                 ;; Leaving a chat we were viewing: remember the session so the
+                 ;; next fresh count marks it read (the user saw responses that
+                 ;; landed while attached, before counts refreshed). See
+                 ;; counts-result.
+                 (and (roomless page) active-sid)
+                 (assoc :web/pending-read active-sid)
+                 ;; Leaving the virtual new chat for a real destination (a
+                 ;; session or home): drop its pending-room so its draft
+                 ;; can't resurface in another chat — a typed-in one is parked
+                 ;; as a sidebar draft first. A fresh virtual chat gets a new
+                 ;; pending-room (with a new id) via :room/new.
+                 (or (not= page :chat) session-id)
+                 (-> stash-draft-chat (dissoc :web/pending-room))
+                 ;; Sync the git-status cwd from the route
+                 (= page :git-status) (assoc :web/git-status-cwd cwd)
+                 ;; Sync project dir drill-down from the route
+                 (= page :home) (-> (assoc :web/selected-project-dir dir)
+                                    (cond->
+                                      ;; Clear stale sessions when navigating away
+                                      (nil? dir) (dissoc :web/project-sessions
+                                                         :web/project-sessions-cwd)
+                                      ;; Leaving the all-sessions view: drop the
+                                      ;; full list so it's re-fetched fresh next
+                                      ;; time (the capped lobby keeps painting).
+                                      (not= dir :all) (dissoc :web/all-sessions)
+                                      ;; Clear old data when drilling into a new dir
+                                      (and dir (not= dir :all))
+                                      (-> (dissoc :web/project-sessions)
+                                          (update :web/search dissoc :project-sessions)
+                                          (update :web/content-search dissoc :project-sessions)
+                                          (update :web/content-matches dissoc :project-sessions)
+                                          (assoc :web/project-sessions-loading? true)))))
+      :effects effects}
+     ;; Join through the cache-aware effect so the client can echo the cached
+     ;; msg-hash and let the server skip re-sending unchanged history. Always
+     ;; carry :session-id so the server can resume even when the lobby cache
+     ;; has a stale room-id that no longer exists on a restarted server.
+     (when (and (= page :chat) session-id (not already?))
+       {:target     (or (session->room-id st session-id)
+                        {:session-id session-id})
+        :session-id session-id}))))
 
 (defn nav-back
   [_st {:keys [fallback]}]
@@ -263,8 +323,9 @@
   "Router handler map over the extension route table (a map or an atom —
    read per navigation, so routes added later count)."
   [routes]
-  {:route/navigate (fn [st ev] (navigate (roomless-pages routes) st ev))
-   :nav/back       nav-back})
+  {:route/navigate       (fn [st ev] (navigate (roomless-pages routes) st ev))
+   :room/join-burst-end  join-burst-end
+   :nav/back             nav-back})
 
 ;; ── History effect + init (impure edge) ──────────────────────────────────────
 

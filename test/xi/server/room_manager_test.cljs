@@ -49,6 +49,13 @@
     (is (empty? (:effects (handle st {:type :cwd/agents-files :client-id "c1"})))
         "no cwd, no lookup")))
 
+(deftest session-peek-replies-to-the-asking-client
+  (let [st (server-state-with-room)]
+    (is (= [[:session/peek-reply {:client-id "c1" :session-id "s1"}]]
+           (:effects (handle st {:type :session/peek :client-id "c1" :session-id "s1"}))))
+    (is (empty? (:effects (handle st {:type :session/peek :client-id "c1"})))
+        "no session id, no read")))
+
 (deftest join-latest-attaches-to-most-recent
   (let [st (apply-events (server-state-with-room)
                          {:type :room/create :room-id "r2" :room {:created 200}})
