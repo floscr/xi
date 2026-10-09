@@ -51,6 +51,7 @@
             [xi.fx :as fx]
             [xi.server.files :as files]
             [xi.server.room-manager :as rm]
+            [xi.server.usage :as usage]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
             [xi.user-config :as user-config]
@@ -200,76 +201,6 @@
    sessions active during this run from ones carried over from disk."
   (js/Date.now))
 
-;; ── Claude subscription usage ───────────────────────────────────────────
-
-(def ^:private claude-usage
-  "Latest Claude subscription usage reading (nil until the first fetch); rides
-   on the lobby broadcast."
-  (atom nil))
-
-(defn- read-claude-token
-  "OAuth access token from <claude-config-dir>/.credentials.json, nil when missing."
-  []
-  (try
-    (let [fs   (js/require "node:fs")
-          path (str (session/claude-config-dir) "/.credentials.json")]
-      (when (.existsSync fs path)
-        (some-> (.readFileSync fs path "utf8")
-                (js/JSON.parse)
-                (aget "claudeAiOauth")
-                (aget "accessToken"))))
-    (catch :default _ nil)))
-
-(def ^:private claude-usage-fetched-at
-  "Wall-clock ms of the last fetch attempt, throttling on-demand refreshes."
-  (atom 0))
-
-(defn- fetch-claude-usage!
-  "Fetch subscription usage from the OAuth endpoint Claude Code's /usage uses;
-   calls on-change when the reading differs. Failures keep the last reading."
-  [on-change]
-  (reset! claude-usage-fetched-at (js/Date.now))
-  (when-let [token (read-claude-token)]
-    (-> (js/fetch "https://api.anthropic.com/api/oauth/usage"
-                  #js {:headers #js {"Authorization"  (str "Bearer " token)
-                                     "anthropic-beta" "oauth-2025-04-20"}})
-        (.then (fn [^js res] (when (.-ok res) (.json res))))
-        (.then (fn [^js data]
-                 (when data
-                   (let [{:keys [five_hour seven_day limits]}
-                         (js->clj data :keywordize-keys true)
-                         pct   (fn [u] (some-> u js/Math.round (min 100)))
-                         usage {:session  (pct (:utilization five_hour))
-                                :weekly   (pct (:utilization seven_day))
-                                :severity (or (some #(when (= "session" (:kind %))
-                                                       (:severity %))
-                                              limits)
-                                              "normal")
-                                :session-resets-at (:resets_at five_hour)
-                                :weekly-resets-at  (:resets_at seven_day)}]
-                     (when (and (:session usage) (not= usage @claude-usage))
-                       (reset! claude-usage usage)
-                       (on-change))))))
-        (.catch (fn [_] nil)))))
-
-(defn- claude-credentials-mtime
-  []
-  (try (.-mtimeMs (.statSync (js/require "node:fs")
-                             (str (session/claude-config-dir) "/.credentials.json")))
-       (catch :default _ nil)))
-
-(defn- watch-claude-credentials!
-  "Refetch usage as soon as the credentials file changes (account switch, token refresh)."
-  [on-change]
-  (let [seen (atom (claude-credentials-mtime))]
-    (js/setInterval
-     (fn []
-       (let [m (claude-credentials-mtime)]
-         (when (not= m @seen)
-           (reset! seen m)
-           (fetch-claude-usage! on-change))))
-     10000)))
-
 (defn- client-user
   [st cid]
   (util/user-id (get-in st [:connection :clients cid :user])))
@@ -322,7 +253,10 @@
              :started-at server-started-at}
       model    (assoc :model model)
       agent-id (assoc :agent-id agent-id)
-      @claude-usage   (assoc :claude-usage @claude-usage))))
+      ;; The sidebar ring's reading, plus when the usage poll last ran so a
+      ;; client on the /usage page knows to refetch (xi.web.usage).
+      (usage/claude-summary) (assoc :claude-usage (usage/claude-summary))
+      (pos? (usage/fetched-at)) (assoc :usage-at (usage/fetched-at)))))
 
 (defn- lobby-payload
   [st agent-id model user]
@@ -409,10 +343,13 @@
    provider map (model listing); :agent-id run as a named agent
    (xi.agent-profile; nil = coding server); :ext-system-prompt-parts (fn [cwd]
    → parts); :room-ext-init ext-id → initial room-scoped state (or a 0-arg fn,
-   read per room); :ext the composed extension map (xi.ext.core/compose).
+   read per room); :ext the composed extension map (xi.ext.core/compose);
+   :usage-sources a 0-arg fn of the composition's `:usage-sources`
+   (xi.server.usage).
    Returns {:fx :start!}, :start! being (fn [app {:keys [port]}] → {:port
    :stop!})."
-  [{:keys [server-opts providers agent-id ext-system-prompt-parts room-ext-init ext]}]
+  [{:keys [server-opts providers agent-id ext-system-prompt-parts room-ext-init ext
+           usage-sources]}]
   (let [sockets (js/Map.)
         agent?  (some? agent-id)
         ;; XI_ICON: "desktop" (default), "personal" or "green".
@@ -872,10 +809,9 @@
                             (reset! lobby-timer nil)
                             (broadcast-lobby! @state))
                           150))))
-             _ (fetch-claude-usage! schedule-lobby-broadcast!)
-             _ (js/setInterval #(fetch-claude-usage! schedule-lobby-broadcast!)
-                               (* 5 60 1000))
-             _ (watch-claude-credentials! schedule-lobby-broadcast!)
+             _ (usage/start! {:sources   usage-sources
+                              :ctx       {:get-state (fn [] @state)}
+                              :on-change schedule-lobby-broadcast!})
              ;; GET /api/rooms/status?ids=…: "running" (a live room mid-turn),
              ;; "error" (aborted or interrupted, from the persisted metadata,
              ;; since finished background rooms are reaped), "complete", "unknown".
@@ -1042,11 +978,15 @@
                                   (= :auth/deny (:type ev))
                                   (resolve-pending! (:code ev) false)
 
-                                  ;; Transport-level, throttled to 30s.
+                                  ;; Transport-level: a poll of every usage
+                                  ;; source (throttled), and the /usage page's
+                                  ;; readings + history, replied to the asker.
                                   (= :usage/refresh (:type ev))
-                                  (when (> (- (js/Date.now) @claude-usage-fetched-at)
-                                           (* 30 1000))
-                                    (fetch-claude-usage! schedule-lobby-broadcast!))
+                                  (usage/refresh!)
+
+                                  (= :usage/fetch (:type ev))
+                                  (send! cid (wire/encode (assoc (usage/snapshot)
+                                                                 :type :usage/state)))
 
                                   (or (pre-join-types (:type ev))
                                       (roomless-types (:type ev)))

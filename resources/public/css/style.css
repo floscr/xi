@@ -3191,6 +3191,147 @@ code a:hover,
   color: var(--fg-1);
   font-variant-numeric: tabular-nums;
 }
+/* ---- Usage page (xi.ext.usage.web): one card per account, a meter per
+   window, the current period's chart from the sample history. The meters
+   reuse the sidebar popover's track/fill and severity colors. ---- */
+.usage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: var(--size-4);
+  padding: var(--size-4);
+  align-items: start;
+}
+.usage-card { display: flex; flex-direction: column; }
+.usage-card-head {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--size-3);
+}
+.usage-card-titles { min-width: 0; }
+.usage-card-title {
+  font-weight: 600;
+  color: var(--fg-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.usage-card-subtitle { font-size: var(--font-sm); color: var(--fg-1); }
+.usage-card-badges { display: flex; flex-wrap: wrap; gap: var(--size-1); flex-shrink: 0; }
+.usage-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4);
+}
+.usage-window,
+.usage-balance {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+.usage-window + .usage-window,
+.usage-window + .usage-balance,
+.usage-balance + .usage-balance { padding-top: var(--size-3); border-top: var(--border-0); }
+.usage-window-head,
+.usage-balance-row {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  font-size: var(--font-sm);
+}
+.usage-window-label { font-weight: 600; color: var(--fg-0); }
+.usage-window-pct,
+.usage-balance-value {
+  margin-left: auto;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-xs);
+  color: var(--fg-0);
+  font-variant-numeric: tabular-nums;
+}
+.usage-meter .claude-usage-track { height: 6px; }
+.usage-note {
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  font-variant-numeric: tabular-nums;
+}
+.usage-note--pace { color: var(--fg-2); }
+/* Line chart: the SVG stretches to the box (preserveAspectRatio none), so
+   strokes keep their width via vector-effect; labels are HTML below it. */
+.usage-chart { display: flex; flex-direction: column; gap: var(--size-1); margin-top: var(--size-1); }
+.usage-chart-svg {
+  width: 100%;
+  height: 4.5rem;
+  border-bottom: 1px dotted var(--bg-2);
+  overflow: visible;
+}
+.usage-chart-grid { stroke: var(--bg-2); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.usage-chart-line {
+  fill: none;
+  stroke: var(--fg-0);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.usage-chart-projection {
+  fill: none;
+  stroke: var(--fg-2);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 3;
+  vector-effect: non-scaling-stroke;
+}
+.usage-chart-ticks {
+  position: relative;
+  height: 1.2em;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+.usage-chart-tick {
+  position: absolute;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.usage-chart-tick:first-child { transform: none; }
+.usage-chart-tick:last-child { transform: translateX(-100%); }
+.usage-chart-legend {
+  display: flex;
+  gap: var(--size-3);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+.usage-legend-line::before,
+.usage-legend-dotted::before {
+  content: "";
+  display: inline-block;
+  width: 1rem;
+  margin-right: var(--size-1);
+  vertical-align: middle;
+  border-top: 2px solid var(--fg-0);
+}
+.usage-legend-dotted::before { border-top-style: dotted; border-color: var(--fg-2); }
+
+/* Past periods of a short window: one bar per period, peak use. */
+.usage-strip { display: flex; flex-direction: column; gap: var(--size-1); margin-top: var(--size-1); }
+.usage-strip-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 2.5rem;
+  border-bottom: 1px solid var(--bg-2);
+}
+.usage-strip-bar {
+  flex: 1;
+  min-width: 3px;
+  max-width: 1.25rem;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.usage-strip-fill {
+  width: 100%;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  background-color: var(--usage-color);
+}
 
 /* ---- Sidebar drawer: compact cards (Arc/Realm-style) ----
    Same .project-card look as the listings, just tighter for the narrow

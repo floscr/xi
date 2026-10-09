@@ -49,6 +49,7 @@ provider effects, and TUI.
    :no-broadcast     #{event-type}     ; never echoed to the room's clients
    :originator-only  #{event-type}     ; sent only to the originating client
    :lobby-relevant   #{event-type}     ; push fresh :lobby/state afterwards
+   :usage-sources    [{:id kw :fetch (fn [ctx] → Promise<[reading …]>)}] ; /usage page accounts (see "Usage Sources")
    ;; web-client surface (browser build only — see "Web Client Surface")
    :routes           {"seg" {:parse fn :path {page-kw fn} :roomless-pages #{page-kw}}}
    :pages            {page-kw (fn [state dispatch!] → hiccup)}
@@ -356,6 +357,26 @@ runtime-toggleable extensions to contribute only tools.
 configured MCP server (`~/.config/xi/mcp.edn`) as an extension contributing
 `mcp__<id>__*` tools and registers it into the manager. See
 [mcp-internals.md](mcp-internals.md).
+
+## Usage Sources
+
+`xi.server.usage` polls every subscription the server can read (the Claude
+login, the Codex login, an Ollama Cloud key, an OpenCode Go key) and the
+composed `:usage-sources`, at start, every five minutes, on a client's
+`:usage/refresh` (throttled) and when the Claude credentials file changes.
+A source is `{:id kw :fetch (fn [ctx] → Promise<[reading …]|nil>)}`; a
+reading is the card shape `xi.usage` documents (windows with a used percent,
+reset time and period; balances; badges; notes). A nil or failing fetch keeps
+the source's last readings. The readings stay in memory; the per-window
+sample history behind the page's charts (`xi.usage/record`, two weeks) is
+written to `~/.config/xi/state/usage-history.edn`.
+
+The lobby broadcast carries the live Claude reading's summary as
+`:claude-usage` (the sidebar ring) and the last poll time as `:usage-at`; the
+roomless `:usage/fetch` is answered with `:usage/state {:readings :history
+:fetched-at}` for the `/usage` page (`xi.ext.usage.web`, a built-in web
+half). User extensions may declare `:usage-sources` too; the guard hands
+their `:fetch` the same capability ctx as a lifecycle hook.
 
 ## Web Client Surface
 

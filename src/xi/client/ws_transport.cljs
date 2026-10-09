@@ -152,7 +152,7 @@
   "Replace the lobby slice, keeping the last Claude usage reading when the payload omits it."
   [st ev]
   (let [lobby (select-keys ev [:rooms :sessions :read :profiles :user-ids :agent-id :started-at :claude-usage :model
-                               :buffers])
+                               :buffers :usage-at])
         prev  (get-in st [:lobby :claude-usage])]
     {:state (assoc st :lobby (cond-> lobby
                                (and prev (not (:claude-usage lobby)))

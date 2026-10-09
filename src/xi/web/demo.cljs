@@ -11,8 +11,10 @@
      ?demo=chat        → a chat room mid-conversation (the configured appearance)
      ?demo=chat-viewer → the same room forced into viewer mode (grouped,
                          collapsed tool + thinking rows)
-     ?demo=chat-open   → the same room with every block expanded, ungrouped"
-  (:require [xi.core.state :as state]))
+     ?demo=chat-open   → the same room with every block expanded, ungrouped
+     ?demo=usage       → the /usage page: Claude logins, Codex, Ollama Cloud"
+  (:require [xi.core.state :as state]
+            [xi.usage :as usage]))
 
 (def ^:private now (js/Date.now))
 
@@ -206,10 +208,68 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
            :rooms {rid room}
            :active-room rid)))
 
+;; ── Usage page ──
+
+(defn- iso-in [ms] (.toISOString (js/Date. (+ now ms))))
+
+(defn- claude-payload
+  "An /api/oauth/usage payload: `session` % with `session-left` ms to go,
+   `weekly` % with `week-left` ms, `fable` % on the per-model window."
+  [session session-left weekly week-left fable]
+  {:five_hour {:utilization session :resets_at (iso-in session-left)}
+   :seven_day {:utilization weekly :resets_at (iso-in week-left)}
+   :limits [{:kind "session" :percent session :resets_at (iso-in session-left)
+             :severity (usage/severity session) :is_active (< weekly 100)}
+            {:kind "weekly_all" :percent weekly :resets_at (iso-in week-left)
+             :severity (usage/severity weekly) :is_active (>= weekly 100)}
+            {:kind "weekly_scoped" :percent fable :resets_at (iso-in week-left)
+             :scope {:model {:display_name "Fable"}}}]
+   :seven_day_breakdown {:rows [{:display_name "Claude Code" :percent 92}
+                                {:display_name "Chats" :percent 8}]}})
+
+(defn- ramp
+  "Samples every 30 min from `from` ms ago to now, climbing to `to` %."
+  [from to]
+  (let [n (js/Math.floor (/ from 1800000))]
+    (vec (for [i (range (inc n))]
+           [(- now (* (- n i) 1800000)) (js/Math.round (* to (/ i (max n 1))))]))))
+
+(defn- usage-state []
+  (let [live   (usage/claude-reading
+                {:response (claude-payload 14 (* 168 60000) 15 (+ (* 1 usage/day-ms) (* 3 usage/hour-ms)) 0)
+                 :email "dev@example.com" :plan "max" :tier "default_claude_max_20x"
+                 :expires-at (+ now (* 4 usage/hour-ms)) :now now})
+        stored (-> (usage/claude-reading
+                    {:response (claude-payload 0 (* 4 usage/hour-ms) 100 (* 21 usage/hour-ms) 0)
+                     :email "team@example.com" :plan "max" :tier "default_claude_max_20x" :now now})
+                   (update :badges conj {:label "Stored · team" :tone :outline}))
+        codex  (usage/codex-reading
+                {:response {:email "OpenAI" :plan_type "prolite"
+                            :rate_limit {:primary_window {:used_percent 11 :limit_window_seconds 604800
+                                                          :reset_after_seconds (* 6 86400)}}}
+                 :now now})
+        ollama (usage/ollama-reading
+                {:balance {:included {:balance_usd 295.18 :allowance_usd 300
+                                      :period {:until (iso-in (* 27 usage/day-ms))}}
+                           :purchased {:balance_usd 0}}
+                 :usage {:totals {:request_count 412 :usage_usd 4.82}}
+                 :now now})
+        past5h (vec (for [k (range 1 13)
+                          :let [t (- now (* 168 60000) (* k usage/five-hours-ms))]]
+                      [t (mod (* k 23) 90)]))]
+    (assoc (base {:page :usage})
+           :web/usage {:readings   [live stored codex ollama]
+                       :fetched-at (- now 90000)
+                       :history    {(:id live)   {"seven-day" (ramp (* 5 usage/day-ms) 15)
+                                                  "five-hour" (conj past5h [(- now 3600000) 9])}
+                                    (:id stored) {"seven-day" (ramp (* 6 usage/day-ms) 100)}
+                                    (:id codex)  {"codex-primary" (ramp (* 20 usage/hour-ms) 11)}}})))
+
 (defn demo-state
   "Build the seeded app state for a `?demo=<view>` value."
   [view]
   (case view
+    "usage" (usage-state)
     "chat" (chat-state)
     "chat-viewer" (assoc (chat-state) :web/appearance {:super-collapsed? false
                                                        :tool-blocks :collapsed

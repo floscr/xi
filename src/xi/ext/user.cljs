@@ -26,6 +26,7 @@
             [xi.api.sessions]
             [xi.api.sh]
             [xi.api.time]
+            [xi.api.usage]
             [xi.api.user]
             [xi.core.events]
             [xi.core.state]
@@ -68,6 +69,7 @@
    'xi.api.mcp     (sci/copy-ns xi.api.mcp     (sci/create-ns 'xi.api.mcp))
    'xi.api.user    (sci/copy-ns xi.api.user    (sci/create-ns 'xi.api.user))
    'xi.api.time    (sci/copy-ns xi.api.time    (sci/create-ns 'xi.api.time))
+   'xi.api.usage   (sci/copy-ns xi.api.usage   (sci/create-ns 'xi.api.usage))
    'xi.api.promise api-promise/sci-namespace
    'xi.core.state  (sci/copy-ns xi.core.state  (sci/create-ns 'xi.core.state))
    'xi.core.events (sci/copy-ns xi.core.events (sci/create-ns 'xi.core.events))})
@@ -103,6 +105,8 @@
     ;; load lifecycle: (fn [ctx]) after the extension is (re)registered / before
     ;; it is replaced or removed (see "Mount lifecycle" below)
     :on-mount :on-unmount
+    ;; accounts on the web client's /usage page (xi.server.usage)
+    :usage-sources
     ;; web half, collected but not composed node-side
     :routes :pages :nav-items :taps})
 

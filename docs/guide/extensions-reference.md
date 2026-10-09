@@ -19,6 +19,7 @@ first; this page is for looking things up.
    :keybindings      [{:key "ctrl+shift+x" :event {:type :ext.my-ext/do}}]
    :prompt-badge     (fn [state] → string | nil)
    :mcp-servers      {:name {:command "…" :args […]}}
+   :usage-sources    [{:id :pool :fetch (fn [ctx] → promise of [reading …])}]
    :on-mount         (fn [ctx])
    :on-unmount       (fn [ctx])
    :on-enable        (fn [])
@@ -41,6 +42,7 @@ and `:remove-tools` are not available: whether a tool call runs is the
 | `:system-prompt` | A function gets the chat's directory and may return nil to add nothing. |
 | `:keybindings` | Terminal client only, read at startup. Each entry is a keyboard action: `:key` is its default key (`"alt+r"`, `"ctrl+shift+n"`, any spelling from [Keyboard shortcuts](keyboard.md#writing-a-key)), which the user may change under `:keys` in `config.edn`; `:id` names the action (default: the event's `:type`), `:label` is its name in the shortcut list, `:layer` where the key applies (default `:global`; e.g. `:buffer/diff`). `:when (fn [state])` makes it conditional. |
 | `:mcp-servers` | Private servers; see [the tutorial](extension-tutorial-mcp.md). |
+| `:usage-sources` | Accounts for the web client's [usage page](web-client.md#usage), polled with the built-in ones (every five minutes, and on refresh). `:fetch` gets the same `ctx` as a hook and resolves to a list of readings: `{:id "claude/me@x" :provider :claude :title "me@x" :subtitle "Claude · Max" :windows [{:id "five-hour" :label "5-hour" :used 14 :resets-at "2026-…Z" :period-ms 18000000}] :badges [{:label "Stored" :tone :outline}] :balances [{:label "Credits" :value "$5"}] :notes ["…"]}`. `:used` is a percent; a window with both `:resets-at` and `:period-ms` gets a pace and a chart. A failing fetch keeps the source's last readings. |
 | `:on-mount` / `:on-unmount` | Load and unload, including every reload. `ctx` has `:dispatch!` and `:get-state`. |
 | `:on-enable` / `:on-disable` | `/ext enable` and `/ext disable`. |
 
@@ -226,6 +228,14 @@ answer even while no client is connected, and shows when one joins; only in
 `(now)` → milliseconds since the epoch. The sandbox has no `js/Date`; this is
 the clock, on the server and in a web half alike. Not a rules request.
 
+### `xi.api.usage`
+
+Pure helpers for a [`:usage-sources`](#the-map) fetch: `(claude-reading
+{:response m :email s :plan s :tier s :expires-at ms :now ms})` turns a
+Claude login's `/api/oauth/usage` payload into a reading, `(codex-reading
+{:response m :now ms})` a Codex login's `wham/usage` payload. Both return nil
+when the payload carries no usage.
+
 ### `xi.api.json` and `xi.api.promise`
 
 `json/parse` (keyword keys; `{:keywordize? false}` for strings),
@@ -293,8 +303,8 @@ ones that touch `js/window`), `xi.web.views` helpers (`menu-button`,
 
 `dispatch!` sends `:ext.<id>/*` events to the server (tagged with the active
 chat and the client), passes `:route/navigate` and `:nav/back`, and drops
-everything else. The events of `:nav-items`, `:sidebar-groups` and
-`:session-menu-items` follow the same rule: an own event is sent to the
+everything else. The events of `:nav-items`, `:sidebar-groups`,
+`:session-menu-items` and a card's `:load` and `:more` follow the same rule: an own event is sent to the
 server, navigation passes, anything else is dropped. Browser-only state lives at `[:user-ext/ui <id> …]`: an
 input with `:bind [:k]` (in `:attrs` for `ui.form` inputs) keeps its value
 there, and `{:type :ext-ui/set :path [:k] :value v}` writes it. A bound field

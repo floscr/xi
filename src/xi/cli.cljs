@@ -831,6 +831,7 @@ See docs/guide/command-line.md for the full reference.")
                  :agent-id agent
                  :ext-system-prompt-parts (fn [cwd] (ext/system-prompt-parts (manager/composed mgr) cwd))
                  :room-ext-init (manager/live-view mgr :room-ext-init)
+                 :usage-sources (manager/live-view mgr :usage-sources)
                  :ext composed})
         ;; Late-bound: a live extension reload rebuilds handlers and fx.
         handlers (manager/live-view

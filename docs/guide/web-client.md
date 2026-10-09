@@ -115,6 +115,32 @@ refreshes it in place.
   on any device, as long as the server runs. They are not saved to disk: a
   server restart starts with none.
 
+## Usage
+
+The ring in the sidebar footer shows how much of the Claude login's 5-hour
+window is used; click it for the session and weekly windows. **All usage**
+there (or "Usage" in the command palette and the ⋮ menu) opens the
+`/usage` page: one card per account the server can read.
+
+- **Claude**: the Claude Code login. Every window the plan has (5-hour, 7-day,
+  per-model), when each resets, the pace it is on ("≈6%/h · on pace for 32%
+at reset"), and when the sign-in renews.
+- **OpenAI**: the Codex CLI login (`codex login`), its 5-hour and weekly
+  windows and credits.
+- **Ollama Cloud**: with `OLLAMA_API_KEY` set, the included and purchased
+  credits and the last 30 days' spend.
+- **OpenCode Go**: with an OpenCode Go key (`OPENCODE_API_KEY` or the
+  OpenCode CLI's login), its rolling, weekly and monthly windows.
+
+A 7-day window draws the week so far as a line, dotted ahead at the current
+pace; a 5-hour window draws the peak of each earlier window. The server
+samples every account every five minutes and keeps two weeks of samples in
+`~/.config/xi/state/usage-history.edn`, so the lines survive a restart. The
+page follows each poll; the refresh button asks for one now.
+
+An [extension](extensions-reference.md) can add accounts of its own to the
+page, for example the other logins of an account pool.
+
 ## Install it on your phone
 
 Add the page to your home screen (Share → Add to Home Screen on iOS, Install

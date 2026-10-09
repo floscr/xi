@@ -221,6 +221,8 @@ Never sent over the wire:
 | `:user-ext/ui` | per-extension browser-only UI state (`:bind` inputs) |
 | `:user-ext/state` | per-extension slice a user extension's server half pushed to this user (`:user-ext/push`), reduced by the web half's `:handlers` |
 | `:lobby` | rooms + sessions mirror (shared shape with the TUI client) |
+| `:lobby` | rooms + sessions mirror (shared shape with the TUI client); its `:claude-usage` feeds the sidebar ring, its `:usage-at` tells the usage page a poll happened |
+| `:web/usage` | `{:readings :history :fetched-at :loading?}` of the `/usage` page (`xi.ext.usage.web`), the server's `:usage/state` reply |
 
 ## Source files
 
@@ -238,7 +240,10 @@ src/xi/web/
   viewer_group.cljs super-collapsed summaries (pure)
   user_ext.cljs, user_ext/  browser halves of user extensions (lazy :user-ext module)
   demo.cljs        fabricated data for the static ?demo=<view> render
+src/xi/ext/usage/web.cljs         the /usage page (cards, pace notes, charts) + its dashboard card
+src/xi/usage.cljs                 readings, provider parsers, history, pace maths (pure)
 src/xi/client/ws_transport.cljs   shared WS transport (forward+mirror, reconnect)
 src/xi/server/ws.cljs             WS server + static file serving
+src/xi/server/usage.cljs          usage sources, polling, history file
 resources/public/                 index.html, css/style.css, theme.css, ui-runtime.js
 ```

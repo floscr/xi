@@ -60,6 +60,10 @@
                    when the event carries no :client-id.
      :lobby-relevant #{event-type} — event types after which the WS server
                    pushes fresh :lobby/state to every client.
+     :usage-sources [{:id kw :fetch (fn [ctx] → Promise<[reading …]|nil>)}]
+                   — accounts for the web client's /usage page, polled by
+                   xi.server.usage next to the built-in providers; a reading
+                   is the map xi.usage describes. Server mode only.
      :server-fx    (fn [{:keys [send!]}] → {fx-type (fn [ctx payload])})
                    fx that reply directly to a WS client. Instantiated by
                    the WS server with send! = (fn [client-id event]) —
@@ -216,6 +220,7 @@
      :no-broadcast     (into #{} (mapcat :no-broadcast) exts)
      :originator-only  (into #{} (mapcat :originator-only) exts)
      :lobby-relevant   (into #{} (mapcat :lobby-relevant) exts)
+     :usage-sources    (vec (mapcat :usage-sources exts))
      :server-fx-fns    (vec (keep :server-fx exts))
      :routes           (apply merge {} (keep :routes exts))
      :pages            (apply merge {} (keep :pages exts))

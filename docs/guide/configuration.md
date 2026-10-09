@@ -157,6 +157,7 @@ Settings that belong to the machine rather than to you:
 | `XI_TREESITTER_DIR` | bundled | Where the tree-sitter runtime and grammars for [file outlines](reading-code.md) are. |
 | `XI_GIT_LOCK_WAIT_SECS` | `600` | How long a chat waits for another chat's git operation on the same repository. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | The Ollama endpoint. |
+| `OLLAMA_API_KEY` | — | An [ollama.com](https://ollama.com/settings/keys) key; shows the Ollama Cloud credits on the web client's [usage page](web-client.md#usage). |
 | `OPENCODE_API_KEY`, `OPENCODE_ZEN_API_KEY` | — | The OpenCode Zen key. See [Models](models.md). |
 | `CODEX_HOME` | `~/.codex` | Where the Codex CLI keeps its login. |
 | `XI_CLAUDE_CLI_PATH` | bundled | Another Claude CLI executable for the Claude provider. |

@@ -208,6 +208,12 @@
        (:on-mount ext)   (update :on-mount (partial guard-hook id token))
        (:on-unmount ext) (update :on-unmount (partial guard-hook id token))
 
+       ;; a usage source's fetch gets the same capability ctx as a hook
+       (:usage-sources ext)
+       (update :usage-sources
+               (fn [srcs]
+                 (mapv (fn [s] (update s :fetch (partial guard-hook id token))) srcs)))
+
        (:commands ext)
        (update :commands
                (fn [cmds]

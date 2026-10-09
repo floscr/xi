@@ -4026,10 +4026,11 @@
 
 (defn- claude-usage-popover
   "Claude subscription usage (rides on the lobby broadcast) for the sidebar
-   footer: a ring that opens a popover with the session and weekly windows.
+   footer: a ring that opens a popover with the session and weekly windows and
+   a link to the /usage page (every account and provider, xi.ext.usage.web).
    Only the session window carries a server severity; the weekly one is derived
    from its percent."
-  [state]
+  [state dispatch!]
   (when-let [{:keys [session weekly severity session-resets-at weekly-resets-at]}
              (get-in state [:lobby :claude-usage])]
     (let [fmt-time (fn [iso opts]
@@ -4083,7 +4084,14 @@
                                         (when resets-in (str " · " resets-in)))))
              (when weekly
                (claude-usage-meter "Week" weekly weekly-severity
-                                   (when weekly-reset (str "Resets " weekly-reset))))))))))))
+                                   (when weekly-reset (str "Resets " weekly-reset))))))
+          (button/button
+           {:variant :ghost :size :sm :icon-right :arrow-right
+            :class "claude-usage-details"
+            :on-click (fn [e]
+                        (some-> (.-target e) (.closest "[popover]") (.hidePopover))
+                        (dispatch! {:type :route/navigate :page :usage}))}
+           "All usage")))))))
 
 (defn- switch-user!
   "Act as user `id` from this browser (localStorage xi-user, sent in
@@ -4329,7 +4337,7 @@
          [:div {:class ["sidebar-footer-bar"]}
           [:div {:class ["sidebar-footer-start"]}
            (user-switcher state)
-           (claude-usage-popover state)]
+           (claude-usage-popover state dispatch!)]
           (theme-toggle/theme-toggle
            {:mode (or (:web/theme-mode state) "auto")
             :size :sm
