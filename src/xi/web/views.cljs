@@ -755,45 +755,125 @@
   {true "permission/allow" false "permission/deny" :always "permission/always"
    :repo "permission/allow-repo" :block "permission/allow-block"})
 
+(defn- close-popover!
+  "Hide the popover the clicked element sits in: a menu closes itself before
+   its answer removes the dialog."
+  [^js e]
+  (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover)))
+
+(defn- confirm-menu-item
+  "One row of a confirm split button's menu: the option's label over its
+   one-line consequence (:desc from xi.dialog's option table)."
+  [{:keys [label desc]} {:keys [class data-key-action title on-click key]}]
+  [:button {:class (into ["confirm-menu-item"] class)
+            :data-key-action data-key-action
+            :title title
+            :replicant/key key
+            :on {:click on-click}}
+   [:span {:class ["confirm-menu-label"]} label]
+   (when desc [:span {:class ["confirm-menu-desc"]} desc])])
+
+(defn- confirm-split
+  "A confirm answer as a split button: the main button answers `value`; when
+   `menu` has rows, a caret twin opens them as a popover anchored to the
+   button (native Popover API via ui.popover, so no app state). `id` keys the
+   popover — one per dialog and side."
+  [{:keys [id class label value data-key-action caret-label answer!]} menu]
+  (let [menu      (seq (remove nil? menu))
+        btn-class (into ["confirm-btn"] class)]
+    [:span {:class (cond-> ["confirm-split"] menu (conj "confirm-split--menu"))}
+     [:button {:class btn-class
+               :data-key-action data-key-action
+               :on {:click (fn [_] (answer! value))}}
+      label]
+     (when menu
+       (list
+        [:button (merge {:class (conj btn-class "confirm-btn--caret")
+                         :aria-label caret-label
+                         :title caret-label
+                         :replicant/key (str id "-caret")}
+                        (popover/trigger-attrs id))
+         (icon/icon {:icon-name :chevron-down :size :sm})]
+        (popover/popover-content
+         {:id    id
+          :side  :bottom
+          :align :end
+          :class "confirm-menu"
+          :attrs {:replicant/key id}}
+         menu)))]))
+
+(def ^:private confirm-menu-rank
+  "Order of the grants in Allow's menu: the one-off block grant first, the
+   rules that persist after it, the meta action last."
+  {:block 0 :always 1 :repo 2 :recommend 4})
+
 (defn- confirm-buttons
   "Answer buttons for a :confirm dialog, driven by its normalized :options
-   data (xi.dialog) instead of hardcoded per-option markup. Deny-style
-   options render first, plain Allow last, extras in between. When the ask
-   takes a reason (:deny-reason?), Deny grows a ⋯ twin that calls
-   `deny-reason!` (the composer becomes the reason field)."
+   data (xi.dialog) instead of hardcoded per-option markup. The row is always
+   just two split buttons: Deny (its caret opens \"Deny with reason…\", which
+   calls `deny-reason!` — the composer becomes the reason field) and Allow,
+   whose caret lists every other grant (Allow all, Always, repo writes,
+   Recommend a rule) with its consequence. Carets render only when there is
+   something behind them. A dialog whose :options leave out plain Allow
+   renders its grants as standalone buttons instead."
   [dialog answer! deny-reason!]
-  (for [{:keys [value label]} (sort-by (fn [{:keys [value]}]
-                                         (cond (false? value) 0
-                                               (true? value)  2
-                                               :else          1))
-                                       (dlg/confirm-options dialog))
-        :let [block? (= :block value)
-              btn [:button {:class (cond-> ["confirm-btn" (cond (false? value) "confirm-btn--deny"
-                                                                 (true? value)  "confirm-btn--allow"
-                                                                 :else          "confirm-btn--extra")]
-                                     block? (conj "confirm-btn--block"))
-                            :data-key-action (confirm-key-action value)
-                            :title (when block? "Allow every request of this block (hover to see them)")
-                            :on {:click (fn [_] (answer! value))}}
-                   (if-let [n (and block? (get-in dialog [:block :count]))]
-                     (str label " (" n ")")
-                     label)]]]
-    (if (and (false? value) deny-reason! (:deny-reason? dialog))
-      [:span {:class ["confirm-split"]}
-       btn
-       [:button {:class ["confirm-btn" "confirm-btn--deny" "confirm-btn--more"]
-                 :title "Deny with reason…"
-                 :aria-label "Deny with reason"
-                 :on {:click (fn [_] (deny-reason!))}}
-        "⋯"]]
-      btn)))
+  (let [options (dlg/confirm-options dialog)
+        deny    (first (filter #(false? (:value %)) options))
+        allow   (first (filter #(true? (:value %)) options))
+        extras  (sort-by #(get confirm-menu-rank (:value %) 3)
+                         (remove #(boolean? (:value %)) options))
+        did     (str "confirm-" (:id dialog))
+        block-n (get-in dialog [:block :count])
+        extra-label (fn [{:keys [value label]}]
+                      (if (and (= :block value) block-n) (str label " (" block-n ")") label))
+        block-title "Allow every request of this block (hover to see them)"]
+    (list
+     (when deny
+       (confirm-split {:id (str did "-deny")
+                       :class ["confirm-btn--deny"]
+                       :label (:label deny)
+                       :value false
+                       :data-key-action (confirm-key-action false)
+                       :caret-label "Deny with reason"
+                       :answer! answer!}
+                      [(when (and deny-reason! (:deny-reason? dialog))
+                         (confirm-menu-item {:label "Deny with reason…"
+                                             :desc  "Tell the agent why, in the composer"}
+                                            {:key "deny-reason"
+                                             :on-click (fn [e] (close-popover! e) (deny-reason!))}))]))
+     (if allow
+       (confirm-split {:id (str did "-allow")
+                       :class ["confirm-btn--allow"]
+                       :label (:label allow)
+                       :value true
+                       :data-key-action (confirm-key-action true)
+                       :caret-label "More ways to allow"
+                       :answer! answer!}
+                      (for [{:keys [value] :as opt} extras
+                            :let [block? (= :block value)]]
+                        (list
+                         (when (and (= :recommend value) (not= opt (first extras)))
+                           [:div {:class ["confirm-menu-sep"] :replicant/key "sep"}])
+                         (confirm-menu-item (assoc opt :label (extra-label opt))
+                                            {:key (str value)
+                                             :class (when block? ["confirm-btn--block"])
+                                             :data-key-action (confirm-key-action value)
+                                             :title (when block? block-title)
+                                             :on-click (fn [e] (close-popover! e) (answer! value))}))))
+       (for [{:keys [value] :as opt} extras
+             :let [block? (= :block value)]]
+         [:button {:class (cond-> ["confirm-btn" "confirm-btn--extra"] block? (conj "confirm-btn--block"))
+                   :data-key-action (confirm-key-action value)
+                   :title (when block? block-title)
+                   :on {:click (fn [_] (answer! value))}}
+          (extra-label opt)])))))
 
 (defn- explain-button
-  "Explain, next to a tool block's Allow/Deny: asks a sub-agent what the call
-   does, why the agent wants it and the risk (xi.ext.subagent.handlers/
-   explain-call). `child` is the call's explanation sub-agent, if one was
-   started: the button spins while it runs and stays disabled once it is
-   done; a failed or stopped one can be retried."
+  "Explain, the quiet text action at the start of a tool block's answer row:
+   asks a sub-agent what the call does, why the agent wants it and the risk
+   (xi.ext.subagent.handlers/explain-call). `child` is the call's explanation
+   sub-agent, if one was started: the button spins while it runs and stays
+   disabled once it is done; a failed or stopped one can be retried."
   [dispatch! room-id call-id child]
   (let [status   (:status child)
         running? (= :running status)
@@ -804,7 +884,9 @@
               :title "Ask a sub-agent what this call does and why"
               :on {:click (fn [_] (dispatch! {:type :subagent/explain-call
                                               :room-id room-id :call-id call-id}))}}
-     (when running? [:span {:class ["agent-status-spinner--sm"]}])
+     (if running?
+       [:span {:class ["agent-status-spinner--sm"]}]
+       [:span {:class ["confirm-explain-mark"] :aria-hidden "true"} "?"])
      (cond running? "Explaining…"
            done?    "Explained"
            :else    "Explain")]))
@@ -1017,8 +1099,8 @@
            [:div {:class ["tool-call-permission"]}
             [:div {:class ["tool-call-permission-msg"]} (or message text)]
             [:div {:class ["tool-call-permission-actions"]}
-             (confirm-buttons dialog answer! deny-reason!)
-             (explain-button dispatch! room-id id explanation)]]]))
+             (explain-button dispatch! room-id id explanation)
+             (confirm-buttons dialog answer! deny-reason!)]]]))
       (when imgs
         [:div {:class ["tool-call-content" "user-images"]}
          (map-indexed

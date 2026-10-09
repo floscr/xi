@@ -2489,21 +2489,28 @@ code a:hover,
 
 .tool-call-permission-actions {
   display: flex;
+  align-items: center;
+  justify-content: flex-end;
   gap: var(--size-2);
   flex-wrap: wrap;
 }
 
-/* Explain: a quiet ghost pushed to the far end of the Allow/Deny row. While
-   its sub-agent runs it shows a small spinner and reads "Explaining…";
-   once done it stays as a disabled "Explained". */
-.confirm-btn--explain {
-  margin-left: auto;
+/* Explain: a quiet text action at the start of the row, next to the
+   question it explains, with a ? ring as its mark. While its sub-agent runs
+   the ring gives way to a small spinner and it reads "Explaining…"; once
+   done it stays as a disabled "Explained". */
+/* Doubled class: the .confirm-btn base rule sits later in this file and its
+   border shorthand would otherwise win over the transparent border here. */
+.confirm-btn.confirm-btn--explain {
+  margin-right: auto;
   display: inline-flex;
   align-items: center;
-  gap: var(--size-1);
+  gap: 6px;
+  padding-inline: var(--size-1);
   background: transparent;
   border-color: transparent;
-  color: var(--fg-1);
+  font-weight: 500;
+  color: var(--fg-2);
 }
 
 .confirm-btn--explain:hover:not(:disabled) {
@@ -2514,6 +2521,18 @@ code a:hover,
 .confirm-btn--explain:disabled {
   cursor: default;
   color: var(--fg-2);
+}
+
+.confirm-explain-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* The explanation under a tool block (the Explain button's answer): its own
@@ -3691,18 +3710,21 @@ code a:hover,
   user-select: none;
 }
 
-/* Clear hierarchy: Allow is the one solid button, extras (Always, …) are
-   accent-outlined, Deny is a quiet ghost. The buttons stay grouped (the
-   container decides left/right alignment) so wide layouts don't split them. */
+/* Clear hierarchy: Allow is the one solid button, Deny a tonal grey one.
+   Each is a split button (.confirm-split): its caret twin opens the rest of
+   the answers as a popover menu, so the row never grows past two buttons.
+   .confirm-btn--extra is the fallback for a dialog without plain Allow,
+   whose grants stand on their own. The buttons stay grouped (the container
+   decides left/right alignment) so wide layouts don't split them. */
 .confirm-btn--deny {
-  background: transparent;
+  background: var(--bg-2, rgba(128,128,128,0.2));
   border-color: transparent;
   color: var(--fg-1);
 }
 
 .confirm-btn--deny:hover {
-  background: var(--bg-2, rgba(128,128,128,0.2));
-  color: var(--red-fg, #ef4444);
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-2));
+  color: var(--danger, #ef4444);
 }
 
 .confirm-btn--extra {
@@ -3716,8 +3738,9 @@ code a:hover,
 }
 
 .confirm-btn--allow {
-  padding-inline: var(--size-6);
+  padding-inline: var(--size-5);
   background: var(--accent);
+  border-color: transparent;
   color: var(--bg-0);
 }
 
@@ -3725,15 +3748,72 @@ code a:hover,
   filter: brightness(1.1);
 }
 
-/* Deny + its ⋯ (deny with reason) read as one quiet split button. */
+/* Split button: the main button and its caret twin share one pill; a thin
+   divider between them is the only seam. The popover panel is the span's
+   last child, so the radii go by class, not by :last-child. */
 .confirm-split {
   display: inline-flex;
   align-items: stretch;
 }
-.confirm-split > .confirm-btn--deny:first-child { padding-right: var(--size-2); }
-.confirm-btn--more {
+
+.confirm-split--menu > .confirm-btn:first-child {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.confirm-btn--caret {
+  display: inline-flex;
+  align-items: center;
   padding-inline: var(--size-2);
-  letter-spacing: 0.05em;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  border-left: 1px solid color-mix(in srgb, var(--fg-0) 14%, transparent);
+}
+
+.confirm-btn--allow.confirm-btn--caret {
+  padding-inline: var(--size-2);
+  border-left-color: color-mix(in srgb, var(--bg-0) 30%, transparent);
+}
+
+/* The caret's menu: one row per answer, label over its consequence. */
+.confirm-menu {
+  min-width: 17rem;
+  padding: var(--size-1);
+}
+
+.confirm-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 7px var(--size-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-0);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.confirm-menu-item:focus-visible { outline: none; background: var(--bg-1); }
+@media (hover: hover) {
+  .confirm-menu-item:hover { background: var(--bg-1); }
+}
+
+.confirm-menu-label { font-weight: 600; }
+
+.confirm-menu-desc {
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+.confirm-menu-sep {
+  height: 1px;
+  margin: var(--size-1) 2px;
+  background: var(--bg-2);
 }
 
 /* The reason a confirm was denied with, under its decision pill. */

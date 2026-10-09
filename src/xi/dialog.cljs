@@ -18,19 +18,24 @@
   "Canonical confirm options, keyed by the keyword that appears in a dialog's
    :options vector. :value is what the dialog resolves to (callers branch on
    it), :key the TUI shortcut, :label the button/hint text, :resolved-label
-   the text of the decision pill once answered."
+   the text of the decision pill once answered, :desc the one-line
+   consequence the web client's answer menu shows under the label."
   {:yes        {:value true    :key "y" :label "Allow"
                 :resolved-label "Allowed"}
    :no         {:value false   :key "n" :label "Deny"
                 :resolved-label "Denied"}
    :always     {:value :always :key "a" :label "Always"
-                :resolved-label "Always allowed"}
+                :resolved-label "Always allowed"
+                :desc "Save a rule for this chat: requests like this stop asking"}
    :allow-repo {:value :repo   :key "r" :label "Allow repo writes"
-                :resolved-label "Repo writes allowed"}
+                :resolved-label "Repo writes allowed"
+                :desc "Save a rule: writes and edits anywhere in this repository"}
    :allow-block {:value :block :key "b" :label "Allow all"
-                 :resolved-label "All allowed"}
+                 :resolved-label "All allowed"
+                 :desc "This ask and the rest of the script's asks, this run only"}
    :recommend-rule {:value :recommend :key "?" :label "Recommend a rule"
-                    :resolved-label "Recommending a rule…"}})
+                    :resolved-label "Recommending a rule…"
+                    :desc "Deny this call and have a sub-agent draft a rule for it"}})
 
 (def ^:private option-alias
   "Other spellings of a confirm option: rules files name the repo grant after
