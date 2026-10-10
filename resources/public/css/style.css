@@ -2137,6 +2137,12 @@ body {
 
 @media (hover: hover) {
   .tool-call-toggle:hover { color: var(--fg-0); }
+  .tool-call-toggle--static:hover { color: var(--fg-2); }
+}
+
+/* No content to expand: the header is inert (views/tool-post). */
+.tool-call-toggle--static {
+  cursor: default;
 }
 
 .tool-call-toggle-icon {

@@ -860,8 +860,14 @@
      [:details {:class (cond-> ["tool-call-block"]
                          clj? (conj "tool-call-block--clj")
                          grouped? (conj "tool-call-block--viewer"))
-                :open (not collapsed?)}
-      [:summary {:class (cond-> ["tool-call-toggle"] bash? (conj "tool-call-toggle--wrap"))}
+                :open (and has-content? (not collapsed?))}
+      ;; Nothing to expand yet (a running call without output): the header
+      ;; stays shut until content arrives.
+      [:summary (cond-> {:class (cond-> ["tool-call-toggle"]
+                                  bash? (conj "tool-call-toggle--wrap")
+                                  (not has-content?) (conj "tool-call-toggle--static"))}
+                  (not has-content?)
+                  (assoc :on {:click (fn [^js e] (.preventDefault e))}))
        [:span {:class (cond-> ["tool-call-toggle-icon"]
                         running? (conj "tool-call-toggle-icon--running")
                         (and (not running?) (not has-content?)) (conj "tool-call-toggle-icon--empty"))}
