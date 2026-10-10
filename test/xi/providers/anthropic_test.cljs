@@ -116,6 +116,23 @@
       (feed! {:type "result" :is_error true :result notice})
       (is (= 1 (count @errors))))))
 
+(deftest rate-limit-is-reported-once
+  (let [errors (atom [])
+        cbs    {:on-error #(swap! errors conj %)}
+        state  (atom {})
+        notice "You've hit your session limit · resets 6pm (Europe/Vienna)"
+        feed!  #(anthropic/process-sdk-message (clj->js %) cbs state)]
+    (feed! {:type "rate_limit_event"
+            :rate_limit_info {:status "rejected" :rateLimitType "five_hour"
+                              :resetsAt 1791648000}})
+    (feed! {:type "assistant" :error "rate_limit"
+            :message {:content [{:type "text" :text notice}]}})
+    (feed! {:type "result" :is_error true :result notice})
+    (is (= ["rate_limit"] (map :type @errors))
+        "the structured event wins; the notice and result repeat it")
+    (is (:error-reported @state)
+        "the runner drops the SDK's closing error-result throw")))
+
 (deftest failed-result-with-known-failure-is-reported
   (let [errors (atom [])
         cbs    {:on-error #(swap! errors conj %)}

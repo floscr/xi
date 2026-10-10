@@ -238,13 +238,14 @@
       nil)))
 
 (defn- report-error!
-  "Surface `msg` as an :on-error once per turn, so the same failure arriving
-   as an assistant message and again as the `result` isn't shown twice."
-  [callbacks state msg]
+  "Surface `error` (a string message or an error map) as an :on-error once per
+   turn: one failure arrives as a rate_limit_event, an assistant message, the
+   `result` and the SDK's closing throw, and should be shown once."
+  [callbacks state error]
   (when-not (:error-reported @state)
     (swap! state assoc :error-reported true)
     (when-let [f (:on-error callbacks)]
-      (f {:type "error" :message msg}))))
+      (f (if (string? error) {:type "error" :message error} error)))))
 
 (defn- assistant-text
   "The concatenated text blocks of an SDK assistant message."
@@ -360,8 +361,7 @@
         (when-let [msg (and (not (:fatal-error @state))
                             (fatal-api-errors (.-error message)))]
           (swap! state assoc :fatal-error true)
-          (when-let [f (:on-error callbacks)]
-            (f {:type "error" :message msg})))
+          (report-error! callbacks state msg))
 
         nil)
 
@@ -372,11 +372,10 @@
         ;; proceeds, so don't surface it as an error the user has to see.
         (when (and info (= "rejected" (.-status info))
                    (not (= "allowed" (.-overageStatus info)))
-                   (not (.-isUsingOverage info))
-                   (:on-error callbacks))
-          ((:on-error callbacks)
-           {:type "rate_limit"
-            :info (js->clj info :keywordize-keys true)})))
+                   (not (.-isUsingOverage info)))
+          (report-error! callbacks state
+                         {:type "rate_limit"
+                          :info (js->clj info :keywordize-keys true)})))
 
       nil)))
 
@@ -479,8 +478,9 @@
                                           :client-pid (:client-pid opts)})
           :on-error (fn [msg]
                       (cond
-                        ;; The abort above; the real error is already out.
-                        (:fatal-error @state) nil
+                        ;; The abort above, or the SDK's closing "returned an
+                        ;; error result" throw: the real error is already out.
+                        (or (:fatal-error @state) (:error-reported @state)) nil
 
                         (and resume-id (re-find #"No conversation found" msg))
                         (swap! state assoc :resume-failed true)
