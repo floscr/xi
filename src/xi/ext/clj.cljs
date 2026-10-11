@@ -672,23 +672,34 @@
    the fetch tool."
   '#{curl now sleep basename dirname})
 
+(defn- compute-refusal
+  "A stand-in for helper `call` in a `:compute` room: throws, naming it and
+   what the room has instead."
+  [call]
+  (fn [& _]
+    (throw (ex-info (str "clj: (" call " …) is not available here: this chat's clj "
+                         "is restricted (no file, program or socket access). "
+                         "Available: " (str/join " " (sort COMPUTE_HELPERS))
+                         ", clojure.core, str/set/walk/edn, json "
+                         "(clojure.data.json), cheshire.core.")
+                    {}))))
+
+(defn- compute-namespace
+  "SCI namespace map `m` with every fn a compute-refusal, `prefix` naming it
+   (\"process/\")."
+  [prefix m]
+  (into {} (map (fn [[sym _]] [sym (compute-refusal (str prefix sym))])) m))
+
 (defn- compute-helpers
-  "helper-fns for a `:compute` room: every other helper throws, saying why.
-   cat and find are left out so they stay clojure.core's."
+  "helper-fns for a `:compute` room: every other helper refuses. cat and find
+   are left out so they stay clojure.core's."
   [opts]
   (into {}
         (keep (fn [[sym f]]
                 (cond
                   (contains? COMPUTE_HELPERS sym) [sym f]
                   (contains? '#{cat find} sym)    nil
-                  :else
-                  [sym (fn [& _]
-                         (throw (ex-info (str "clj: (" sym " …) is not available: this chat's "
-                                              "clj has no file, program or socket access. "
-                                              "Available: " (str/join " " (sort COMPUTE_HELPERS))
-                                              ", clojure.core, str/set/walk/edn, "
-                                              "clojure.data.json, cheshire.core.")
-                                         {})))])))
+                  :else                           [sym (compute-refusal sym)])))
         (helper-fns opts)))
 
 ;; ── SCI runtime (persistent per room) ────────────────────────────────────────
@@ -866,27 +877,27 @@
                whole))))))))
 
 (defn- make-ctx
-  "The SCI ctx of a room; `compute?` drops the file, program and socket
-   helpers and the process / socket namespaces (compute-helpers)."
+  "The SCI ctx of a room; `compute?` swaps the file, program and socket
+   helpers and the process / socket namespaces for refusals (compute-helpers)."
   [opts compute?]
   (let [helpers (if compute? (compute-helpers opts) (helper-fns opts))
+        process (proc/sci-namespace opts (fn [d] (resolve-dir opts d)))
+        socket  (sock/sci-namespace opts)
         ctx (sandbox/init {:namespaces
-                       (cond->
-                        {'user helpers
-                         ;; Shadow the core vars the helpers collide with, plus the parse-* fns
-                         ;; SCI's core lacks.
-                         'clojure.core (merge (select-keys helpers '[cat find])
-                                              {'parse-long    parse-long
-                                               'parse-double  parse-double
-                                               'parse-boolean parse-boolean
-                                               'parse-uuid    parse-uuid
-                                               'format        sandbox-format})
-                         'clojure.instant instant-namespace
-                         'clojure.data.json json-data-namespace
-                         'cheshire.core cheshire-namespace}
-                        (not compute?)
-                        (assoc 'process (proc/sci-namespace opts (fn [d] (resolve-dir opts d)))
-                               'socket (sock/sci-namespace opts)))
+                       {'user helpers
+                        ;; Shadow the core vars the helpers collide with, plus the parse-* fns
+                        ;; SCI's core lacks.
+                        'clojure.core (merge (select-keys helpers '[cat find])
+                                             {'parse-long    parse-long
+                                              'parse-double  parse-double
+                                              'parse-boolean parse-boolean
+                                              'parse-uuid    parse-uuid
+                                              'format        sandbox-format})
+                        'clojure.instant instant-namespace
+                        'clojure.data.json json-data-namespace
+                        'cheshire.core cheshire-namespace
+                        'process (if compute? (compute-namespace "process/" process) process)
+                        'socket  (if compute? (compute-namespace "socket/" socket) socket)}
                        ;; Every class is a null-proto object (xi.sandbox.sci), never a real
                        ;; class, so `Class/constructor` can't reach js/Function. Instance interop
                        ;; still works: SCI keys it on the class name. System exposes the clock

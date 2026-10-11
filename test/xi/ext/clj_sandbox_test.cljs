@@ -9,6 +9,7 @@
        the `:deny` set
    If any of these starts returning a value again, the sandbox is broken."
   (:require [cljs.test :refer [deftest is testing]]
+            [clojure.string :as str]
             [xi.ext.clj :as clj-ext]
             ["node:os" :as os]))
 
@@ -95,9 +96,14 @@
                     "(tmpdir)" "(sh \"ls\")" "(git \"status\")" "(jq \".\" {})"
                     "(env \"HOME\")" "(cwd)" "(ports)" "(which \"ls\")"]]
         (is (re-find #"no file, program or socket access" (ev code)) code)))
-    (testing "the process and socket namespaces are absent"
-      (is (re-find #"^Error" (ev "(process/start \"ls\")")))
-      (is (re-find #"^Error" (ev "(socket/connect \"127.0.0.1\" 1)"))))
+    (testing "a refusal names the call and what is available"
+      (let [out (ev "(slurp \"x\")")]
+        (is (str/includes? out "(slurp …) is not available here") out)
+        (is (str/includes? out "Available: basename curl dirname now sleep") out)))
+    (testing "the process and socket namespaces refuse the same way"
+      (is (str/includes? (ev "(process/start \"ls\")") "(process/start …) is not available here"))
+      (is (str/includes? (ev "(socket/connect \"127.0.0.1\" 1)")
+                         "(socket/connect …) is not available here")))
     (testing "computation still works, and cat / find are clojure.core's"
       (is (= "=> 3" (ev "(+ 1 2)")))
       (is (= "=> [1 2]" (ev "(into [] cat [[1] [2]])")))
@@ -106,4 +112,7 @@
       (is (= "=> \"b.txt\"" (ev "(basename \"/a/b.txt\")"))))
     (testing "the room's REPL persists across calls"
       (ev "(def x 41)")
-      (is (= "=> 42" (ev "(inc x)"))))))
+      (is (= "=> 42" (ev "(inc x)")))))
+  (testing "a room without :compute keeps the file helpers"
+    (is (= "=> true" (ev "(vector? (ls))")))
+    (is (= (str "=> " (pr-str (os/tmpdir))) (ev "(cwd)")))))
