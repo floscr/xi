@@ -436,17 +436,59 @@
 (deftest sh-git-dir-must-be-this-repository
   (let [other (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-foreign-repo-"))
         _     (fs/mkdirSync (node-path/join other ".git"))
-        code  (str "(sh {:dir \"" other "\"} \"git\" \"status\")")]
+        code  (str "(sh {:dir \"" other "\"} \"git\" \"log\")")]
     (let [res (eval! code {:allowed ["git"]})]
       (is (:is-error res))
-      (is (str/includes? (result-text res) "another one")))
+      (is (str/includes? (result-text res) "another repository")))
     (testing "approved git is exempt (git itself then fails on the fake repo)"
       (let [res (eval! code {:allowed ["git"] :approved ["git"]})]
-        (is (not (str/includes? (result-text res) "another one")))))
+        (is (not (str/includes? (result-text res) "another repository")))))
     (testing "a directory in no repository, like the cwd, is fine"
       (let [d   (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-plain-dir-"))
             res (eval! (str "(sh {:dir \"" d "\"} \"git\" \"--version\")") {:allowed ["git"]})]
         (is (not (:is-error res)) (result-text res))))))
+
+(defn- git! [dir & args]
+  (let [r (cp/spawnSync "git" (clj->js args) #js {:cwd dir :encoding "utf8"})]
+    (when-not (zero? (.-status r))
+      (throw (ex-info (str "git " (str/join " " args) ": " (.-stderr r)) {})))
+    (.-stdout r)))
+
+(defn- foreign-repo!
+  "A committed repo with a modified tracked file whose core.fsmonitor touches
+   PWN when git runs it."
+  []
+  (let [repo (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-foreign-git-"))
+        fsm  (node-path/join repo "fsm.sh")]
+    (git! repo "init" "-q")
+    (fs/writeFileSync (node-path/join repo "a.txt") "a\n")
+    (git! repo "add" "a.txt")
+    (git! repo "-c" "user.name=x" "-c" "user.email=x@x" "commit" "-qm" "init")
+    (fs/writeFileSync fsm (str "#!/bin/sh\ntouch " (node-path/join repo "PWN") "\n"))
+    (fs/chmodSync fsm 0755)
+    (git! repo "config" "core.fsmonitor" fsm)
+    (fs/writeFileSync (node-path/join repo "a.txt") "changed\n")
+    repo))
+
+(deftest sh-git-status-diff-in-another-repository-run-hardened
+  (let [repo (foreign-repo!)
+        pwn  (node-path/join repo "PWN")]
+    (doseq [code [(str "(sh {:dir \"" repo "\"} \"git\" \"status\" \"--short\")")
+                  (str "(sh {:dir \"" repo "\"} \"git\" \"diff\" \"--stat\")")]]
+      (let [res (eval! code {:allowed ["git"]})]
+        (is (not (:is-error res)) (result-text res))
+        (is (str/includes? (result-text res) "a.txt") code)
+        (is (not (fs/existsSync pwn)) (str code " ran the repository's fsmonitor"))))
+    (testing "a flag that would undo the hardening is refused"
+      (let [res (eval! (str "(sh {:dir \"" repo "\"} \"git\" \"status\" \"--ignore-submodules=none\")")
+                       {:allowed ["git"]})]
+        (is (:is-error res))
+        (is (str/includes? (result-text res) "another repository"))))
+    (testing "a filter driver in the repository's own config is refused"
+      (git! repo "config" "filter.evil.clean" "cat")
+      (let [res (eval! (str "(sh {:dir \"" repo "\"} \"git\" \"status\")") {:allowed ["git"]})]
+        (is (:is-error res))
+        (is (str/includes? (result-text res) "filter.evil.clean"))))))
 
 (deftest write-helpers-refuse-git-directories
   (let [repo (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-dotgit-"))
@@ -1012,8 +1054,9 @@
 
 (deftest gate-escalates-git-config-and-foreign-dir
   ;; `git -c …` / a config write / `-C` are refused by the parser; git run
-  ;; with a :dir in another repository too (its hooks would run). Headless,
-  ;; that is a block; a background command line is judged the same way.
+  ;; with a :dir in another repository too (its hooks would run), unless it
+  ;; is a status/diff the worker runs hardened. Headless, that is a block; a
+  ;; background command line is judged the same way.
   (async done
     (let [other (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-gate-foreign-"))
           _     (fs/mkdirSync (node-path/join other ".git"))
@@ -1021,13 +1064,19 @@
           calls ["(sh \"git\" \"-c\" \"core.hooksPath=/tmp/h\" \"commit\" \"-m\" \"x\")"
                  "(sh \"git\" \"config\" \"core.hooksPath\" \"/tmp/h\")"
                  "(sh \"git\" \"-C\" \"/tmp\" \"status\")"
-                 (str "(sh {:dir \"" other "\"} \"git\" \"status\")")
-                 "(process/start \"git -c core.hooksPath=/tmp/h commit -m x\")"]]
-      (-> (js/Promise.all (clj->js (mapv #(gate {:name "clj" :arguments {:code %}} ctx) calls)))
+                 (str "(sh {:dir \"" other "\"} \"git\" \"log\")")
+                 (str "(sh {:dir \"" other "\"} \"git\" \"status\" \"--ignore-submodules=none\")")
+                 "(process/start \"git -c core.hooksPath=/tmp/h commit -m x\")"]
+          hardened [(str "(sh {:dir \"" other "\"} \"git\" \"status\" \"--short\")")
+                    (str "(sh {:dir \"" other "\"} \"git\" \"diff\" \"--stat\")")]]
+      (-> (js/Promise.all (clj->js (mapv #(gate {:name "clj" :arguments {:code %}} ctx)
+                                         (concat calls hardened))))
           (.then (fn [rs]
                    (doseq [[code r] (map vector calls rs)]
                      (is (:intercepted r) code)
                      (is (str/includes? (intercepted-text r) "need approval") code))
+                   (doseq [[code r] (map vector hardened (drop (count calls) rs))]
+                     (is (not (:intercepted r)) code))
                    (done)))))))
 
 (deftest gate-confirmed-git-push-is-an-exact-grant

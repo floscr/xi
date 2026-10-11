@@ -44,6 +44,7 @@
             [xi.holds :as holds]
             [xi.rules :as rules]
             [xi.rules.defaults :as rules-defaults]
+            [xi.rules.foreign-git :as foreign-git]
             [xi.rules.readonly :as readonly]
             [xi.rules.store :as rules-store]
             [xi.paths :as paths]
@@ -306,6 +307,26 @@
   (not= (rules-store/git-root (paths/real-resolve cwd "."))
         (rules-store/git-root (paths/real-resolve cwd (str dir)))))
 
+(defn- foreign-git-unsafe-keys
+  "`dir`'s own git config keys a hardened status/diff still acts on
+   (xi.rules.foreign-git/unsafe-keys). Listing config runs nothing."
+  [dir]
+  (let [r (cp/spawnSync "git" #js ["--no-pager" "config" "--list" "--show-scope" "--name-only"]
+                        #js {:cwd (str dir) :encoding "utf8" :timeout 10000})]
+    (if (zero? (.-status r))
+      (foreign-git/unsafe-keys (.-stdout r))
+      ["(unreadable config)"])))
+
+(defn- foreign-git-refusal
+  "Why git `argv` (nil when computed) can't auto-run in `dir`, a repository
+   other than the chat's, or nil when it runs hardened (xi.rules.foreign-git)."
+  [argv dir]
+  (if-not (and argv (foreign-git/hardenable? argv))
+    "runs git in another repository, whose hooks and config would run"
+    (when-let [ks (seq (foreign-git-unsafe-keys dir))]
+      (str "runs git in another repository whose own config sets "
+           (str/join ", " ks) " (a program git runs, or another work tree)"))))
+
 (defn- sh-fn
   "(sh \"cmd\" \"arg\" …) → stdout (stderr when stdout is empty); throws
    ex-info {:exit :out :err} on non-zero exit. A leading opts map takes :dir
@@ -313,7 +334,7 @@
    allowed CLI-wide or the exact argv granted; a read-only program the gate
    auto-ran is re-parsed on the real argv (xi.rules.readonly), and git in
    another repository is refused, unless the user approved the program or this
-   argv."
+   argv — or it is a status/diff that runs hardened (xi.rules.foreign-git)."
   [opts]
   (fn [& argv]
     (let [[m argv] (if (map? (first argv))
@@ -352,18 +373,21 @@
          (if-let [d (:dir m)] (resolve-dir opts d) (opts-cwd opts)))
 
         :else
-        (let [dir (if-let [d (:dir m)] (resolve-dir opts d) (opts-cwd opts))
-              git? (= "git" bin)
-              _    (when (and git? (:dir m) (not exempt?)
-                              (foreign-git-dir? (opts-cwd opts) dir))
-                     (throw (ex-info (str "clj: git is auto-run only inside this room's "
-                                          "repository — :dir " (:dir m) " is another one, "
-                                          "whose hooks and config would run. A literal "
-                                          "(sh {:dir …} \"git\" …) call there asks the user "
-                                          "for approval.")
-                                     {})))
-              _    (when git? (git-lock-gate! opts dir (rest argv)))
-              {:keys [exit out err]} (spawn-sync! argv dir {:env (proc/env-overlay (:env m))})
+        (let [dir      (if-let [d (:dir m)] (resolve-dir opts d) (opts-cwd opts))
+              git?     (= "git" bin)
+              foreign? (and git? (:dir m) (not (contains? approved "git"))
+                            (foreign-git-dir? (opts-cwd opts) dir))
+              _        (when-let [why (and foreign? (not exact?) (foreign-git-refusal argv dir))]
+                         (throw (ex-info (str "clj: git is auto-run in another repository only "
+                                              "for status/diff — :dir " (:dir m) ": " why
+                                              ". A literal (sh {:dir …} \"git\" …) call there "
+                                              "asks the user for approval.")
+                                         {})))
+              run-argv (if (and foreign? (foreign-git/hardenable? argv))
+                         (foreign-git/harden argv)
+                         argv)
+              _        (when git? (git-lock-gate! opts dir (rest argv)))
+              {:keys [exit out err]} (spawn-sync! run-argv dir {:env (proc/env-overlay (:env m))})
               _    (when git? (git-lock-settle! opts dir (rest argv)))]
           (if (zero? exit)
             (let [out' (str/trimr out)]
@@ -2020,18 +2044,23 @@
             ;;              args-specific allow can't leak to other
             ;;              (sh "<cli>" …) calls — dynamic args, `apply sh` —
             ;;              in the same eval.
-            ;; git run with a :dir in another repository is never granted:
-            ;; that repository's hooks and config would run (the worker
-            ;; refuses it too, for a computed :dir).
+            ;; git run with a :dir in another repository is granted only as a
+            ;; status/diff the worker runs hardened, and only when that
+            ;; repository's own config sets nothing the hardening leaves on
+            ;; (xi.rules.foreign-git): otherwise its hooks and config would run.
             grants   (mapv (fn [c]
-                             (let [r        (cmd-decision c)
-                                   cli      (command-cli (:command c))
-                                   foreign? (and (= "git" cli) (:dir c)
-                                                 (foreign-git-dir? cwd (cmd-eff-cwd (:dir c))))]
-                               (assoc c :decision r :cli cli :foreign-git? foreign?
+                             (let [r       (cmd-decision c)
+                                   cli     (command-cli (:command c))
+                                   eff     (cmd-eff-cwd (:dir c))
+                                   foreign (when (and (= "git" cli) (:dir c)
+                                                      (foreign-git-dir? cwd eff))
+                                             (foreign-git-refusal
+                                              (when (and (:literal? c) (not (:bg? c))) (:argv c))
+                                              eff))]
+                               (assoc c :decision r :cli cli :foreign-git foreign
                                       :grant
                                       (when (and (= :allow (get-in r [:action :type]))
-                                                 (not foreign?))
+                                                 (not foreign))
                                         (cond
                                           (not (rules/arg-scoped? r))         :cli
                                           (or (:bg? c) (:literal? c))         :command)))))
@@ -2062,18 +2091,24 @@
             ;; A read-only CLI with a refused literal call (and no arg-scoped :ask of
             ;; its own) goes through per-CLI approval, reason attached.
             refused  (into {}
-                           (keep (fn [{:keys [cli argv literal? bg? grant decision foreign-git?]}]
+                           (keep (fn [{:keys [cli argv literal? bg? grant decision foreign-git]}]
                                    (when (and literal? (not bg?) (not grant)
                                               (contains? SAFE_AUTORUN cli))
                                      (cond
-                                       foreign-git?
-                                       [cli "runs git in another repository, whose hooks would run"]
+                                       foreign-git
+                                       [cli foreign-git]
 
                                        (not (and (= :ask (get-in decision [:action :type]))
                                                  (rules/arg-scoped? decision)))
                                        [cli (or (readonly/violation argv) "a rule refused it")]))))
                            grants)
-            shadowed (filter #(contains? HELPER_EQUIV %) needed)
+            ;; (git …) takes no :dir, so it is no stand-in for (sh {:dir …} "git" …)
+            dir-only-git? (fn [cli]
+                            (and (= "git" cli)
+                                 (every? :dir (filter #(= "git" (:cli %)) grants))))
+            shadowed (->> needed
+                          (filter #(contains? HELPER_EQUIV %))
+                          (remove dir-only-git?))
             autorun  (->> needed
                           (filter #(contains? SAFE_AUTORUN %))
                           (remove #(contains? refused %)))
