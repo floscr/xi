@@ -126,7 +126,8 @@
             (.then
              (fn [{:keys [code stderr]}]
                (is (= 0 code) stderr)
-               (let [[sum slurp sh search] (:tool-calls (last (h/main-turns env)))]
+               (let [[sum slurp sh search] (:tool-calls (last (h/main-turns env)))
+                     sid (second (re-find #"id: (\S+)" (str (:content search))))]
                  (is (= "=> 3" (:content sum)))
                  (testing "no file or program access"
                    (is (str/includes? (:content slurp) "no file, program or socket access")
@@ -136,7 +137,22 @@
                  (testing "session_search finds the agent's chat, not the project's"
                    (is (str/includes? (:content search) "Found 1 session") (:content search))
                    (is (not (str/includes? (:content search) (h/path env "")))
-                       "no directories in an agent's results"))))))))))
+                       "no directories in an agent's results"))
+                 (h/set-script! env {:rules [{:when {:prompt "read it"}
+                                              :reply [{:tool "session_view" :args {:id sid}}
+                                                      {:text "done"}]}]
+                                     :default [{:text "noted"}]})
+                 (h/prompt! env "read it" "--agent" "calc"))))
+            (.then
+             (fn [{:keys [code stderr]}]
+               (is (= 0 code) stderr)
+               (let [[view] (:tool-calls (last (h/main-turns env)))]
+                 (testing "session_view reads the found chat"
+                   (is (not (:is-error view)) (:content view))
+                   (is (str/includes? (:content view) "user:\nzebra in an agent chat")
+                       (:content view))
+                   (is (str/includes? (:content view) "assistant:\nnoted")
+                       (:content view)))))))))))
 
 (deftest a-broken-config-still-answers-but-denies-tools
   (async done

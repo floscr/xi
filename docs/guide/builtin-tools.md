@@ -89,7 +89,8 @@ one of them changes a file, match it by name:
 
 | Tool | Does | Asks |
 | --- | --- | --- |
-| `session_search` | Find previous chats whose title or messages contain a phrase, case-insensitive. Returns up to 20 chats, newest first, each with title, directory, date, id and a short excerpt around the match. Searches the current project's chats; `cwd` picks another project, `all` searches every project. | Never |
+| `session_search` | Find previous chats whose title or messages contain a phrase, case-insensitive. Returns up to 20 chats, newest first, each with title, directory, date, id and a short excerpt around the match. Searches the current project's chats; `cwd` picks another project, `all` searches every project. An empty query lists the newest chats. | Never |
+| `session_view` | Read a previous chat by its id: the user and assistant messages, oldest first, without tool calls. Long chats come in pages of about 30k characters; `offset` picks the first message. | Never |
 
 Ask the agent "what did we decide about the cache last week?" and it searches
 instead of guessing. A found id can be resumed with `xi --session <id>`; see

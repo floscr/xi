@@ -60,11 +60,11 @@
 
 (def agent
   "Agent profiles with a fixed prompt: helper reads files, calc gets the
-   compute-only clj and session_search."
+   compute-only clj, session_search and session_view."
   (merge (config :agents {"helper" {:system-prompt "You are the e2e helper."
                                     :tools ["read" "ls"]}
                           "calc"   {:system-prompt "You are the e2e calculator."
-                                    :tools ["clj" "session_search"]}})
+                                    :tools ["clj" "session_search" "session_view"]}})
          (rules [])))
 
 (def broken

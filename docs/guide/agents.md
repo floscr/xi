@@ -38,8 +38,8 @@ The profile is read when a chat starts, so an edit applies to the next one.
 - **Only the listed tools exist.** Without `read`, `edit`, `bash`, `bb` or a
   `:full` `clj` in the list, the model cannot touch files or run programs at
   all. A typo in the list removes a tool; it never adds one.
-- **`session_search` finds the profile's own chats only**, never your coding
-  sessions or another profile's.
+- **`session_search` and `session_view` see the profile's own chats only**,
+  never your coding sessions or another profile's.
 - **Sessions live in `~/.config/xi/personal-agent/<id>/`**, one directory per
   profile. A server started with `--agent` shows only those; the web client
   shows a flat list with no projects.

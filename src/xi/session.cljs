@@ -1123,6 +1123,51 @@
       "")
     (catch :default _ "")))
 
+(def ^:private conversation-byte-cap
+  "Max bytes of a transcript `conversation` reads."
+  (* 8 1024 1024))
+
+(defn- message-texts
+  "Every text block of a raw Claude message JS object, joined; nil without one."
+  [^js message]
+  (let [content (some-> message .-content)]
+    (cond
+      (string? content) (not-empty content)
+      (array? content)  (->> (array-seq content)
+                             (keep #(when (= "text" (.-type %)) (.-text %)))
+                             (str/join "\n\n")
+                             not-empty)
+      :else nil)))
+
+(defn conversation
+  "The user and assistant text of a session, oldest first, as
+   [{:role \"user\"|\"assistant\" :text s}]; tool calls and results are left
+   out, and a reply split over several transcript lines is one message. A
+   transcript over `conversation-byte-cap` is read up to it."
+  [summary]
+  (try
+    (if-let [filepath (summary->transcript summary)]
+      (let [lines (if (<= (.-size (fs/statSync filepath)) conversation-byte-cap)
+                    (str/split-lines (fs/readFileSync filepath "utf8"))
+                    (read-head-lines filepath conversation-byte-cap))]
+        (transduce
+         (keep (fn [line]
+                 (let [obj (when (seq line)
+                             (try (js/JSON.parse line) (catch :default _ nil)))
+                       t   (some-> obj .-type)]
+                   (when (or (= "user" t) (= "assistant" t))
+                     (when-let [text (some-> obj .-message message-texts)]
+                       {:role t :text text})))))
+         (completing
+          (fn [msgs {:keys [role text] :as m}]
+            (if (= role (:role (peek msgs)))
+              (update-in msgs [(dec (count msgs)) :text] str "\n\n" text)
+              (conj msgs m))))
+         []
+         lines))
+      [])
+    (catch :default _ [])))
+
 (defonce ^:private search-text-cache
   ;; session-id -> {:stamp <mtime> :text <lowercased search text>}, busted
   ;; when the session grows.
