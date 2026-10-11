@@ -59,9 +59,12 @@
                  {:match {:tool :edit} :action {:type :ask}}])))
 
 (def agent
-  "An agent profile with a fixed prompt and two tools."
+  "Agent profiles with a fixed prompt: helper reads files, calc gets the
+   compute-only clj and session_search."
   (merge (config :agents {"helper" {:system-prompt "You are the e2e helper."
-                                    :tools ["read" "ls"]}})
+                                    :tools ["read" "ls"]}
+                          "calc"   {:system-prompt "You are the e2e calculator."
+                                    :tools ["clj" "session_search"]}})
          (rules [])))
 
 (def broken

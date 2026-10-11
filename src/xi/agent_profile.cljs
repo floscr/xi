@@ -32,6 +32,9 @@
                          whole process, so a coding machine's extensions (kb,
                          notifiers, …) stay out of the agent. Absent = the
                          top-level list.
+     :clj                :compute (default) or :full. :compute limits the clj
+                         tool to Clojure, curl and the data namespaces: no
+                         files, programs or sockets (xi.ext.clj).
      :system-prompt      prompt text; replaces the project prompt parts.
      :system-prompt-file path to a file holding the prompt (`~` expanded;
                          relative paths resolve against ~/.config/xi/).
@@ -101,18 +104,29 @@ Be concise, direct, and friendly. When unsure, say so.")
     :else [nil [(str ":extensions must be a vector of file names, got "
                      (pr-str exts))]]))
 
+(defn- clj-mode
+  "Normalize a profile's :clj → [mode errors]: :full, else :compute (also for
+   anything malformed — fail closed)."
+  [mode]
+  (cond
+    (contains? #{nil :compute} mode) [:compute []]
+    (= :full mode)                   [:full []]
+    :else [:compute [(str ":clj must be :compute or :full, got " (pr-str mode))]]))
+
 (defn parse
   "Pure normalization of a raw profile map (the `[:agents id]` entry, nil when
-   absent) → {:id :tools :extensions :system-prompt :system-prompt-file :model
-   :errors}. :tools is nil (= every tool) or a set of names; a missing profile
-   is reported in :errors and gets no tools. :extensions is nil (= the global
-   list) or a set of file names. :system-prompt-file is the resolved path when
-   set and no inline prompt wins (the caller reads it)."
+   absent) → {:id :tools :extensions :clj :system-prompt :system-prompt-file
+   :model :errors}. :tools is nil (= every tool) or a set of names; a missing
+   profile is reported in :errors and gets no tools. :extensions is nil (= the
+   global list) or a set of file names. :clj is :compute or :full.
+   :system-prompt-file is the resolved path when set and no inline prompt wins
+   (the caller reads it)."
   [id raw]
   (let [missing? (nil? raw)
         raw      (or raw {})
         [tools tool-errors] (tool-set (:tools raw))
         [exts ext-errors]   (extension-set (:extensions raw))
+        [clj clj-errors]    (clj-mode (:clj raw))
         inline   (some-> (:system-prompt raw) str str/trim not-empty)
         pfile    (when-not inline
                    (some-> (:system-prompt-file raw) str not-empty resolve-prompt-file))
@@ -120,10 +134,11 @@ Be concise, direct, and friendly. When unsure, say so.")
     {:id                 id
      :tools              tools
      :extensions         exts
+     :clj                clj
      :system-prompt      inline
      :system-prompt-file pfile
      :model              model
-     :errors             (cond-> (into tool-errors ext-errors)
+     :errors             (cond-> (-> tool-errors (into ext-errors) (into clj-errors))
                            missing?
                            (conj (str "no profile under [:agents " (pr-str id)
                                       "] in " (user-config/config-file)
@@ -174,6 +189,8 @@ Be concise, direct, and friendly. When unsure, say so.")
 
 (defn room-ext
   "Room ext state marking an agent room, merged into the room's [:ext] so
-   rules can match it with `:when {:agent {:id \"…\"}}`."
-  [{:keys [id]}]
-  {:agent {:id id}})
+   rules can match it with `:when {:agent {:id \"…\"}}`. :clj is read by the
+   clj tool (xi.ext.clj) and session_search scopes to :id
+   (xi.ext.session-search)."
+  [{:keys [id clj]}]
+  {:agent {:id id :clj (or clj :compute)}})

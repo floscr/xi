@@ -12,6 +12,10 @@ constructors. `Math`, `Date` and `System/currentTimeMillis` exist;
 `System/getenv` does not (use `env`). `(catch Exception e …)` catches any
 error, and `(.getMessage e)` works.
 
+In an [agent profile](agents.md)'s chats the tool is `:compute` unless the
+profile sets `:clj :full`: of the helpers below only `curl`, `now`, `sleep`,
+`basename` and `dirname` remain, and there is no `process` or `socket`.
+
 The REPL persists per chat: `def` once, use later. `/clj reset` drops it.
 A result longer than 30k characters is saved to a file under the temp
 directory and the result names the file. Values inside the REPL are never

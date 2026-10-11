@@ -26,6 +26,7 @@ xi prompt --agent research "what changed in Bun 1.3?"
 | --- | --- |
 | `:tools` | The tools the model gets, by name, or `:all`. A tool not listed is not offered, so it cannot be called. **No key means no tools.** |
 | `:extensions` | The extension files this profile loads, instead of the top-level list. `[]` loads none. |
+| `:clj` | What the `clj` tool may do. `:compute` (the default): Clojure, `curl` and the JSON namespaces, with no files, programs or sockets. `:full`: the coding agent's `clj`. |
 | `:system-prompt` | The instructions. They replace the project's `AGENTS.md`, skills and extension prompts entirely. |
 | `:system-prompt-file` | The same, read from a file; relative paths are under `~/.config/xi/`. |
 | `:model` | The model to use, unless `--model` says otherwise. |
@@ -34,9 +35,11 @@ The profile is read when a chat starts, so an edit applies to the next one.
 
 ## What a profile changes
 
-- **Only the listed tools exist.** Without `read`, `edit` or `clj` in the list,
-  the model cannot touch files or run programs at all. A typo in the list
-  removes a tool; it never adds one.
+- **Only the listed tools exist.** Without `read`, `edit`, `bash`, `bb` or a
+  `:full` `clj` in the list, the model cannot touch files or run programs at
+  all. A typo in the list removes a tool; it never adds one.
+- **`session_search` finds the profile's own chats only**, never your coding
+  sessions or another profile's.
 - **Sessions live in `~/.config/xi/personal-agent/<id>/`**, one directory per
   profile. A server started with `--agent` shows only those; the web client
   shows a flat list with no projects.

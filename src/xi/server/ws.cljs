@@ -589,7 +589,8 @@
                                        :query       query
                                        :session-ids (session/content-search
                                                      cwd query
-                                                     {:personal-agent? agent?})})))
+                                                     {:personal-agent? agent?
+                                                      :agent-id agent-id})})))
 
       ;; Palette session search: summaries + snippets, scoped to `cwd` (nil =
       ;; all). A blank query lists the newest sessions.
@@ -601,9 +602,10 @@
                  :query    query
                  :sessions (->> (if (str/blank? query)
                                   (session/recent-sessions
-                                   cwd {:personal-agent? agent?})
+                                   cwd {:personal-agent? agent? :agent-id agent-id})
                                   (session/search-sessions
                                    cwd query {:personal-agent? agent?
+                                              :agent-id agent-id
                                               :names-only? names-only?}))
                                 (take 50)
                                 (mapv #(select-keys % [:session-id :name :cwd

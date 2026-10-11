@@ -28,3 +28,11 @@
     (is (str/includes?
          (-> (tool-fn {:query "" :all true} {:cwd "/room"}) :content first :text)
          "all projects"))))
+
+(deftest tool-in-an-agent-room
+  (testing "an agent profile's room searches its own sessions, whatever cwd / all say"
+    (let [ctx  {:cwd "/room" :room-id "r"
+                :get-state (constantly {:rooms {"r" {:ext {:agent {:id "root"}}}}})}
+          text (-> (tool-fn {:query "" :all true :cwd "/x"} ctx) :content first :text)]
+      (is (str/includes? text "your previous conversations"))
+      (is (not (str/includes? text "/x"))))))

@@ -85,6 +85,7 @@ and what extensions keep about them are stored apart, in
 | --- | --- | --- |
 | `:tools` | none | Tool names the model gets, or `:all`. Unlisted tools are never offered; no key means no tools. |
 | `:extensions` | the top-level list | Extension files this profile loads instead; `[]` for none. The top-level `:demo-extensions` still load. |
+| `:clj` | `:compute` | What the `clj` tool may do: `:compute` keeps Clojure, `curl`, `now`, `sleep`, `basename`, `dirname` and the JSON namespaces, without files, programs or sockets; `:full` is the coding agent's `clj`. |
 | `:system-prompt` | a short generic prompt | The instructions; replaces `AGENTS.md`, skills and extension prompts. |
 | `:system-prompt-file` | — | The same from a file; relative to `~/.config/xi/`. `:system-prompt` wins. |
 | `:model` | — | The profile's model; `--model` wins. |

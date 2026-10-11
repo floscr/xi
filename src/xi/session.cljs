@@ -1139,18 +1139,26 @@
         (swap! search-text-cache assoc id {:stamp stamp :text text})
         text))))
 
+
+(defn- search-corpus
+  "The session summaries a search runs over (newest first): a named agent's
+   sessions (`:agent-id`; `:personal-agent?` alone = the default agent's), one
+   project's, or — with a blank `cwd` — every project's."
+  [cwd {:keys [personal-agent? agent-id]}]
+  (cond
+    (or personal-agent? agent-id) (list-personal-agent-sessions agent-id)
+    (seq cwd)                     (list-sessions cwd)
+    :else                         (list-all-sessions)))
+
 (defn content-search
   "Session ids whose name or conversation text contains `query`
-   (case-insensitive), scoped to `cwd` when given."
+   (case-insensitive), scoped to `cwd` when given. Opts as `search-sessions`."
   ([cwd query] (content-search cwd query nil))
-  ([cwd query {:keys [personal-agent?]}]
+  ([cwd query opts]
   (let [q (str/lower-case (str/trim (or query "")))]
     (if (str/blank? q)
       []
-      (->> (cond
-             personal-agent? (list-personal-agent-sessions)
-             (seq cwd)       (list-sessions cwd)
-             :else           (list-all-sessions))
+      (->> (search-corpus cwd opts)
            (keep (fn [s]
                    (when (or (str/includes? (str/lower-case (or (:name s) "")) q)
                              (str/includes? (cached-search-text s) q))
@@ -1172,32 +1180,24 @@
               (str/replace #"\s+" " ")
               str/trim))))))
 
-(defn- search-corpus
-  "The session summaries a search runs over (newest first): personal-agent
-   sessions, one project's, or — with a blank `cwd` — every project's."
-  [cwd personal-agent?]
-  (cond
-    personal-agent? (list-personal-agent-sessions)
-    (seq cwd)       (list-sessions cwd)
-    :else           (list-all-sessions)))
 
 (defn recent-sessions
   "Newest-first summaries over the same corpus as `search-sessions`, unfiltered
    (:snippet nil)."
   ([cwd] (recent-sessions cwd nil))
-  ([cwd {:keys [personal-agent?]}]
-   (mapv #(assoc % :snippet nil) (search-corpus cwd personal-agent?))))
+  ([cwd opts]
+   (mapv #(assoc % :snippet nil) (search-corpus cwd opts))))
 
 (defn search-sessions
   "Like `content-search` but returns full summaries, newest first, each with a
    :snippet around the first content match. `:names-only?` skips transcript
-   text."
+   text; `:personal-agent?` / `:agent-id` pick the corpus (search-corpus)."
   ([cwd query] (search-sessions cwd query nil))
-  ([cwd query {:keys [personal-agent? names-only?]}]
+  ([cwd query {:keys [names-only?] :as opts}]
    (let [q (str/lower-case (str/trim (or query "")))]
      (if (str/blank? q)
        []
-       (->> (search-corpus cwd personal-agent?)
+       (->> (search-corpus cwd opts)
             (keep (fn [s]
                     (let [name-match?    (str/includes?
                                           (str/lower-case (or (:name s) "")) q)

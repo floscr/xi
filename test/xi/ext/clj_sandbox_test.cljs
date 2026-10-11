@@ -12,15 +12,18 @@
             [xi.ext.clj :as clj-ext]
             ["node:os" :as os]))
 
-(defn- ev [code]
+(defn- ev* [room-id compute? code]
   (-> (clj-ext/reply->result
        (clj-ext/eval-message #js {:id 0 :kind "clj" :code code
-                                  :roomId "sandbox-test"
+                                  :roomId room-id
                                   :allowed #js [] :allowedCommands #js []
                                   :allowedWrites #js [] :allowedReads #js []
-                                  :allowedBg #js [] :cwd (os/tmpdir)})
+                                  :allowedBg #js [] :cwd (os/tmpdir)
+                                  :compute compute?})
        nil)
       :content first :text))
+
+(defn- ev [code] (ev* "sandbox-test" false code))
 
 (defn- blocked?
   "The eval produced an error (a sandbox escape would instead return `=> …`)."
@@ -83,3 +86,24 @@
     (is (= "=> true" (ev "(inst? (Date.))")))
     (is (= "=> 0" (ev "(.getTime (Date. 0))")))
     (is (= "=> \"1970-01-01T00:00:01.000Z\"" (ev "(str (Instant. 1000))")))))
+
+(deftest compute-mode-has-no-file-program-or-socket-access
+  (let [ev (partial ev* "compute-test" true)]
+    (testing "every helper that touches files, runs programs or reads the env refuses"
+      (doseq [code ["(slurp \"x\")" "(spit \"x\" \"y\")" "(ls)"
+                    "(glob \"*\")" "(grep \"a\" \".\")" "(stat \".\")" "(rm \"x\")"
+                    "(tmpdir)" "(sh \"ls\")" "(git \"status\")" "(jq \".\" {})"
+                    "(env \"HOME\")" "(cwd)" "(ports)" "(which \"ls\")"]]
+        (is (re-find #"no file, program or socket access" (ev code)) code)))
+    (testing "the process and socket namespaces are absent"
+      (is (re-find #"^Error" (ev "(process/start \"ls\")")))
+      (is (re-find #"^Error" (ev "(socket/connect \"127.0.0.1\" 1)"))))
+    (testing "computation still works, and cat / find are clojure.core's"
+      (is (= "=> 3" (ev "(+ 1 2)")))
+      (is (= "=> [1 2]" (ev "(into [] cat [[1] [2]])")))
+      (is (= "=> [:a 1]" (ev "(find {:a 1} :a)")))
+      (is (= "=> \"{\\\"a\\\":1}\"" (ev "(json/write-str {:a 1})")))
+      (is (= "=> \"b.txt\"" (ev "(basename \"/a/b.txt\")"))))
+    (testing "the room's REPL persists across calls"
+      (ev "(def x 41)")
+      (is (= "=> 42" (ev "(inc x)"))))))

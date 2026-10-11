@@ -49,6 +49,16 @@
       (is (nil? (:extensions p)))
       (is (some #(str/includes? % ":extensions") (:errors p))))))
 
+(deftest parse-clj
+  (testing "absent = :compute (fail closed)"
+    (is (= :compute (:clj (profile/parse "a" {})))))
+  (testing ":full is kept"
+    (is (= :full (:clj (profile/parse "a" {:clj :full})))))
+  (testing "malformed = :compute, with an error"
+    (let [p (profile/parse "a" {:clj true})]
+      (is (= :compute (:clj p)))
+      (is (some #(str/includes? % ":clj") (:errors p))))))
+
 (deftest parse-model
   (is (= "claude-haiku-4-5-20251001"
          (:model (profile/parse "a" {:model "claude-haiku-4-5-20251001"}))))
@@ -57,6 +67,7 @@
 (deftest helpers
   (is (= [{:source "agent:root" :text "p"}]
          (profile/system-parts {:id "root" :system-prompt "p"})))
-  (is (= {:agent {:id "coach"}} (profile/room-ext {:id "coach"})))
+  (is (= {:agent {:id "coach" :clj :compute}} (profile/room-ext {:id "coach"})))
+  (is (= {:agent {:id "dev" :clj :full}} (profile/room-ext {:id "dev" :clj :full})))
   (is (str/ends-with? (profile/agent-dir nil) "/personal-agent/root"))
   (is (str/ends-with? (profile/agent-dir "coach") "/personal-agent/coach")))

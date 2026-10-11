@@ -665,6 +665,32 @@
                        (throw (ex-info (str "clj: env key blocked: " k) {}))))))
      'sh     (sh-fn opts)}))
 
+(def ^:private COMPUTE_HELPERS
+  "The helpers a `:compute` room keeps (an agent profile's `:clj`,
+   xi.agent-profile): none of them touches a file, runs a program of the
+   script's choosing or opens a raw socket; curl reaches http(s) URLs, like
+   the fetch tool."
+  '#{curl now sleep basename dirname})
+
+(defn- compute-helpers
+  "helper-fns for a `:compute` room: every other helper throws, saying why.
+   cat and find are left out so they stay clojure.core's."
+  [opts]
+  (into {}
+        (keep (fn [[sym f]]
+                (cond
+                  (contains? COMPUTE_HELPERS sym) [sym f]
+                  (contains? '#{cat find} sym)    nil
+                  :else
+                  [sym (fn [& _]
+                         (throw (ex-info (str "clj: (" sym " …) is not available: this chat's "
+                                              "clj has no file, program or socket access. "
+                                              "Available: " (str/join " " (sort COMPUTE_HELPERS))
+                                              ", clojure.core, str/set/walk/edn, "
+                                              "clojure.data.json, cheshire.core.")
+                                         {})))])))
+        (helper-fns opts)))
+
 ;; ── SCI runtime (persistent per room) ────────────────────────────────────────
 
 (defonce ^:private runtimes (atom {}))
@@ -839,23 +865,28 @@
 
                whole))))))))
 
-(defn- make-ctx [opts]
-  (let [helpers (helper-fns opts)
+(defn- make-ctx
+  "The SCI ctx of a room; `compute?` drops the file, program and socket
+   helpers and the process / socket namespaces (compute-helpers)."
+  [opts compute?]
+  (let [helpers (if compute? (compute-helpers opts) (helper-fns opts))
         ctx (sandbox/init {:namespaces
-                       {'user helpers
-                        ;; Shadow the core vars the helpers collide with, plus the parse-* fns
-                        ;; SCI's core lacks.
-                        'clojure.core (merge (select-keys helpers '[cat find])
-                                             {'parse-long    parse-long
-                                              'parse-double  parse-double
-                                              'parse-boolean parse-boolean
-                                              'parse-uuid    parse-uuid
-                                              'format        sandbox-format})
-                        'clojure.instant instant-namespace
-                        'clojure.data.json json-data-namespace
-                        'cheshire.core cheshire-namespace
-                        'process (proc/sci-namespace opts (fn [d] (resolve-dir opts d)))
-                        'socket (sock/sci-namespace opts)}
+                       (cond->
+                        {'user helpers
+                         ;; Shadow the core vars the helpers collide with, plus the parse-* fns
+                         ;; SCI's core lacks.
+                         'clojure.core (merge (select-keys helpers '[cat find])
+                                              {'parse-long    parse-long
+                                               'parse-double  parse-double
+                                               'parse-boolean parse-boolean
+                                               'parse-uuid    parse-uuid
+                                               'format        sandbox-format})
+                         'clojure.instant instant-namespace
+                         'clojure.data.json json-data-namespace
+                         'cheshire.core cheshire-namespace}
+                        (not compute?)
+                        (assoc 'process (proc/sci-namespace opts (fn [d] (resolve-dir opts d)))
+                               'socket (sock/sci-namespace opts)))
                        ;; Every class is a null-proto object (xi.sandbox.sci), never a real
                        ;; class, so `Class/constructor` can't reach js/Function. Instance interop
                        ;; still works: SCI keys it on the class name. System exposes the clock
@@ -877,12 +908,14 @@
     (sci/eval-string* ctx PRELUDE)
     ctx))
 
-(defn- ensure-runtime! [room-id]
-  (or (get @runtimes room-id)
+(defn- ensure-runtime! [room-id compute?]
+  (let [rt (get @runtimes room-id)]
+    (if (and rt (= compute? (:compute? rt)))
+      rt
       (let [opts (atom {})
-            rt   {:opts opts :ctx (make-ctx opts)}]
+            rt   {:opts opts :ctx (make-ctx opts compute?) :compute? compute?}]
         (swap! runtimes assoc room-id rt)
-        rt)))
+        rt))))
 
 (defn- format-value [v]
   (cond
@@ -951,8 +984,8 @@
            "(str/split s #\",\") for .split."))))
 
 (defn- eval-code! [{:keys [code room-id gate-id cwd allowed allowed-commands approved
-                           allowed-writes allowed-reads allowed-bg abort-arr]}]
-  (let [{:keys [ctx opts]} (ensure-runtime! (or room-id :default))
+                           allowed-writes allowed-reads allowed-bg abort-arr compute?]}]
+  (let [{:keys [ctx opts]} (ensure-runtime! (or room-id :default) (boolean compute?))
         prints (atom "")
         commit-outs (atom [])]
     (swap! opts assoc :cwd cwd :allowed (set allowed)
@@ -1299,6 +1332,7 @@
                           :allowedWrites (clj->js (vec (:_allowed-writes args)))
                           :allowedReads  (clj->js (vec (:_allowed-reads args)))
                           :allowedBg     (clj->js (vec (:_allowed-bg args)))
+                          :compute (boolean (:_compute? args))
                           :cwd     (or cwd (.cwd js/process))})
       (.then (fn [^js m] (reply->result m (:_hint args))))))
 
@@ -1364,6 +1398,7 @@
                              :allowed-writes (js->clj (.-allowedWrites m))
                              :allowed-reads (js->clj (.-allowedReads m))
                              :allowed-bg (js->clj (.-allowedBg m))
+                             :compute? (.-compute m)
                              :abort-arr (when-let [sab (.-abortSab m)]
                                           (js/Int32Array. sab))
                              :cwd     cwd})]
@@ -2202,19 +2237,29 @@
   [args]
   (into {} (remove (fn [[k _]] (str/starts-with? (name k) "_"))) args))
 
+(defn- compute-only?
+  "Whether the room is an agent profile's whose `:clj` isn't :full
+   (xi.agent-profile/room-ext) — fail closed on a missing mode."
+  [{:keys [get-state room-id]}]
+  (when-let [agent (and get-state (get-in (get-state) [:rooms room-id :ext :agent]))]
+    (not= :full (:clj agent))))
+
 (defn- clj-tool
   "The clj tool: `approve` the call, then evaluate it in the room's worker with
-   its grants. The call's gate ctx lives until the eval settles."
+   its grants. The call's gate ctx lives until the eval settles. A
+   compute-only room skips `approve`: it has no helper that could ask."
   [args ctx]
-  (let [gate-id (str "g" (swap! gate-seq inc))
-        done!   #(swap! call-ctxs dissoc gate-id)]
-    (-> (js/Promise.resolve (approve {:name "clj" :arguments (public-args args)}
-                                     (assoc ctx :gate-id gate-id)))
-        (.then (fn [v]
-                 (if (:intercepted v)
-                   (:result v)
-                   (run-clj (:arguments v) ctx))))
-        (.finally done!))))
+  (if (compute-only? ctx)
+    (run-clj {:code (:code args) :_room-id (:room-id ctx) :_compute? true} ctx)
+    (let [gate-id (str "g" (swap! gate-seq inc))
+          done!   #(swap! call-ctxs dissoc gate-id)]
+      (-> (js/Promise.resolve (approve {:name "clj" :arguments (public-args args)}
+                                       (assoc ctx :gate-id gate-id)))
+          (.then (fn [v]
+                   (if (:intercepted v)
+                     (:result v)
+                     (run-clj (:arguments v) ctx))))
+          (.finally done!)))))
 
 ;; ── Command + state ──────────────────────────────────────────────────────────
 

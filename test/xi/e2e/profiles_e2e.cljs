@@ -108,6 +108,36 @@
                    "the session is the agent's")
                (is (= [] (h/files-under (h/home-path env ".config/xi/sessions")))))))))))
 
+(deftest an-agent-profile-gets-a-compute-only-clj-and-its-own-sessions
+  (async done
+    (h/with-env! profiles/agent
+      {:rules [{:when {:prompt "compute"}
+                :reply [{:tool "clj" :args {:code "(+ 1 2)"}}
+                        {:tool "clj" :args {:code "(slurp \"README.md\")"}}
+                        {:tool "clj" :args {:code "(sh \"ls\")"}}
+                        {:tool "session_search" :args {:query "zebra" :all true}}
+                        {:text "done"}]}]
+       :default [{:text "noted"}]}
+      done
+      (fn [env]
+        (-> (h/prompt! env "zebra in a project chat")
+            (.then #(h/prompt! env "zebra in an agent chat" "--agent" "calc"))
+            (.then #(h/prompt! env "compute" "--agent" "calc"))
+            (.then
+             (fn [{:keys [code stderr]}]
+               (is (= 0 code) stderr)
+               (let [[sum slurp sh search] (:tool-calls (last (h/main-turns env)))]
+                 (is (= "=> 3" (:content sum)))
+                 (testing "no file or program access"
+                   (is (str/includes? (:content slurp) "no file, program or socket access")
+                       (:content slurp))
+                   (is (str/includes? (:content sh) "no file, program or socket access")
+                       (:content sh)))
+                 (testing "session_search finds the agent's chat, not the project's"
+                   (is (str/includes? (:content search) "Found 1 session") (:content search))
+                   (is (not (str/includes? (:content search) (h/path env "")))
+                       "no directories in an agent's results"))))))))))
+
 (deftest a-broken-config-still-answers-but-denies-tools
   (async done
     (h/with-env! profiles/broken
