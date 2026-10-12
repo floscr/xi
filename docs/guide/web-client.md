@@ -148,7 +148,8 @@ terminal** in the ⋮ menu and the command palette opens a shell.
   outside it to use Xi's shortcuts again.
 - **Lifetime.** The program keeps running while you look at another buffer,
   leave the chat or reload the page, and every device in the chat sees the
-  same screen. When it exits with code 0, its buffer closes; any other exit
+  same screen. It takes the size of the window you use last: the one you
+  resize, type in or come back to. When it exits with code 0, its buffer closes; any other exit
   keeps the output with **Restart** and **Close**. Closing the buffer ends the
   program. A server restart ends every terminal.
 - **Colours.** The terminal takes its colours from the current theme and

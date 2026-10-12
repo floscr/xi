@@ -111,7 +111,10 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   writes `:terminal/output` into the instance before the inbox, so typing
   and output never render. Mount attaches (the server replays its
   scrollback, then nudges the size so a full-screen program repaints),
-  unmount detaches, `on-connection-status` re-attaches all. xterm calls
+  unmount detaches, `on-connection-status` re-attaches all. Fits run once
+  per frame (host ResizeObserver + window `resize`); the PTY has one size,
+  so a client re-sends its own on terminal focus, window focus and tab
+  visible (`claim-size!`). xterm calls
   `preventDefault` on keys it sends, so `keymap/handle-keydown` skips them.
   Colours are the theme's vars converted to hex (xterm can't parse
   `oklch()`), re-read when the theme state changes (`:data-theme` →

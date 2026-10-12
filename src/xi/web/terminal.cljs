@@ -126,6 +126,43 @@
 (defn- fit! [^js fit]
   (try (.fit fit) (catch :default _ nil)))
 
+;; ── Size ──
+;; A fit that changes cols/rows fires xterm's onResize, which tells the server
+;; (its PTY passes SIGWINCH on to the program). The PTY has one size: the last
+;; any client sent. So the browser in use claims it again when its terminal
+;; gets focus or its tab comes back, as tmux follows its latest client.
+
+(defn- send-size! [term-id ^js term]
+  (send! {:type :terminal/resize :term-id term-id
+          :cols (.-cols term) :rows (.-rows term)}))
+
+(defonce ^:private fit-frame (atom nil))
+
+(defn- fit-all!
+  "Re-fit every terminal on screen, once per frame however often it's asked."
+  [& _]
+  (when-not @fit-frame
+    (reset! fit-frame
+            (js/requestAnimationFrame
+             (fn []
+               (reset! fit-frame nil)
+               (doseq [{:keys [fit]} (vals @instances)] (fit! fit)))))))
+
+(defn- claim-size! [& _]
+  (doseq [[term-id {:keys [term]}] @instances]
+    (send-size! term-id term)))
+
+;; Window-level triggers, installed with the first terminal: a window resize
+;; the host's ResizeObserver can miss, and the tab or window coming back.
+(defonce ^:private window-listeners
+  (delay
+    (.addEventListener js/window "resize" fit-all!)
+    (.addEventListener js/window "focus" claim-size!)
+    (.addEventListener js/document "visibilitychange"
+                       #(when (= "visible" (.-visibilityState js/document))
+                          (fit-all!)
+                          (claim-size!)))))
+
 (defn- mount! [^js node term-id]
   (-> (load-lib!)
       (.then
@@ -133,7 +170,7 @@
          (when (and (.-isConnected node) (not (contains? @instances term-id)))
            (let [Terminal (.-Terminal js/globalThis)
                  FitAddon (.. js/globalThis -FitAddon -FitAddon)
-                 term     (Terminal. #js {:cursorBlink true
+                 ^js term (Terminal. #js {:cursorBlink true
                                           :fontFamily  (str (css-var node "--font-mono"
                                                                      "ui-monospace, Menlo, monospace")
                                                             ", 'Symbols Nerd Font Mono'")
@@ -141,13 +178,14 @@
                                           :scrollback  5000
                                           :theme       (theme node)})
                  fit      (FitAddon.)
-                 observer (js/ResizeObserver. #(fit! fit))]
+                 observer (js/ResizeObserver. fit-all!)]
+             @window-listeners
              (.loadAddon term fit)
              (.open term node)
              (fit! fit)
              (.onData term #(send! {:type :terminal/input :term-id term-id :text %}))
-             (.onResize term #(send! {:type :terminal/resize :term-id term-id
-                                      :cols (.-cols %) :rows (.-rows %)}))
+             (.onResize term #(send-size! term-id term))
+             (.addEventListener (.-textarea term) "focus" #(send-size! term-id term))
              (.observe observer node)
              (swap! instances assoc term-id {:term term :fit fit :observer observer :node node})
              (attach! term-id term)
