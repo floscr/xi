@@ -104,12 +104,29 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   members into `{buffer-id [user …]}` — on the room for the buffer menu, as
   `:viewers` on the lobby room summaries for the sidebar rows. Avatars via
   `sidebar/room-people`, so a single-user server shows none.
+- **Terminals** (`xi.web.terminal`): a `:terminal` buffer mounts an xterm.js
+  instance (vendored, loaded by `<script>` on first use) on its host div,
+  keyed by term id. I/O bypasses the app: `onData` / `onResize` go out
+  through `ws-transport`'s raw `:send!`, and the transport's `:intercept`
+  writes `:terminal/output` into the instance before the inbox, so typing
+  and output never render. Mount attaches (the server replays its
+  scrollback, then nudges the size so a full-screen program repaints),
+  unmount detaches, `on-connection-status` re-attaches all. xterm calls
+  `preventDefault` on keys it sends, so `keymap/handle-keydown` skips them.
+  Colours are the theme's vars converted to hex (xterm can't parse
+  `oklch()`), re-read when the theme state changes (`:data-theme` →
+  `on-update`); `palette` also maps the 16 ANSI slots to the theme's status
+  and `--hl-*` syntax colours, and the PTY env carries `TERM_PROGRAM=xi`
+  (`xi.ext.terminal.pty`), so a 16-colour editor scheme follows the theme.
 - **Code-block menu**: right-click / tap → Copy; on Read/Write/Edit blocks
   View file (`:file/open`); on blocks rendering a change View diff
-  (`:ui/diff-open`, no git run). Blocks carry
+  (`:ui/diff-open`, no git run), then the extensions' `:block-menu-items`
+  (`xi.web.block-menu`). The menu renders outside the chat-view buffer
+  `case`, so blocks in buffers open it too; the file tab carries its path.
+  Blocks carry
   `data-file-path` / `data-diff-path` / `data-diff-text` for the delegated
-  listener in `xi.web.core`; `xi.diff/tool-diff->unified` converts the tool
-  diff format. A diff viewer's file header is a `ui.context-menu` trigger
+  listener in `xi.web.core` (plus `:lang` from a `pre.language-*`);
+  `xi.diff/tool-diff->unified` converts the tool diff format. A diff viewer's file header is a `ui.context-menu` trigger
   (`diff-file-menu-items`: View file via `:file/open`, Copy path); the
   trigger wrapper is the sticky element. git prints root-relative paths, so
   the file-view extension resolves against the room cwd and then its git
@@ -226,6 +243,7 @@ Never sent over the wire:
 | `:web/pending-submit` | message stashed until `:room/joined` |
 | `:web/pending-buffer` | `{:session-id :buffer-id}` a sidebar / palette buffer row asked to open, applied on `:room/joined` |
 | `:web/session-views` | session id → the buffer (or `:chat`) this client left it on, set on navigating away and restored on `:room/joined` (`xi.web.router/restore-view`) |
+| `:web/terminals-gone` | term ids the server answered `:terminal/gone` for (it restarted); cleared by the buffer coming back without an exit (`xi.ext.terminal.web`) |
 | `:web/sidebar-buffers-open` | session ids whose buffer rows are unfolded; this browser's own, cached in localStorage (`xi/sidebar-buffers-open`) |
 | `:web/connected?` | transport status |
 | `:web/nav-items` | extension nav entries, stored at init |

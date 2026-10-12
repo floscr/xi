@@ -5056,6 +5056,59 @@ code a:hover,
   margin: 0 auto;
 }
 
+/* Terminal tab (xi.web.terminal): an xterm.js screen filling the buffer, a
+   bar when its program ended, and the extensions' buttons as a floating pill
+   group (the chat's .fgroup) in the bottom-right corner. */
+.terminal-tab {
+  position: relative;
+}
+
+.terminal-host {
+  flex: 1;
+  min-height: 0;
+  padding: var(--size-2) 0 0 var(--size-2);
+  background: var(--bg-0);
+}
+
+.terminal-host .xterm {
+  height: 100%;
+}
+
+/* xterm.css paints the viewport black; the host already has the theme's. */
+.terminal-host .xterm .xterm-viewport {
+  background-color: transparent;
+}
+
+.terminal-ended {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-2) var(--size-4);
+  border-bottom: 1px solid var(--border-0);
+  font-size: var(--font-sm);
+  color: var(--fg-1);
+}
+
+.terminal-ended > span {
+  flex: 1;
+}
+
+/* Raised over the last two rows, where full-screen programs keep their
+   status line and command line. */
+.terminal-toolbar {
+  position: absolute;
+  right: var(--size-4);
+  bottom: calc(var(--size-12) + env(safe-area-inset-bottom, 0px));
+  z-index: 5;
+}
+
+.terminal-toolbar .quick-cmd {
+  color: var(--fg-0);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-sm);
+}
+
 /* System-prompt tab (/prompt): per-part collapsible cards */
 .prompt-tab-body {
   flex: 1;

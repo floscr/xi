@@ -137,6 +137,35 @@ refreshes it in place.
   on any device, as long as the server runs. They are not saved to disk: a
   server restart starts with none.
 
+## Terminals
+
+A terminal is a buffer running a program on the server, in the chat's
+directory. `/term` opens your shell (`$SHELL`), `/term <command …>` runs that
+command instead (quotes keep spaces: `/term nvim "my notes.md"`). **New
+terminal** in the ⋮ menu and the command palette opens a shell.
+
+- **Typing.** While the terminal has focus, keys go to the program. Click
+  outside it to use Xi's shortcuts again.
+- **Lifetime.** The program keeps running while you look at another buffer,
+  leave the chat or reload the page, and every device in the chat sees the
+  same screen. When it exits with code 0, its buffer closes; any other exit
+  keeps the output with **Restart** and **Close**. Closing the buffer ends the
+  program. A server restart ends every terminal.
+- **Colours.** The terminal takes its colours from the current theme and
+  follows a theme switch at once. The 16 ANSI colours keep their usual
+  meaning and carry the code-block colours: 0 surface, 1 danger, 2 success,
+  3 warning, 4 keyword, 5 symbol, 6 function, 7 secondary text, 8 comment,
+  9 operator, 10 string, 11 warning, 12 accent, 13 number, 14 builtin, 15
+  text. Programs see `TERM_PROGRAM=xi`, so an editor can pick a colorscheme
+  that uses only those 16 colours and looks like the chat in every theme.
+- **Toolbar.** On a touch screen, floating buttons at the bottom right send
+  Esc, Tab, Ctrl+C and the arrow keys. Extensions add buttons there and
+  entries to the code-block menu, for example "Open in vim"
+  ([reference](extensions-reference.md#browser-halves)).
+- **Who may.** Opening a terminal is a rules request with `:tool :terminal`.
+  No built-in rule matches it, so it runs; a rule can deny it, for example
+  for some users ([rules reference](rules-reference.md)).
+
 ## Usage
 
 The ring in the sidebar footer shows how much of the Claude login's 5-hour

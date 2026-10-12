@@ -45,6 +45,7 @@ message. `/help` lists everything that is available in the current setup.
 | `/buffers` | Switch between the chat, the log and the chat's open buffers (diffs, files, the system prompt); the last entry closes them all |
 | `/events` | Show the event log of this chat |
 | `/prompt` | Show the system prompt the agent gets |
+| `/term [command …]` | Open a [terminal](web-client.md#terminals) in the chat's directory: your shell, or the command |
 | `/holds`, `/release` | Show who holds the repository's git index when two chats share it; force it free |
 | `/ps`, `/kill <pid>` | Background processes the agent started; stop one |
 | `/subagents` | Background sub-agents of this chat |

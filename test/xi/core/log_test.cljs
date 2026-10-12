@@ -19,6 +19,10 @@
     (let [e (log/prepare-entry {:type :agent/text-delta :room-id "a" :text "hello"} [])]
       (is (nil? (:text e)))
       (is (= 5 (:log/chars e)))))
+  (testing "terminal keystrokes are never logged, only counted"
+    (let [e (log/prepare-entry {:type :terminal/input :term-id "t" :text "hunter2\r"} [])]
+      (is (nil? (:text e)))
+      (is (= 8 (:log/chars e)))))
   (testing "effect types recorded"
     (let [e (log/prepare-entry {:type :prompt/submit :room-id "a"}
                                [[:provider/start-turn {:big "payload"}]])]

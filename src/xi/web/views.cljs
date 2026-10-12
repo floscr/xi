@@ -25,10 +25,12 @@
             [xi.tui.snippets :as snippets]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
+            [xi.web.block-menu :as block-menu]
             [xi.web.dashboard :as dashboard]
             [xi.web.theme :as ctheme]
             [xi.web.keymap :as keymap]
             [xi.web.palette-items :as palette-items]
+            [xi.web.terminal :as terminal]
             [xi.web.tool-views :as tool-views]
             [xi.web.viewer-group :as viewer-group]
             [ui.icon :as icon]
@@ -2527,7 +2529,8 @@
   [{:keys [path text]}]
   (let [ext     (file-ext path)
         grammar (grammars/get-grammar ext)]
-    [:div {:class ["file-tab"]}
+    ;; data-file-path: the code-block menu offers the file to extensions
+    [:div {:class ["file-tab"] :data-file-path path}
      [:div {:class ["file-tab-header"]}
       [:span {:class ["file-tab-path"]} path]]
      (if (contains? md-diff/markdown-exts ext)
@@ -2594,6 +2597,7 @@
   (case kind
     :diff     :code
     :file     :file-text
+    :terminal :terminal
     :prompt   :terminal
     :subagent :users
     :list))
@@ -3009,8 +3013,9 @@
   "Floating menu for a tapped code block: Copy, View file (when the block
    belongs to a tool call naming a file), and View diff (an edit result or
    permission preview, converted by xi.diff/tool-diff->unified; no server
-   round-trip). The tap is detected by a delegated listener in xi.web.core."
-  [dispatch! room-id {:keys [text path diff-path diff-text x y]}]
+   round-trip), then the extensions' entries (xi.web.block-menu). The tap is
+   detected by a delegated listener in xi.web.core."
+  [dispatch! state room-id {:keys [text path diff-path diff-text x y] :as menu}]
   (let [close! (fn [] (dispatch! {:type :code/menu-close}))]
     [:div {:class ["bubble-menu-backdrop"]
            :on {:click (fn [_] (close!))}}
@@ -3042,7 +3047,16 @@
                                             :title (str "Diff: " (last (str/split diff-path #"/")))
                                             :text unified :engine :git}))}}
          (icon/icon {:icon-name :code :size :sm})
-         [:span "View diff"]])]]))
+         [:span "View diff"]])
+      (for [{:keys [label icon event]}
+            (block-menu/items (select-keys menu [:text :path :lang :diff-path]) state)]
+        [:button {:class ["bubble-menu-item"]
+                  :on {:click (fn [e]
+                                (.stopPropagation e)
+                                (close!)
+                                (dispatch! event))}}
+         (icon/icon {:icon-name (or icon :chevron-right) :size :sm})
+         [:span label]])]]))
 
 (defn- subagent-duration [{:keys [started ended]}]
   (when started
@@ -3329,6 +3343,10 @@
        :file
        (file-tab-view active-buffer)
 
+       :terminal
+       (terminal/view dispatch! state room active-buf active-buffer
+                      (contains? (:web/terminals-gone state) (:term-id active-buffer)))
+
        :prompt
        (prompt-tab-view dispatch! room (or (:web/prompt-expanded state) #{}))
 
@@ -3501,8 +3519,6 @@
         (copy-dialog-overlay dispatch! (:web/copy-text state))
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))
-        (when-let [menu (:web/code-menu state)]
-          (code-copy-menu dispatch! (:id room) menu))
         (lightbox/lightbox {:src (:web/lightbox state)
                             :on-close (fn [] (dispatch! {:type :lightbox/close}))})
         [:div {:class ["compose-dock"]}
@@ -3533,7 +3549,10 @@
                           (:web/prompt-nav state)
                           nav-ctx
                           (:web/scrolled-up? state)
-                          (false? (:web/connected? state)))))])))]))
+                          (false? (:web/connected? state)))))])))
+     ;; outside the case: code blocks in file buffers open it too
+     (when-let [menu (:web/code-menu state)]
+       (code-copy-menu dispatch! state (:id room) menu))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 

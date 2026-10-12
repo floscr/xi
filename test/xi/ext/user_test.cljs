@@ -348,6 +348,25 @@
     ((get-in ext [:tool-registry "t"]) {} {:dispatch! (fn [e] (swap! seen conj e))})
     (is (empty? @seen) "a tool may not")))
 
+(deftest a-click-may-open-a-terminal-but-a-tool-may-not
+  ;; :terminal/open runs a program (xi.ext.terminal): only from what the user
+  ;; did — a command, or a web half's own event the server stamped.
+  (let [seen (atom [])
+        ev   {:type :terminal/open :room-id "r" :argv ["nvim" "a.clj"]}
+        ext  (guard/wrap
+              {:id :ext-t
+               :commands [{:name "vim" :handler (fn [_ _] {:effects [[:app/dispatch ev]]})}]
+               :handlers {:ext.ext-t/open (fn [_ _] {:effects [[:app/dispatch ev]]})}
+               :tool-registry {"t" (fn [_ {:keys [dispatch!]}] (dispatch! ev) {:content []})}})
+        open (get-in ext [:handlers :ext.ext-t/open])]
+    (is (= [[:app/dispatch ev]] (:effects ((:handler (first (:commands ext))) {} {:room-id "r"}))))
+    (is (= [[:app/dispatch ev]]
+           (:effects (open {} {:type :ext.ext-t/open ::guard/user-initiated true})))
+        "a click in the web half (stamped by the server)")
+    (is (empty? (:effects (open {} {:type :ext.ext-t/open}))))
+    ((get-in ext [:tool-registry "t"]) {} {:dispatch! #(swap! seen conj %)})
+    (is (empty? @seen) "a tool may not")))
+
 (deftest fx-dispatch-is-filtered
   (let [id :ext-c
         seen (atom [])

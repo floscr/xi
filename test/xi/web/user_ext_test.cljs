@@ -93,6 +93,40 @@
                                          :session-id "s1")
                                   "r1"))))))
 
+(deftest block-menu-and-terminal-toolbar-items
+  (testing "both must be fns"
+    (is (nil? (guard/validate {:id :vim :block-menu-items (fn [_ _])
+                               :terminal-toolbar-items (fn [_ _])} {})))
+    (is (re-find #":block-menu-items must be a fn"
+                 (guard/validate {:id :vim :block-menu-items []} {})))
+    (is (re-find #":terminal-toolbar-items must be a fn"
+                 (guard/validate {:id :vim :terminal-toolbar-items []} {}))))
+  (let [ext (guard/wrap
+             {:id :vim
+              :block-menu-items
+              (fn [block _]
+                [{:label "Open" :event {:type :ext.vim/open :path (:path block)}}
+                 {:label "Evil" :event {:type :terminal/open :argv ["sh"]}}
+                 {:event {:type :ext.vim/open}}])
+              :terminal-toolbar-items
+              (fn [buffer _]
+                (if (= :boom (:tag buffer))
+                  (throw (js/Error. "boom"))
+                  [{:label "Esc" :send "\u001b" :event {:type :agent/abort}}
+                   {:label ":w" :event {:type :ext.vim/save}}
+                   {:label "Evil" :event {:type :agent/abort}}
+                   {:label "Nothing"}]))})]
+    (testing "block items: own events forward, core events and unlabelled items are dropped"
+      (is (= [{:label "Open" :event {:type :user-ext/forward
+                                     :event {:type :ext.vim/open :path "a.clj"}}}]
+             ((:block-menu-items ext) {:path "a.clj"} {}))))
+    (testing "toolbar items: :send types keys, :event forwards own events only"
+      (is (= [{:label "Esc" :send "\u001b"}
+              {:label ":w" :event {:type :user-ext/forward :event {:type :ext.vim/save}}}]
+             ((:terminal-toolbar-items ext) {:tag :vim} {}))))
+    (testing "a throwing provider adds nothing"
+      (is (= [] ((:terminal-toolbar-items ext) {:tag :boom} {}))))))
+
 (deftest tool-views-render-only-the-extensions-own-tools
   (let [ok {:id :notes :tool-views {"notes_add" (fn [_])}}]
     (is (nil? (guard/validate ok {:own-tools ["notes_add"]})))

@@ -37,6 +37,7 @@
         [xi.ext.clojure-skills :as skills]
         [xi.ext.snippets :as snippets]
         [xi.ext.subagent :as subagent]
+        [xi.ext.terminal :as terminal]
         [xi.ext.terminal-title :as terminal-title]
         [xi.ext.user :as user-ext]
         [xi.ext.treesitter.core :as treesitter]
@@ -52,6 +53,7 @@
         [xi.ext.file-view.web :as file-view-web]
         [xi.ext.home.web :as home-web]
         [xi.ext.subagent.web :as subagent-web]
+        [xi.ext.terminal.web :as terminal-web]
         [xi.ext.usage.web :as usage-web]
         [xi.ext.yolo.web :as yolo-web]])))
 
@@ -139,6 +141,8 @@
       yolo/extension
       diff/extension
       file-view/extension
+      ;; terminal buffers: programs under a PTY, shown by xterm.js (xi.web.terminal)
+      terminal/create
       file-finder/extension
       worktree/create
       session-search/extension
@@ -188,6 +192,7 @@
      "Browser-safe extension web halves, composed by xi.web.core."
      [diff-web/extension
       file-view-web/extension
+      terminal-web/extension
       canvas-review-web/extension
       subagent-web/extension
       ;; mirrors the /yolo flag and its status line (xi.ext.yolo)

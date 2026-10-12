@@ -24,6 +24,8 @@
             [xi.quick-replies :as quick-replies]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
+            [xi.web.block-menu :as block-menu]
+            [xi.web.terminal :as terminal]
             [xi.web.theme :as theme]
             [xi.web.user-state :as user-state]
             [xi.web.cache :as cache]
@@ -1047,8 +1049,8 @@
                                                                         :x x :y y})})
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
           ;; Floating Copy button for a tapped code block (attach-code-copy-listener!).
-          :code/menu-open        (fn [st {:keys [text path diff-path diff-text x y]}]
-                                   {:state (assoc st :web/code-menu {:text text :path path
+          :code/menu-open        (fn [st {:keys [text path lang diff-path diff-text x y]}]
+                                   {:state (assoc st :web/code-menu {:text text :path path :lang lang
                                                                      :diff-path diff-path
                                                                      :diff-text diff-text
                                                                      :x x :y y})})
@@ -2233,6 +2235,9 @@
                               path (attr "data-file-path")
                               diff-path (attr "data-diff-path")
                               diff-text (attr "data-diff-text")
+                              lang (some->> (some-> node (.closest "pre") .-className)
+                                            (re-find #"\blanguage-(\S+)")
+                                            second)
                               text (if (.matches node ".md-diff")
                                      diff-text
                                      (.-textContent node))]
@@ -2242,6 +2247,7 @@
                                         :x (.-clientX e)
                                         :y (.-clientY e)}
                                  path (assoc :path path)
+                                 lang (assoc :lang lang)
                                  diff-text (assoc :diff-path diff-path
                                                   :diff-text diff-text)))
                             true))))]
@@ -2622,6 +2628,7 @@
       (do (when-let [t @offline-timer]
             (js/clearTimeout t)
             (reset! offline-timer nil))
+          (terminal/reattach-all!)
           (d {:type :connection/status :connected? true}))
       (when-not @offline-timer
         (reset! offline-timer
@@ -2885,7 +2892,9 @@
                         ;; nil: the router drives joins; reconnect replays them.
                         :target     nil
                         :reconnect? true
-                        :on-status  on-connection-status}))
+                        :on-status  on-connection-status
+                        ;; terminal output goes straight into xterm.js
+                        :intercept  terminal/intercept}))
         {:keys [dispatch! state add-tap!] :as app}
         (app/create-app {:initial-state initial
                          :handlers      (ws-transport/make-handlers
@@ -2904,6 +2913,11 @@
                          :on-render     render!})]
     (reset! pages-ref (:pages composed))
     (dashboard/register! (:dashboard-cards composed))
+    (doseq [{:keys [id block-menu-items terminal-toolbar-items]} (:extensions composed)]
+      (when block-menu-items (block-menu/register! id block-menu-items))
+      (when terminal-toolbar-items (terminal/register-toolbar! id terminal-toolbar-items)))
+    (when-let [send! (:send! transport)]
+      (terminal/set-send! send!))
     (reset! dispatch-ref dispatch!)
     (reset! app-ref app)
     ((:set-dispatch! transport) dispatch!)

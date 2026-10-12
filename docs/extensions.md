@@ -56,7 +56,9 @@ provider effects, and TUI.
    :nav-items        [{:menu :sidebar|:palette|:home-topbar|:overflow ...}]
    :sidebar-groups   [{:id kw :label str :where session-key :limit n :more {...}}]
    :session-menu-items [{:label str :label-on str :flag session-key :icon kw :event {...}}]
-   :taps             [(fn [dispatch!] → tap-fn)]})
+   :taps             [(fn [dispatch!] → tap-fn)]
+   :block-menu-items (fn [block state] → [{:label :icon :event}])  ; code-block menu (xi.web.block-menu)
+   :terminal-toolbar-items (fn [buffer state] → [{:label :icon :title :send|:event}])})  ; xi.web.terminal
 ```
 
 ## Architecture
@@ -443,6 +445,16 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
   are `xi.ext.home.web` and `xi.ext.usage.web`'s Usage card.
 - **`:taps`** — `(fn [dispatch!] → (fn [event state]))` factories, added via
   `add-tap!` at init (e.g. fire a stashed action once `:room/joined` arrives).
+- **`:block-menu-items`** — `(fn [block state] → items)`, asked when the
+  code-block menu opens (`xi.web.views/code-copy-menu`); `block` is `{:text
+  :path :lang :diff-path}`. Registered in `xi.web.block-menu` (fns, so outside
+  the state, like `xi.web.palette-items`).
+- **`:terminal-toolbar-items`** — `(fn [buffer state] → items)`, the floating
+  buttons of a terminal buffer; an item `:send`s text into the terminal or
+  dispatches its `:event`. Registered in `xi.web.terminal`.
+
+Both are open to user web halves too (`xi.web.user-ext.guard/wrap` confines
+their events like `:palette-items`).
 
 ### Routing hooks
 
@@ -502,6 +514,7 @@ namespace docstring is the authoritative description.
 | canvas-review | Experimental node-based review canvas (`canvas_review_*` tools); has a web half. A code block's Explain button spawns a sub-agent (`:canvas-review/explain-start` fx, no confirmation) and stores its final text on the node through a `:subagent/turn-end` chain — canvas-review is composed before subagent in `xi.config`, so that chain runs first and reads the child's history directly; keep that order. |
 | diff | `/diff` viewer buffer, one per source (`git` \| `staged` \| `unstaged` \| `session-edits` \| `session-git` \| `session-commits` \| `<ref>`; no args = session diff), id `diff:<source>` (`xi.buffers`); has a web half. |
 | file-view | Opens files touched by write/edit into a `file:<path>` buffer; has a web half. |
+| terminal | Terminal buffers `term:<id>` (`/term`, `:terminal/open`, rules `{:tool :terminal}`): a program under a Bun PTY (`xi.ext.terminal.pty`), shown by xterm.js (core `xi.web.terminal`, vendored in `resources/public/vendor/xterm`). Its I/O never enters the event loop on the browser side: keys go out through the transport's raw `:send!`, `:terminal/output` is taken off the socket by the transport's `:intercept`; on the server the roomless `:terminal/attach\|detach\|input\|resize` are `:no-broadcast` and output leaves through `:server-fx` `send!`. `:terminal/input` is coalesced in the event log (no keystrokes in `xi_events`). Has a web half (forwarding, touch keys, `:web/terminals-gone`). |
 | file-finder | Ctrl+P fuzzy file finder (TUI). |
 | projects | `/project` / Alt+P project path picker; remembers the git repo of every room / `/cd`; list from `xi.projects` ([guide: configuration](guide/configuration.md#projects)). |
 | skills | Project-marker system-prompt injection + `/skill list\|load` (`<input />` placeholders raise a `:form` dialog). |

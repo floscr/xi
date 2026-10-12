@@ -208,8 +208,11 @@
    :target (\"latest\" | \"new\" | room-id | {:session-id sid}, joined on open
    and replayed on reconnect), :cwd, :reconnect? (backoff 1s → 30s, queued
    sends), :on-status (fn [connected?]), :on-close (fn [], only without
-   :reconnect?). Returns {:effects :set-dispatch! :close!}."
-  [{:keys [url hello target cwd reconnect? on-status on-close]}]
+   :reconnect?), :intercept (fn [event] → truthy when it consumed the event,
+   which then never reaches the app: a stream with its own consumer, the web
+   terminals' output). Returns {:effects :send! :set-dispatch! :close!}; :send!
+   sends an event without going through the app."
+  [{:keys [url hello target cwd reconnect? on-status on-close intercept]}]
   (let [ctx #js {:dispatch nil :ws nil :closed false :pending #js [] :backoff 1000
                  :authed (nil? hello)
                  ;; Incoming broadcasts are coalesced: decoded events pile into
@@ -306,8 +309,9 @@
                        (set! (.-lastJoin ctx)
                              (wire/encode {:type :room/join
                                            :target {:session-id sid}})))
-                     (.push (.-inbox ctx) (assoc ev :remote? true))
-                     (schedule-flush!))))
+                     (when-not (and intercept (intercept ev))
+                       (.push (.-inbox ctx) (assoc ev :remote? true))
+                       (schedule-flush!)))))
                 (.addEventListener ws "close" (fn [_] (handle-drop!)))
                 (.addEventListener ws "error"
                                    (fn [_] (try (.close ws) (catch :default _ nil))))))
@@ -330,6 +334,7 @@
                     (.push (.-pending ctx) msg)))))]
       (connect!)
       {:effects       {:ws/send (fn [_ event] (send! event))}
+       :send!         send!
        :set-dispatch! (fn [dispatch!] (set! (.-dispatch ctx) dispatch!))
        :close!        (fn []
                         (set! (.-closed ctx) true)

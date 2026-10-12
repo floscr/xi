@@ -34,8 +34,10 @@
    sub-agent without the spawn confirmation, or open chats on its own.
    :chat/start {:text :cwd :client-id} opens a new chat seeded with a user
    message (see xi.server.room-manager). :session/resume {:room-id
-   :session-id} loads a saved session into the room, as /resume id:<id> does."
-  #{:prompt/submit :subagent/spawn :chat/start :session/resume})
+   :session-id} loads a saved session into the room, as /resume id:<id> does.
+   :terminal/open {:room-id :argv :cwd :title :tag :client-id :user} runs a
+   program in a terminal buffer (xi.ext.terminal, rules-gated as :terminal)."
+  #{:prompt/submit :subagent/spawn :chat/start :session/resume :terminal/open})
 
 (defn- own-event? [id ev-type]
   (= (some-> ev-type namespace) (str "ext." (name id))))

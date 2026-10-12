@@ -17,8 +17,10 @@
 (def ^:private max-string-len 200)
 
 (def coalescable-types
-  "High-frequency stream events — summarized to char counts and merged."
-  #{:agent/text-delta :agent/thinking-delta})
+  "High-frequency stream events — summarized to char counts and merged.
+   Terminal keystrokes too, so nothing typed into a shell (a password) lands
+   in the log the agent can read (xi_events)."
+  #{:agent/text-delta :agent/thinking-delta :terminal/input})
 
 (defn elide-string [s]
   (if (> (count s) max-string-len)

@@ -20,7 +20,8 @@
    over the extension's own browser slice only (see `wrap`) — logic lives in
    the server half."
   #{:id :routes :pages :nav-items :palette-items :taps :tool-views :sidebar-groups
-    :session-menu-items :dashboard-cards :handlers})
+    :session-menu-items :dashboard-cards :handlers :block-menu-items
+    :terminal-toolbar-items})
 
 (def builtin-segments
   "First URL segments the web client routes itself."
@@ -121,6 +122,11 @@
            " [:size :normal|:wide] [:icon kw] [:description str]}")
       (and (some? (:palette-items ext)) (not (fn? (:palette-items ext))))
       ":palette-items must be a fn of the app state → [{:label str :icon kw :event {…}}]"
+      (and (some? (:block-menu-items ext)) (not (fn? (:block-menu-items ext))))
+      ":block-menu-items must be a fn [block state] → [{:label str :icon kw :event {…}}]"
+      (and (some? (:terminal-toolbar-items ext)) (not (fn? (:terminal-toolbar-items ext))))
+      (str ":terminal-toolbar-items must be a fn [buffer state] → "
+           "[{:label str :icon kw :title str} + :send str or :event {…}]")
       (and (some? views) (not (map? views)))
       ":tool-views must be a map of tool name → fn"
       (seq alien)
@@ -403,6 +409,38 @@
                              (f state))
                        (catch :default e
                          (log-blocked id (str "palette items threw: " (.-message e)))
+                         [])))))
+
+      (:block-menu-items ext)
+      (update :block-menu-items
+              (fn [f]
+                (fn [block state]
+                  (try (into []
+                             (keep (fn [item]
+                                     (when (and (map? item) (string? (:label item)))
+                                       (when-let [event (forwardable id (:event item))]
+                                         (assoc item :event event)))))
+                             (f block state))
+                       (catch :default e
+                         (log-blocked id (str "block menu items threw: " (.-message e)))
+                         [])))))
+
+      ;; a button types its :send into the terminal on screen, or sends an
+      ;; :event confined like a menu item's
+      (:terminal-toolbar-items ext)
+      (update :terminal-toolbar-items
+              (fn [f]
+                (fn [buffer state]
+                  (try (into []
+                             (keep (fn [{:keys [label send event] :as item}]
+                                     (when (and (map? item) (string? label))
+                                       (cond
+                                         (string? send) (dissoc item :event)
+                                         (map? event)   (when-let [ev (forwardable id event)]
+                                                          (assoc item :event ev))))))
+                             (f buffer state))
+                       (catch :default e
+                         (log-blocked id (str "terminal toolbar items threw: " (.-message e)))
                          [])))))
 
       (:session-menu-items ext)

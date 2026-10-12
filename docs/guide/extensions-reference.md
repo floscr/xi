@@ -51,9 +51,14 @@ and `:remove-tools` are not available: whether a tool call runs is the
 - An extension's own events and effects are named `:ext.<id>/…`. A handler
   may dispatch those, plus `:ui/status` (text in the status line) and
   `:theme/set` (`:light`, `:dark` or nil for the terminal's code blocks).
-- `:prompt/submit`, `:chat/start`, `:subagent/spawn` and `:session/resume`
+- `:prompt/submit`, `:chat/start`, `:subagent/spawn`, `:session/resume`
   (`{:room-id … :session-id …}`: load a saved session into the chat, as
-  `/resume id:<id>` does) may be dispatched from commands, keybindings,
+  `/resume id:<id>` does) and `:terminal/open` (`{:room-id :argv :cwd :title :tag :client-id
+  :user}`: run `argv`, default the user's shell, in a
+  [terminal](web-client.md#terminals) buffer; `:cwd` is relative to the
+  chat's, `:tag` marks the buffer for your web half, `:client-id` switches
+  that client to it, `:user` is who the rules decide for) may be dispatched
+  from commands, keybindings,
   effects a command started, and handlers of own events a client sent (a
   click in a page). Never from tools.
 - An own event a client sends needs no chat: it also arrives from the home
@@ -274,7 +279,8 @@ A sibling namespace is loaded from the extension's directory:
 
 `<name>/web.cljs` defines `web-extension` with the same `:id` and only these
 keys: `:routes`, `:pages`, `:nav-items`, `:palette-items`, `:taps`, `:tool-views`,
-`:sidebar-groups`, `:session-menu-items`, `:dashboard-cards`, `:handlers`.
+`:sidebar-groups`, `:session-menu-items`, `:dashboard-cards`, `:handlers`,
+`:block-menu-items`, `:terminal-toolbar-items`.
 
 | Key | Shape |
 | --- | --- |
@@ -288,6 +294,8 @@ keys: `:routes`, `:pages`, `:nav-items`, `:palette-items`, `:taps`, `:tool-views
 | `:sidebar-groups` | `[{:id :<ext>/group :label "…" :where :flag? :limit 5 :more {:label "…" :icon :kw :event {…}}}]`: a drawer group (between Drafts and Recent) of the sessions whose `:where` flag is true, most recent first; `:more` is a closing row shown when there are more than `:limit`. The `:id` is namespaced with the extension's id. |
 | `:session-menu-items` | `[{:label "…" :label-on "…" :flag :flag? :icon :kw :event {…}}]`: entries of every session's context menu and the palette's "Current session" group. The `:event` gets the session's `:session-id`; `:label-on` replaces `:label` while the session's `:flag` is true. |
 | `:dashboard-cards` | `[{:id :<ext>/card :title "…" :render (fn [state dispatch!] → hiccup) :icon :kw :description "…" :order 50 :size :normal/:wide :when (fn [state] → bool) :load {…} :more {:label "…" :event {…}}}]`: cards on the [home page](web-client.md#home). `:render` draws the body (rendered like a page); Xi draws the frame with `:icon`, `:title` and the `:more` link. Cards sort by `:order` (built-in ones use 10–40, default 100); `:wide` takes the whole row; `:when` hides the card while false; `:load` is sent each time the home page opens, so a card can ask its server half for data. `:description` is shown under Customize dashboard. The `:id` is namespaced with the extension's id. |
+| `:block-menu-items` | `(fn [block state] → [{:label "…" :icon :kw :event {…}}])`: entries of the code-block menu (right-click or tap a code block), below Copy / View file / View diff. `block` is `{:text :path :lang :diff-path}`: `:path` when the block belongs to a tool call or file buffer naming a file, `:lang` for a fenced code block. Events follow the `:nav-items` rule; a throw yields no entries. |
+| `:terminal-toolbar-items` | `(fn [buffer state] → [{:label "…" :title "…" :icon :kw …}])`: buttons floating over a [terminal](web-client.md#terminals) buffer. `buffer` is `{:term-id :argv :cwd :title :tag …}`; check `:tag` to show buttons only on your own terminals. A button with `:send "…"` types that text into the terminal (`"\u001b:w\r"`), one with `:event` sends it like a nav item. `:icon` replaces the label, which stays the tooltip unless `:title` is set. |
 
 A tool view replaces the text result in the chat's block for one of the
 extension's own tools. `call` is the finished call, `{:tool :arguments :text

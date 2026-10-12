@@ -3,10 +3,10 @@
    system prompt, the event log, the shortcut list. Pure helpers over the
    room's `[:ui :buffers id → buffer]` map and `[:ui :active-buffer]`.
 
-   A buffer is `{:kind :diff|:file|:prompt|:events|:keys :title … :opened-at
-   ms …}` plus its kind's payload (`:text`, `:path`, `:engine`, …). Several
-   buffers of one kind coexist, so ids are strings built from what they show
-   (`file-id`, `diff-id`); the singletons keep a keyword id equal to their kind
+   A buffer is `{:kind :diff|:file|:terminal|:prompt|:events|:keys :title …
+   :opened-at ms …}` plus its kind's payload (`:text`, `:path`, `:engine`,
+   `:term-id`, …). Several buffers of one kind coexist, so ids are strings
+   built from what they show (`file-id`, `diff-id`, `terminal-id`); the singletons keep a keyword id equal to their kind
    (`:prompt`, `:events`, `:keys`), which `kind` falls back to.
 
    The buffer list is room state (it mirrors to every client and survives the
@@ -36,6 +36,17 @@
    replaces that buffer in place."
   [source]
   (str "diff:" (if (str/blank? source) "session-edits" source)))
+
+(defn terminal-id
+  "The id of the buffer showing terminal `term-id` (xi.ext.terminal)."
+  [term-id]
+  (str "term:" term-id))
+
+(defn terminal-of
+  "The terminal id behind buffer id `id`, nil for any other buffer."
+  [id]
+  (when (and (string? id) (str/starts-with? id "term:"))
+    (subs id 5)))
 
 (defn label
   "What a buffer is called in lists: its title, else its id."
