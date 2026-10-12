@@ -1,6 +1,8 @@
 (ns xi.ext.canvas-review-test
   (:require [cljs.test :refer [deftest is testing]]
+            [xi.buffers :as buffers]
             [xi.core.state :as state]
+            [xi.ext.diff.git :as git]
             [xi.session :as session]
             [xi.ext.canvas-review :as cr]
             ["node:fs" :as fs]
@@ -50,6 +52,37 @@
     (testing "hydrate won't clobber a canvas that already has nodes"
       (let [populated (assoc-in base [:rooms rid :ext :canvas-review :nodes "x"] {:id "x"})]
         (is (nil? (hydrate populated {:room-id rid :canvas sample-canvas})))))))
+
+(deftest canvas-opens-as-a-buffer
+  (let [rid     "r1"
+        base    (room-state rid {:nodes {} :edges {} :plan []})
+        load    (get-in cr/extension [:handlers :canvas-review/load])
+        hydrate (get-in cr/extension [:handlers :canvas-review/hydrate])
+        buf     (fn [res] (get-in (:state res) [:rooms rid :ui :buffers buffers/canvas]))]
+    (testing "loading a review installs the room's :canvas buffer, titled by the source"
+      (let [res (load base {:room-id rid :source "HEAD~1" :title "Diff: HEAD~1"
+                            :text "diff" :event/ts 5})]
+        (is (= {:kind :canvas :title "Canvas review · Diff: HEAD~1" :opened-at 5}
+               (buf res)))
+        (is (= :canvas (buffers/kind buffers/canvas (buf res))))
+        (testing "reloading keeps its place in the buffer order"
+          (is (= 5 (:opened-at (buf (load (:state res) {:room-id rid :title "Staged Changes"
+                                                       :text "diff" :event/ts 9})))))))
+    (testing "hydrating a persisted canvas brings its buffer back"
+      (is (= "Canvas review · T" (:title (buf (hydrate base {:room-id rid :canvas sample-canvas}))))))
+    (testing "a canvas without a diff gets no buffer"
+      (is (nil? (buf (hydrate base {:room-id rid :canvas {:nodes {} :edges {} :plan []}})))))
+    (testing "/canvas-review switches only the originating client to it"
+      (let [seen  (atom [])
+            st    (assoc-in base [:rooms rid :cwd] (.cwd js/process))
+            start (get-in cr/extension [:fx :canvas-review/start])]
+        (with-redefs [git/diff-against-ref (constantly {:ok "diff --git a/a b/a\n@@ -1 +1 @@\n-a\n+b\n"})
+                      git/git-ref?         (constantly true)]
+          (start {:dispatch! #(swap! seen conj %) :get-state (constantly st)}
+                 {:room-id rid :args "HEAD~1" :client-id "c1"}))
+        (is (= [:canvas-review/load :ui/buffer-switch :subagent/spawn] (mapv :type @seen)))
+        (is (= {:type :ui/buffer-switch :room-id rid :buffer-id :canvas :client-id "c1"}
+               (second @seen)))))))
 
 (deftest mutation-emits-persist
   (let [rid "r1"
@@ -111,3 +144,4 @@
         (is (= :canvas-review/hydrate (:type @seen)))
         (is (= rid (:room-id @seen)))
         (is (= sample-canvas (:canvas @seen)))))))
+)

@@ -4,10 +4,28 @@
    [:rooms rid :ext :canvas-review], so both surfaces register them: the server
    applies them and broadcasts, and each web client applies the same reducer to
    its mirror — the canvas builds up live as the model works. Browser-safe (no
-   node APIs)."
-  (:require [xi.core.state :as state]))
+   node APIs).
+
+   Loading or hydrating a canvas also installs the room's `:canvas` buffer
+   (xi.buffers/canvas), which the chat view renders through the web half's
+   `:buffer-views`."
+  (:require [xi.buffers :as buffers]
+            [xi.core.state :as state]))
 
 (def ext-id :canvas-review)
+
+(defn buffer
+  "The `:canvas` buffer for a canvas titled `title`."
+  [title]
+  {:kind  buffers/canvas
+   :title (str "Canvas review" (when title (str " · " title)))})
+
+(defn- install-buffer
+  "Install the room's `:canvas` buffer for its current canvas (keeps its place
+   in the buffer order when already open)."
+  [st room-id ts]
+  (update-in st [:rooms room-id] buffers/install buffers/canvas
+             (buffer (get-in st [:rooms room-id :ext ext-id :title])) ts))
 
 (defn load-handler
   "Install the diff and reset the canvas. Deterministically names an unnamed
@@ -16,11 +34,13 @@
    seeded by a /command, which bypasses the usual prompt-driven auto-naming.
    Guarded on `nil?` name so re-running /canvas-review in a real, already-named
    user session never clobbers its title."
-  [st {:keys [room-id source title text name]}]
+  [st {:keys [room-id source title text name] :as ev}]
   (when (state/get-room st room-id)
-    (let [st (assoc-in st [:rooms room-id :ext ext-id]
-                       {:source source :title title :diff text
-                        :nodes {} :edges {} :plan []})
+    (let [st (-> st
+                 (assoc-in [:rooms room-id :ext ext-id]
+                           {:source source :title title :diff text
+                            :nodes {} :edges {} :plan []})
+                 (install-buffer room-id (:event/ts ev)))
           st (if (and name (nil? (get-in st [:rooms room-id :session :name])))
                (assoc-in st [:rooms room-id :session :name] name)
                st)]
@@ -74,10 +94,11 @@
   "Install a whole persisted canvas into a room (on resume from disk). Broadcast
    to clients so their mirror rebuilds. Guarded to avoid clobbering a canvas
    that's already populated (a live room the agent is still drawing on)."
-  [st {:keys [room-id canvas]}]
+  [st {:keys [room-id canvas] :as ev}]
   (when (and canvas (state/get-room st room-id)
              (empty? (get-in st [:rooms room-id :ext ext-id :nodes])))
-    {:state (assoc-in st [:rooms room-id :ext ext-id] canvas)}))
+    {:state (cond-> (assoc-in st [:rooms room-id :ext ext-id] canvas)
+              (seq (:diff canvas)) (install-buffer room-id (:event/ts ev)))}))
 
 (def handlers
   {:canvas-review/load      load-handler

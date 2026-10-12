@@ -75,8 +75,8 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
 - **Timeline virtualization**: last 60 entries render; "Show earlier" adds 40
   (`:web/timeline-window`, reset on navigation).
 - **Buffers** (`xi.buffers`, cljc): the room's `[:ui :buffers id → buffer]`
-  — diffs (`diff:<source>`), files (`file:<path>`), the prompt (`:prompt`)
-  — and `[:ui :active-buffer]`. The list is room state (mirrors, survives the
+  — diffs (`diff:<source>`), files (`file:<path>`), terminals
+  (`term:<id>`), the review canvas (`:canvas`), the prompt (`:prompt`) — and `[:ui :active-buffer]`. The list is room state (mirrors, survives the
   room's close parked per session on the server, see architecture.md); the
   active one is this client's: `:ui/buffer-switch` is a ws-transport
   local-ui event, and a switch a server flow dispatches for one client (a
@@ -84,9 +84,10 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   core reducer compares with `[:connection :client-id]` (from `:auth/ok`).
   `room-joined` resets the snapshot's active buffer to the chat. The topbar
   `buffer-menu` (a `.tab-pill` trigger + `ui.popover`) names the view in front
-  and lists the chat, every buffer (× → `:ui/buffer-close`), the canvas and
-  Close all (`:ui/buffers-close-all`); `chat-view` picks the view by the
-  buffer's kind (`diff-tab-view`, `file-tab-view`, `prompt-tab-view`, else
+  and lists the chat, every buffer (× → `:ui/buffer-close`) and Close all
+  (`:ui/buffers-close-all`); `chat-view` picks the view by the buffer's kind
+  (`diff-tab-view`, `file-tab-view`, `terminal/view`, `prompt-tab-view`, an
+  extension's `:buffer-views` entry from `xi.web.buffer-views`, else
   `text-tab-view`). Session cards get `:buffers` from the lobby's
   `:buffers {sid [{:id :kind :title}]}` (`sidebar/session-buffers`) and list
   them under the card (`session-buffer-rows`; the count toggles

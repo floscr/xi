@@ -139,7 +139,7 @@ No on-enter callback — chain a `:route/navigate` handler:
   `xi.api.user`, shown by `:session-flags`, see extensions-reference.md).
 - Replicant: seq-rendered siblings need `:replicant/key`.
 
-Canonical example: `src/xi/ext/canvas_review/web.cljs`.
+Canonical example: `src/xi/ext/usage/web.cljs`.
 
 ## 6. Verify
 

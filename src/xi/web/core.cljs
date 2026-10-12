@@ -25,6 +25,7 @@
             [xi.util :as util]
             [xi.web.appearance :as appearance]
             [xi.web.block-menu :as block-menu]
+            [xi.web.buffer-views :as buffer-views]
             [xi.web.terminal :as terminal]
             [xi.web.theme :as theme]
             [xi.web.user-state :as user-state]
@@ -2920,8 +2921,9 @@
                          :on-render     render!})]
     (reset! pages-ref (:pages composed))
     (dashboard/register! (:dashboard-cards composed))
-    (doseq [{:keys [id block-menu-items terminal-toolbar-items]} (:extensions composed)]
+    (doseq [{:keys [id block-menu-items terminal-toolbar-items buffer-views]} (:extensions composed)]
       (when block-menu-items (block-menu/register! id block-menu-items))
+      (when buffer-views (buffer-views/register! id buffer-views))
       (when terminal-toolbar-items (terminal/register-toolbar! id terminal-toolbar-items)))
     (when-let [send! (:send! transport)]
       (terminal/set-send! send!))

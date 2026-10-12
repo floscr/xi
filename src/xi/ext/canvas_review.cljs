@@ -3,11 +3,12 @@
 
    `/canvas-review [source]` loads a diff (default: this session's uncommitted
    edits, like /diff session-git), installs it as the room's canvas-review
-   state, opens the web Canvas view, and seeds an agent turn instructing the
-   model to lay the changes out on a spatial canvas: one node per meaningful
-   changed code block, comment/prose nodes explaining what and why, labeled
-   connections describing how blocks relate, and a targeted walkthrough plan
-   (where to look first) the human steps through with Next/Prev.
+   state, opens it as the room's `:canvas` buffer, and seeds an agent turn
+   instructing the model to lay the changes out on a spatial canvas: one node
+   per meaningful changed code block, comment/prose nodes explaining what and
+   why, labeled connections describing how blocks relate, and a targeted
+   walkthrough plan (where to look first) the human steps through with
+   Next/Prev.
 
    The model drives the canvas through six tools (canvas_review_*), plain
    :tool-registry entries: each dispatches a pure state-mutating event via the
@@ -16,8 +17,9 @@
    so the canvas builds up live as the model works.
 
    Node/server half. The browser half (xi.ext.canvas-review.web) renders the
-   canvas page."
+   canvas buffer."
   (:require [clojure.string :as str]
+            [xi.buffers :as buffers]
             [xi.core.state :as state]
             [xi.diff :as diff]
             [xi.ext.canvas-review.handlers :as h]
@@ -140,15 +142,16 @@
       (dispatch! {:type :ui/status :room-id room-id
                   :text "No changes to review."})
       (do
-        ;; Broadcast: install the diff + reset the canvas for every client, and
-        ;; name the (still-unnamed) session so the sidebar shows the review.
+        ;; Broadcast: install the diff + reset the canvas (and its :canvas
+        ;; buffer) for every client, and name the (still-unnamed) session so
+        ;; the sidebar shows the review.
         (dispatch! {:type :canvas-review/load :room-id room-id
                     :source (or (some-> args str/trim not-empty) "session-git")
                     :title title :text text :name label})
-        ;; Originator-only: tell the web client that ran the command to open
-        ;; the Canvas view (a no-op on the server + TUI).
-        (dispatch! (cond-> {:type :canvas-review/open :room-id room-id
-                            :session-id (get-in room [:session :id])}
+        ;; Show the canvas buffer on the client that ran the command only
+        ;; (xi.buffers/switch-here?).
+        (dispatch! (cond-> {:type :ui/buffer-switch :room-id room-id
+                            :buffer-id buffers/canvas}
                      client-id (assoc :client-id client-id)))
         ;; Kick off a background sub-agent that builds the canvas — the
         ;; canvas_review_* tools act on THIS room (the sub-agent's gate uses
@@ -379,10 +382,6 @@
                       :canvas-review/persist   persist-fx
                       :canvas-review/rehydrate rehydrate-fx}
    :handlers         node-handlers
-   ;; :canvas-review/open only tells the originating web client to navigate to
-   ;; the Canvas view — it must not flip other clients or reach the server as
-   ;; state, so it rides originator-only with no server handler.
-   :originator-only  #{:canvas-review/open}
    ;; Loading a review names the (unnamed) session; a fresh lobby fan-out lets
    ;; every client's recent-sessions sidebar pick up the new :session-name.
    :lobby-relevant   #{:canvas-review/load}

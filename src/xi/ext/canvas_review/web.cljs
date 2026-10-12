@@ -3,9 +3,9 @@
 
    Registers the shared pure canvas handlers (so the mirrored
    :canvas-review/add-node|add-edge|set-plan|load broadcasts build the canvas
-   live) plus client-local view handlers (:canvas-review/open navigation, the
-   Next/Prev walkthrough stepper), and contributes the /canvas-review/:sid
-   route + page and a chat overflow entry point.
+   live) plus client-local view handlers (the overflow entry point, the
+   Next/Prev walkthrough stepper), and renders the room's `:canvas` buffer
+   (xi.buffers/canvas) through `:buffer-views`, inside the chat view.
 
    The canvas is a scrollable layer of absolutely-positioned node cards; edges
    are drawn imperatively into an SVG overlay from the nodes' laid-out
@@ -13,6 +13,7 @@
    plan drives a cursor that scrolls the focused node to center and highlights
    it."
   (:require [clojure.string :as str]
+            [xi.buffers :as buffers]
             [ui.button :as button]
             [ui.icon :as icon]
             [ui.toolbar :as toolbar]
@@ -27,31 +28,28 @@
 (defn- cr-state [st]
   (get-in (state/active-room st) [:ext :canvas-review]))
 
-(defn- on-open
-  "Originator-only :canvas-review/open from the server → navigate to the
-   Canvas view for the session that ran /canvas-review."
-  [st {:keys [session-id]}]
-  {:state   (dissoc st :web/diff-sel)
-   :effects [[:app/dispatch {:type :route/navigate :page :canvas-review
-                             :session-id session-id}]]})
-
 (defn- on-open-page
-  "Chat overflow entry point — open the active room's canvas."
+  "Chat overflow entry point — show the room's canvas buffer, reopening it
+   when it was closed; a room without a canvas runs /canvas-review instead."
   [st {:keys [room-id]}]
-  (let [sid (get-in st [:rooms room-id :session :id])]
-    {:state   (dissoc st :web/diff-sel)
-     :effects [[:app/dispatch {:type :route/navigate :page :canvas-review
-                               :session-id sid}]]}))
+  (let [rid (or room-id (:active-room st))
+        cr  (get-in st [:rooms rid :ext :canvas-review])]
+    (cond
+      (nil? rid) nil
 
-(defn- on-navigate
-  "Chained after the router: entering the canvas for a session we're not
-   already in joins/resumes that room (so a deep link / reload works)."
-  [st {:keys [page session-id]}]
-  (when (and (= page :canvas-review) session-id
-             (not= session-id (get-in (state/active-room st) [:session :id])))
-    {:effects [[:cache/seed-room {:session-id session-id}]
-               [:room/join-with-cache {:target {:session-id session-id}
-                                       :session-id session-id}]]}))
+      (empty? (:diff cr))
+      {:effects [[:app/dispatch {:type :web/command :room-id rid :name "canvas-review"}]]}
+
+      :else
+      {:state   (dissoc st :web/diff-sel)
+       :effects (cond-> []
+                  (nil? (get-in st [:rooms rid :ui :buffers buffers/canvas]))
+                  (conj [:app/dispatch {:type :ui/buffer-set :room-id rid
+                                        :buffer-id buffers/canvas
+                                        :buffer (h/buffer (:title cr))}])
+                  :always
+                  (conj [:app/dispatch {:type :ui/buffer-switch :room-id rid
+                                        :buffer-id buffers/canvas}]))})))
 
 (defn- plan-len [st] (count (:plan (cr-state st))))
 
@@ -104,13 +102,12 @@
   {:state (update-in st [:web/cr :composing?] not)})
 
 (defn- send-fx
-  "Submit a prompt into the room and jump to the chat view (mirrors
+  "Submit a prompt into the room and switch to the chat (mirrors
    diff-submit): the agent's answer lands in the conversation."
   [st prompt]
-  (let [rid (:active-room st)
-        sid (get-in (state/active-room st) [:session :id])]
+  (let [rid (:active-room st)]
     [[:ws/send {:type :input/submit :room-id rid :text prompt}]
-     [:app/dispatch {:type :route/navigate :page :chat :session-id sid}]]))
+     [:app/dispatch {:type :ui/buffer-switch :room-id rid :buffer-id buffers/chat}]]))
 
 (defn- one-prompt [{:keys [file snippet]} comment]
   (str (or (not-empty comment)
@@ -185,9 +182,7 @@
 
 (def ^:private handlers
   (merge h/handlers
-         {:route/navigate              on-navigate
-          :canvas-review/open          on-open
-          :canvas-review/open-page     on-open-page
+         {:canvas-review/open-page     on-open-page
           :canvas-review/step          cr-step
           :canvas-review/goto          cr-goto
           :canvas-review/select        cr-select
@@ -692,9 +687,11 @@
     {:w (+ 80 (apply max 900 xs))
      :h (apply max 640 ys)}))
 
-(defn- canvas-page [state dispatch!]
-  (let [room     (state/active-room state)
-        cr       (get-in room [:ext :canvas-review])
+(defn- canvas-view
+  "The `:canvas` buffer's body, below the chat topbar (whose view switch names
+   the review)."
+  [state dispatch! room _id _buffer]
+  (let [cr       (get-in room [:ext :canvas-review])
         nodes    (:nodes cr)
         edges    (vals (:edges cr))
         plan     (:plan cr)
@@ -707,12 +704,7 @@
         open     (get-in state [:web/cr :open-comments])
         composing? (get-in state [:web/cr :composing?])
         {cw :w ch :h} (canvas-size nodes)]
-    [:div {:class ["container" "cr-container"] :replicant/key "canvas-review"}
-     [:div {:class ["topbar"]}
-      (views/menu-button dispatch!)
-      [:div {:class ["topbar-title"]} "Canvas review"
-       (when (:title cr) [:span {:class ["cr-source"]} " · " (:title cr)])]
-      (views/overflow-menu dispatch! state)]
+    [:div {:class ["cr-container"] :replicant/key "canvas-review"}
      [:div {:class ["cr-layout"]}
       [:div {:class ["cr-viewport"]
              :replicant/on-mount canvas-pan!
@@ -737,20 +729,11 @@
           (review-tray dispatch! items)])]
       (plan-panel dispatch! plan cursor)]]))
 
-;; ── Route ────────────────────────────────────────────────────────────────────
-
-(defn- parse-route [segs]
-  {:page :canvas-review :session-id (first segs)})
-
 ;; ── Extension ────────────────────────────────────────────────────────────────
 
 (def extension
   {:id       :canvas-review
    :handlers handlers
-   :routes   {"canvas-review"
-              {:parse parse-route
-               :path  {:canvas-review (fn [{:keys [session-id]}]
-                                        (str "/canvas-review/" session-id))}}}
-   :pages    {:canvas-review canvas-page}
+   :buffer-views {buffers/canvas {:view canvas-view :icon :layout-dashboard}}
    :nav-items [{:menu :overflow :mode :room :label "Canvas review"
                 :icon :layout-dashboard :event {:type :canvas-review/open-page}}]})

@@ -5410,7 +5410,13 @@ code a:hover,
 
 /* ── Canvas review (experimental node-based review) ─────────────────────── */
 
-.cr-container { display: flex; flex-direction: column; height: 100%; }
+.cr-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 
 .cr-layout {
   flex: 1;
@@ -5739,8 +5745,6 @@ code a:hover,
   overflow-y: auto;
 }
 .cr-step-note :first-child { margin-top: 0; }
-
-.cr-source { color: var(--fg-2); font-weight: 400; }
 
 @media (max-width: 720px) {
   .cr-layout { flex-direction: column; }

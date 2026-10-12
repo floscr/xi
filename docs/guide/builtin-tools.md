@@ -117,8 +117,9 @@ attached to answer, the spawn is refused.
 
 ## Review canvas
 
-`/canvas-review` asks the agent to lay a diff out on a canvas in the web
-client: code blocks, comments, connections and a walkthrough. The agent
+`/canvas-review` asks the agent to lay a diff out on a canvas, which opens
+as a buffer of the chat in the web client: code blocks, comments,
+connections and a walkthrough. The agent
 builds it with these tools, and the canvas updates live on every client.
 
 | Tool | Does |

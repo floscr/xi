@@ -26,6 +26,7 @@
             [xi.util :as util]
             [xi.web.appearance :as appearance]
             [xi.web.block-menu :as block-menu]
+            [xi.web.buffer-views :as buffer-views]
             [xi.web.dashboard :as dashboard]
             [xi.web.theme :as ctheme]
             [xi.web.keymap :as keymap]
@@ -2592,7 +2593,8 @@
 
 (defn buffer-icon
   "The icon of a buffer kind (xi.buffers); `:subagent` is a background
-   sub-agent listed with the buffers (xi.server.room-manager/session-buffers)."
+   sub-agent listed with the buffers (xi.server.room-manager/session-buffers).
+   Kinds an extension renders bring their own (xi.web.buffer-views)."
   [kind]
   (case kind
     :diff     :code
@@ -2600,7 +2602,7 @@
     :terminal :terminal
     :prompt   :terminal
     :subagent :users
-    :list))
+    (or (buffer-views/icon kind) :list)))
 
 (defn- text-tab-view
   [id {:keys [text] :as buf}]
@@ -2668,12 +2670,12 @@
    [:circle {:cx "12" :cy "19" :r "1"}]])
 
 (defn- buffer-menu
-  "The topbar's view switch once the room has a buffer or a canvas: a pill
-   naming the view in front, opening a popover listing the chat, every buffer
-   (× closes it for everyone), the Canvas page and \"Close all\". Switching
+  "The topbar's view switch once the room has a buffer: a pill naming the
+   view in front, opening a popover listing the chat, every buffer (× closes
+   it for everyone) and \"Close all\". Switching
    stays client-local; a virtual new chat keeps its buffers on the pending
    room."
-  [dispatch! room-id active-buffer buffers canvas? people-of]
+  [dispatch! room-id active-buffer buffers people-of]
   (let [switch! (fn [buffer-id]
                   (dispatch! {:type :diff/clear-selection})
                   (dispatch! (if room-id
@@ -2732,9 +2734,6 @@
                :people (people-of id)
                :on-click #(switch! id)
                :on-close #(close! id)}))
-      (when canvas?
-        (item {:id "canvas" :icon :layout-dashboard :title "Canvas"
-               :on-click #(dispatch! {:type :canvas-review/open-page :room-id room-id})}))
       (when (seq buffers)
         (list
          [:div {:class ["overflow-menu-divider"] :replicant/key "buffer-menu-divider"}]
@@ -3303,8 +3302,7 @@
         active-buf (get ui :active-buffer :chat)
         active-buffer (get buffers active-buf)
         buffer-kind (when active-buffer (buffers/kind active-buf active-buffer))
-        canvas?    (boolean (seq (get-in room [:ext :canvas-review :diff])))
-        has-tabs?  (boolean (or (seq buffers) canvas?))
+        has-tabs?  (boolean (seq buffers))
         nav-ctx (prompt-nav-ctx state history)
         ;; Drops stage on the composer, so only while it is actually showing.
         deny-reason (:web/deny-reason state)
@@ -3327,7 +3325,7 @@
       (offline-badge state)
       (yolo-chip dispatch! room)
       (when has-tabs?
-        (buffer-menu dispatch! (:id room) active-buf buffers canvas?
+        (buffer-menu dispatch! (:id room) active-buf buffers
                      (let [viewers (buffers/viewers room)]
                        (fn [id] (sb/room-people state (get viewers id))))))
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
@@ -3350,8 +3348,14 @@
        :prompt
        (prompt-tab-view dispatch! room (or (:web/prompt-expanded state) #{}))
 
-       (if (and active-buffer (string? (:text active-buffer)))
+       (cond
+         (and active-buffer (buffer-views/view buffer-kind))
+         ((buffer-views/view buffer-kind) state dispatch! room active-buf active-buffer)
+
+         (and active-buffer (string? (:text active-buffer)))
          (text-tab-view active-buf active-buffer)
+
+         :else
        (list
         [:div {:class ["timeline"
                        (when-not pa? "timeline--float-footer")]}

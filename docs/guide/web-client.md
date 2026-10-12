@@ -98,15 +98,15 @@ projects** in the sidebar opens the project list (`/projects`).
 
 A chat can hold views next to its conversation: the diffs you opened
 (`/diff`, the Git status entry, a commit from `/commits` or `/log`), the files you
-opened from a code block or the file finder, the system prompt (`/prompt`).
+opened from a code block or the file finder, the system prompt (`/prompt`),
+terminals (`/term`) and the review canvas (`/canvas-review`).
 These are its **buffers**. Each file and each diff source is its own buffer,
 so opening a second file keeps the first; opening the same one again
 refreshes it in place.
 
 - **Switching.** Once a chat has a buffer, the pill in the top bar names the
   view you are looking at. Click it for the list: the chat, every buffer in
-  the order you opened them (the one in front is tinted), and the review
-  canvas when there is one. `Alt+b` opens the same list in the command
+  the order you opened them (the one in front is tinted). `Alt+b` opens the same list in the command
   palette: type to filter, Enter to switch. `q` or `Esc` in a diff or file
   view goes back to the chat; the buffer stays open.
 - **In the sidebar.** A session with buffers says so under its name ("3

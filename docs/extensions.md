@@ -58,7 +58,8 @@ provider effects, and TUI.
    :session-menu-items [{:label str :label-on str :flag session-key :icon kw :event {...}}]
    :taps             [(fn [dispatch!] → tap-fn)]
    :block-menu-items (fn [block state] → [{:label :icon :event}])  ; code-block menu (xi.web.block-menu)
-   :terminal-toolbar-items (fn [buffer state] → [{:label :icon :title :send|:event}])})  ; xi.web.terminal
+   :terminal-toolbar-items (fn [buffer state] → [{:label :icon :title :send|:event}])  ; xi.web.terminal
+   :buffer-views     {kind {:view (fn [state dispatch! room id buffer] → hiccup) :icon kw}}})  ; xi.web.buffer-views
 ```
 
 ## Architecture
@@ -388,7 +389,7 @@ build, an extension with a web UI is split in two:
 
 - `src/xi/ext/canvas_review.cljs` — the node/server half (tools, server
   handlers, state), listed in `xi.config/server`.
-- `src/xi/ext/canvas_review/web.cljs` — the browser half (routes, pages,
+- `src/xi/ext/canvas_review/web.cljs` — the browser half (its buffer view,
   client handlers), listed in `xi.config/web`. It may require
   `xi.web.views` (shared building blocks: `menu-button`, `overflow-menu`,
   `spinner`, `shorten-path`, `diff-rows-view`) and `ui.*` components, but
@@ -452,8 +453,15 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
 - **`:terminal-toolbar-items`** — `(fn [buffer state] → items)`, the floating
   buttons of a terminal buffer; an item `:send`s text into the terminal or
   dispatches its `:event`. Registered in `xi.web.terminal`.
+- **`:buffer-views`** — `{kind {:view (fn [state dispatch! room id buffer]
+  → hiccup) :icon kw}}`, the body of a room buffer of that kind (`xi.buffers`)
+  below the chat topbar, for kinds the chat view has no built-in view for;
+  `:icon` marks the kind in the view switch and the sidebar. Registered in
+  `xi.web.buffer-views`; built-in web halves only. Example: the review canvas
+  (`:canvas`, `xi.ext.canvas-review.web`), whose buffer the shared
+  `:canvas-review/load` / `:canvas-review/hydrate` reducers install.
 
-Both are open to user web halves too (`xi.web.user-ext.guard/wrap` confines
+`:block-menu-items` and `:terminal-toolbar-items` are open to user web halves too (`xi.web.user-ext.guard/wrap` confines
 their events like `:palette-items`).
 
 ### Routing hooks
@@ -470,7 +478,7 @@ drill-down state from the route and emitting fetch effects:
                 [[:app/dispatch {:type :my-ext/load :cwd cwd}]])}))
 ```
 
-Example: `xi.ext.canvas-review.web` (the /canvas-review page).
+Example: `xi.ext.usage.web` (the /usage page).
 
 ## Writing a New Extension
 
@@ -511,7 +519,7 @@ namespace docstring is the authoritative description.
 |-----------|--------------|
 | resume | `/trim`, `/rollover`, `/lineage`. See [architecture.md](architecture.md#session-tools) and the guide's [sessions](guide/sessions.md). |
 | worktree | `/worktree` — move the room into a fresh git worktree (`merge`/`list`/`remove`). |
-| canvas-review | Experimental node-based review canvas (`canvas_review_*` tools); has a web half. A code block's Explain button spawns a sub-agent (`:canvas-review/explain-start` fx, no confirmation) and stores its final text on the node through a `:subagent/turn-end` chain — canvas-review is composed before subagent in `xi.config`, so that chain runs first and reads the child's history directly; keep that order. |
+| canvas-review | Experimental node-based review canvas (`canvas_review_*` tools), shown as the room's `:canvas` buffer (`/canvas-review` switches the originating client to it); has a web half. A code block's Explain button spawns a sub-agent (`:canvas-review/explain-start` fx, no confirmation) and stores its final text on the node through a `:subagent/turn-end` chain — canvas-review is composed before subagent in `xi.config`, so that chain runs first and reads the child's history directly; keep that order. |
 | diff | `/diff` viewer buffer, one per source (`git` \| `staged` \| `unstaged` \| `session-edits` \| `session-git` \| `session-commits` \| `<ref>`; no args = session diff), id `diff:<source>` (`xi.buffers`); has a web half. |
 | file-view | Opens files touched by write/edit into a `file:<path>` buffer; has a web half. |
 | terminal | Terminal buffers `term:<id>` (`/term`, `:terminal/open`, rules `{:tool :terminal}`): a program under a Bun PTY (`xi.ext.terminal.pty`), shown by xterm.js (core `xi.web.terminal`, vendored in `resources/public/vendor/xterm`). Its I/O never enters the event loop on the browser side: keys go out through the transport's raw `:send!`, `:terminal/output` is taken off the socket by the transport's `:intercept`; on the server the roomless `:terminal/attach\|detach\|input\|resize` are `:no-broadcast` and output leaves through `:server-fx` `send!`. `:terminal/input` is coalesced in the event log (no keystrokes in `xi_events`). Has a web half (forwarding, touch keys, `:web/terminals-gone`). |

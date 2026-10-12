@@ -3,11 +3,11 @@
    system prompt, the event log, the shortcut list. Pure helpers over the
    room's `[:ui :buffers id → buffer]` map and `[:ui :active-buffer]`.
 
-   A buffer is `{:kind :diff|:file|:terminal|:prompt|:events|:keys :title …
+   A buffer is `{:kind :diff|:file|:terminal|:canvas|:prompt|:events|:keys :title …
    :opened-at ms …}` plus its kind's payload (`:text`, `:path`, `:engine`,
    `:term-id`, …). Several buffers of one kind coexist, so ids are strings
    built from what they show (`file-id`, `diff-id`, `terminal-id`); the singletons keep a keyword id equal to their kind
-   (`:prompt`, `:events`, `:keys`), which `kind` falls back to.
+   (`:prompt`, `:events`, `:keys`, `:canvas`), which `kind` falls back to.
 
    The buffer list is room state (it mirrors to every client and survives the
    room's close — the server parks it per session, see
@@ -18,6 +18,12 @@
 (def chat
   "The pseudo buffer id of the chat itself."
   :chat)
+
+(def canvas
+  "The id (and kind) of the room's review canvas buffer (xi.ext.canvas-review).
+   Its payload is just the title; the canvas itself lives at
+   `[:ext :canvas-review]`."
+  :canvas)
 
 (defn kind
   "A buffer's kind: its `:kind`, else its keyword id (the singletons)."
