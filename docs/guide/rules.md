@@ -59,8 +59,8 @@ so it can change course instead of retrying.
 runs instead, until you run `/yolo` again. It works while the agent is busy;
 a dialog that is already open still waits for your answer. The terminal
 prompt shows 🔥 and the web chat header a `Yolo` chip while it is on (click
-the chip to turn it off). The mode is not saved with the chat; a resumed
-chat starts with it off.
+the chip to turn it off). The mode is saved with the chat: it stays on
+across turns, chat switches and server restarts.
 
 It skips confirmations only: rule asks, the [clj tool](clj-tool.md)'s own
 prompts (programs, paths outside the project, directory deletions) and

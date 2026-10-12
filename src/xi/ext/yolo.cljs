@@ -6,7 +6,8 @@
    :ext.yolo/set, whose reducer `set-enabled` flips the flag and appends the
    status line; the server echoes that event, so the TUI mirror and the web
    half (xi.ext.yolo.web) apply the same reducer and every client shows the
-   same state. The flag is not persisted: a resumed chat starts with it off.
+   same state. The flag is saved with the chat (:persist-room, xi.ext.persist),
+   so it survives the room being reaped between turns and a server restart.
 
    The skipping itself is not here: xi.ext.core/create-dialogs resolves a
    :confirm dialog to yes without opening it while the flag is on
@@ -20,11 +21,14 @@
   (boolean (:enabled? (state/room-ext state room-id ext-id))))
 
 (defn set-enabled
-  "Reducer for :ext.yolo/set {:room-id :enabled?}; shared with the web half."
+  "Reducer for :ext.yolo/set {:room-id :enabled?}; shared with the web half.
+   Off removes the key rather than storing false: xi.ext.persist then drops
+   the chat's saved slice, and a hydrate only fills keys the room lacks."
   [st {:keys [room-id enabled?]}]
   (when (state/get-room st room-id)
     {:state (-> st
-                (assoc-in [:rooms room-id :ext ext-id :enabled?] (boolean enabled?))
+                (update-in [:rooms room-id :ext ext-id]
+                           #(if enabled? (assoc % :enabled? true) (dissoc % :enabled?)))
                 (update-in [:rooms room-id :history] conj
                            {:kind :status
                             :text (str "Yolo mode: "
@@ -49,7 +53,7 @@
 
 (def extension
   {:id           ext-id
-   :init         {:room {:enabled? false}}
+   :persist-room [:enabled?]
    :handlers     {:ext.yolo/set set-enabled}
    :commands     [{:name "yolo"
                    :description "Toggle yolo mode (run tool calls without asking)"

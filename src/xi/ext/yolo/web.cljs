@@ -7,7 +7,9 @@
   (:require [xi.ext.yolo :as yolo]))
 
 (def extension
-  {:id       :yolo
-   :handlers {:ext.yolo/set
-              (fn [st {:keys [remote?] :as ev}]
-                (when remote? (yolo/set-enabled st ev)))}})
+  {:id           :yolo
+   ;; so the web's :ext.persist/hydrate mirror installs a restored flag too
+   :persist-room (:persist-room yolo/extension)
+   :handlers     {:ext.yolo/set
+                  (fn [st {:keys [remote?] :as ev}]
+                    (when remote? (yolo/set-enabled st ev)))}})
