@@ -61,8 +61,8 @@ projects** in the sidebar opens the project list (`/projects`).
   picker, or drag files from your desktop onto the chat), stop a running
   turn, and answer permission requests with Allow or Deny. The caret next to
   Deny holds **Deny with reason**; the one next to Allow lists the other
-  grants the request offers (Allow all, Always, Allow repo writes, Recommend
-  a rule) with what each one does. **Explain** on a
+  grants the request offers (Allow all, Always, Allow repo writes, Allow for
+  this chat, Recommend a rule) with what each one does. **Explain** on a
   permission request starts a [sub-agent](builtin-tools.md#sub-agents) that
   reads the call, the conversation and the session transcript and says what
   the call does, why the agent wants it and the risk. The answer appears

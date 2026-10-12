@@ -281,7 +281,7 @@
                                     with recommend-a-rule
      {:decision :nudge :message m}  a :nudge rule
      {:decision :pass}              an unknown action type"
-  [{:keys [type message options unanswered hints scope]} req {:keys [confirm! dispatch! room-id recommend-rule?]}]
+  [{:keys [type message options unanswered hints scope grant]} req {:keys [confirm! dispatch! room-id recommend-rule?]}]
   (let [deny-reason (volatile! nil)]
     (case type
       :allow {:decision :allow}
@@ -331,6 +331,15 @@
                                                   :rule    rule}))
                                     {:decision :approved})
 
+                                ;; [s] allow-rule → this ask rule stops asking
+                                ;; for the chat (see `granted?`)
+                                (= ans :rule)
+                                (do (when (and dispatch! grant (not= :hardened scope))
+                                      (dispatch! {:type    :ext.rules/grant
+                                                  :room-id room-id
+                                                  :grant   grant}))
+                                    {:decision :approved})
+
                                 ;; an option carrying an event (the bb-trust
                                 ;; rule's "trust bb.edn") → approve + dispatch it
                                 (option-event options ans)
@@ -354,7 +363,20 @@
                    {:decision :unanswered})))
       {:decision :pass})))
 
+(defn- grant-key
+  "A rule's identity for an [s] allow-rule grant: its tier and :match,
+   printed, so it survives rules-file reloads (regexes print as source)."
+  [rule]
+  (pr-str [(:scope rule) (:match rule)]))
 
+(defn- granted?
+  "An :ask rule the user answered [s] for in this chat: it allows instead.
+   Works for config-file asks too, which outrank any session allow-rule."
+  [state room-id rule]
+  (and (= :ask (get-in rule [:action :type]))
+       (not= :hardened (:scope rule))
+       (contains? (get-in state [:rooms room-id :ext ext-id :granted])
+                  (grant-key rule))))
 
 (defn- decide*
   "`decide!`, but synchronous unless it has to ask (value or Promise)."
@@ -365,10 +387,14 @@
           ruleset (store/ordered-rules state room-id (:effective-cwd req))
           req     (store/enrich-request req ruleset)
           rule    (rules/first-match ruleset req)]
-      (if rule
-        (apply-action (assoc (:action rule) :hints (:hints rule) :scope (:scope rule))
-                      req ctx)
-        {:decision :pass}))))
+      (cond
+        (nil? rule) {:decision :pass}
+        (granted? state room-id rule) {:decision :approved}
+        :else (apply-action (assoc (:action rule)
+                                   :hints (:hints rule)
+                                   :scope (:scope rule)
+                                   :grant (grant-key rule))
+                            req ctx)))))
 
 (defn decide!
   "Decide a decision request (store/decision-request for tool calls,
@@ -444,6 +470,9 @@
 
 (defn clear-session-rules [st {:keys [room-id]}]
   {:state (assoc-in st [:rooms room-id :ext ext-id :rules] [])})
+
+(defn grant-rule [st {:keys [room-id grant]}]
+  {:state (update-in st [:rooms room-id :ext ext-id :granted] (fnil conj #{}) grant)})
 
 (defn- save-fx
   "Move the chat's :session rules into <repo>/.xi/rules.edn: they keep their
@@ -565,13 +594,14 @@
    On the client mirror (ask! nil) the recommend fx is a no-op."
   [{:keys [ask!]}]
   {:id       ext-id
-   :init     {:room    {:rules []}
+   :init     {:room    {:rules [] :granted #{}}
               :process {:rules []}}
-   ;; Always-answers are session rules: they ride along with the chat across
-   ;; server restarts and reaped rooms.
+   ;; Always-answers are session rules, [s] answers :granted rule keys: both
+   ;; ride along with the chat across server restarts and reaped rooms.
    :persist-room true
    :handlers {:ext.rules/add           add-rule
               :ext.rules/clear-session clear-session-rules
+              :ext.rules/grant         grant-rule
               :subagent/turn-end       on-subagent-turn-end}
    :commands [{:name        "rules"
                :description "List, reload or save policy rules"

@@ -40,6 +40,9 @@
    :allow-repo {:value :repo   :key "r" :label "Allow repo writes"
                 :resolved-label "Repo writes allowed"
                 :desc "Save a rule: writes and edits anywhere in this repository"}
+   :allow-rule {:value :rule :key "s" :label "Allow for this chat"
+                :resolved-label "Allowed for this chat"
+                :desc "Stop asking for anything this rule matches, for the rest of this chat"}
    :allow-block {:value :block :key "b" :label "Allow all"
                  :resolved-label "All allowed"
                  :desc "This ask and the rest of the script's asks, this run only"}
@@ -48,9 +51,9 @@
                     :desc "Deny this call and have a sub-agent draft a rule for it"}})
 
 (def ^:private option-alias
-  "Other spellings of a confirm option: rules files name the repo grant after
-   the answer it resolves to (`:options [:yes :no :repo]`)."
-  {:repo :allow-repo})
+  "Other spellings of a confirm option: rules files name a grant after the
+   answer it resolves to (`:options [:yes :no :repo]`)."
+  {:repo :allow-repo :rule :allow-rule})
 
 (def default-confirm-options [:yes :no])
 
@@ -78,7 +81,9 @@
    "repo"   :allow-repo
    "r"      :allow-repo
    "block"  :allow-block
-   "b"      :allow-block})
+   "b"      :allow-block
+   "chat"   :allow-rule
+   "s"      :allow-rule})
 
 (defn answer-option
   "Confirm option an answer command picks — `verb` is :allow or :deny,

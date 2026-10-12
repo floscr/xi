@@ -343,6 +343,35 @@
                    (is (= :allow (get-in @dispatched [:rule :action :type])))
                    (done)))))))
 
+(deftest allow-rule-answer-stops-the-rule-asking-for-the-chat
+  (async done
+    (let [rule  {:match {:tool #{:write :edit} :path #"^/x/ext/"}
+                 :action {:type :ask :options [:yes :no :rule]}}
+          state (state-with [:ext :rules :rules] rule)
+          write (fn [path] {:name "write" :arguments {:path path}})
+          evs   (atom [])
+          asked (atom 0)
+          c     (fn [st answer]
+                  {:get-state (fn [] st) :room-id "r1" :cwd "/tmp"
+                   :confirm!  (fn [_ _] (swap! asked inc) (js/Promise.resolve answer))
+                   :dispatch! #(swap! evs conj %)})]
+      (-> (rules-ext/tool-policy (write "/x/ext/a.cljs") (c state :rule))
+          (.then (fn [out]
+                   (is (= (write "/x/ext/a.cljs") out) "[s] allows this call")
+                   (let [grant   (first @evs)
+                         granted (:state (rules-ext/grant-rule state grant))]
+                     (is (= :ext.rules/grant (:type grant)))
+                     (-> (rules-ext/tool-policy (write "/x/ext/b.cljs") (c granted false))
+                         (.then (fn [out]
+                                  (is (= (write "/x/ext/b.cljs") out)
+                                      "another call the rule matches runs")
+                                  (is (= 1 @asked) "without asking again")
+                                  (rules-ext/tool-policy (write "/x/ext/c.cljs") (c state false))))
+                         (.then (fn [out]
+                                  (is (= 2 @asked) "a chat without the grant still asks")
+                                  (is (nil? out) "and a no blocks it")
+                                  (done)))))))))))
+
 (deftest mcp-default-rule-asks-with-rich-message
   (testing "an external MCP call is gated by the built-in default rule with an
            informative server/tool/arguments confirm block"

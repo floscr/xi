@@ -101,7 +101,9 @@ tool name). The rule is stored with the chat (`<session-id>.ext.edn` next to
 its metadata in `~/.config/xi/sessions/`), so it survives a server restart and a
 closed room, and applies again when the chat is resumed. `:repo`, offered for
 writes inside a git repository, saves a rule allowing writes and edits anywhere
-in it. An edit's dialog previews the diff.
+in it. `:rule`, offered when a rule lists it, allows everything that rule
+matches for the rest of the chat, also when the rule sits in a rules file
+above the chat's grants. An edit's dialog previews the diff.
 
 ## The hardened tier
 
