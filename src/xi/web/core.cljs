@@ -2758,6 +2758,103 @@
            (.preventDefault e))))
      #js {:passive false})))
 
+;; TEMP: on-screen palette scroll diagnostics for iOS — remove after.
+(defn- install-palette-scroll-debug! []
+  (let [box (.createElement js/document "div")
+        c   (atom {})
+        bump! (fn [k] (swap! c update k (fnil inc 0)))
+        note! (fn [k v] (swap! c assoc k v))
+        render!
+        (fn []
+          (let [d (.querySelector js/document ".command-dialog[open]")
+                l (some-> d (.querySelector ".command-list"))
+                vv (.-visualViewport js/window)]
+            (if-not l
+              (set! (.. box -style -display) "none")
+              (let [ds (.getComputedStyle js/window d)
+                    ls (.getComputedStyle js/window l)
+                    dr (.getBoundingClientRect d)]
+                (set! (.. box -style -display) "block")
+                (set! (.-textContent box)
+                      (str "dbg v3 " "list ch=" (.-clientHeight l) " sh=" (.-scrollHeight l)
+                           " st=" (js/Math.round (.-scrollTop l))
+                           " ov=" (.-overflowY ls) " ta=" (.-touchAction ls)
+                           "\ndlg top=" (js/Math.round (.-top dr)) " h=" (js/Math.round (.-height dr))
+                           " maxh=" (.-maxHeight ds) " modal=" (.matches d ":modal")
+                           "\n--top=" (.getPropertyValue (.-style d) "--command-top")
+                           " --maxh=" (.getPropertyValue (.-style d) "--command-max-h")
+                           "\nvv h=" (some-> vv .-height js/Math.round) " off=" (some-> vv .-offsetTop js/Math.round)
+                           " sc=" (some-> vv .-scale) " innerH=" (.-innerHeight js/window)
+                           "\nactive=" (some-> js/document .-activeElement .-className)
+                           "\n" (pr-str @c)))))))]
+    (set! (.-cssText (.-style box))
+          (str "position:fixed;left:4px;right:4px;bottom:4px;z-index:2147483647;"
+               "font:10px/1.3 monospace;white-space:pre-wrap;background:#000c;color:#0f0;"
+               "padding:4px;pointer-events:none;display:none;margin:0;border:0;inset:auto 4px 4px 4px"))
+    (.setAttribute box "popover" "manual")
+    (.appendChild (.-body js/document) box)
+    (doseq [t ["touchstart" "touchmove" "touchend" "touchcancel"
+               "pointerdown" "pointermove" "pointercancel" "pointerup"]]
+      (.addEventListener
+       js/window t
+       (fn [^js e]
+         (when (.querySelector js/document ".command-dialog[open]")
+           (bump! t)
+           (when (.-defaultPrevented e) (bump! (str t "-PREVENTED")))
+           (when (= t "pointerup")
+             (note! :up (some-> e .-target .-className str (subs 0 30))))
+           (when (= t "touchstart")
+             (note! :target (some-> e .-target .-className str (subs 0 30)))
+             (note! :cancelable (.-cancelable e)))
+           (render!)))
+       #js {:passive true}))
+    (.addEventListener js/document "scroll"
+                       (fn [^js e]
+                         (when (.querySelector js/document ".command-dialog[open]")
+                           (bump! (str "scroll:" (some-> e .-target .-className str (subs 0 14))))
+                           (render!)))
+                       #js {:capture true :passive true})
+    ;; Tap a group heading ("Recent", "All commands") to cycle CSS variants.
+    (let [variants [["0 baseline" ""]
+                    ["1 touch-action:auto" ".command-dialog, .command-dialog * { touch-action: auto !important; }"]
+                    ["2 touch-action:pan-y" ".command-list, .command-list * { touch-action: pan-y !important; }"]
+                    ["3 dialog overflow:visible" ".command-dialog[open] { overflow: visible !important; }"]
+                    ["4 no anim + list layer" ".command-dialog[open] { animation: none !important; } .command-list { transform: translateZ(0); }"]
+                    ["5 list display:block" ".command-list { display: block !important; }"]
+                    ["6 blur input" ""]
+                    ["7 all of 1+3+4+blur" (str ".command-dialog, .command-dialog * { touch-action: auto !important; }"
+                                                ".command-dialog[open] { overflow: visible !important; animation: none !important; }"
+                                                ".command-list { transform: translateZ(0); }")]]
+          idx   (atom 0)
+          style (.createElement js/document "style")]
+      (.appendChild (.-head js/document) style)
+      (note! :variant (ffirst variants))
+      ;; pointerup, not click: iOS fires no click on a non-interactive div.
+      (.addEventListener
+       js/document "pointerup"
+       (fn [^js e]
+         (when (some-> e .-target (.closest ".command-dialog .command-group-heading"))
+           (let [i (mod (inc @idx) (count variants))
+                 [label css] (nth variants i)]
+             (reset! idx i)
+             (set! (.-textContent style) css)
+             (when (str/includes? label "blur")
+               (some-> js/document .-activeElement .blur))
+             (reset! c {:variant label})
+             (render!))))
+       true))
+    (js/setInterval
+     (fn []
+       (let [open? (some? (.querySelector js/document ".command-dialog[open]"))]
+         (when (and open? (not (.matches box ":popover-open")))
+           (swap! c select-keys [:variant])
+           (try (.hidePopover box) (catch :default _))
+           (try (.showPopover box) (catch :default _)))
+         (when (and (not open?) (.matches box ":popover-open"))
+           (.hidePopover box))
+         (render!)))
+     500)))
+
 (defn- real-init!
   "Boot the client. opts: :transport replaces the WebSocket one (xi.web.tour);
    with it the localStorage session cache is neither read nor written."
@@ -2839,6 +2936,7 @@
       (.addEventListener mql "change"
                          (fn [e] (dispatch! {:type :web/set-wide :wide? (.-matches e)}))))
     (install-sidebar-swipe! state dispatch!)
+    (install-palette-scroll-debug!)
     ;; Prevent iOS Safari smart-zoom (double-tap & pinch).
     (.addEventListener js/document "gesturestart" (fn [e] (.preventDefault e)))
     (.addEventListener js/document "gesturechange" (fn [e] (.preventDefault e)))
