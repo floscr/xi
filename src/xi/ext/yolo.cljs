@@ -12,29 +12,46 @@
    The skipping itself is not here: xi.ext.core/create-dialogs resolves a
    :confirm dialog to yes without opening it while the flag is on
    (xi.dialog/auto-confirm?), so the rules engine's asks, the clj gate's own
-   prompts and sub-agent spawns all run. Hardened-tier asks are exempt."
-  (:require [xi.core.state :as state]))
+   prompts and sub-agent spawns all run. Hardened-tier asks are exempt.
+   Asks already open when it is turned on are allowed then."
+  (:require [xi.core.state :as state]
+            [xi.dialog :as dialog]))
 
 (def ^:private ext-id :yolo)
 
 (defn enabled? [state room-id]
   (boolean (:enabled? (state/room-ext state room-id ext-id))))
 
+(defn- answer-open-asks
+  "Allow every dialog already open in the room that yolo would not have
+   opened, through the same :ui/dialog-response a click sends."
+  [st room-id]
+  (into []
+        (keep (fn [d]
+                (when (dialog/auto-confirm? st room-id d)
+                  [:app/dispatch {:type :ui/dialog-response :room-id room-id
+                                  :dialog-id (:id d) :value true}])))
+        (get-in st [:rooms room-id :ui :dialogs])))
+
 (defn set-enabled
   "Reducer for :ext.yolo/set {:room-id :enabled?}; shared with the web half.
+   Turning it on also allows the asks already waiting (answer-open-asks).
    Off removes the key rather than storing false: xi.ext.persist then drops
    the chat's saved slice, and a hydrate only fills keys the room lacks."
   [st {:keys [room-id enabled?]}]
   (when (state/get-room st room-id)
-    {:state (-> st
-                (update-in [:rooms room-id :ext ext-id]
-                           #(if enabled? (assoc % :enabled? true) (dissoc % :enabled?)))
-                (update-in [:rooms room-id :history] conj
-                           {:kind :status
-                            :text (str "Yolo mode: "
-                                       (if enabled?
-                                         "ON (tool calls run without asking)"
-                                         "OFF"))}))}))
+    (let [st' (-> st
+                  (update-in [:rooms room-id :ext ext-id]
+                             #(if enabled? (assoc % :enabled? true) (dissoc % :enabled?)))
+                  (update-in [:rooms room-id :history] conj
+                             {:kind :status
+                              :text (str "Yolo mode: "
+                                         (if enabled?
+                                           "ON (tool calls run without asking)"
+                                           "OFF"))}))
+          fx  (when enabled? (answer-open-asks st' room-id))]
+      (cond-> {:state st'}
+        (seq fx) (assoc :effects fx)))))
 
 (defn- toggle
   "/yolo — flip the flag through :ext.yolo/set so the change is an event

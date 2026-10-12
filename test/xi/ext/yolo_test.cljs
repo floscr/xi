@@ -40,6 +40,23 @@
             "off leaves nothing to save")
         (is (re-find #"OFF" (:text (last (get-in st' [:rooms "r1" :history])))))))))
 
+(deftest turning-on-allows-the-open-asks
+  (let [set-handler (get-in yolo/extension [:handlers :ext.yolo/set])
+        dialogs     [{:id "d1" :type :confirm :message "write?"}
+                     {:id "d2" :type :confirm :message "hardened" :hardened? true}
+                     {:id "d3" :type :cwd-select :message "where?"}]
+        st          (assoc-in (with-room false) [:rooms "r1" :ui :dialogs] dialogs)]
+    (testing "on: each confirm yolo would skip is answered yes"
+      (is (= [[:app/dispatch {:type :ui/dialog-response :room-id "r1"
+                              :dialog-id "d1" :value true}]]
+             (:effects (set-handler st {:room-id "r1" :enabled? true})))))
+    (testing "off answers nothing"
+      (is (nil? (:effects (set-handler (assoc-in st [:rooms "r1" :ext :yolo :enabled?] true)
+                                       {:room-id "r1" :enabled? false})))))
+    (testing "the web mirror only takes the state; the server answers"
+      (is (nil? (:effects ((get-in yolo-web/extension [:handlers :ext.yolo/set])
+                           st {:room-id "r1" :enabled? true :remote? true})))))))
+
 (deftest flag-survives-a-reaped-room
   (let [specs (:persist-room (ext/compose [yolo/extension]))
         on    (:state (yolo/set-enabled (with-room false) {:room-id "r1" :enabled? true}))

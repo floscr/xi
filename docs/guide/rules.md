@@ -57,7 +57,7 @@ so it can change course instead of retrying.
 
 `/yolo` stops the dialog for the current chat: every call that would ask
 runs instead, until you run `/yolo` again. It works while the agent is busy;
-a dialog that is already open still waits for your answer. The terminal
+turning it on also allows the asks already open. The terminal
 prompt shows 🔥 and the web chat header a `Yolo` chip while it is on (click
 the chip to turn it off). The mode is saved with the chat: it stays on
 across turns, chat switches and server restarts.

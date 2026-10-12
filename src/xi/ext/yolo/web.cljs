@@ -12,4 +12,5 @@
    :persist-room (:persist-room yolo/extension)
    :handlers     {:ext.yolo/set
                   (fn [st {:keys [remote?] :as ev}]
-                    (when remote? (yolo/set-enabled st ev)))}})
+                    ;; state only: the server answers the open asks itself
+                    (when remote? (some-> (yolo/set-enabled st ev) (dissoc :effects))))}})
