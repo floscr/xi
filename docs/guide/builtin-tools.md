@@ -121,9 +121,12 @@ attached to answer, the spawn is refused.
 as a buffer of the chat in the web client: code blocks, comments,
 connections and a walkthrough. The agent
 builds it with these tools, and the canvas updates live on every client.
+Asking the agent for a canvas in plain words works too: it starts one with
+`canvas_review_load`, which opens the same buffer.
 
 | Tool | Does |
 | --- | --- |
+| `canvas_review_load` | Start a canvas for a diff source (a ref, `staged`, `pr <n>`, …) and open its buffer. `/canvas-review` does this itself. |
 | `canvas_review_add_block` | A code block for a changed region: file and line range. |
 | `canvas_review_add_comment` | A short note, attached to a block. |
 | `canvas_review_add_prose` | A longer Markdown note about the change as a whole. |

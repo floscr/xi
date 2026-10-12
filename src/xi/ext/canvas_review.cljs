@@ -10,8 +10,10 @@
    walkthrough plan (where to look first) the human steps through with
    Next/Prev.
 
-   The model drives the canvas through six tools (canvas_review_*), plain
-   :tool-registry entries: each dispatches a pure state-mutating event via the
+   The model drives the canvas through seven tools (canvas_review_*), plain
+   :tool-registry entries. canvas_review_load starts a canvas when the chat's
+   own agent builds it (no /canvas-review); the others need one and each
+   dispatches a pure state-mutating event via the
    tool ctx's dispatch! and returns a short result. Canvas state lives
    room-scoped at [:rooms rid :ext :canvas-review] and mirrors to every client,
    so the canvas builds up live as the model works.
@@ -88,12 +90,17 @@
 
 (def ^:private MAX_DIFF_CHARS 24000)
 
+(defn- annotated-listing
+  "The annotated diff as the model reads it, cut at MAX_DIFF_CHARS."
+  [text]
+  (let [annotated (annotate-diff text)]
+    (if (> (count annotated) MAX_DIFF_CHARS)
+      (str (subs annotated 0 MAX_DIFF_CHARS)
+           "\n\n… (diff truncated — cover the most important changes)")
+      annotated)))
+
 (defn- build-seed-prompt [title text]
-  (let [annotated (annotate-diff text)
-        annotated (if (> (count annotated) MAX_DIFF_CHARS)
-                    (str (subs annotated 0 MAX_DIFF_CHARS)
-                         "\n\n… (diff truncated — cover the most important changes)")
-                    annotated)]
+  (let [annotated (annotated-listing text)]
     (str
      "You are building a **node-based review canvas** to help a human understand "
      "this diff (\"" title "\") as fast and deeply as possible. Use the "
@@ -166,7 +173,12 @@
 ;; ── Tools (advertised to the model, executed via the gate) ───────────────────
 
 (def ^:private tool-defs
-  [{:name "canvas_review_add_block"
+  [{:name "canvas_review_load"
+    :description "Start a review canvas for a diff when you build it yourself: loads the diff, resets the canvas and opens it as the chat's Canvas buffer. Call it before the other canvas_review_* tools. Not needed after /canvas-review, which has loaded the diff already."
+    :input_schema {:type "object"
+                   :properties {:source {:type "string"
+                                         :description "What to diff, as for /canvas-review: a ref to diff the working tree against (e.g. origin/develop), staged, unstaged, git (all changes), pr <number>, or session-git (this session's uncommitted edits, the default)"}}}}
+   {:name "canvas_review_add_block"
     :description "Add a code-block node to the review canvas, referencing a changed region of the diff by file and new-side line range."
     :input_schema {:type "object"
                    :properties {:file       {:type "string" :description "File path as shown in the diff"}
@@ -295,16 +307,49 @@
 
     nil))
 
+(defn- error-result [text]
+  {:content [{:type "text" :text text}] :is-error true})
+
+(defn- load-tool
+  "canvas_review_load: what /canvas-review does minus the sub-agent — the
+   calling agent builds the canvas itself. Installs the :canvas buffer but
+   switches no client: the tool ctx doesn't know which one asked."
+  [dispatch! get-state room-id cwd {:keys [source]}]
+  (let [room   (state/get-room (get-state) room-id)
+        cwd    (or (:cwd room) cwd (.cwd js/process))
+        source (some-> source str/trim not-empty)
+        {:keys [title text]} (load-diff cwd room source)]
+    (if (str/blank? text)
+      (error-result (str "No changes to review for " (or source "session-git") "."))
+      (do
+        (dispatch! {:type :canvas-review/load :room-id room-id
+                    :source (or source "session-git")
+                    :title title :text text :name (str "Canvas review: " title)})
+        (ok-result (str "Loaded " title " (" (count (diff/parse-diff-text text))
+                        " files). The canvas is open as the chat's \"Canvas review\" buffer."
+                        "\n\nAnnotated diff (left gutter = line number, then +/-/space):\n\n"
+                        "```\n" (annotated-listing text) "\n```"))))))
+
 (def ^:private tool-registry
-  "canvas_review_* name → exec-fn. Reads dispatch!/room-id from the tool ctx."
+  "canvas_review_* name → exec-fn. Reads dispatch!/room-id from the tool ctx.
+   Every tool but canvas_review_load needs a loaded diff: without one the
+   room has no canvas buffer to show the nodes in."
   (into {}
         (map (fn [tool-name]
                [tool-name
-                (fn [args {:keys [dispatch! room-id]}]
-                  (if dispatch!
-                    (handle-tool dispatch! room-id tool-name args)
-                    {:content [{:type "text" :text "canvas review: no room context"}]
-                     :is-error true}))]))
+                (fn [args {:keys [dispatch! get-state room-id cwd]}]
+                  (cond
+                    (not (and dispatch! get-state))
+                    (error-result "canvas review: no room context")
+
+                    (= tool-name "canvas_review_load")
+                    (load-tool dispatch! get-state room-id cwd args)
+
+                    (str/blank? (get-in (get-state) [:rooms room-id :ext ext-id :diff]))
+                    (error-result "No review canvas is loaded in this chat. Call canvas_review_load with the diff source first.")
+
+                    :else
+                    (handle-tool dispatch! room-id tool-name args)))]))
         tool-names))
 
 ;; ── Persistence (node-only) ──────────────────────────────────────────────────

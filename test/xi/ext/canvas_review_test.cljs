@@ -82,7 +82,29 @@
                  {:room-id rid :args "HEAD~1" :client-id "c1"}))
         (is (= [:canvas-review/load :ui/buffer-switch :subagent/spawn] (mapv :type @seen)))
         (is (= {:type :ui/buffer-switch :room-id rid :buffer-id :canvas :client-id "c1"}
-               (second @seen)))))))
+               (second @seen)))))
+    (testing "canvas_review_load starts a canvas when the chat's own agent builds it"
+      (let [seen (atom [])
+            st   (assoc-in base [:rooms rid :cwd] (.cwd js/process))
+            tool (get-in cr/extension [:tool-registry "canvas_review_load"])
+            ctx  {:room-id rid :dispatch! #(swap! seen conj %) :get-state (constantly st)}]
+        (with-redefs [git/diff-against-ref (constantly {:ok "diff --git a/a b/a\n--- a/a\n+++ b/a\n@@ -1 +1 @@\n-a\n+b\n"})
+                      git/git-ref?         (constantly true)]
+          (let [res (tool {:source "penpot/develop"} ctx)]
+            (is (not (:is-error res)))
+            (is (re-find #"Diff: penpot/develop" (get-in res [:content 0 :text])))
+            (is (re-find #"\+b" (get-in res [:content 0 :text])) "returns the annotated diff")
+            (is (= [{:type :canvas-review/load :room-id rid :source "penpot/develop"
+                     :title "Diff: penpot/develop" :name "Canvas review: Diff: penpot/develop"}]
+                   (mapv #(dissoc % :text) @seen)))
+            (is (= "Canvas review · Diff: penpot/develop"
+                   (:title (buf (load base (first @seen))))))))
+        (testing "an empty diff is an error and loads nothing"
+          (reset! seen [])
+          (with-redefs [git/diff-against-ref (constantly {:ok ""})
+                        git/git-ref?         (constantly true)]
+            (is (:is-error (tool {:source "HEAD"} ctx)))
+            (is (empty? @seen))))))))
 
 (deftest mutation-emits-persist
   (let [rid "r1"
@@ -105,8 +127,9 @@
       (is (= (set (map :name defs)) (set (keys (:tool-registry cr/extension))))))
     (testing "the highlight tool dispatches through the tool ctx"
       (let [seen (atom nil)
+            st   (room-state rid sample-canvas)
             res  (tool {:id "blk-1" :lines [402 403 404]}
-                       {:room-id rid :dispatch! #(reset! seen %)})]
+                       {:room-id rid :dispatch! #(reset! seen %) :get-state (constantly st)})]
         (is (not (:is-error res)))
         (is (re-find #"Highlighted 3" (get-in res [:content 0 :text])))
         (is (= :canvas-review/highlight (:type @seen)))
@@ -118,6 +141,14 @@
         (is (= [402 403] (get-in (:state res) [:rooms rid :ext :canvas-review
                                                :nodes "blk-1" :highlight])))
         (is (some #(= % [:canvas-review/persist {:room-id rid}]) (:effects res)))))
+    (testing "without a loaded diff the tools refuse and point at canvas_review_load"
+      (let [seen (atom nil)
+            res  (tool {:id "blk-1" :lines [1]}
+                       {:room-id rid :dispatch! #(reset! seen %)
+                        :get-state (constantly (room-state rid {:nodes {} :edges {} :plan []}))})]
+        (is (:is-error res))
+        (is (re-find #"canvas_review_load" (get-in res [:content 0 :text])))
+        (is (nil? @seen))))
     (testing "highlighting an unknown node no-ops"
       (is (nil? (hl (room-state rid sample-canvas)
                     {:room-id rid :id "nope" :lines [1]}))))))
