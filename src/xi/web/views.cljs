@@ -852,7 +852,7 @@
         ext-view  (when (and (not running?) (seq text) (not imgs))
                     (tool-views/render {:tool name :arguments arguments
                                         :text text :is-error is-error}
-                                       room-ext))
+                                       room-ext dispatch!))
         diff-result? (and (contains? #{"Edit" "edit" "clj_replace"} name)
                           (not is-error))
         ;; The asked-for change shows until the call is done; a finished

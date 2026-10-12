@@ -49,6 +49,13 @@
   {:effects [[:diff/load (cond-> {:room-id room-id :args (str "commit:" sha) :engine :git}
                            client-id (assoc :client-id client-id))]]})
 
+(defn- diff-show
+  "Open what /diff `args` would, for a user extension's button (allowed when a
+   click started it, xi.ext.user.guard)."
+  [_st {:keys [room-id args client-id]}]
+  {:effects [[:diff/load (cond-> {:room-id room-id :args args :engine :git}
+                           client-id (assoc :client-id client-id))]]})
+
 ;; ── Effect (impure) ───────────────────────────────────────────────────────────
 
 (defn- diff-load-fx
@@ -191,12 +198,13 @@
                :description "Pick a commit made this session and view its diff"
                :handler cmd-commits}]
    :handlers {:ui/diff-open    handlers/diff-open
-              :diff/open-commit diff-open-commit}
+              :diff/open-commit diff-open-commit
+              :diff/show       diff-show}
    ;; :ui/diff-open is broadcast like any buffer install: every client in the
    ;; room gets the diff in its buffer list, and only the one that ran /diff
    ;; switches to it (the reducer checks the event's :client-id).
-   ;; :diff/open-commit is an internal server-side relay (menu choice →
-   ;; :diff/load) and never needs the wire.
-   :no-broadcast    #{:diff/open-commit}
+   ;; :diff/open-commit and :diff/show are server-side relays (menu choice,
+   ;; extension button → :diff/load) and never need the wire.
+   :no-broadcast    #{:diff/open-commit :diff/show}
    :fx       {:diff/load    diff-load-fx
               :commits/pick commits-pick-fx}})

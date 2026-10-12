@@ -145,6 +145,21 @@
     (is (nil? ((get-in ext [:tool-views "notes_boom"]) {} nil))
         "nil → the tool block shows its plain text result")))
 
+(deftest tool-view-data-handlers-forward-own-events
+  (let [seen (atom [])
+        ext  (guard/wrap {:id :notes
+                          :tool-views {"notes_add"
+                                       (fn [_ _]
+                                         [:div
+                                          [:button {:on {:click {:type :ext.notes/open :n 1}}} "open"]
+                                          [:button {:on {:click {:type :diff/show}}} "foreign"]])}})
+        [_ [_ {own :on}] [_ {foreign :on}]]
+        ((get-in ext [:tool-views "notes_add"]) {} nil #(swap! seen conj %))]
+    ((:click own) nil)
+    (is (= [{:type :user-ext/forward :event {:type :ext.notes/open :n 1}}] @seen)
+        "an own event map becomes a click handler that forwards it")
+    (is (empty? foreign) "another event type is dropped")))
+
 ;; ── dispatch filtering + forwarding ──────────────────────────────────────────
 
 (deftest guarded-dispatch

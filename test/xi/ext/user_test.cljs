@@ -326,6 +326,22 @@
     (is (= [{:type :ext.ext-g/go}] @seen)
         "a tool's own event loses a forged stamp, and :chat/start is blocked for it")))
 
+(deftest a-client-click-may-open-a-diff-but-a-tool-may-not
+  (let [ev   {:type :diff/show :room-id "r" :args "main"}
+        seen (atom [])
+        ext  (guard/wrap
+              {:id :ext-d
+               :handlers {:ext.ext-d/open (fn [_ _] {:effects [[:app/dispatch ev]]})}
+               :tool-registry {"t" (fn [_ {:keys [dispatch!]}]
+                                     (dispatch! ev)
+                                     {:content []})}})
+        open (get-in ext [:handlers :ext.ext-d/open])]
+    (is (= [[:app/dispatch ev]]
+           (:effects (open {} {:type :ext.ext-d/open ::guard/user-initiated true}))))
+    (is (empty? (:effects (open {} {:type :ext.ext-d/open}))))
+    ((get-in ext [:tool-registry "t"]) {} {:dispatch! #(swap! seen conj %)})
+    (is (empty? @seen))))
+
 (deftest a-command-may-resume-a-session-but-a-tool-may-not
   ;; :session/resume {:room-id :session-id} loads a saved session (what
   ;; /resume id:<id> does): user-initiated, like :chat/start.

@@ -267,6 +267,28 @@
                                 (when (= "insertLineBreak" (.-inputType e))
                                   (send! e)))))))))))))
 
+(defn event-binder
+  "The `bind` fn for a tool view's `sanitize`. A view gets no dispatch!, so it
+   writes a handler as data: `:on {:click {:type :ext.<id>/… …}}` sends that
+   own event to the server (as `:user-ext/forward`, like a page's). Any other
+   non-fn handler is dropped."
+  [id dispatch!]
+  (fn [attrs]
+    (if-not (map? (:on attrs))
+      attrs
+      (update attrs :on
+              (fn [on]
+                (into {}
+                      (keep (fn [[k h]]
+                              (cond
+                                (fn? h) [k h]
+                                (and (map? h) (own-event-type? id (:type h)))
+                                [k (fn [e]
+                                     (some-> e .stopPropagation)
+                                     (dispatch! {:type :user-ext/forward :event h}))]
+                                :else nil)))
+                      on))))))
+
 ;; ── Wrapping ─────────────────────────────────────────────────────────────────
 
 (def ^:private passthrough-events
@@ -347,11 +369,14 @@
       (map? (:tool-views ext))
       (update :tool-views update-vals
               (fn [f]
-                (fn [call slice]
-                  (try (sanitize (f call slice))
-                       (catch :default e
-                         (log-blocked id (str "tool view threw: " (.-message e)))
-                         nil)))))
+                (fn view
+                  ([call slice] (view call slice nil))
+                  ([call slice dispatch!]
+                   (try (sanitize (f call slice)
+                                  (if dispatch! (event-binder id dispatch!) identity))
+                        (catch :default e
+                          (log-blocked id (str "tool view threw: " (.-message e)))
+                          nil))))))
 
       (:taps ext)
       (update :taps

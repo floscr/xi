@@ -7,6 +7,8 @@
    A view is (fn [call slice] → hiccup or nil): `call` is the finished tool
    call, `slice` the extension's own room slice ([:rooms <id> :ext <ext-id>]),
    so a view can show data its server half keeps there beyond the result text.
+   The registered (guarded) view also takes the host's `dispatch!`, which
+   wires its `:on {:click {:type :ext.<id>/…}}` events (xi.web.user-ext.guard).
 
    The registry lives outside the app state because its values are fns (the
    state is persisted and synced); it is filled once per page load, when the
@@ -37,6 +39,6 @@
    {:tool name (MCP prefix stripped) :arguments map :text result-text
    :is-error bool}, argument keys reach the view as keywords; `room-ext` is
    the room's :ext map."
-  [{:keys [tool] :as call} room-ext]
+  [{:keys [tool] :as call} room-ext dispatch!]
   (when-let [{:keys [ext-id view]} (get @registry tool)]
-    (view (update call :arguments keywordize) (get room-ext ext-id))))
+    (view (update call :arguments keywordize) (get room-ext ext-id) dispatch!)))

@@ -36,8 +36,11 @@
    message (see xi.server.room-manager). :session/resume {:room-id
    :session-id} loads a saved session into the room, as /resume id:<id> does.
    :terminal/open {:room-id :argv :cwd :title :tag :client-id :user} runs a
-   program in a terminal buffer (xi.ext.terminal, rules-gated as :terminal)."
-  #{:prompt/submit :subagent/spawn :chat/start :session/resume :terminal/open})
+   program in a terminal buffer (xi.ext.terminal, rules-gated as :terminal).
+   :diff/show {:room-id :client-id :args} opens the diff viewer as /diff
+   <args> does (xi.ext.diff.core)."
+  #{:prompt/submit :subagent/spawn :chat/start :session/resume :terminal/open
+    :diff/show})
 
 (defn- own-event? [id ev-type]
   (= (some-> ev-type namespace) (str "ext." (name id))))
