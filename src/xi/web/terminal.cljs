@@ -71,16 +71,23 @@
 
 (defn- hex-color
   "Any CSS colour → #rrggbb, which xterm.js parses (it can't read the
-   theme's oklch()); a canvas does the conversion."
-  [css]
-  (let [^js ctx (or @color-ctx
-                    (reset! color-ctx (.getContext (.createElement js/document "canvas") "2d"
-                                                   #js {:willReadFrequently true})))]
-    (.clearRect ctx 0 0 1 1)
-    (set! (.-fillStyle ctx) css)
-    (.fillRect ctx 0 0 1 1)
-    (let [d (.-data (.getImageData ctx 0 0 1 1))]
-      (str "#" (apply str (map #(.padStart (.toString (aget d %) 16) 2 "0") [0 1 2]))))))
+   theme's oklch()); a canvas does the conversion. With `tint`, that colour
+   is painted over `css` at `alpha` first."
+  ([css] (hex-color css nil 0))
+  ([css tint alpha]
+   (let [^js ctx (or @color-ctx
+                     (reset! color-ctx (.getContext (.createElement js/document "canvas") "2d"
+                                                    #js {:willReadFrequently true})))]
+     (.clearRect ctx 0 0 1 1)
+     (set! (.-fillStyle ctx) css)
+     (.fillRect ctx 0 0 1 1)
+     (when tint
+       (set! (.-globalAlpha ctx) alpha)
+       (set! (.-fillStyle ctx) tint)
+       (.fillRect ctx 0 0 1 1)
+       (set! (.-globalAlpha ctx) 1))
+     (let [d (.-data (.getImageData ctx 0 0 1 1))]
+       (str "#" (apply str (map #(.padStart (.toString (aget d %) 16) 2 "0") [0 1 2])))))))
 
 (def ^:private palette
   "xterm theme key → the web theme's CSS var (and a fallback). The 16 ANSI
@@ -110,8 +117,20 @@
    :brightCyan          ["--hl-builtin" "#005cc5"]
    :brightWhite         ["--fg-0" "#1f2328"]})
 
+(def ^:private tints
+  "Colours past the 16, xterm's `extendedAnsi` (index 16 on): --success and
+   --danger faintly over the background, for diff line backgrounds that
+   follow the theme like the 16 do (the dotfiles' nvim `xi` colorscheme)."
+  [["--success" "#22863a"] ["--danger" "#d73a49"]])
+
+(def ^:private tint-alpha 0.14)
+
 (defn- theme [node]
-  (clj->js (update-vals palette (fn [[k fallback]] (hex-color (css-var node k fallback))))))
+  (let [bg (css-var node "--bg-0" "#ffffff")]
+    (clj->js (assoc (update-vals palette (fn [[k fallback]] (hex-color (css-var node k fallback))))
+                    :extendedAnsi (mapv (fn [[k fallback]]
+                                          (hex-color bg (css-var node k fallback) tint-alpha))
+                                        tints)))))
 
 (defn- retheme!
   "Follow a theme change: re-read the colours once its CSS vars are applied."
