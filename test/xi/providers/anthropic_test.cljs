@@ -54,6 +54,10 @@
     (is (= [] (:allowedTools opts)))
     (is (not (contains? opts :systemPrompt)))))
 
+(deftest side-turns-write-no-transcript
+  (is (false? (:persistSession (base-query-opts {:cwd "/tmp" :no-tools? true} nil))))
+  (is (not (contains? (base-query-opts {:cwd "/tmp"} "sys") :persistSession))))
+
 (deftest main-turn-system-prompt
   (let [opts (base-query-opts {:cwd "/tmp" :model "m"} "appended")]
     (is (= {:type "preset" :preset "claude_code" :append "appended"}

@@ -404,8 +404,11 @@
    - Main turns load only `user` (~/.claude/CLAUDE.md): project instructions
      are already in `append-sys` (xi.system-prompt), so letting the CLI load
      them too sends the same file twice.
-   - Text-only side turns (:no-tools? — titles, quick replies, summaries)
-     load nothing; they carry their whole instruction in the prompt."
+   - Text-only side turns (:no-tools? — titles, quick replies, summaries,
+     the login warm-up) load nothing; they carry their whole instruction in
+     the prompt. They are never resumed, so their transcript isn't written
+     either: the warm-up runs on the live config dir and would otherwise
+     leave a `Reply with: ok` session in ~/.claude/projects."
   [opts append-sys]
   (cond-> {:cwd (or (:cwd opts) (.cwd js/process))
            :settingSources (if (:no-tools? opts) [] ["user"])
@@ -416,6 +419,7 @@
            :allowedTools (if (:no-tools? opts) [] [(str MCP_TOOL_PREFIX "*")])
            :strictMcpConfig true
            :autoMemoryEnabled false}
+    (:no-tools? opts) (assoc :persistSession false)
     (:model opts) (assoc :model (:model opts))
     append-sys (assoc :systemPrompt {:type "preset" :preset "claude_code"
                                      :append append-sys})
