@@ -1482,12 +1482,14 @@
                                                  (get-in st [:web/pending-room :cwd]))]
                                      {:state (-> st
                                                  (assoc :web/palette-page {:kind :snippets}
+                                                        :web/palette-open? true
                                                         :web/palette-drilling? true)
                                                  (dissoc :web/snippet-list))
                                       :effects [[:ws/send {:type :snippets/web-list :cwd cwd}]
                                                 [:palette/reopen nil]]}))
           :palette/open-commands (fn [st _]
                                    {:state (assoc st :web/palette-page {:kind :commands}
+                                                     :web/palette-open? true
                                                      :web/palette-drilling? true)
                                     :effects [[:palette/reopen nil]]})
           ;; Full-text session search: the palette input is the query, each
@@ -1498,6 +1500,7 @@
                                                (assoc :web/palette-page
                                                       {:kind :search :cwd cwd
                                                        :label (get-in st [:web/palette-page :label])}
+                                                      :web/palette-open? true
                                                       :web/palette-drilling? true)
                                                (dissoc :web/palette-search)
                                                (cond-> (not (str/blank? query))
