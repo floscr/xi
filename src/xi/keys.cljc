@@ -348,8 +348,10 @@
          :buffer/file        {"q"      :buffer/close
                               "escape" :buffer/close}
          ;; keys of :mode/terminal skip the program (xi.web.terminal):
-         ;; Ctrl+` (VS Code's) sends only NUL to a terminal
-         :mode/terminal      {"ctrl+`" :terminal/leave}
+         ;; Ctrl+` (VS Code's) sends only NUL to a terminal, Alt+\ only
+         ;; ESC \, which programs don't bind
+         :mode/terminal      {"ctrl+`" :terminal/leave
+                              "alt+\\" :terminal/leave}
          :buffer/terminal    {"q"      :buffer/close
                               "escape" :buffer/close
                               "i"      :terminal/focus

@@ -24,7 +24,7 @@ follows your `:keys` overrides.
   list) has focus. Single keys work, such as `?`.
 - **Terminal** (web): a [terminal](web-client.md#terminals) buffer has focus.
   Every key goes to its program, except those bound in `:mode/terminal`:
-  `` Ctrl+` `` leaves the terminal, then the other keys work again.
+  `` Ctrl+` `` or `Alt+\` leaves the terminal, then the other keys work again.
 
 In the web client, `Esc` leaves the text field. There is no built-in key back
 into it; bind `:compose/focus` in `:mode/navigate` (`i` in the example under
@@ -78,6 +78,7 @@ Web client:
 | `q`, `Esc` | Leave the diff or file view, back to the chat (the buffer stays open) | `:buffer/close` | `:buffer/diff`, `:buffer/file` |
 | `] f` / `[ f` | Next / previous file in the diff | `:diff/next-file` / `:diff/prev-file` | `:buffer/diff` |
 | `` Ctrl+` `` | Leave the terminal: keys go back to Xi (the key left of `1` on any layout) | `:terminal/leave` | `:mode/terminal` |
+| `Alt+\` | Leave the terminal (the US `\` key; on ISO layouts also the key left of `Z`) | `:terminal/leave` | `:mode/terminal` |
 | `i`, `Enter` | Back into the terminal | `:terminal/focus` | `:buffer/terminal` |
 | `q`, `Esc` | Leave the terminal view, back to the chat (the program keeps running) | `:buffer/close` | `:buffer/terminal` |
 

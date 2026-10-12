@@ -26,6 +26,9 @@
   (testing "Ctrl+` (the physical key left of 1, any layout) leaves by default"
     (is (keymap/terminal-key? {} (keydown {:key "`" :code "Backquote" :ctrlKey true})))
     (is (keymap/terminal-key? {} (keydown {:key "^" :code "Backquote" :ctrlKey true}))))
+  (testing "so does Alt+\\, on the US key and on the ISO one next to Shift"
+    (is (keymap/terminal-key? {} (keydown {:key "\\" :code "Backslash" :altKey true})))
+    (is (keymap/terminal-key? {} (keydown {:key "<" :code "IntlBackslash" :altKey true}))))
   (testing "everything else is the program's, Xi's other keys included"
     (is (not (keymap/terminal-key? {} (keydown {:key "Escape" :code "Escape"}))))
     (is (not (keymap/terminal-key? {} (keydown {:key "b" :code "KeyB" :altKey true}))))
