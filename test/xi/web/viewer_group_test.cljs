@@ -7,7 +7,9 @@
     (is (true? (vg/super-collapsible? [{:collapsed? true} {:collapsed? true}])))
     (is (false? (vg/super-collapsible? [{:collapsed? true} {:collapsed? false}])))
     (is (false? (vg/super-collapsible? [{:collapsed? true} {}])))
-    (is (false? (vg/super-collapsible? [])))))
+    (is (false? (vg/super-collapsible? []))))
+  (testing "a lone block is not wrapped in a summary row"
+    (is (false? (vg/super-collapsible? [{:collapsed? true}])))))
 
 (deftest summarize-run
   (let [s (vg/summarize [{:kind :thinking :name "Thinking"}

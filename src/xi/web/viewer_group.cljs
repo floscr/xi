@@ -13,10 +13,11 @@
 
 (defn super-collapsible?
   "Does a run of group `items` ({:collapsed? bool …}) fold into a summary row?
-   Only when every block in the run starts collapsed — a run containing an open
-   block (the :tool-blocks / :thinking-blocks :open setting) must stay visible."
+   Only a run of two or more blocks that all start collapsed — a lone block
+   is already one header row, and a run containing an open block (the
+   :tool-blocks / :thinking-blocks :open setting) must stay visible."
   [items]
-  (boolean (and (seq items) (every? :collapsed? items))))
+  (boolean (and (next items) (every? :collapsed? items))))
 
 (defn summarize
   "Reduce the `infos` of a run (oldest → newest) to the summary row's data:

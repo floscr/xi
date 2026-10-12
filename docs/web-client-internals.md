@@ -43,7 +43,7 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   (`group-viewer-items`, always on) folds runs of tool/thinking posts into
   `.viewer-tool-group`; a run breaks on text or on a pending permission ask
   (always expanded). **Super collapsed** (`xi.web.viewer-group`, pure) folds a
-  fully collapsed group into one summary row. Appearance layering:
+  fully collapsed group of two or more rows into one summary row. Appearance layering:
   `xi.web.appearance` defaults ← `xi.config/appearance` ← the user's
   overrides (per-user state, see below; `localStorage "xi/appearance"` is
   its cache).
