@@ -60,6 +60,7 @@ mode); there is no switch for that.
 | `:super-collapsed?` | `true` | Fold a fully collapsed group into one summary row (step count + latest block). |
 | `:tool-blocks` | `:collapsed` | `:open` or `:collapsed` for tool call details. A tool awaiting Allow/Deny is always open. |
 | `:thinking-blocks` | `:collapsed` | `:open` or `:collapsed` for thinking blocks. |
+| `:tool-args` | `:summary` | What a tool call's header shows next to the tool name: `:summary` (a per-tool one-liner: the command, the path, the pattern) or `:all` (every argument as `k=v`, values cut at 80 characters). |
 
 ## Feature flags
 

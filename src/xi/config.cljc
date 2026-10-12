@@ -102,7 +102,13 @@
 
      :thinking-blocks
        :open | :collapsed — whether thinking blocks start expanded.
-       Default :collapsed."
+       Default :collapsed.
+
+     :tool-args
+       :summary | :all — what a tool call's header shows next to the tool
+       name: a per-tool one-liner (the command, the path, the pattern) or
+       every argument as `k=v`.
+       Default :summary."
   {})
 
 (def quick-replies?

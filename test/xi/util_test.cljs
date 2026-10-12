@@ -177,6 +177,24 @@
   (testing "other MCP server prefixes are also stripped"
     (is (= "list_files" (util/strip-mcp-prefix "mcp__other-server__list_files")))))
 
+;; ── tool-args-line ──
+
+(deftest tool-args-line-shows-every-argument
+  (is (= "tag=PENPOT" (util/tool-args-line {"tag" "PENPOT"})))
+  (is (= "query=foo limit=5" (util/tool-args-line {:query "foo" :limit 5}))
+      "keyword keys and non-string values")
+  (testing "strings keep their first line only"
+    (is (= "code=(def x 1)" (util/tool-args-line {"code" "(def x 1)\n(inc x)"}))))
+  (testing "long values are cut"
+    (let [line (util/tool-args-line {"text" (apply str (repeat 200 "a"))})]
+      (is (= (+ (count "text=") util/tool-arg-value-max (count "...")) (count line)))
+      (is (str/ends-with? line "..."))))
+  (testing "nil and blank values are left out"
+    (is (= "a=1" (util/tool-args-line {"a" 1 "b" nil "c" "" "d" "  "})))
+    (is (nil? (util/tool-args-line {"b" nil})))
+    (is (nil? (util/tool-args-line {})))
+    (is (nil? (util/tool-args-line nil)))))
+
 ;; ── history-edit-paths / relative-under ──
 
 (deftest history-edit-paths-collects-edit-tools

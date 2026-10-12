@@ -205,9 +205,12 @@ The full list, the layers a key applies in, and how to change any of them in
 
 The gear in the sidebar footer (or "Appearance" in the chat menu and the
 command palette) opens the appearance dialog: theme, whether tool and
-thinking blocks start open or collapsed, and **super collapsed** (a run of
-two or more collapsed tool and thinking rows shows as one summary line with
-a step count instead of its header rows). "Reset to defaults" drops them.
+thinking blocks start open or collapsed, **tool arguments** (what a tool
+row shows next to the tool name: a per-tool summary such as the command,
+the path or the pattern, or every argument as `key=value`), and **super
+collapsed** (a run of two or more collapsed tool and thinking rows shows as
+one summary line with a step count instead of its header rows). "Reset to
+defaults" drops them.
 
 ### Color themes
 

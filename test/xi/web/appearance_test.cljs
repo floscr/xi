@@ -7,7 +7,8 @@
     (let [app (appearance/effective nil)]
       (is (true? (:super-collapsed? app)))
       (is (= :collapsed (:tool-blocks app)))
-      (is (= :collapsed (:thinking-blocks app)))))
+      (is (= :collapsed (:thinking-blocks app)))
+      (is (= :summary (:tool-args app)))))
   (testing "the retired viewer-mode toggle is gone: viewer mode is always on"
     (is (not (contains? (appearance/effective nil) :viewer-mode?)))
     (is (= {} (appearance/normalize {:viewer-mode? false}))
@@ -32,17 +33,20 @@
       (is (= :collapsed (:tool-blocks (appearance/effective {:tool-blocks :sideways} nil)))))
     (testing "effective-in reads both layers from state"
       (is (= {:super-collapsed? true
-              :tool-blocks :collapsed :thinking-blocks :open}
+              :tool-blocks :collapsed :thinking-blocks :open
+              :tool-args :summary}
              (appearance/effective-in {:web/appearance-config configured
                                        :web/appearance {:tool-blocks :collapsed}}))))))
 
 (deftest normalize-drops-garbage
   (testing "unknown keys and disallowed values are dropped"
-    (is (= {:tool-blocks :open}
+    (is (= {:tool-blocks :open :tool-args :all}
            (appearance/normalize {:tool-blocks :open
                                   :thinking-blocks :sideways
                                   :super-collapsed? "yes"
-                                  :bogus 1}))))
+                                  :tool-args :all
+                                  :bogus 1})))
+    (is (= {} (appearance/normalize {:tool-args :everything}))))
   (testing "non-map input is treated as empty"
     (is (= {} (appearance/normalize nil)))
     (is (= {} (appearance/normalize "junk")))

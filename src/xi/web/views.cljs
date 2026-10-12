@@ -323,6 +323,15 @@
                   [:command :file_path :path :pattern :query :url :prompt :description])]
       v)))
 
+(defn- tool-detail
+  "What a tool header shows next to the name under the :tool-args appearance
+   setting (`mode`): the per-tool `tool-summary`, or every argument as
+   `k=v` (xi.util/tool-args-line)."
+  [mode tool args cwd]
+  (if (= :all mode)
+    (util/tool-args-line args)
+    (tool-summary tool args cwd)))
+
 (defn- file-ext [path]
   (when (and (string? path) (str/includes? path "."))
     (-> path (str/split #"\.") last str/lower-case)))
@@ -823,13 +832,13 @@
 
 (defn- tool-post
   "A tool call's <details> block. `:grouped?` (inside a viewer group),
-   `:collapsed?` and `:room-ext` (for extension tool views) are stamped by
-   chat-view."
+   `:collapsed?`, `:tool-args` (the appearance setting) and `:room-ext` (for
+   extension tool views) are stamped by chat-view."
   [dispatch! {:keys [id tool arguments result is-error status started-at diff
                      permission resolved-permission explanation room-id
-                     grouped? collapsed? cwd room-ext md-diff-code?]}]
+                     grouped? collapsed? cwd room-ext md-diff-code? tool-args]}]
   (let [name      (util/strip-mcp-prefix tool)
-        summary   (tool-summary name arguments cwd)
+        summary   (tool-detail tool-args name arguments cwd)
         running?  (= :running status)
         text      (util/extract-text-content result)
         grammar   (when (and text (not is-error)) (tool-grammar name arguments))
@@ -3149,12 +3158,12 @@
         chips)])))
 
 (defn- block-info
-  [entry cwd]
+  [entry cwd tool-args]
   (case (:kind entry)
     :tool-call (let [name (util/strip-mcp-prefix (:tool entry))]
                  {:kind     :tool-call
                   :name     name
-                  :detail   (some-> (tool-summary name (:arguments entry) cwd)
+                  :detail   (some-> (tool-detail tool-args name (:arguments entry) cwd)
                                     str str/split-lines first)
                   :running? (= :running (:status entry))
                   :error?   (boolean (:is-error entry))})
@@ -3433,6 +3442,7 @@
                               [p dispatch! cwd (:id room) sender groupable? collapsed?
                                (when tool?
                                  (tool-views/inputs (util/strip-mcp-prefix (:tool entry)) (:ext room)))
+                               (when tool? (:tool-args app))
                                md-code? (when editing? [(:text editing)]) resolved
                                explanation retry])
                             (fn []
@@ -3447,7 +3457,8 @@
                                                  collapsed?
                                                  (assoc :collapsed? true)
                                                  tool?
-                                                 (assoc :room-ext (:ext room))
+                                                 (assoc :room-ext (:ext room)
+                                                        :tool-args (:tool-args app))
                                                  md-code?
                                                  (assoc :md-diff-code? true)
                                                  editing?
@@ -3468,7 +3479,7 @@
                                 [{:key (str "h-" p)
                                   :group? groupable?
                                   :collapsed? collapsed?
-                                  :info (when groupable? (block-info entry cwd))
+                                  :info (when groupable? (block-info entry cwd (:tool-args app)))
                                   :node (with-post-key (str "h-" p) post)}])))))))
                     (range start (inc total))))))
                ;; Every child of .timeline-content is keyed: mixing keyed and
@@ -5524,17 +5535,20 @@
     (when hint [:div {:class ["form-hint"]} hint])]
    control])
 
+(defn- appearance-choice
+  "One button per `[value label]` option; the active one is the setting's
+   current `value`."
+  [dispatch! key value options]
+  (apply button-group/button-group {:variant :boxed}
+         (for [[v label] options]
+           (button-group/button-group-item
+            {:active (= v value)
+             :on-click (fn [_] (dispatch! {:type :appearance/set :key key :value v}))}
+            label))))
+
 (defn- open-collapsed-choice
   [dispatch! key value]
-  (button-group/button-group {:variant :boxed}
-    (button-group/button-group-item
-     {:active (= :open value)
-      :on-click (fn [_] (dispatch! {:type :appearance/set :key key :value :open}))}
-     "Open")
-    (button-group/button-group-item
-     {:active (= :collapsed value)
-      :on-click (fn [_] (dispatch! {:type :appearance/set :key key :value :collapsed}))}
-     "Collapsed")))
+  (appearance-choice dispatch! key value [[:open "Open"] [:collapsed "Collapsed"]]))
 
 ;; ── Color themes (xi.web.theme) ─────────────────────────────────────────────
 
@@ -5730,6 +5744,11 @@
             "Tool blocks"
             "Read, edit, clj… calls and their results"
             (open-collapsed-choice dispatch! :tool-blocks (:tool-blocks app)))
+           (appearance-row
+            "Tool arguments"
+            "Next to the tool name: a per-tool summary (the command, the path, the pattern) or every argument"
+            (appearance-choice dispatch! :tool-args (:tool-args app)
+                               [[:summary "Summary"] [:all "All"]]))
            (appearance-row
             "Thinking blocks" nil
             (open-collapsed-choice dispatch! :thinking-blocks (:thinking-blocks app))))

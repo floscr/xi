@@ -185,6 +185,31 @@
       n)
     n))
 
+(def tool-arg-value-max
+  "Longest argument value `tool-args-line` shows before cutting it."
+  80)
+
+(defn tool-args-line
+  "Every argument of a tool call as one `k=v k2=v2` line, for the web
+   client's tool header (appearance :tool-args :all). Strings keep their
+   first line, other values are printed; each value is cut at
+   `tool-arg-value-max`. Nil and blank values are left out; nil when nothing
+   remains."
+  [arguments]
+  (when (map? arguments)
+    (->> arguments
+         (keep (fn [[k v]]
+                 (let [s (cond
+                           (nil? v)    nil
+                           (string? v) (first (str/split-lines v))
+                           (keyword? v) (name v)
+                           :else       (pr-str v))]
+                   (when-not (str/blank? s)
+                     (str (if (keyword? k) (name k) (str k))
+                          "=" (truncate s tool-arg-value-max))))))
+         (str/join " ")
+         not-empty)))
+
 ;; ── Session edits ──
 ;; Pure history reads shared by xi.fx (commit flow, git lock) and the web
 ;; client's edited-files finder.

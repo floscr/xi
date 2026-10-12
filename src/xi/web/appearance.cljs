@@ -24,10 +24,15 @@
                        to reveal the header rows
      :tool-blocks      :open | :collapsed — whether a tool call's details
                        start expanded
-     :thinking-blocks  :open | :collapsed — same for thinking blocks"
+     :thinking-blocks  :open | :collapsed — same for thinking blocks
+     :tool-args        :summary | :all — what a tool call's header shows
+                       next to the tool name: a per-tool one-liner (the
+                       command, the path, the pattern) or every argument
+                       as `k=v`"
   {:super-collapsed? true
    :tool-blocks      :collapsed
-   :thinking-blocks  :collapsed})
+   :thinking-blocks  :collapsed
+   :tool-args        :summary})
 
 (def choices
   "Allowed values per setting; anything else is ignored by `normalize`
@@ -35,7 +40,8 @@
    carry)."
   {:super-collapsed? #{true false}
    :tool-blocks      #{:open :collapsed}
-   :thinking-blocks  #{:open :collapsed}})
+   :thinking-blocks  #{:open :collapsed}
+   :tool-args        #{:summary :all}})
 
 (defn normalize
   "Keep only the known settings of `m` whose values are allowed (`choices`).
