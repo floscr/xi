@@ -2521,6 +2521,22 @@
     mo1.observe(menu, { "childList": true, "subtree": true });
     return get_state().growthObserver = mo1;
   };
+  var moves_trigger_QMARK_ = function(trigger, e) {
+    const t1 = e.target;
+    const or__23426__auto__2 = not(trigger);
+    if (or__23426__auto__2) {
+      return or__23426__auto__2;
+    } else {
+      const or__23426__auto__3 = not(t1.contains);
+      if (or__23426__auto__3) {
+        return or__23426__auto__3;
+      } else {
+        return t1.contains(trigger);
+      }
+      ;
+    }
+    ;
+  };
   var focus_first_item_BANG_ = function(menu) {
     const first_item1 = menu.querySelector(".context-menu-item");
     if (truth_(first_item1)) {
@@ -2569,46 +2585,47 @@
     });
     f5.cljs$core$IFn$_invoke$arity$variadic = (function(event, args) {
       dismiss_BANG_();
-      const items6 = (() => {
-        const passed7 = first(args);
-        if (truth_(passed7)) {
-          return passed7;
+      const trigger6 = event.currentTarget;
+      const items7 = (() => {
+        const passed8 = first(args);
+        if (truth_(passed8)) {
+          return passed8;
         } else {
-          const json8 = event.currentTarget.dataset.contextMenu;
-          if (truth_(json8)) {
-            return JSON.parse(json8);
+          const json9 = event.currentTarget.dataset.contextMenu;
+          if (truth_(json9)) {
+            return JSON.parse(json9);
           }
           ;
         }
         ;
       })();
-      const _9 = not(items6) ? console.warn("Context menu: no items provided") : null;
-      const menu10 = create_menu(items6);
-      const state11 = get_state();
-      state11.menu = menu10;
-      position_menu_BANG_(menu10, event.clientX, event.clientY);
-      focus_first_item_BANG_(menu10);
-      const on_click12 = (function(e) {
-        if (not(menu10.contains(e.target))) {
+      const _10 = not(items7) ? console.warn("Context menu: no items provided") : null;
+      const menu11 = create_menu(items7);
+      const state12 = get_state();
+      state12.menu = menu11;
+      position_menu_BANG_(menu11, event.clientX, event.clientY);
+      focus_first_item_BANG_(menu11);
+      const on_click13 = (function(e) {
+        if (not(menu11.contains(e.target))) {
           e.preventDefault();
           e.stopPropagation();
           return dismiss_BANG_();
         }
         ;
       });
-      const on_key13 = (function(e) {
-        const key14 = e.key;
-        if (key14 === "Escape") {
+      const on_key14 = (function(e) {
+        const key15 = e.key;
+        if (key15 === "Escape") {
           e.preventDefault();
           return dismiss_BANG_();
         } else {
-          if (key14 === "ArrowDown") {
+          if (key15 === "ArrowDown") {
             e.preventDefault();
-            return focus_next_BANG_(menu10, "down");
+            return focus_next_BANG_(menu11, "down");
           } else {
-            if (key14 === "ArrowUp") {
+            if (key15 === "ArrowUp") {
               e.preventDefault();
-              return focus_next_BANG_(menu10, "up");
+              return focus_next_BANG_(menu11, "up");
             } else {
               return null;
             }
@@ -2616,23 +2633,26 @@
         }
         ;
       });
-      const on_scroll15 = (function(_) {
+      const on_scroll16 = (function(e) {
+        if (truth_(moves_trigger_QMARK_(trigger6, e))) {
+          return dismiss_BANG_();
+        }
+        ;
+      });
+      const on_resize17 = (function(_) {
         return dismiss_BANG_();
       });
-      const on_resize16 = (function(_) {
-        return dismiss_BANG_();
+      const cleanup18 = (function() {
+        document.removeEventListener("click", on_click13, true);
+        document.removeEventListener("keydown", on_key14, true);
+        window.removeEventListener("scroll", on_scroll16, true);
+        return window.removeEventListener("resize", on_resize17);
       });
-      const cleanup17 = (function() {
-        document.removeEventListener("click", on_click12, true);
-        document.removeEventListener("keydown", on_key13, true);
-        window.removeEventListener("scroll", on_scroll15, true);
-        return window.removeEventListener("resize", on_resize16);
-      });
-      document.addEventListener("click", on_click12, true);
-      document.addEventListener("keydown", on_key13, true);
-      window.addEventListener("scroll", on_scroll15, true);
-      window.addEventListener("resize", on_resize16);
-      return state11.cleanup = cleanup17;
+      document.addEventListener("click", on_click13, true);
+      document.addEventListener("keydown", on_key14, true);
+      window.addEventListener("scroll", on_scroll16, true);
+      window.addEventListener("resize", on_resize17);
+      return state12.cleanup = cleanup18;
     });
     f5.cljs$lang$maxFixedArity = 1;
     return f5;
