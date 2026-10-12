@@ -115,7 +115,11 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   per frame (host ResizeObserver + window `resize`); the PTY has one size,
   so a client re-sends its own on terminal focus, window focus and tab
   visible (`claim-size!`). xterm calls
-  `preventDefault` on keys it sends, so `keymap/handle-keydown` skips them.
+  `preventDefault` on keys it sends, so `keymap/handle-keydown` skips them;
+  its custom key handler also cancels the browser's plain Ctrl+key defaults
+  (not Ctrl+V, the paste) and hands the `:mode/terminal` layer's chords to
+  Xi (`set-xi-key!` → `keymap/terminal-key?`): `current-mode` is
+  `:terminal` while focus is inside `.xterm`.
   Colours are the theme's vars converted to hex (xterm can't parse
   `oklch()`), re-read when the theme state changes (`:data-theme` →
   `on-update`); `palette` also maps the 16 ANSI slots to the theme's status

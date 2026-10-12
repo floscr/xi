@@ -14,7 +14,9 @@
        transient  :permission-pending :agent-busy
        buffer     :buffer/diff :buffer/file :buffer/prompt :buffer/pager …
        page       :page/chat :page/home :page/git-status … (web only)
-       mode       :mode/compose (a text field owns the keys) | :mode/navigate
+       mode       :mode/compose (a text field owns the keys) | :mode/terminal
+                  (a web terminal owns them; only its layer's keys reach Xi)
+                  | :mode/navigate
        :global
      `lookup` walks them in that order: the first layer mentioning the key
      wins, an explicit nil unbinds it, and an action whose guard fails lets
@@ -252,6 +254,8 @@
    :scroll/half-down        {:label "Scroll half a page down" :surface #{:web}}
    :scroll/half-up          {:label "Scroll half a page up" :surface #{:web}}
    :dialog/close            {:label "Close the open dialog" :surface #{:web}}
+   :terminal/leave          {:label "Leave the terminal, keys go back to Xi" :surface #{:web}}
+   :terminal/focus          {:label "Type in the terminal" :surface #{:web}}
    ;; tui
    :prompt/toggle           {:label "System prompt: full / overview" :surface #{:tui}}
    :pager/down              {:label "Cursor down" :surface #{:tui}}
@@ -289,12 +293,14 @@
   [[:global             "Everywhere"]
    [:mode/navigate      "Navigating (no text field focused)"]
    [:mode/compose       "In a text field"]
+   [:mode/terminal      "Typing in a terminal"]
    [:page/chat          "Chat page"]
    [:page/home          "Projects page"]
    [:page/git-status    "Git status page"]
    [:buffer/pager       "Any buffer viewer"]
    [:buffer/diff        "Diff view"]
    [:buffer/file        "File view"]
+   [:buffer/terminal    "Terminal view"]
    [:buffer/prompt      "System prompt view"]
    [:buffer/keys        "Shortcut list"]
    [:buffer/subagents   "Sub-agents view"]
@@ -340,7 +346,14 @@
                               "] f"    :diff/next-file
                               "[ f"    :diff/prev-file}
          :buffer/file        {"q"      :buffer/close
-                              "escape" :buffer/close}}
+                              "escape" :buffer/close}
+         ;; keys of :mode/terminal skip the program (xi.web.terminal):
+         ;; Ctrl+` (VS Code's) sends only NUL to a terminal
+         :mode/terminal      {"ctrl+`" :terminal/leave}
+         :buffer/terminal    {"q"      :buffer/close
+                              "escape" :buffer/close
+                              "i"      :terminal/focus
+                              "enter"  :terminal/focus}}
    :tui {:buffer/prompt {"ctrl+o" :prompt/toggle}
          :buffer/pager  {"j"        :pager/down
                          "down"     :pager/down

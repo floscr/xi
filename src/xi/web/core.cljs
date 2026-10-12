@@ -2610,6 +2610,13 @@
                                      (dispatch! (if room-id
                                                   {:type :ui/buffer-switch :room-id room-id :buffer-id :chat}
                                                   {:type :pending/buffer-switch :buffer-id :chat}))))})
+  ;; In a terminal every key is the program's but the :mode/terminal layer's
+  ;; (xi.web.terminal/set-xi-key!): leaving drops focus, so Xi's keys work
+  ;; again; on the terminal view i / Enter go back in.
+  (keymap/register-action! {:id :terminal/leave
+                            :run (fn [_ _ _] (keymap/blur-active!))})
+  (keymap/register-action! {:id :terminal/focus
+                            :run (fn [_ _ _] (terminal/focus!))})
   (keymap/register-action! {:id :diff/next-file
                             :run (fn [_ _ _] (jump-diff-file! :next))})
   (keymap/register-action! {:id :diff/prev-file
@@ -2918,6 +2925,7 @@
       (when terminal-toolbar-items (terminal/register-toolbar! id terminal-toolbar-items)))
     (when-let [send! (:send! transport)]
       (terminal/set-send! send!))
+    (terminal/set-xi-key! #(keymap/terminal-key? @state %))
     (reset! dispatch-ref dispatch!)
     (reset! app-ref app)
     ((:set-dispatch! transport) dispatch!)

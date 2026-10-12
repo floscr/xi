@@ -22,6 +22,9 @@ follows your `:keys` overrides.
   (and named keys such as `Esc`) can fire.
 - **Navigate**: nothing is focused, or a viewer (diff, file, the shortcuts
   list) has focus. Single keys work, such as `?`.
+- **Terminal** (web): a [terminal](web-client.md#terminals) buffer has focus.
+  Every key goes to its program, except those bound in `:mode/terminal`:
+  `` Ctrl+` `` leaves the terminal, then the other keys work again.
 
 In the web client, `Esc` leaves the text field. There is no built-in key back
 into it; bind `:compose/focus` in `:mode/navigate` (`i` in the example under
@@ -38,10 +41,10 @@ first layer that mentions it wins.
 | --- | --- |
 | `:permission-pending` | While a permission request is waiting for an answer |
 | `:agent-busy` | While the agent is working |
-| `:buffer/diff`, `:buffer/file`, `:buffer/prompt`, `:buffer/keys` | While that view is open (diff, file, system prompt, this shortcut list) |
+| `:buffer/diff`, `:buffer/file`, `:buffer/terminal`, `:buffer/prompt`, `:buffer/keys` | While that view is open (diff, file, terminal, system prompt, this shortcut list) |
 | `:buffer/pager` | Any scrollable viewer in the terminal (under the specific `:buffer/…` layer) |
 | `:page/chat`, `:page/home`, `:page/git-status` | The web client's pages |
-| `:mode/compose`, `:mode/navigate` | The two modes above |
+| `:mode/compose`, `:mode/terminal`, `:mode/navigate` | The modes above. `:mode/terminal` takes single chords only |
 | `:global` | Everywhere |
 
 ## Default keys
@@ -74,6 +77,9 @@ Web client:
 | `Esc` | Leave the text field | `:compose/blur` | `:mode/compose` |
 | `q`, `Esc` | Leave the diff or file view, back to the chat (the buffer stays open) | `:buffer/close` | `:buffer/diff`, `:buffer/file` |
 | `] f` / `[ f` | Next / previous file in the diff | `:diff/next-file` / `:diff/prev-file` | `:buffer/diff` |
+| `` Ctrl+` `` | Leave the terminal: keys go back to Xi (the key left of `1` on any layout) | `:terminal/leave` | `:mode/terminal` |
+| `i`, `Enter` | Back into the terminal | `:terminal/focus` | `:buffer/terminal` |
+| `q`, `Esc` | Leave the terminal view, back to the chat (the program keeps running) | `:buffer/close` | `:buffer/terminal` |
 
 Terminal client, in any viewer (`:buffer/pager`):
 

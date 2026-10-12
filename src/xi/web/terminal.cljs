@@ -15,7 +15,9 @@
    `:terminal-toolbar-items` providers (register-toolbar!)."
   (:require [clojure.string :as str]
             [ui.button :as button]
-            [ui.icon :as icon]))
+            [ui.icon :as icon]
+            [xi.keys :as keys]
+            [xi.web.keymap :as keymap]))
 
 ;; ── Transport ────────────────────────────────────────────────────────────────
 
@@ -163,6 +165,25 @@
                           (fit-all!)
                           (claim-size!)))))
 
+(defonce ^:private xi-key-ref (atom (constantly false)))
+
+(defn set-xi-key!
+  "Install (fn [keydown-event] → bool): true for the keys Xi keeps while a
+   terminal has focus (xi.web.keymap/terminal-key?, the :mode/terminal
+   layer). xterm ignores those, so they bubble to Xi's keymap."
+  [f]
+  (reset! xi-key-ref f))
+
+(defn- ctrl-key?
+  "A plain Ctrl+key the terminal should own outright: the program gets it,
+   the browser's binding (Firefox's Ctrl+D bookmark, Ctrl+F find, …) never
+   runs. Ctrl+V stays the browser's, it is how a paste reaches xterm."
+  [^js e]
+  (and (= "keydown" (.-type e))
+       (.-ctrlKey e)
+       (not (or (.-shiftKey e) (.-altKey e) (.-metaKey e)))
+       (not= "v" (str/lower-case (.-key e)))))
+
 (defn- mount! [^js node term-id]
   (-> (load-lib!)
       (.then
@@ -183,6 +204,11 @@
              (.loadAddon term fit)
              (.open term node)
              (fit! fit)
+             (.attachCustomKeyEventHandler term (fn [e]
+                                                  (cond
+                                                    (@xi-key-ref e) false
+                                                    (ctrl-key? e)   (do (.preventDefault e) true)
+                                                    :else           true)))
              (.onData term #(send! {:type :terminal/input :term-id term-id :text %}))
              (.onResize term #(send-size! term-id term))
              (.addEventListener (.-textarea term) "focus" #(send-size! term-id term))
@@ -209,6 +235,13 @@
   "After a reconnect: the server forgot this client's subscriptions."
   []
   (run! reattach! (keys @instances)))
+
+(defn focus!
+  "Focus the terminal on screen (the :terminal/focus key)."
+  []
+  (some (fn [{:keys [^js term ^js node]}]
+          (when (.-isConnected node) (.focus term) true))
+        (vals @instances)))
 
 (defn write!
   "Type `text` into terminal `term-id` as if from the keyboard."
@@ -286,7 +319,9 @@
   [:div {:class ["file-tab" "terminal-tab"]}
    [:div {:class ["file-tab-header"]}
     (icon/icon {:icon-name :terminal :size :sm})
-    [:span {:class ["file-tab-path"]} title]]
+    [:span {:class ["file-tab-path"]} title]
+    (when-let [k (keys/shortcut (keymap/keymap state) [:mode/terminal] :terminal/leave)]
+      [:span {:class ["terminal-hint"]} (str k " leaves the terminal")])]
    (when (or error (some? exit-code) gone?)
      (ended-bar dispatch! (:id room) buffer-id buffer gone?))
    (when-not error

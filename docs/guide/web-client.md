@@ -144,8 +144,10 @@ directory. `/term` opens your shell (`$SHELL`), `/term <command …>` runs that
 command instead (quotes keep spaces: `/term nvim "my notes.md"`). **New
 terminal** in the ⋮ menu and the command palette opens a shell.
 
-- **Typing.** While the terminal has focus, keys go to the program. Click
-  outside it to use Xi's shortcuts again.
+- **Typing.** While the terminal has focus, keys go to the program, plain
+  Ctrl keys too (Firefox's Ctrl+D does not bookmark). `` Ctrl+` `` leaves the
+  terminal; then `Esc` goes back to the chat, `i` or `Enter` back into the
+  terminal ([keys](keyboard.md#default-keys)).
 - **Lifetime.** The program keeps running while you look at another buffer,
   leave the chat or reload the page, and every device in the chat sees the
   same screen. It takes the size of the window you use last: the one you

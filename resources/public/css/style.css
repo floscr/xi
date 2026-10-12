@@ -5063,6 +5063,13 @@ code a:hover,
   position: relative;
 }
 
+.terminal-hint {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
 .terminal-host {
   flex: 1;
   min-height: 0;

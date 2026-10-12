@@ -126,10 +126,14 @@
         (= "fixed" (.-position (js/getComputedStyle el))))))
 
 (defn current-mode
-  "`:compose` when a *visible* text field is focused, else `:navigate`."
+  "`:terminal` when a terminal buffer has focus (xi.web.terminal), `:compose`
+   when another *visible* text field does, else `:navigate`."
   []
   (let [el (.-activeElement js/document)]
-    (if (and (editable? el) (visible? el)) :compose :navigate)))
+    (cond
+      (some-> el (.closest ".xterm")) :terminal
+      (and (editable? el) (visible? el)) :compose
+      :else :navigate)))
 
 (defn in-open-dialog?
   "True when the focused element sits inside an open native <dialog>."
@@ -217,7 +221,11 @@
           (and kind (= page :chat))
            (conj (keyword "buffer" (name kind)))
            page (conj (keyword "page" (name page))))
-         (conj (if (= mode :compose) :mode/compose :mode/navigate) :global)))))
+         (conj (case mode
+                 :compose  :mode/compose
+                 :terminal :mode/terminal
+                 :mode/navigate)
+               :global)))))
 
 (defn- text-action
   "The action behind a string binding: send `text` as a message in the chat
@@ -280,6 +288,16 @@
               :pending (do (set-pending! (:pending res))
                            (.preventDefault e))
               (set-pending! []))))))))
+
+(defn terminal-key?
+  "True when keydown `e` in a focused terminal is Xi's, not the program's:
+   bound in the :mode/terminal layer (one chord, e.g. Ctrl+` to leave).
+   xi.web.terminal then leaves it to handle-keydown."
+  [state ^js e]
+  (boolean
+   (when (= "keydown" (.-type e))
+     (when-let [chord (event->chord e)]
+       (get-in (keymap state) [:mode/terminal chord])))))
 
 ;; ── For views ────────────────────────────────────────────────────────────────
 

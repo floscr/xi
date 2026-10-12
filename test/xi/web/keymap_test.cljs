@@ -16,3 +16,23 @@
     (is (nil? (keymap/event-shortcut {} {:type :room/new :extra 1})))
     (is (nil? (keymap/event-shortcut {} nil))))
   (keymap/unregister-action! :chat/new))
+
+(defn- keydown [m]
+  (clj->js (merge {:type "keydown" :ctrlKey false :altKey false :metaKey false
+                   :shiftKey false}
+                  m)))
+
+(deftest terminal-keeps-only-its-layers-keys-for-xi
+  (testing "Ctrl+` (the physical key left of 1, any layout) leaves by default"
+    (is (keymap/terminal-key? {} (keydown {:key "`" :code "Backquote" :ctrlKey true})))
+    (is (keymap/terminal-key? {} (keydown {:key "^" :code "Backquote" :ctrlKey true}))))
+  (testing "everything else is the program's, Xi's other keys included"
+    (is (not (keymap/terminal-key? {} (keydown {:key "Escape" :code "Escape"}))))
+    (is (not (keymap/terminal-key? {} (keydown {:key "b" :code "KeyB" :altKey true}))))
+    (is (not (keymap/terminal-key? {} (keydown {:key "`" :code "Backquote" :ctrlKey true
+                                                :type "keyup"})))))
+  (testing "a user binding in :mode/terminal counts, an unbind removes it"
+    (let [km {:mode/terminal {"alt+b" :buffers/switch "ctrl+`" nil}}]
+      (is (keymap/terminal-key? {:web/keymap km} (keydown {:key "b" :code "KeyB" :altKey true})))
+      (is (not (keymap/terminal-key? {:web/keymap km}
+                                     (keydown {:key "`" :code "Backquote" :ctrlKey true})))))))
