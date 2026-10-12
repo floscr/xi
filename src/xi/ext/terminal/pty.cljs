@@ -15,7 +15,7 @@
             [xi.paths :as paths]))
 
 ;; term-id → {:proc :decoder :scrollback :pending :timer :subs #{cid}
-;;            :session-id :exit-code}
+;;            :session-id :user :token :exit-code}
 (defonce ^:private terms (atom {}))
 
 (def ^:private flush-ms
@@ -48,18 +48,31 @@
 (defn- child-env
   "TERM_PROGRAM=xi tells programs they run in Xi's terminal, whose 16 ANSI
    colours follow the web theme (xi.web.terminal/theme): a colorscheme that
-   sticks to those follows every theme switch."
-  []
-  (doto (paths/scrub-env)
-    (unchecked-set "TERM" "xterm-256color")
-    (unchecked-set "COLORTERM" "truecolor")
-    (unchecked-set "TERM_PROGRAM" "xi")))
+   sticks to those follows every theme switch. `extra` adds variables."
+  [extra]
+  (let [env (doto (paths/scrub-env)
+              (unchecked-set "TERM" "xterm-256color")
+              (unchecked-set "COLORTERM" "truecolor")
+              (unchecked-set "TERM_PROGRAM" "xi"))]
+    (doseq [[k v] extra] (unchecked-set env k v))
+    env))
+
+(defn by-token
+  "The live terminal `token` belongs to (spawn!'s `:token`) → {:term-id
+   :session-id :user}, nil for an unknown or empty token."
+  [token]
+  (when (seq token)
+    (some (fn [[tid t]]
+            (when (= token (:token t))
+              (assoc (select-keys t [:session-id :user]) :term-id tid)))
+          @terms)))
 
 (defn spawn!
   "Start `argv` in `cwd` under a PTY as terminal `term-id` (replacing a
-   finished one of that id, keeping its watchers). `on-exit` gets the exit
-   code. Throws when the program cannot start."
-  [send! {:keys [term-id argv cwd cols rows session-id]} on-exit]
+   finished one of that id, keeping its watchers). `env` adds variables,
+   `token` and `user` are kept for by-token. `on-exit` gets the exit code.
+   Throws when the program cannot start."
+  [send! {:keys [term-id argv cwd cols rows session-id user token env]} on-exit]
   (when-let [{:keys [^js proc timer]} (get @terms term-id)]
     (when timer (js/clearTimeout timer))
     (try (.kill proc "SIGHUP") (catch :default _ nil))
@@ -69,7 +82,7 @@
         proc    (js/Bun.spawn
                  (clj->js argv)
                  #js {:cwd cwd
-                      :env (child-env)
+                      :env (child-env env)
                       :terminal #js {:cols (or cols 80)
                                      :rows (or rows 24)
                                      :data (fn [_ data]
@@ -81,7 +94,9 @@
                                      :pending    ""
                                      :subs       (get-in m [term-id :subs] #{})
                                      :size       (get-in m [term-id :size])
-                                     :session-id session-id})))
+                                     :session-id session-id
+                                     :user       user
+                                     :token      token})))
     (.then (.-exited proc)
            (fn [code]
              ;; a restart may have replaced this process already
@@ -89,7 +104,7 @@
                ;; the PTY outlives its child and would hold its fd open
                (try (.close (.-terminal proc)) (catch :default _ nil))
                (flush! send! term-id)
-               (swap! terms assoc-in [term-id :exit-code] code)
+               (swap! terms update term-id #(-> % (assoc :exit-code code) (dissoc :token)))
                (send-to-subs! send! term-id {:type :terminal/exit :code code})
                (on-exit code))))
     proc))

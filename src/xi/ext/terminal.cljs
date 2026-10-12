@@ -14,12 +14,16 @@
    never broadcast; output goes back to the watching clients from
    xi.ext.terminal.pty, outside the event loop. A terminal ends with its
    buffer: closing it hangs the program up; the program exiting 0 closes the
-   buffer, any other exit keeps it with `:exit-code` (Restart / Close)."
+   buffer, any other exit keeps it with `:exit-code` (Restart / Close).
+
+   A program reaches its chat back through xi.ext.terminal.socket: a prompt
+   as the user who opened the terminal, or a sub-agent (core/send-event)."
   (:require [xi.buffers :as buffers]
             [xi.core.state :as state]
             [xi.ext.rules :as rules-ext]
             [xi.ext.terminal.core :as core]
             [xi.ext.terminal.pty :as pty]
+            [xi.ext.terminal.socket :as socket]
             [xi.rules.store :as store]
             [xi.tools.fs :as tfs]
             ["node:fs" :as fs]))
@@ -109,6 +113,13 @@
   (when session-id
     {:effects [[:terminal/kill {:session-id session-id}]]}))
 
+(defn- sub-stream
+  "A sub-agent event, for the program streaming it (socket/push!; a no-op
+   for the sub-agents nobody streams)."
+  [_st {:keys [sub-id] :as ev}]
+  (when-let [item (core/stream-item ev)]
+    {:effects [[:terminal/sub-stream {:sub-id sub-id :item item}]]}))
+
 (defn- io [fx-type]
   (fn [_st ev]
     {:effects [[fx-type (select-keys ev [:client-id :term-id :text :cols :rows])]]}))
@@ -149,11 +160,20 @@
                    :unanswered "Opening this terminal needs approval, and nobody could answer."
                    (or message "Opening this terminal was denied by a rule.")))))))
 
+(defn- on-send
+  "A program's `POST /send` (xi.ext.terminal.socket): dispatch what it asks."
+  [{:keys [dispatch! get-state]}]
+  (fn [term body]
+    (let [{:keys [event] :as res} (core/send-event (get-state) term body)]
+      (when event (dispatch! event))
+      res)))
+
 (defn- spawn-fx [ask! send!]
   (fn [{:keys [dispatch!] :as ctx}
-       {:keys [room-id term-id client-id session-id cwd] :as p}]
+       {:keys [room-id term-id client-id session-id cwd user] :as p}]
     (let [argv  (or (:argv p) (core/shell-argv (aget js/process.env "SHELL")))
           p     (assoc p :argv argv)
+          token (socket/new-token)
           bid   (buffers/terminal-id term-id)
           show! (fn [extra]
                   (dispatch! {:type :ui/buffer-set :room-id room-id :buffer-id bid
@@ -173,7 +193,10 @@
                      :else
                      (try
                        (pty/spawn! send! {:term-id term-id :argv argv :cwd cwd
-                                          :session-id session-id}
+                                          :session-id session-id :user user
+                                          :token token
+                                          :env {"XI_TERM_SOCK"  (socket/ensure! (on-send ctx))
+                                                "XI_TERM_TOKEN" token}}
                                    (fn [code]
                                      (dispatch! {:type :terminal/exited
                                                  :term-id term-id :code code})))
@@ -194,6 +217,8 @@
                         (pty/write! term-id text))
      :terminal/resize (fn [_ {:keys [term-id cols rows]}]
                         (pty/resize! term-id cols rows))
+     :terminal/sub-stream (fn [_ {:keys [sub-id item]}]
+                            (socket/push! sub-id item))
      :terminal/kill   (fn [_ {:keys [term-ids session-id]}]
                         (run! pty/kill! (concat term-ids
                                                 (when session-id (pty/session-terms session-id)))))
@@ -215,6 +240,10 @@
                      :ui/buffers-close-all on-close-all
                      :session/buffer-close on-session-buffer-close
                      :session/delete       on-session-delete
+                     :subagent/text-delta  sub-stream
+                     :subagent/tool-start  sub-stream
+                     :subagent/error       sub-stream
+                     :subagent/turn-end    sub-stream
                      :client/disconnect    (fn [_ {:keys [client-id]}]
                                              {:effects [[:terminal/detach-client
                                                          {:client-id client-id}]]})}
@@ -223,4 +252,6 @@
    :roomless-events #{:terminal/attach :terminal/detach :terminal/input :terminal/resize}
    :no-broadcast    #{:terminal/open :terminal/restart :terminal/exited
                       :terminal/attach :terminal/detach :terminal/input :terminal/resize}
-   :on-shutdown     pty/kill-all!})
+   :on-shutdown     (fn [& _]
+                      (pty/kill-all!)
+                      (socket/stop!))})

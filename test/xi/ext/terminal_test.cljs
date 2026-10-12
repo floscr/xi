@@ -133,3 +133,41 @@
     (is (= :terminal/spawn fx))
     (is (= ["htop" "-d" "5"] (:argv p)))
     (is (= "c1" (:client-id p)))))
+
+(deftest a-program-sends-to-its-chat
+  (let [st   {:rooms {"r1" {:session {:id "s1"}} "r2" {:session {:id "s2"}}}}
+        term {:session-id "s2" :user "alice"}]
+    (testing "by default the text is the user's next prompt in the terminal's chat"
+      (is (= {:event {:type :prompt/submit :room-id "r2" :text "explain" :user "alice"
+                      :collapsed-label "Explain a.clj:1-3"}}
+             (core/send-event st term {:text "explain" :label " Explain a.clj:1-3 "}))))
+    (testing "to a sub-agent of that chat"
+      (is (= {:event {:type :subagent/spawn :room-id "r2" :task "explain" :prompt "explain"
+                      :label "Explain"}}
+             (core/send-event st term {:text "explain" :to "subagent" :label "Explain"}))))
+    (testing "no text, or the chat is not open"
+      (is (:error (core/send-event st term {:text "  "})))
+      (is (:error (core/send-event st term {:text 3})))
+      (is (:error (core/send-event st {:session-id "gone"} {:text "hi"}))))))
+
+(deftest a-streamed-sub-agent
+  (testing "the socket's sub-id names the sub-agent"
+    (is (= "sa-term-1"
+           (get-in (core/send-event {:rooms {"r" {:session {:id "s"}}}} {:session-id "s"}
+                                    {:text "hi" :to "subagent" :sub-id "sa-term-1"})
+                   [:event :sub-id]))))
+  (testing "its events become stream items"
+    (is (= {:type "text" :text "Hel"}
+           (core/stream-item {:type :subagent/text-delta :text "Hel"})))
+    (is (= {:type "tool" :tool "read" :detail "src/a.clj"}
+           (core/stream-item {:type :subagent/tool-start :tool "mcp__xi-tools__read"
+                              :arguments {:path "src/a.clj"}})))
+    (is (= {:type "tool" :tool "grep" :detail "defn"}
+           (core/stream-item {:type :subagent/tool-start :tool "grep"
+                              :arguments {"pattern" "defn"}})))
+    (is (= {:type "done" :status "stopped"}
+           (core/stream-item {:type :subagent/turn-end :aborted? true})))
+    (is (= "boom" (:error (core/stream-item {:type :subagent/error :error "boom"})))))
+  (testing "the rest is skipped"
+    (is (nil? (core/stream-item {:type :subagent/text-delta :text ""})))
+    (is (nil? (core/stream-item {:type :subagent/thinking-delta :text "hm"})))))

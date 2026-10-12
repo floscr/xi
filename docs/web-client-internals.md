@@ -129,6 +129,11 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   `keymap/run-action!` (installed by core via `set-run-action!`), limited to
   `program-actions` since any output can carry it; OSCs in a replayed
   scrollback are dropped (`replaying`, cleared by `write`'s callback).
+  Prompts go the other way, server-side: `xi.ext.terminal.socket` (one
+  0600 Unix socket per server process) takes `POST /send` with the
+  per-spawn token `xi.ext.terminal.pty` puts in the child env, maps it to
+  the terminal's session and user (`pty/by-token`) and dispatches what
+  `core/send-event` returns (`:prompt/submit` or `:subagent/spawn`).
 - **Code-block menu**: right-click / tap → Copy; on Read/Write/Edit blocks
   View file (`:file/open`); on blocks rendering a change View diff
   (`:ui/diff-open`, no git run), then the extensions' `:block-menu-items`

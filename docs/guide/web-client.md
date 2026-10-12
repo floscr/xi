@@ -169,6 +169,22 @@ terminal** in the ⋮ menu and the command palette opens a shell.
   `buffers/switch`, `files/find`, `files/find-edited`, `git/status`,
   `git/log`, `projects/pick`, `skills/search`, `themes/pick`, `keys/show`,
   `sidebar/toggle`, `buffer/close`, `terminal/leave`.
+- **Prompts from a program.** A program can send its chat a prompt, or
+  start a sub-agent there, through the socket in `XI_TERM_SOCK`, with the
+  token in `XI_TERM_TOKEN`. The prompt counts as sent by whoever opened the
+  terminal. `label` is what the chat shows instead of the full text:
+
+  ```sh
+  curl --unix-socket "$XI_TERM_SOCK" -H "Authorization: Bearer $XI_TERM_TOKEN" \
+    -H 'Content-Type: application/json' \
+    -d '{"text": "Explain main.clj", "to": "chat", "label": "Explain"}' http://xi/send
+  ```
+
+  `"to": "subagent"` starts a sub-agent instead; with `"stream": true` the
+  answer streams its reply as JSON lines (`text`, `tool`, `error`, then
+  `done`). Otherwise the answer is `{"ok": true}`,
+  or `{"error": …}` with status 400 (body isn't JSON), 401 (unknown token)
+  or 409 (no text, or the chat isn't open).
 - **Toolbar.** On a touch screen, floating buttons at the bottom right send
   Esc, Tab, Ctrl+C and the arrow keys. Extensions add buttons there and
   entries to the code-block menu, for example "Open in vim"

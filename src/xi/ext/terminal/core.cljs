@@ -3,7 +3,8 @@
    late client replays, argv and titles, the buffer a terminal shows in, and
    its rules request."
   (:require [clojure.string :as str]
-            [xi.buffers :as buffers]))
+            [xi.buffers :as buffers]
+            [xi.util :as util]))
 
 ;; ── Scrollback ───────────────────────────────────────────────────────────────
 
@@ -77,6 +78,59 @@
    :command       (str/join " " argv)
    :argv          argv
    :effective-cwd cwd})
+
+(defn- session-room [st session-id]
+  (some (fn [[rid room]] (when (= session-id (get-in room [:session :id])) rid))
+        (:rooms st)))
+
+(defn send-event
+  "The event a program's `POST /send` asks for (xi.ext.terminal.socket):
+   `body` {:text :to :label} from terminal `term` {:session-id :user}.
+   `:to \"subagent\"` starts a sub-agent in the terminal's chat (id `sub-id`,
+   set by the socket when it streams it), else the text is the user's next
+   prompt there, shown as `label` when given. → {:event} or {:error}."
+  [st {:keys [session-id user]} {:keys [text to label sub-id]}]
+  (let [room-id (session-room st session-id)
+        label   (when (string? label) (not-empty (str/trim label)))]
+    (cond
+      (not (and (string? text) (not (str/blank? text))))
+      {:error "needs a non-empty :text"}
+
+      (nil? room-id)
+      {:error "the terminal's chat is not open"}
+
+      (= "subagent" to)
+      {:event (cond-> {:type :subagent/spawn :room-id room-id :task text :prompt text}
+                label  (assoc :label label)
+                sub-id (assoc :sub-id sub-id))}
+
+      :else
+      {:event (cond-> {:type :prompt/submit :room-id room-id :text text}
+                user  (assoc :user user)
+                label (assoc :collapsed-label label))})))
+
+(def ^:private detail-keys
+  [:path :file_path :pattern :command :query :url :description])
+
+(defn- tool-detail [arguments]
+  (when-let [v (some #(let [v (or (get arguments %) (get arguments (name %)))]
+                        (when (string? v) v))
+                     detail-keys)]
+    (let [v (first (str/split-lines v))]
+      (if (> (count v) 80) (str (subs v 0 79) "…") v))))
+
+(defn stream-item
+  "What sub-agent event `ev` adds to a program's stream of that sub-agent
+   (xi.ext.terminal.socket/push!), nil for the events it skips. A \"done\"
+   item ends the stream."
+  [{:keys [type text tool arguments error aborted?]}]
+  (case type
+    :subagent/text-delta (when (seq text) {:type "text" :text text})
+    :subagent/tool-start (cond-> {:type "tool" :tool (util/strip-mcp-prefix (str tool))}
+                           (tool-detail arguments) (assoc :detail (tool-detail arguments)))
+    :subagent/error      {:type "error" :error (str error)}
+    :subagent/turn-end   {:type "done" :status (if aborted? "stopped" "done")}
+    nil))
 
 (defn buffer-term-id
   "The terminal behind `buffer-id` of the room, nil for any other buffer."
