@@ -125,6 +125,10 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   `on-update`); `palette` also maps the 16 ANSI slots to the theme's status
   and `--hl-*` syntax colours, and the PTY env carries `TERM_PROGRAM=xi`
   (`xi.ext.terminal.pty`), so a 16-colour editor scheme follows the theme.
+  An OSC 7474 handler runs the action its payload names through
+  `keymap/run-action!` (installed by core via `set-run-action!`), limited to
+  `program-actions` since any output can carry it; OSCs in a replayed
+  scrollback are dropped (`replaying`, cleared by `write`'s callback).
 - **Code-block menu**: right-click / tap → Copy; on Read/Write/Edit blocks
   View file (`:file/open`); on blocks rendering a change View diff
   (`:ui/diff-open`, no git run), then the extensions' `:block-menu-items`

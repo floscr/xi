@@ -289,6 +289,14 @@
                            (.preventDefault e))
               (set-pending! []))))))))
 
+(defn run-action!
+  "Run action `id` as if its key was pressed, when it is registered and its
+   guard allows it. True when it ran."
+  [state dispatch! id]
+  (when ((enabled? state) id)
+    ((:run (resolve-action id)) state dispatch! nil)
+    true))
+
 (defn terminal-key?
   "True when keydown `e` in a focused terminal is Xi's, not the program's:
    bound in the :mode/terminal layer (one chord, e.g. Ctrl+` to leave).

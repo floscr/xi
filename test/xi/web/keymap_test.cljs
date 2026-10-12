@@ -36,3 +36,20 @@
       (is (keymap/terminal-key? {:web/keymap km} (keydown {:key "b" :code "KeyB" :altKey true})))
       (is (not (keymap/terminal-key? {:web/keymap km}
                                      (keydown {:key "`" :code "Backquote" :ctrlKey true})))))))
+
+(deftest run-action-by-id
+  (keymap/register-action! {:id :palette/open :event {:type :palette/open}})
+  (keymap/register-action! {:id :themes/pick :event {:type :palette/open-themes}
+                            :when (constantly false)})
+  (let [sent (atom [])
+        run-id! #(keymap/run-action! {} (fn [ev] (swap! sent conj ev)) %)]
+    (testing "a registered action runs as if its key was pressed"
+      (is (true? (run-id! :palette/open)))
+      (is (= [{:type :palette/open}] @sent)))
+    (testing "its guard and unknown ids keep it from running"
+      (reset! sent [])
+      (is (nil? (run-id! :themes/pick)))
+      (is (nil? (run-id! :no/such-action)))
+      (is (= [] @sent))))
+  (keymap/unregister-action! :palette/open)
+  (keymap/unregister-action! :themes/pick))

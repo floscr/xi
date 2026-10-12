@@ -161,6 +161,14 @@ terminal** in the ⋮ menu and the command palette opens a shell.
   9 operator, 10 string, 11 warning, 12 accent, 13 number, 14 builtin, 15
   text. Programs see `TERM_PROGRAM=xi`, so an editor can pick a colorscheme
   that uses only those 16 colours and looks like the chat in every theme.
+- **Xi actions from a program.** A program can run some Xi actions by
+  writing `ESC ] 7474 ; <action> BEL`, for example a vim mapping that opens
+  the command palette:
+  `nnoremap <C-k> <Cmd>call nvim_ui_send("\e]7474;palette/open\x07")<CR>`.
+  Only actions that open or switch a view run: `palette/open`,
+  `buffers/switch`, `files/find`, `files/find-edited`, `git/status`,
+  `git/log`, `projects/pick`, `skills/search`, `themes/pick`, `keys/show`,
+  `sidebar/toggle`, `buffer/close`, `terminal/leave`.
 - **Toolbar.** On a touch screen, floating buttons at the bottom right send
   Esc, Tab, Ctrl+C and the arrow keys. Extensions add buttons there and
   entries to the code-block menu, for example "Open in vim"

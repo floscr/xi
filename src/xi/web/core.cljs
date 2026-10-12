@@ -2926,6 +2926,7 @@
     (when-let [send! (:send! transport)]
       (terminal/set-send! send!))
     (terminal/set-xi-key! #(keymap/terminal-key? @state %))
+    (terminal/set-run-action! #(keymap/run-action! @state dispatch! %))
     (reset! dispatch-ref dispatch!)
     (reset! app-ref app)
     ((:set-dispatch! transport) dispatch!)

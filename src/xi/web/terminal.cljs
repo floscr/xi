@@ -174,6 +174,45 @@
   [f]
   (reset! xi-key-ref f))
 
+(def osc-code
+  "OSC number a program in the terminal writes to run a Xi action:
+   ESC ] 7474 ; palette/open BEL. nvim's Ctrl+K in the dotfiles uses it."
+  7474)
+
+(def program-actions
+  "The actions an OSC may run. Any output can carry the sequence (`cat` of
+   a file), so only ones that open or move a view, nothing that deletes,
+   answers a permission or sends a message."
+  #{:palette/open :buffers/switch :files/find :files/find-edited
+    :git/status :git/log :projects/pick :skills/search :themes/pick
+    :keys/show :sidebar/toggle :buffer/close :terminal/leave})
+
+(defn osc-action
+  "The action keyword an OSC payload names (\"palette/open\"), or nil when
+   it is not one of program-actions."
+  [payload]
+  (let [id (keyword (str/trim (str payload)))]
+    (when (contains? program-actions id) id)))
+
+(defonce ^:private run-action-ref (atom (constantly nil)))
+
+(defn set-run-action!
+  "Install (fn [action-id]) that runs a Xi action (xi.web.keymap/run-action!)."
+  [f]
+  (reset! run-action-ref f))
+
+(defonce ^:private replaying (atom #{}))
+
+(defn- on-osc
+  "OSC handler of terminal `term-id`. A replayed scrollback holds the OSCs
+   already run, so those are dropped."
+  [term-id]
+  (fn [payload]
+    (when-not (contains? @replaying term-id)
+      (when-let [id (osc-action payload)]
+        (@run-action-ref id)))
+    true))
+
 (defn- ctrl-key?
   "A plain Ctrl+key the terminal should own outright: the program gets it,
    the browser's binding (Firefox's Ctrl+D bookmark, Ctrl+F find, …) never
@@ -209,6 +248,7 @@
                                                     (@xi-key-ref e) false
                                                     (ctrl-key? e)   (do (.preventDefault e) true)
                                                     :else           true)))
+             (.. term -parser (registerOscHandler osc-code (on-osc term-id)))
              (.onData term #(send! {:type :terminal/input :term-id term-id :text %}))
              (.onResize term #(send-size! term-id term))
              (.addEventListener (.-textarea term) "focus" #(send-size! term-id term))
@@ -221,6 +261,7 @@
 (defn- unmount! [term-id]
   (when-let [{:keys [^js term ^js observer]} (get @instances term-id)]
     (swap! instances dissoc term-id)
+    (swap! replaying disj term-id)
     (send! {:type :terminal/detach :term-id term-id})
     (.disconnect observer)
     (.dispose term)))
@@ -257,8 +298,11 @@
   [{:keys [type term-id text reset?]}]
   (case type
     :terminal/output (do (when-let [^js term (get-in @instances [term-id :term])]
-                           (when reset? (.reset term))
-                           (.write term text))
+                           (if reset?
+                             (do (.reset term)
+                                 (swap! replaying conj term-id)
+                                 (.write term text #(swap! replaying disj term-id)))
+                             (.write term text)))
                          true)
     :terminal/exit   true
     false))
