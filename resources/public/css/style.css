@@ -441,7 +441,43 @@ body {
   font-weight: 600;
 }
 
-.appearance-body {
+/* A fixed height, so switching panes or folding a section doesn't resize it */
+.appearance-dialog {
+  max-width: 46rem;
+  height: min(85vh, 46rem);
+}
+
+/* side menu | pane; the menu turns into top tabs when narrow */
+.appearance-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  gap: var(--size-5);
+}
+
+.appearance-nav { align-self: start; }
+
+/* the menu's stock active/hover background is the panel's own */
+.appearance-nav .sidebar-menu-item-active,
+.appearance-nav .sidebar-menu-item:hover {
+  background: var(--bg-2);
+}
+
+@media (max-width: 640px) {
+  .appearance-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--size-3);
+  }
+  .appearance-nav { flex-direction: row; }
+  .appearance-nav > li { flex: 1; }
+  .appearance-nav .sidebar-menu-item { justify-content: center; }
+}
+
+.appearance-body { min-height: 0; }
+
+.appearance-pane {
   display: flex;
   flex-direction: column;
   gap: var(--size-4);
@@ -480,81 +516,384 @@ body {
   gap: var(--size-1);
 }
 
-.theme-editor {
+/* One row per theme: radio, color strip (xi.web.theme/strip-colors), name,
+   Edit or a note. */
+.theme-list {
   display: flex;
   flex-direction: column;
-  gap: var(--size-3);
-  padding: var(--size-3);
   border: var(--border-0);
   border-radius: var(--radius-md);
-  background: var(--bg-1);
+  background: var(--bg-0);
+  overflow: hidden;
 }
 
-.theme-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-2);
-}
-
-/* the 900 / 50 stops match the panel background in dark / light mode */
-.theme-editor .swatch {
-  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.25);
-}
-
-.theme-slider {
+.theme-row {
   display: flex;
   align-items: center;
   gap: var(--size-2);
+  padding: 0 var(--size-2) 0 var(--size-3);
+  min-height: var(--size-10);
 }
 
-.theme-slider-label {
-  width: 48px;
+.theme-row + .theme-row { border-top: var(--border-0); }
+
+.theme-row--active,
+.theme-row--editing {
+  background: color-mix(in oklch, var(--accent) 8%, transparent);
+}
+
+.theme-row--new { padding: var(--size-1); }
+
+/* the active theme's row opens it in the editor (xi.web.views theme-row) */
+.theme-row--editable { cursor: pointer; }
+
+.theme-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  padding: var(--size-2) 0;
+  cursor: pointer;
+}
+
+.theme-row-radio-gap {
+  width: 1rem;
   flex-shrink: 0;
+}
+
+.theme-strip {
+  display: flex;
+  width: 4.5rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  outline: 1px solid rgba(128, 128, 128, 0.25);
+  outline-offset: -1px;
+}
+
+.theme-strip > span { flex: 1; }
+
+.theme-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+
+.theme-row-note {
+  padding: 0 var(--size-2);
   font-size: var(--font-xs);
   color: var(--fg-2);
 }
 
-.theme-slider .form-range {
-  flex: 1;
+.theme-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-3);
+}
+
+/* ui.accordion items joined into one list; each header carries a summary of
+   its values so the editor reads closed */
+.theme-sections .accordion { background: var(--bg-0); }
+
+.theme-sections .accordion-trigger {
+  padding: var(--size-2) var(--size-3);
+  font-size: var(--font-sm);
+}
+
+.theme-sections .accordion-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-3);
+  padding: var(--size-3);
+}
+
+.theme-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
   min-width: 0;
 }
 
-.theme-slider-value {
-  width: 40px;
+.theme-section-label {
+  width: 6.5rem;
   flex-shrink: 0;
-  text-align: right;
+}
+
+.theme-section-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
   font-size: var(--font-xs);
-  color: var(--fg-1);
+  font-weight: 400;
+  color: var(--fg-2);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-variant-numeric: tabular-nums;
 }
 
-/* background swatch; opens ui.color-picker in .theme-color-popover */
-.theme-color-swatch {
-  flex: 1;
+.theme-dot {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex-shrink: 0;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.3);
+}
+
+/* ── Editor controls: a slim range under a label/value line, color chips ── */
+.theme-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--size-3) var(--size-4);
+}
+
+.theme-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   min-width: 0;
-  height: var(--size-6);
-  padding: 0;
+}
+
+.theme-slider-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--size-2);
+  font-size: var(--font-xs);
+}
+
+.theme-slider-label { color: var(--fg-1); }
+
+.theme-slider-value {
+  color: var(--fg-0);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-slider .form-range { height: 4px; }
+
+.theme-slider .form-range::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.theme-slider .form-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.theme-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-2);
+}
+
+/* opens ui.color-picker in .theme-color-popover */
+.theme-color-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2);
+  padding: var(--size-1) var(--size-3) var(--size-1) var(--size-1);
   border: var(--border-0);
-  border-radius: var(--radius-sm);
-  box-shadow: inset 0 0 0 2px var(--bg-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+  color: var(--fg-0);
+  font: inherit;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
-.theme-color-swatch:focus-visible {
+@media (hover: hover) { .theme-color-chip:hover { background: var(--bg-2); } }
+
+.theme-color-chip:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+.theme-color-swatch {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, 0.3);
+}
+
+/* ── Specimens (xi.web.views theme-specimen-for): page-token ones follow the
+   draft live, the light/dark pairs take xi.web.theme's computed colors ── */
+.theme-specimen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-3);
+  padding: var(--size-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+}
+
+.theme-specimen-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--size-2) var(--size-3);
+}
+
+.theme-specimen-link {
+  color: var(--accent);
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+
+.theme-specimen-muted {
+  color: var(--fg-2);
+  font-size: var(--font-xs);
+}
+
+.theme-ramp {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  outline: 1px solid rgba(128, 128, 128, 0.25);
+  outline-offset: -1px;
+}
+
+.theme-ramp > span { flex: 1; }
+
+.theme-specimen-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--size-2);
+}
+
+.theme-mini-app {
+  display: flex;
+  height: 64px;
+  border-radius: 8px;
+  overflow: hidden;
+  outline: 1px solid rgba(128, 128, 128, 0.25);
+  outline-offset: -1px;
+}
+
+.theme-mini-side {
+  width: 32%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 6px;
+}
+
+.theme-mini-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 8px;
+  min-width: 0;
+}
+
+.theme-mini-main b {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.theme-mini-app i {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+}
+
+.theme-mini-diff {
+  padding: 4px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  outline: 1px solid rgba(128, 128, 128, 0.25);
+  outline-offset: -1px;
+  font: 11px/1.6 "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+}
+
+.theme-mini-diff > div {
+  padding: 0 8px;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.theme-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-1);
+  font-size: var(--font-sm);
+}
+
+.theme-status > i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.theme-meter {
+  display: block;
+  width: 64px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.theme-meter > i {
+  display: block;
+  width: 69%;
+  height: 100%;
+}
+
+.theme-type {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+  font-size: var(--font-base);
+}
+
+.theme-type-heading {
+  font-size: var(--font-xl);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.theme-type code {
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-xs);
+  background: var(--bg-2);
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-size: calc(0.9em * var(--code-scale));
+}
+
+.theme-space { font-size: var(--font-sm); }
+
+.theme-space p { margin: 0 0 var(--paragraph-space); }
+
+.theme-space-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-0);
 }
 
 .theme-color-popover {
   width: 260px;
   padding: var(--size-3);
-}
-
-.theme-editor-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--size-2);
 }
 
 /* ---- Keyboard shortcuts dialog ----

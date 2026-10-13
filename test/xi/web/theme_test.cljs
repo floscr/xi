@@ -209,3 +209,10 @@
       (let [full {:themes (into {} (map (fn [i] [(str "t" i) {}]) (range theme/max-themes)))}]
         (is (not (theme/draft-savable? full {:original nil :name "more"})))
         (is (theme/draft-savable? full {:original "t1" :name "t1 renamed"}))))))
+
+(deftest strip-colors-sum-up-a-theme
+  (testing "light page, gray 500, dark page, accent 500; unset parameters are the defaults"
+    (is (= ["#ffffff" (theme/gray-color {}) "#0a0a0f" (theme/accent-color {})]
+           (theme/strip-colors nil)))
+    (is (= "#123456" (first (theme/strip-colors {:bg-light "#123456"}))))
+    (is (= "oklch(0.530 0.0350 285.0)" (theme/gray-color {})))))

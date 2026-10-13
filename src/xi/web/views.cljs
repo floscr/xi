@@ -51,6 +51,7 @@
             [ui.select :as select]
             [ui.color-picker :as color-picker]
             [ui.chip :as chip]
+            [ui.accordion :as accordion]
             [xi.clj-result :as clj-result]
             [ui.theme-toggle :as theme-toggle]))
 
@@ -4738,7 +4739,7 @@
        (cmd/command-item
         {:icon :settings
          :value "edit themes appearance"
-         :on-click (fn [_] (dispatch! {:type :appearance/open}))}
+         :on-click (fn [_] (dispatch! {:type :appearance/open :tab :theme}))}
         "Edit themes…"))]))
 
 (defn- palette-skill-item [dispatch! {:keys [name description]}]
@@ -5626,12 +5627,15 @@
 ;; ── Color themes (xi.web.theme) ─────────────────────────────────────────────
 
 (defn- theme-slider
-  "One parameter of the draft. The input works in integer units (`scale` ×
-   the stored value) so hues read as degrees and ratios as percentages."
+  "One parameter of the draft: label and value on a line above a slim range.
+   The input works in integer units (`scale` × the stored value) so hues
+   read as degrees and ratios as percentages."
   [dispatch! draft key label {:keys [min max step scale fmt gradient]}]
   (let [v (get-in draft [:params key])]
-    [:div {:class ["theme-slider"]}
-     [:span {:class ["theme-slider-label"]} label]
+    [:label {:class ["theme-slider"]}
+     [:span {:class ["theme-slider-head"]}
+      [:span {:class ["theme-slider-label"]} label]
+      [:span {:class ["theme-slider-value"]} (fmt v)]]
      (form/form-range
       {:min min :max max :step step
        :value (js/Math.round (* v scale))
@@ -5639,23 +5643,22 @@
                        :on {:input (fn [^js e]
                                      (dispatch! {:type :themes/draft-set :key key
                                                  :value (/ (js/parseInt (.. e -target -value) 10) scale)}))}}
-                gradient (assoc :style {:background gradient}))})
-     [:span {:class ["theme-slider-value"]} (fmt v)]]))
+                gradient (assoc :style {:background gradient}))})]))
 
 (defn- theme-color
-  "One color parameter of the draft: a swatch opening ui.color-picker in a
-   popover, limited to the formats xi.web.theme/color? accepts. `fallback`
-   is what an unset parameter shows."
+  "One color parameter of the draft: a swatch-and-label chip opening
+   ui.color-picker in a popover, limited to the formats xi.web.theme/color?
+   accepts. `fallback` is what an unset parameter shows."
   [dispatch! draft key label & [fallback]]
   (let [v  (or (get-in draft [:params key]) fallback)
         id (str "theme-color-" (name key))]
-    [:div {:class ["theme-slider"]}
-     [:span {:class ["theme-slider-label"]} label]
-     [:button (merge {:type "button" :class ["theme-color-swatch"]
-                      :style {:background v}
-                      :aria-label label :title v
+    [:div {:class ["theme-color"]}
+     [:button (merge {:type "button" :class ["theme-color-chip"]
+                      :title v
                       :replicant/key (str id "-trigger")}
-                     (popover/trigger-attrs id))]
+                     (popover/trigger-attrs id))
+      [:span {:class ["theme-color-swatch"] :style {:background v}}]
+      [:span {:class ["theme-color-label"]} label]]
      (popover/popover-content
       {:id id :side :bottom :align :start :class "theme-color-popover"
        :attrs {:replicant/key id}}
@@ -5666,21 +5669,128 @@
                      (dispatch! {:type :themes/draft-set :key key
                                  :value (.. e -target -value)}))}))]))
 
-(defn- theme-section [label & children]
-  (into [:div {:class ["theme-section"]}
-         [:div {:class ["text-xs" "text-faint" "uppercase" "tracking-wide" "font-semibold"]} label]]
-        children))
+(defn- theme-section
+  "A collapsible group of the editor (ui.accordion, starts open, the open
+   state kept by the browser): `summary` (swatches, values) in its header,
+   readable closed."
+  [{:keys [label summary]} & children]
+  (apply accordion/accordion
+         {:title [:span {:class ["theme-section-head"]}
+                  [:span {:class ["theme-section-label"]} label]
+                  (into [:span {:class ["theme-section-summary"]}] summary)]
+          :open true
+          :class "theme-section"
+          :attrs {:replicant/key label}}
+         children))
 
-(defn- swatch-row [colors]
-  [:div {:class ["swatch-row"]}
-   (for [c colors] [:div {:class ["swatch"] :style {:background c}}])])
+(defn- swatch-dot [color]
+  [:span {:class ["theme-dot"] :style {:background color}}])
+
+(defn- ramp-bar [colors]
+  [:div {:class ["theme-ramp"]}
+   (for [c colors] [:span {:style {:background c}}])])
+
+(defn- theme-controls
+  "Sliders in a two-column grid."
+  [& sliders]
+  (into [:div {:class ["theme-controls"]}] sliders))
+
+(defn- theme-colors
+  "Color chips in a row."
+  [& chips]
+  (into [:div {:class ["theme-colors"]}] chips))
+
+;; ── Specimens: what each editor section changes, previewed in the section.
+;; Those on page tokens (var(--accent), var(--font-xl)…) follow the draft live
+;; like the rest of the page; those showing both modes take the colors from
+;; xi.web.theme (backgrounds, surfaces).
+
+(defn- theme-specimen [& children]
+  (into [:div {:class ["theme-specimen"] :inert ""}] children))
+
+(defn- mini-app
+  "A page with its sidebar in one mode: `surface` is that mode's
+   xi.web.theme/surfaces map."
+  [label [page sidebar] surface]
+  [:div {:class ["theme-mini-app"] :style {:background page :color (surface "fg-0")}}
+   [:span {:class ["theme-mini-side"] :style {:background sidebar}}
+    [:i {:style {:background (surface "fg-2")}}]
+    [:i {:style {:background (surface "bg-2")}}]]
+   [:span {:class ["theme-mini-main"]}
+    [:b label]
+    [:i {:style {:background (surface "bg-2")}}]
+    [:i {:style {:background (surface "border-1") :width "60%"}}]]])
+
+(defn- mini-diff
+  [surface]
+  [:div {:class ["theme-mini-diff"] :style {:background (surface "bg-1") :color (surface "fg-0")}}
+   [:div "(defn parse [s]"]
+   [:div {:style {:background (surface "del-bg")}} "-  (read s))"]
+   [:div {:style {:background (surface "add-bg")}} "+  (read (str/trim s)))"]])
+
+(defn- theme-specimen-for
+  "The specimen of editor section `section` for the draft's `params`."
+  [section params]
+  (case section
+    :accent
+    (theme-specimen
+     [:div {:class ["theme-specimen-row"]}
+      (button/button {:variant :primary :size :sm} "Send")
+      (chip/chip {:active true :dot-color (ctheme/accent-color params)} "Active")
+      (switch/switch-toggle {:checked true})
+      [:span {:class ["theme-specimen-link"]} "Open diff →"]]
+     (ramp-bar (ctheme/accent-swatches params)))
+    :gray
+    (theme-specimen
+     [:div {:class ["theme-specimen-row"]}
+      (button/button {:variant :ghost :size :sm} "Cancel")
+      (chip/chip {} "Neutral")
+      [:span {:class ["theme-specimen-muted"]} "acme-web · 2h ago"]]
+     (ramp-bar (ctheme/gray-swatches params)))
+    :background
+    (let [{:keys [light dark]} (ctheme/backgrounds params)
+          surfaces (ctheme/surfaces params)]
+      (theme-specimen
+       [:div {:class ["theme-specimen-pair"]}
+        (mini-app "Light" light (:light surfaces))
+        (mini-app "Dark" dark (:dark surfaces))]))
+    :status
+    (theme-specimen
+     [:div {:class ["theme-specimen-row"]}
+      [:span {:class ["theme-status"]}
+       [:i {:style {:background (:success-color params)}}] "Done"]
+      [:span {:class ["theme-status"]}
+       [:span {:class ["theme-meter"]}
+        [:i {:style {:background (:warning-color params)}}]]
+       "69%"]
+      [:span {:class ["theme-status"] :style {:color (:danger-color params)}}
+       "Request failed"]])
+    :diff
+    (let [{:keys [light dark]} (ctheme/surfaces params)]
+      (theme-specimen
+       [:div {:class ["theme-specimen-pair"]}
+        (mini-diff light)
+        (mini-diff dark)]))
+    :type
+    (theme-specimen
+     [:div {:class ["theme-type"]}
+      [:div {:class ["theme-type-heading"]} "Heading"]
+      [:div "Body text the chat is set in, with " [:code "inline code"] "."]])
+    :space
+    (theme-specimen
+     [:div {:class ["theme-space"]}
+      [:p "A paragraph of the reply."]
+      [:p "The next one, a paragraph gap below."]
+      [:div {:class ["theme-space-card"]}
+       [:span "A card"]
+       (button/button {:variant :secondary :size :sm} "Button")]])))
 
 (defn- theme-editor
   "The draft (:web/theme-draft): name, color presets, a slider or color
-   input per parameter, previewed live on the page until Save or Cancel."
+   input per parameter, previewed live on the page until Save or Cancel
+   (the dialog footer, `appearance-footer`)."
   [state dispatch!]
   (let [{:keys [original name params] :as draft} (:web/theme-draft state)
-        themes   (:web/themes state)
         degrees  (fn [v] (str v "°"))
         percent  (fn [v] (str (js/Math.round (* v 100)) "%"))
         signed   (fn [v] (let [n (js/Math.round (* v 100))] (str (if (pos? n) "+" "") n "%")))
@@ -5688,7 +5798,11 @@
         hue-opts {:min 0 :max 360 :step 1 :scale 1 :fmt degrees :gradient (ctheme/hue-gradient)}
         chroma   (fn [hue] {:min 0 :max 200 :step 1 :scale 100 :fmt percent
                             :gradient (ctheme/chroma-gradient hue)})]
-    [:div {:class ["theme-editor"]}
+    ;; keyed per theme: opening another one mounts afresh and scrolls to it
+    [:div {:class ["theme-editor"]
+           :replicant/key (str "theme-editor-" (or original "new"))
+           :replicant/on-mount (fn [{:replicant/keys [^js node]}]
+                                 (.scrollIntoView node #js {:block "start" :behavior "smooth"}))}
      (form/form-input
       {:value name :placeholder "Theme name"
        :attrs {:maxlength ctheme/max-name-length
@@ -5702,92 +5816,218 @@
                     :attrs {:replicant/key (:name p)}
                     :on-click (fn [_] (dispatch! {:type :themes/draft-preset :preset p}))}
           (:name p)))]
-     (theme-section "Gray"
-       (theme-slider dispatch! draft :gray-hue "Hue" hue-opts)
-       (theme-slider dispatch! draft :gray-chroma "Chroma" (chroma (:gray-hue params)))
-       (swatch-row (ctheme/gray-swatches params)))
-     (theme-section "Accent"
-       (theme-slider dispatch! draft :accent-hue "Hue" hue-opts)
-       (theme-slider dispatch! draft :accent-chroma "Chroma" (chroma (:accent-hue params)))
-       (swatch-row (ctheme/accent-swatches params)))
-     (theme-section "Background"
-       (theme-color dispatch! draft :bg-light "Light")
-       (theme-color dispatch! draft :bg-dark "Dark")
-       (theme-slider dispatch! draft :sidebar-shift "Sidebar" {:min -20 :max 20 :step 1 :scale 100 :fmt signed})
-       ;; page + sidebar of each mode
-       (let [{:keys [light dark]} (ctheme/backgrounds params)]
-         (swatch-row (concat light dark))))
-     ;; --success / --warning / --danger: status dots, usage meters, errors
-     (theme-section "Status"
-       (theme-color dispatch! draft :success-color "Success")
-       (theme-color dispatch! draft :warning-color "Warning")
-       (theme-color dispatch! draft :danger-color "Danger"))
-     ;; --diff-add-bg / --diff-del-bg: diff line backgrounds; unset colors
-     ;; follow Success / Danger
-     (theme-section "Diff"
-       (theme-color dispatch! draft :diff-add-color "Added" (ctheme/diff-color params :add))
-       (theme-color dispatch! draft :diff-del-color "Removed" (ctheme/diff-color params :del))
-       (theme-slider dispatch! draft :diff-strength "Strength" {:min 0 :max 250 :step 5 :scale 100 :fmt percent})
-       (swatch-row (ctheme/diff-swatches params)))
-     (theme-section "Spacing"
-       (theme-slider dispatch! draft :size-base "Base" {:min 10 :max 50 :step 1 :scale 100 :fmt decimal})
-       (theme-slider dispatch! draft :paragraph-space "Paragraphs"
-                     {:min 0 :max 200 :step 5 :scale 100 :fmt (fn [v] (str (decimal v) "em"))}))
-     (theme-section "Font"
-       (theme-slider dispatch! draft :font-base "Base" {:min 75 :max 125 :step 1 :scale 100 :fmt decimal})
-       (theme-slider dispatch! draft :font-ratio "Ratio" {:min 105 :max 150 :step 1 :scale 100 :fmt decimal})
-       (theme-slider dispatch! draft :code-scale "Code" {:min 70 :max 150 :step 5 :scale 100 :fmt percent}))
-     (theme-section "Radius"
-       (theme-slider dispatch! draft :radius-scale "Scale" {:min 0 :max 200 :step 5 :scale 100 :fmt percent}))
-     [:div {:class ["theme-editor-actions"]}
-      (when original
-        (button/button {:variant :ghost :size :sm
-                        :on-click (fn [_] (dispatch! {:type :themes/delete :name original}))}
-          "Delete"))
-      [:span {:class ["flex-1"]}]
-      (button/button {:variant :ghost :size :sm
-                      :on-click (fn [_] (dispatch! {:type :themes/draft-cancel}))}
-        "Cancel")
-      (button/button {:variant :primary :size :sm
-                      :disabled (not (ctheme/draft-savable? themes draft))
-                      :on-click (fn [_] (dispatch! {:type :themes/save}))}
-        "Save")]]))
+     [:div {:class ["theme-sections"]}
+      (theme-section {:label "Accent"
+                      :summary [(swatch-dot (ctheme/accent-color params))
+                                (str (degrees (:accent-hue params)) " · " (percent (:accent-chroma params)))]}
+        (theme-specimen-for :accent params)
+        (theme-controls
+         (theme-slider dispatch! draft :accent-hue "Hue" hue-opts)
+         (theme-slider dispatch! draft :accent-chroma "Chroma" (chroma (:accent-hue params)))))
+      (theme-section {:label "Gray"
+                      :summary [(swatch-dot (ctheme/gray-color params))
+                                (str (degrees (:gray-hue params)) " · " (percent (:gray-chroma params)))]}
+        (theme-specimen-for :gray params)
+        (theme-controls
+         (theme-slider dispatch! draft :gray-hue "Hue" hue-opts)
+         (theme-slider dispatch! draft :gray-chroma "Chroma" (chroma (:gray-hue params)))))
+      (theme-section {:label "Background"
+                      :summary [(swatch-dot (:bg-light params))
+                                (swatch-dot (:bg-dark params))
+                                (str "sidebar " (signed (:sidebar-shift params)))]}
+        (theme-specimen-for :background params)
+        (theme-colors
+         (theme-color dispatch! draft :bg-light "Light page")
+         (theme-color dispatch! draft :bg-dark "Dark page"))
+        (theme-controls
+         (theme-slider dispatch! draft :sidebar-shift "Sidebar" {:min -20 :max 20 :step 1 :scale 100 :fmt signed})))
+      ;; --success / --warning / --danger: status dots, usage meters, errors
+      (theme-section {:label "Status"
+                      :summary (map #(swatch-dot (get params %))
+                                    [:success-color :warning-color :danger-color])}
+        (theme-specimen-for :status params)
+        (theme-colors
+         (theme-color dispatch! draft :success-color "Success")
+         (theme-color dispatch! draft :warning-color "Warning")
+         (theme-color dispatch! draft :danger-color "Danger")))
+      ;; --diff-add-bg / --diff-del-bg: diff line backgrounds; unset colors
+      ;; follow Success / Danger
+      (theme-section {:label "Diff"
+                      :summary [(swatch-dot (ctheme/diff-color params :add))
+                                (swatch-dot (ctheme/diff-color params :del))
+                                (percent (:diff-strength params))]}
+        (theme-specimen-for :diff params)
+        (theme-colors
+         (theme-color dispatch! draft :diff-add-color "Added" (ctheme/diff-color params :add))
+         (theme-color dispatch! draft :diff-del-color "Removed" (ctheme/diff-color params :del)))
+        (theme-controls
+         (theme-slider dispatch! draft :diff-strength "Strength" {:min 0 :max 250 :step 5 :scale 100 :fmt percent})))
+      (theme-section {:label "Type"
+                      :summary [(str (decimal (:font-base params)) " · ×" (decimal (:font-ratio params))
+                                     " · code " (percent (:code-scale params)))]}
+        (theme-specimen-for :type params)
+        (theme-controls
+         (theme-slider dispatch! draft :font-base "Base" {:min 75 :max 125 :step 1 :scale 100 :fmt decimal})
+         (theme-slider dispatch! draft :font-ratio "Ratio" {:min 105 :max 150 :step 1 :scale 100 :fmt decimal})
+         (theme-slider dispatch! draft :code-scale "Code" {:min 70 :max 150 :step 5 :scale 100 :fmt percent})))
+      (theme-section {:label "Space & shape"
+                      :summary [(str (decimal (:size-base params)) " · ¶ " (decimal (:paragraph-space params))
+                                     "em · radius " (percent (:radius-scale params)))]}
+        (theme-specimen-for :space params)
+        (theme-controls
+         (theme-slider dispatch! draft :size-base "Spacing" {:min 10 :max 50 :step 1 :scale 100 :fmt decimal})
+         (theme-slider dispatch! draft :paragraph-space "Paragraphs"
+                       {:min 0 :max 200 :step 5 :scale 100 :fmt (fn [v] (str (decimal v) "em"))})
+         (theme-slider dispatch! draft :radius-scale "Radius" {:min 0 :max 200 :step 5 :scale 100 :fmt percent})))]]))
+
+(defn- theme-row
+  "One theme of the picker: a radio that applies it, its `ctheme/strip-colors`
+   and name, then `aside` (an Edit button, an \"Editing\" note). A nil `name`
+   is the default theme; `selectable?` false leaves the radio out (an unsaved
+   new theme). A click anywhere on the active custom theme's row edits it."
+  [dispatch! {:keys [key name label params checked? editing? selectable? aside]}]
+  (let [edit-on-click? (and checked? name (not editing?))]
+    [:div (cond-> {:class (cond-> ["theme-row"]
+                            checked?       (conj "theme-row--active")
+                            editing?       (conj "theme-row--editing")
+                            edit-on-click? (conj "theme-row--editable"))
+                   :replicant/key key}
+            edit-on-click? (assoc :title "Edit this theme"
+                                  :on {:click (fn [_] (dispatch! {:type :themes/edit :name name}))}))
+     [:label {:class ["theme-row-main"]}
+      (if selectable?
+        [:input {:type "radio" :class ["form-radio"] :name "xi-color-theme"
+                 :checked (boolean checked?)
+                 :on {:change (fn [_] (dispatch! {:type :themes/select :name name}))}}]
+        [:span {:class ["theme-row-radio-gap"]}])
+      [:span {:class ["theme-strip"]}
+       (for [c (ctheme/strip-colors params)] [:span {:style {:background c}}])]
+      [:span {:class ["theme-row-name"]} label]]
+     aside]))
 
 (defn- theme-picker
-  "Default + the user's themes as chips; the active one again opens the
-   editor, \"New\" starts a draft from the defaults."
+  "Default + the user's themes as radio rows; Edit opens a theme in the
+   editor below, \"New theme\" starts a draft from the defaults."
   [state dispatch!]
-  (let [themes (:web/themes state)
-        active (:active themes)
-        draft  (:web/theme-draft state)]
-    [:div {:class ["theme-chips"]}
-     (chip/chip {:active (and (nil? active) (nil? draft))
-                 :attrs {:replicant/key "default"}
-                 :on-click (fn [_] (dispatch! {:type :themes/select :name nil}))}
-       "Default")
-     (for [[n p] (ctheme/custom-themes themes)]
-       (chip/chip {:active (if draft (= n (:original draft)) (= n active))
-                   :dot-color (ctheme/accent-color p)
-                   :attrs {:replicant/key n
-                           :title (if (= n active) "Edit this theme" "Use this theme")}
-                   :on-click (fn [_] (dispatch! (if (= n active)
-                                                  {:type :themes/edit :name n}
-                                                  {:type :themes/select :name n})))}
-         n))
-     (chip/chip {:active (boolean (and draft (nil? (:original draft))))
-                 :attrs {:replicant/key "new"}
+  (let [themes  (:web/themes state)
+        active  (:active themes)
+        draft   (:web/theme-draft state)
+        custom  (ctheme/custom-themes themes)
+        new?    (and draft (nil? (:original draft)))
+        editing [:span {:class ["theme-row-note"]} "Editing"]]
+    (into [:div {:class ["theme-list"]}
+           (theme-row dispatch! {:key "default" :label "Default" :selectable? true
+                                 :checked? (nil? active)})]
+          (concat
+           (for [[n p] custom]
+             (theme-row dispatch!
+                        {:key n :name n :label n :params p :selectable? true
+                         :checked? (= n active)
+                         :editing? (= n (:original draft))
+                         :aside (if (= n (:original draft))
+                                  editing
+                                  (button/button
+                                   {:variant :ghost :size :sm
+                                    :on-click (fn [_] (dispatch! {:type :themes/edit :name n}))}
+                                   "Edit"))}))
+           [(if new?
+              (theme-row dispatch! {:key "new" :label (:name draft) :params (:params draft)
+                                    :editing? true
+                                    :aside [:span {:class ["theme-row-note"]} "New"]})
+              [:div {:class ["theme-row" "theme-row--new"] :replicant/key "new"}
+               (button/button
+                {:variant :ghost :size :sm
+                 :disabled (>= (count custom) ctheme/max-themes)
                  :on-click (fn [_] (dispatch! {:type :themes/edit :name nil}))}
-       (icon/icon {:icon-name :plus :size :sm}) "New")]))
+                (icon/icon {:icon-name :plus :size :sm}) "New theme")])]))))
+
+(defn- appearance-theme-pane [state dispatch!]
+  [:div {:class ["appearance-pane"] :replicant/key "theme"}
+   (appearance-row
+    "Mode" nil
+    (theme-toggle/theme-toggle
+     {:mode (or (:web/theme-mode state) "auto")
+      :size :sm
+      :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))}))
+   [:div {:class ["appearance-block"]}
+    [:div {:class ["appearance-row-label"]} "Color theme"]
+    [:div {:class ["form-hint"]}
+     "Your own hues, spacing, type scale and radii over the light and dark themes."]
+    (theme-picker state dispatch!)]
+   (when (:web/theme-draft state)
+     (theme-editor state dispatch!))])
+
+(defn- appearance-chat-pane [state dispatch!]
+  (let [app (appearance/effective-in state)]
+    [:div {:class ["appearance-pane"] :replicant/key "chat"}
+     (appearance-row
+      "Super collapsed"
+      "Fold a run of collapsed tool and thinking rows into one summary row"
+      (switch/switch-toggle
+       {:checked (:super-collapsed? app)
+        :on-change (fn [^js e]
+                     (dispatch! {:type :appearance/set
+                                 :key :super-collapsed?
+                                 :value (boolean (.. e -target -checked))}))}))
+     (appearance-row
+      "Tool blocks"
+      "Read, edit, clj… calls and their results"
+      (open-collapsed-choice dispatch! :tool-blocks (:tool-blocks app)))
+     (appearance-row
+      "Tool arguments"
+      "Next to the tool name: a per-tool summary (the command, the path, the pattern) or every argument"
+      (appearance-choice dispatch! :tool-args (:tool-args app)
+                         [[:summary "Summary"] [:all "All"]]))
+     (appearance-row
+      "Thinking blocks" nil
+      (open-collapsed-choice dispatch! :thinking-blocks (:thinking-blocks app)))]))
+
+(defn- appearance-footer
+  "An open theme draft's Delete / Cancel / Save; otherwise the Chat pane's
+   Reset and Done."
+  [state dispatch! tab]
+  (let [themes (:web/themes state)
+        draft  (:web/theme-draft state)]
+    (if draft
+      (dialog/dialog-footer {}
+        (when-let [original (:original draft)]
+          (button/button {:variant :ghost :size :sm
+                          :on-click (fn [_] (dispatch! {:type :themes/delete :name original}))}
+            "Delete"))
+        [:span {:class ["flex-1"]}]
+        (button/button {:variant :ghost :size :sm
+                        :on-click (fn [_] (dispatch! {:type :themes/draft-cancel}))}
+          "Cancel")
+        (button/button {:variant :primary :size :sm
+                        :disabled (not (ctheme/draft-savable? themes draft))
+                        :on-click (fn [_] (dispatch! {:type :themes/save}))}
+          "Save theme"))
+      (dialog/dialog-footer {}
+        (when (= tab :chat)
+          (button/button
+           {:variant :ghost :size :sm
+            :disabled (not (appearance/overridden? (:web/appearance state)))
+            :on-click (fn [_] (dispatch! {:type :appearance/reset}))}
+           "Reset to defaults"))
+        [:span {:class ["flex-1"]}]
+        (button/button
+         {:variant :primary :size :sm
+          :on-click (fn [_] (dispatch! {:type :appearance/done}))}
+         "Done")))))
+
+(def ^:private appearance-tabs
+  [[:theme :layers "Theme"]
+   [:chat :list "Chat"]])
 
 (defn- appearance-dialog
-  "The Appearance settings dialog: edits this browser's overrides
-   (:web/appearance, xi.web.appearance) over xi.config/appearance and the
-   defaults; Reset drops them."
+  "The Appearance settings dialog: a side menu (top tabs when narrow) over
+   the Theme pane (mode, color themes and their editor) and the Chat pane
+   (this browser's overrides, :web/appearance, xi.web.appearance, over
+   xi.config/appearance; Reset drops them). :web/appearance-tab is the pane."
   [state dispatch!]
   (when (:web/appearance-open? state)
-    (let [overrides (:web/appearance state)
-          app       (appearance/effective-in state)
-          close!    (fn [] (dispatch! {:type :appearance/close}))]
+    (let [tab    (or (:web/appearance-tab state) :theme)
+          close! (fn [] (dispatch! {:type :appearance/close}))]
       (dialog/dialog-overlay
        {:on-close close!
         :class "appearance-overlay"
@@ -5799,52 +6039,20 @@
                      :title "Close"
                      :on {:click (fn [_] (close!))}}
             (icon/icon {:icon-name :x :size :md})])
-         (dialog/dialog-body {:class "appearance-body"}
-           (appearance-row
-            "Theme" nil
-            (theme-toggle/theme-toggle
-             {:mode (or (:web/theme-mode state) "auto")
-              :size :sm
-              :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))}))
-           [:div {:class ["appearance-block"]}
-            [:div {:class ["appearance-row-label"]} "Color theme"]
-            [:div {:class ["form-hint"]}
-             "Your own hues, spacing, type scale and radii over the light and dark themes. Click the active theme again to edit it."]
-            (theme-picker state dispatch!)
-            (when (:web/theme-draft state)
-              (theme-editor state dispatch!))]
-           (appearance-row
-            "Super collapsed"
-            "Fold a run of collapsed tool and thinking rows into one summary row"
-            (switch/switch-toggle
-             {:checked (:super-collapsed? app)
-              :on-change (fn [^js e]
-                           (dispatch! {:type :appearance/set
-                                       :key :super-collapsed?
-                                       :value (boolean (.. e -target -checked))}))}))
-           (appearance-row
-            "Tool blocks"
-            "Read, edit, clj… calls and their results"
-            (open-collapsed-choice dispatch! :tool-blocks (:tool-blocks app)))
-           (appearance-row
-            "Tool arguments"
-            "Next to the tool name: a per-tool summary (the command, the path, the pattern) or every argument"
-            (appearance-choice dispatch! :tool-args (:tool-args app)
-                               [[:summary "Summary"] [:all "All"]]))
-           (appearance-row
-            "Thinking blocks" nil
-            (open-collapsed-choice dispatch! :thinking-blocks (:thinking-blocks app))))
-         (dialog/dialog-footer {}
-           (button/button
-            {:variant :ghost :size :sm
-             :disabled (not (appearance/overridden? overrides))
-             :on-click (fn [_] (dispatch! {:type :appearance/reset}))}
-            "Reset to defaults")
-           ;; saves an open theme draft (xi.web.core :appearance/done)
-           (button/button
-            {:variant :primary :size :sm
-             :on-click (fn [_] (dispatch! {:type :appearance/done}))}
-            "Done")))))))
+         [:div {:class ["appearance-layout"]}
+          (apply sidebar/sidebar-menu {:class "appearance-nav"}
+                 (for [[id icon-name label] appearance-tabs]
+                   (sidebar/sidebar-menu-item
+                    {:active (= tab id)
+                     :icon-name icon-name
+                     :attrs {:replicant/key id}
+                     :on-click (fn [_] (dispatch! {:type :appearance/tab :tab id}))}
+                    label)))
+          (dialog/dialog-body {:class "appearance-body"}
+            (case tab
+              :chat (appearance-chat-pane state dispatch!)
+              (appearance-theme-pane state dispatch!)))]
+         (appearance-footer state dispatch! tab))))))
 
 (def ^:private fixed-shortcuts
   [["Ctrl+K / Cmd+K" "Command palette"]

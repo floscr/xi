@@ -291,13 +291,15 @@ The full list, the layers a key applies in, and how to change any of them in
 ## Appearance
 
 The gear in the sidebar footer (or "Appearance" in the chat menu and the
-command palette) opens the appearance dialog: theme, whether tool and
-thinking blocks start open or collapsed, **tool arguments** (what a tool
-row shows next to the tool name: a per-tool summary such as the command,
-the path or the pattern, or every argument as `key=value`), and **super
-collapsed** (a run of two or more collapsed tool and thinking rows shows as
-one summary line with a step count instead of its header rows). "Reset to
-defaults" drops them.
+command palette) opens the appearance dialog. Its side menu (tabs at the
+top on a narrow screen) has two panes. **Theme** holds light, dark or
+system mode and the [color themes](#color-themes). **Chat** holds whether
+tool and thinking blocks start open or collapsed, **tool arguments** (what
+a tool row shows next to the tool name: a per-tool summary such as the
+command, the path or the pattern, or every argument as `key=value`), and
+**super collapsed** (a run of two or more collapsed tool and thinking rows
+shows as one summary line with a step count instead of its header rows).
+"Reset to defaults" there drops the Chat settings.
 
 ### Color themes
 
@@ -310,12 +312,17 @@ strongly they stand out; unset, they follow success and danger), the page backgr
 color) with the sidebar a chosen step brighter or darker than it, the spacing base, the gap
 between paragraphs, the type scale, the size of code (code blocks, tool
 output, diffs, the file viewer, the terminal) and the corner radius; light and dark mode stay separate and both use
-it. "New" opens the editor with the defaults and a set
-of presets to start from; the sliders change the page as you move them, and
-"Save" (or the dialog's "Done") keeps the result under the name you typed;
-closing the dialog any other way drops the changes. Pick a saved theme to use it
-and click it again to edit or delete it; "Change color theme…" in the
-command palette switches between them. Themes are per
+it. The themes are a list with a color strip each (light page, gray, dark
+page, accent); pick one to use it. "Edit", or a click on the row of the
+theme in use, opens a theme in the editor below the list, "New theme"
+opens it with the defaults and a set of presets to start from. Each
+section of the editor starts with a preview of what it changes (buttons
+for the accent, a light and a dark page for the backgrounds, a diff, a
+text sample) above its controls. The sections fold; a folded one shows
+its values in its header. The sliders change the page as you move them, and
+"Save theme" keeps the result under the name you typed; "Delete" removes
+it, and closing the dialog drops unsaved changes. "Change color theme…" in
+the command palette switches between themes. Themes are per
 [user](#what-follows-you), up to twenty.
 
 ### What follows you

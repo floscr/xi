@@ -365,16 +365,22 @@
   (let [p (merge defaults params)]
     (mapv #(step-color % (:accent-hue p) (:accent-chroma p)) accent-steps)))
 
-(defn diff-swatches
-  "[added removed] on the light page, then on the dark one."
-  [params]
-  (let [{:keys [light dark]} (surfaces params)]
-    [(light "add-bg") (light "del-bg") (dark "add-bg") (dark "del-bg")]))
-
 (defn accent-color
   "The 500 accent stop of `params`, for a chip dot."
   [params]
   (nth (accent-swatches params) 5))
+
+(defn gray-color
+  "The 500 gray stop of `params`."
+  [params]
+  (nth (gray-swatches params) 5))
+
+(defn strip-colors
+  "A theme at a glance, for its row in the picker: light page, gray, dark
+   page, accent."
+  [params]
+  (let [p (merge defaults params)]
+    [(:bg-light p) (gray-color p) (:bg-dark p) (accent-color p)]))
 
 
 (defn hue-gradient []

@@ -1200,7 +1200,11 @@
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
           ;; Appearance dialog (xi.web.appearance): :web/appearance holds only
           ;; this browser's overrides.
-          :appearance/open       (fn [st _] {:state (assoc st :web/appearance-open? true)})
+          ;; `:tab` (:theme / :chat) picks the pane; without it the last one
+          :appearance/open       (fn [st {:keys [tab]}]
+                                   {:state (cond-> (assoc st :web/appearance-open? true)
+                                             tab (assoc :web/appearance-tab tab))})
+          :appearance/tab        (fn [st {:keys [tab]}] {:state (assoc st :web/appearance-tab tab)})
           ;; closing (×, Escape, outside click) abandons an unsaved theme draft
           :appearance/close      (fn [st ev]
                                    (-> (or (themes-draft-cancel st ev) {:state st})
