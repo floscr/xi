@@ -434,20 +434,38 @@
 
 ;; ── Node rendering ───────────────────────────────────────────────────────────
 
-(defn- node-diff-rows
-  "The diff rows for a code node — the changed/context lines of `file` whose
-   new-side (or old-side, for deletions) number falls in [start end]."
-  [diff-text file start end]
-  (let [rows  (diff/diff-rows (diff/parse-diff-text diff-text))
-        in?   (fn [{:keys [new-line old-line]}]
+(defonce ^:private rows-memo
+  ;; {:text :all rows :nodes {[file start end] rows}}: the diff is parsed once per text and
+  ;; each node's rows stay identical across renders, so views' per-line token
+  ;; and per-group caches (WeakMaps keyed on those objects) keep hitting.
+  (atom nil))
+
+(defn- compute-node-rows [all-rows file start end]
+  (let [in?   (fn [{:keys [new-line old-line]}]
                 (let [n (or new-line old-line)]
                   (and n (<= start n end))))
         lines (filter (fn [r] (and (= :line (:row r))
                                    (= file (:filename r))
                                    (in? (:line r))))
-                      rows)]
+                      all-rows)]
     (when (seq lines)
       (into [{:row :file :filename file :status :modified}] lines))))
+
+(defn- node-diff-rows
+  "The diff rows for a code node — the changed/context lines of `file` whose
+   new-side (or old-side, for deletions) number falls in [start end]."
+  [diff-text file start end]
+  (when-not (and @rows-memo (= (:text @rows-memo) diff-text))
+    (reset! rows-memo {:text  diff-text
+                       :all   (diff/diff-rows (diff/parse-diff-text diff-text))
+                       :nodes {}}))
+  (let [k [file start end]
+        {:keys [all nodes]} @rows-memo]
+    (if (contains? nodes k)
+      (get nodes k)
+      (let [rows (compute-node-rows all file start end)]
+        (swap! rows-memo assoc-in [:nodes k] rows)
+        rows))))
 
 (defn- highlight-idx
   "Convert a code node's highlighted new-side line numbers into the sel-idx
@@ -687,10 +705,7 @@
     {:w (+ 80 (apply max 900 xs))
      :h (apply max 640 ys)}))
 
-(defn- canvas-view
-  "The `:canvas` buffer's body, below the chat topbar (whose view switch names
-   the review)."
-  [state dispatch! room _id _buffer]
+(defn- canvas-body [state dispatch! room]
   (let [cr       (get-in room [:ext :canvas-review])
         nodes    (:nodes cr)
         edges    (vals (:edges cr))
@@ -728,6 +743,25 @@
          [:div {:class ["cr-dock"]}
           (review-tray dispatch! items)])]
       (plan-panel dispatch! plan cursor)]]))
+
+(defonce ^:private view-memo
+  ;; [inputs hiccup] of the last render; see canvas-view
+  (atom nil))
+
+(defn- canvas-view
+  "The `:canvas` buffer's body, below the chat topbar (whose view switch names
+   the review). Every app render (a palette keystroke, a streamed token) lands
+   here, so it returns the identical hiccup while its inputs are unchanged:
+   Replicant then skips the subtree and its on-update hook (reflow + edges)."
+  [state dispatch! room _id _buffer]
+  (let [inputs [dispatch! (get-in room [:ext :canvas-review])
+                (:web/cr state) (:web/diff-sel state)]
+        [prev hiccup] @view-memo]
+    (if (and hiccup (= prev inputs))
+      hiccup
+      (let [hiccup (canvas-body state dispatch! room)]
+        (reset! view-memo [inputs hiccup])
+        hiccup))))
 
 ;; ── Extension ────────────────────────────────────────────────────────────────
 
