@@ -804,13 +804,32 @@
               (js/clearInterval (aget node "__xiTimer")))}
      (run-timer-text started-at)]))
 
+(defn- details-open?
+  "A timeline <details>'s :open: the user's remembered `open-choice` (see
+   remember-open), else the appearance default."
+  [open-choice collapsed?]
+  (if (some? open-choice) open-choice (not collapsed?)))
+
+(defn- remember-open
+  "A <summary> click handler that owns its <details>'s toggle: it records the
+   choice under `k` in the session's :web/block-open (core's
+   :timeline/block-toggle) and the re-render applies it, so the choice
+   survives session switches."
+  [dispatch! session-key k]
+  (fn [^js e]
+    (.preventDefault e)
+    (dispatch! {:type :timeline/block-toggle :session-key session-key :key k
+                :open? (not (.. e -currentTarget -parentNode -open))})))
+
 (defn- tool-post
   "A tool call's <details> block. `:grouped?` (inside a viewer group),
-   `:collapsed?`, `:tool-args` (the appearance setting) and `:room-ext` (for
-   extension tool views) are stamped by chat-view."
+   `:collapsed?`, `:open-choice` + `:toggle!` (remember-open), `:tool-args`
+   (the appearance setting) and `:room-ext` (for extension tool views) are
+   stamped by chat-view."
   [dispatch! {:keys [id tool arguments result is-error status started-at diff
                      permission resolved-permission explanation room-id
-                     grouped? collapsed? cwd room-ext md-diff-code? tool-args]}]
+                     grouped? collapsed? open-choice toggle! cwd room-ext
+                     md-diff-code? tool-args]}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-detail tool-args name arguments cwd)
         running?  (= :running status)
@@ -843,14 +862,16 @@
      [:details {:class (cond-> ["tool-call-block"]
                          clj? (conj "tool-call-block--clj")
                          grouped? (conj "tool-call-block--viewer"))
-                :open (and has-content? (not collapsed?))}
+                :open (and has-content? (details-open? open-choice collapsed?))}
       ;; Nothing to expand yet (a running call without output): the header
       ;; stays shut until content arrives.
       [:summary (cond-> {:class (cond-> ["tool-call-toggle"]
                                   bash? (conj "tool-call-toggle--wrap")
                                   (not has-content?) (conj "tool-call-toggle--static"))}
                   (not has-content?)
-                  (assoc :on {:click (fn [^js e] (.preventDefault e))}))
+                  (assoc :on {:click (fn [^js e] (.preventDefault e))})
+                  (and has-content? toggle!)
+                  (assoc :on {:click toggle!}))
        [:span {:class (cond-> ["tool-call-toggle-icon"]
                         running? (conj "tool-call-toggle-icon--running")
                         (and (not running?) (not has-content?)) (conj "tool-call-toggle-icon--empty"))}
@@ -1139,8 +1160,9 @@
     [:div {:class ["post" "post--assistant" "post--thinking"]}
      [:details {:class (cond-> ["thinking-block"]
                          (:grouped? entry) (conj "thinking-block--viewer"))
-                :open (not (:collapsed? entry))}
-      [:summary {:class ["thinking-toggle"]}
+                :open (details-open? (:open-choice entry) (:collapsed? entry))}
+      [:summary (cond-> {:class ["thinking-toggle"]}
+                  (:toggle! entry) (assoc :on {:click (:toggle! entry)}))
        [:span {:class ["tool-call-toggle-icon"]}
         (icon/icon {:icon-name :chevron-right :size :sm})]
        [:span {:class ["tool-call-toggle-label"]}
@@ -3173,14 +3195,16 @@
 
 (defn- super-group
   "One summary row standing in for a run of collapsed viewer rows (step count,
-   newest block, spinner, error badge). A <details>, so the user's open/closed
-   choice survives re-renders."
-  [run-key run]
+   newest block, spinner, error badge). A <details>, shut unless the user's
+   remembered `open-choice` says otherwise; `toggle!` is its remember-open."
+  [run-key run open-choice toggle!]
   (let [{n :count :keys [error-count running? latest]}
         (viewer-group/summarize (map :info run))]
     [:details {:class ["viewer-tool-group" "viewer-tool-group--super"]
-               :replicant/key (str "vg-" run-key)}
-     [:summary {:class ["viewer-group-summary"]}
+               :replicant/key (str "vg-" run-key)
+               :open (boolean open-choice)}
+     [:summary (cond-> {:class ["viewer-group-summary"]}
+                 toggle! (assoc :on {:click toggle!}))
       [:span {:class ["tool-call-toggle-icon"]}
        (icon/icon {:icon-name :chevron-right :size :sm})]
       [:span {:class ["viewer-group-count"]} (viewer-group/count-label n)]
@@ -3219,14 +3243,17 @@
   "Viewer mode: fold runs of consecutive collapsible tool and thinking posts
    ({:key :node :group? :collapsed? :info}) into one `.viewer-tool-group`
    showing just their headers; with `super?`, an all-collapsed run folds
-   further into a `super-group`."
-  [super? items]
+   further into a `super-group`, opened per `block-open` (a session's
+   :web/block-open) and toggled through `toggle-fn` (key → remember-open)."
+  [{:keys [super? block-open toggle-fn]} items]
   (mapcat
    (fn [run]
      (if (:group? (first run))
-       (let [run-key (:key (first run))]
+       (let [run-key (:key (first run))
+             k       (str "vg-" run-key)]
          [(if (and super? (viewer-group/super-collapsible? run))
-            (super-group run-key run)
+            (super-group run-key run (get block-open k)
+                         (when toggle-fn (toggle-fn k)))
             [:div {:class ["viewer-tool-group"]
                    :replicant/key (str "vg-" run-key)}
              (map :node run)])])
@@ -3415,9 +3442,16 @@
                                                      :group? false
                                                      :node (resolved-dialog-post (:key e) e)})
                                             (remove :tool-id (get by-anchor p))))
-                     agents    (get-in room [:ext :subagents :agents])]
+                     agents    (get-in room [:ext :subagents :agents])
+                     ;; The user's open/closed blocks, kept per session across
+                     ;; switches (core's :timeline/block-toggle).
+                     session-key (or sid (:id room))
+                     block-open  (get-in state [:web/block-open session-key])
+                     toggle-fn   (fn [k] (remember-open dispatch! session-key k))]
                  (group-viewer-items
-                  (:super-collapsed? app)
+                  {:super?     (:super-collapsed? app)
+                   :block-open block-open
+                   :toggle-fn  toggle-fn}
                   (concat
                    ;; Resolved bubbles anchored above the window pin at the top.
                    (mapcat ritems (sort (filter #(< % start) (keys by-anchor))))
@@ -3433,6 +3467,11 @@
                                                (not= p perm-tool-idx))
                                collapsed? (and (not= p perm-tool-idx)
                                                (appearance/block-collapsed? app (:kind entry)))
+                               ;; A pending ask's block keeps the native toggle.
+                               block-key  (when (and (#{:tool-call :thinking} (:kind entry))
+                                                     (not= p perm-tool-idx))
+                                            (str "h-" p))
+                               open-choice (get block-open block-key)
                                cwd      (or (:cwd room) (get-in state [:web/pending-room :cwd]))
                                sender   (when (and (= :user (:kind entry))
                                                (last-of-run? entries p))
@@ -3450,6 +3489,7 @@
                             ;; (it carries fresh answer fns), which always rebuilds.
                             (when-not (= p perm-tool-idx)
                               [p dispatch! cwd (:id room) sender groupable? collapsed?
+                               session-key open-choice
                                (when tool?
                                  (tool-views/inputs (util/strip-mcp-prefix (:tool entry)) (:ext room)))
                                (when tool? (:tool-args app))
@@ -3466,6 +3506,9 @@
                                                  (assoc :grouped? true)
                                                  collapsed?
                                                  (assoc :collapsed? true)
+                                                 block-key
+                                                 (assoc :open-choice open-choice
+                                                        :toggle! (toggle-fn block-key))
                                                  tool?
                                                  (assoc :room-ext (:ext room)
                                                         :tool-args (:tool-args app))

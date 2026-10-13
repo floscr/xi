@@ -531,6 +531,13 @@
                   (fn [s] (let [s (or s #{})]
                             (if (contains? s key) (disj s key) (conj s key)))))})
 
+(defn- timeline-block-toggle
+  "Remember a timeline <details> (tool call, thinking, viewer super-group) the
+   user opened or closed, per session, so the choice survives switching away
+   and back (xi.web.views/remember-open)."
+  [st {:keys [session-key key open?]}]
+  {:state (assoc-in st [:web/block-open session-key key] open?)})
+
 (defn- prompt-part-toggle
   [st {:keys [idx]}]
   {:state (update st :web/prompt-expanded
@@ -1062,6 +1069,7 @@
           :compose/set-draft     compose-set-draft
           :compose/clear-draft   compose-clear-draft
           :timeline/set-window   timeline-set-window
+          :timeline/block-toggle timeline-block-toggle
           :lightbox/open         lightbox-open
           :lightbox/close        lightbox-close
           :web/file-drag         file-drag
@@ -2595,6 +2603,40 @@
                (= :chat (get-in room [:ui :active-buffer] :chat)))
       room)))
 
+;; ── Current block ────────────────────────────────────────────────────────────
+
+(defn- expandable-block?
+  "A tool call without content keeps a static header; opening it shows nothing."
+  [^js details]
+  (not (.querySelector details ":scope > summary.tool-call-toggle--static")))
+
+(defn- current-block
+  "The timeline <details> :block/toggle acts on: the tool call waiting on a
+   permission, else the newest running one with output, else the newest tool,
+   thinking or super-group block."
+  []
+  (when-let [content (.querySelector js/document ".timeline .timeline-content")]
+    (let [newest (fn [sel]
+                   (->> (array-seq (.querySelectorAll content sel))
+                        (filter expandable-block?)
+                        last))]
+      (or (some-> (.querySelector content ".tool-call-permission")
+                  (.closest "details.tool-call-block"))
+          (newest "details.tool-call-block:has(> summary .tool-call-toggle-icon--running)")
+          (newest "details.tool-call-block, details.thinking-block, details.viewer-tool-group--super")))))
+
+(defn- toggle-current-block!
+  "Close the current block, or open it with every closed <details> around it
+   (a super-collapsed group) so it shows."
+  []
+  (when-let [^js el (current-block)]
+    (if (.-open el)
+      (set! (.-open el) false)
+      (loop [^js d el]
+        (when d
+          (set! (.-open d) true)
+          (recur (some-> (.-parentElement d) (.closest "details"))))))))
+
 (defn- chat-session-id
   [st]
   (when (= :chat (get-in st [:web/route :page]))
@@ -2700,6 +2742,9 @@
   (keymap/register-action! {:id :compose/focus
                             :when (fn [st] (= :chat (get-in st [:web/route :page])))
                             :event {:type :compose/focus}})
+  (keymap/register-action! {:id :block/toggle
+                            :when (fn [st] (= :chat (get-in st [:web/route :page])))
+                            :run (fn [_ _ _] (toggle-current-block!))})
   (keymap/register-action! {:id :timeline/bottom
                             :when (fn [st] (= :chat (get-in st [:web/route :page])))
                             :event {:type :timeline/scroll-to-bottom}})

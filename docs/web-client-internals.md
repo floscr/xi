@@ -38,8 +38,12 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
 - **Launch card**: the first timeline block of every chat (logo, model —
   click to switch —, cwd, loaded AGENTS.md files); ordinary timeline content
   (`launch-header`), not an empty state.
-- Tool and thinking blocks are `<details>`; Replicant only writes changed
-  attrs, so manual toggles survive re-renders. **Viewer mode**
+- Tool and thinking blocks (and super-collapsed rows) are `<details>` whose
+  summary click owns the toggle (`remember-open`): it records the choice in
+  `:web/block-open` {session → {"h-<history idx>" / "vg-…" → open?}} and the
+  re-render applies it, so a block keeps its state across session switches
+  (in memory, not across reloads). A pending ask's block keeps the native
+  toggle. **Viewer mode**
   (`group-viewer-items`, always on) folds runs of tool/thinking posts into
   `.viewer-tool-group`; a run breaks on text or on a pending permission ask
   (always expanded). **Super collapsed** (`xi.web.viewer-group`, pure) folds a

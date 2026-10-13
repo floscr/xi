@@ -238,3 +238,15 @@ nothing outside a chat.
 | `:chat/delete` | Delete the current chat, no confirmation |
 
 `:chat/hide` and `:chat/delete` only run on a chat page.
+
+### Opening blocks
+
+`:block/toggle` opens or closes the current block of a chat: the tool call
+waiting on a permission request, else the running one, else the last tool,
+thinking or step-group block. Opening a block inside a folded step group
+opens the group too. No default key; bind it in `:page/chat` to have it in
+the message box as well:
+
+```clojure title="~/.config/xi/config.edn"
+:keys {:web {:page/chat {"alt+shift+=" :block/toggle}}}   ; Alt++ on a US layout
+```

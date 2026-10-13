@@ -72,8 +72,9 @@ projects** in the sidebar opens the project list (`/projects`).
   message in a [sub-agent](builtin-tools.md#sub-agents) right away instead,
   × drops it.
 - **Read what the agent did.** Tool calls and thinking are collapsed blocks.
-  Open one in place, or switch the appearance settings (gear in the sidebar
-  footer) to keep them open.
+  Open one in place (it stays open when you come back from another chat),
+  or switch the appearance settings (gear in the sidebar footer) to keep
+  them open.
 - **Review changes.** An edit shows a diff where it happened. Right-click (or
   long-press) a code block to copy it, open the file, or open the diff as a
   buffer (below). In a diff buffer, right-click a file's header to open that
