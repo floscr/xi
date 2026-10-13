@@ -144,31 +144,41 @@
                {:session-id "unr-old" :timestamp 2 :unread? true}
                {:session-id "unr-new" :timestamp 7 :unread? true}
                {:session-id "ask"     :timestamp 3 :busy? true :has-dialog? true :unread? true}]]
-    (is (= ["ask" "unr-new" "unr-old" "run-new" "run-old"]
+    (is (= {:waiting ["ask"]
+            :others  ["unr-new" "unr-old" "run-new" "run-old"]}
            (sb/attention-order cards))
         "idle sessions are left out; a dialog outranks everything and is listed once")))
 
+(deftest attention-order-lists-dialogs-oldest-first
+  (is (= ["old" "mid" "new"]
+         (:waiting (sb/attention-order [{:session-id "new" :timestamp 9 :has-dialog? true}
+                                        {:session-id "old" :timestamp 1 :has-dialog? true}
+                                        {:session-id "mid" :timestamp 5 :has-dialog? true}])))))
+
 (deftest attention-order-treats-busy-unread-as-running
   (is (= ["b" "a"]
-         (sb/attention-order [{:session-id "a" :timestamp 1 :busy? true}
-                              {:session-id "b" :timestamp 0 :unread? true}
-                              ])))
-  (is (= ["a"] (sb/attention-order [{:session-id "a" :timestamp 1 :busy? true :unread? true}]))))
+         (:others (sb/attention-order [{:session-id "a" :timestamp 1 :busy? true}
+                                       {:session-id "b" :timestamp 0 :unread? true}]))))
+  (is (= ["a"] (:others (sb/attention-order [{:session-id "a" :timestamp 1 :busy? true :unread? true}])))))
 
-(deftest next-attention-jump-walks-the-order-and-wraps
-  (let [order ["ask" "unr" "run"]]
-    (testing "first press from an unrelated chat goes to the top"
-      (is (= {:sid "ask" :visited #{"x" "ask"}}
-             (sb/next-attention-jump order "x" #{}))))
-    (testing "the dialog stays pending, yet the next press moves on"
-      (is (= "unr" (:sid (sb/next-attention-jump order "ask" #{"x" "ask"}))))
-      (is (= "run" (:sid (sb/next-attention-jump order "unr" #{"x" "ask" "unr"})))))
-    (testing "exhausted: the chain restarts from the top, skipping the current chat"
-      (is (= {:sid "ask" :visited #{"run" "ask"}}
-             (sb/next-attention-jump order "run" #{"x" "ask" "unr" "run"}))))
-    (testing "nothing but the current chat: nowhere to go"
-      (is (nil? (sb/next-attention-jump ["ask"] "ask" #{})))
-      (is (nil? (sb/next-attention-jump [] "x" #{}))))))
+(deftest next-attention-jump-cycles-pending-dialogs
+  (let [order {:waiting ["ask1" "ask2"] :others ["unr" "run"]}]
+    (testing "first press from an unrelated chat goes to the oldest dialog"
+      (is (= "ask1" (:sid (sb/next-attention-jump order "x" #{})))))
+    (testing "presses cycle through the dialogs and never leave them"
+      (is (= "ask2" (:sid (sb/next-attention-jump order "ask1" #{}))))
+      (is (= "ask1" (:sid (sb/next-attention-jump order "ask2" #{})))))
+    (testing "a single pending dialog you are on: stay"
+      (is (nil? (sb/next-attention-jump {:waiting ["ask"] :others ["unr"]} "ask" #{}))))))
+
+(deftest next-attention-jump-walks-unread-then-running-and-stops
+  (let [order {:waiting [] :others ["unr" "run"]}]
+    (is (= {:sid "unr" :visited #{"x" "unr"}}
+           (sb/next-attention-jump order "x" #{})))
+    (is (= "run" (:sid (sb/next-attention-jump order "unr" #{"x" "unr"}))))
+    (is (nil? (sb/next-attention-jump order "run" #{"x" "unr" "run"}))
+        "exhausted: no wrap-around")
+    (is (nil? (sb/next-attention-jump {:waiting [] :others []} "x" #{})))))
 
 (deftest live-rooms-carry-who-is-in-them
   (let [state (lobby profiles [{:id "r1" :session-id "s1" :users ["alice" "root"]}

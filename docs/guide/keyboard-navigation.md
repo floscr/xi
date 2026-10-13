@@ -57,7 +57,7 @@ These keys are bound by default:
 | --- | --- |
 | `Alt+j` / `Alt+k` | Next / previous sidebar row |
 | `Alt+Shift+J` / `Alt+Shift+K` | Next / previous row in the same sidebar group; on the open chat's card, into its buffers |
-| `Alt+u` | The chat that needs you most: a pending permission request, then unread output, then a running turn |
+| `Alt+u` | The chat that needs you most. While permission requests are pending it cycles through them, oldest first; then unread output, then running turns, and stops after the last |
 | `Alt+\` | Show / hide the sidebar |
 | `Ctrl/Cmd+k` | Command palette; its first group lists your chats |
 | `Alt+b` | Switch between the chat's open diffs and files |

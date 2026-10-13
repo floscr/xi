@@ -62,7 +62,7 @@ Web client:
 | Key | Does | Action | Layer |
 | --- | --- | --- | --- |
 | `Alt+\` | Show / hide the sidebar | `:sidebar/toggle` | `:global` |
-| `Alt+u` | Jump to the chat that needs you most: one waiting on a permission request, then the newest finished chat with unread output, then the newest running one. Press again to move on | `:session/jump-attention` | `:global` |
+| `Alt+u` | Jump to the chat that needs you most. While chats wait on a permission request, presses cycle through only those, oldest first. Otherwise they walk finished chats with unread output, then running ones (newest first), and stop after the last | `:session/jump-attention` | `:global` |
 | `Alt+j` / `Alt+k` | Next / previous sidebar row: projects, chats, extension pages. Skips collapsed groups and buffer rows | `:session/next` / `:session/prev` | `:global` |
 | `Alt+Shift+J` / `Alt+Shift+K` | Next / previous row in the same group. On the open chat's card, `Alt+Shift+J` steps into its buffers; from the first, `Alt+Shift+K` steps back out | `:session/next-sibling` / `:session/prev-sibling` | `:global` |
 | `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would | `:sessions/prune` | `:global` |

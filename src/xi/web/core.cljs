@@ -2556,8 +2556,9 @@
 (defonce ^:private attention-chain (atom nil))
 
 (defn- jump-to-attention!
-  "Jump to the session that most needs attention (sidebar/attention-order);
-   repeated presses walk that order, skipping sessions already visited."
+  "Jump to the session that most needs attention: repeated presses cycle
+   through pending dialogs, then walk unread and running sessions
+   (sidebar/next-attention-jump)."
   [st dispatch!]
   (let [{:keys [recent hidden earlier]} (sidebar/sidebar-session-groups st)
         cur     (get-in st [:web/route :session-id])

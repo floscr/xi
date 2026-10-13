@@ -203,21 +203,22 @@
     {:recent (vec recent) :hidden (vec hidden) :earlier (vec earlier)}))
 
 (defn attention-order
-  "Session-ids worth jumping to, most pressing first: sessions waiting on a
-   dialog, then finished ones with unread output, then running ones. Each tier
-   is newest-first, and a session lands in the first tier it qualifies for.
-   `cards` are session-status maps (see `sidebar-session-groups`)."
+  "Session-ids worth jumping to: `{:waiting [..] :others [..]}`. `:waiting`
+   holds sessions waiting on a dialog, oldest first; `:others` finished ones
+   with unread output, then running ones, each newest first. A session lands
+   in the first tier it qualifies for. `cards` are session-status maps (see
+   `sidebar-session-groups`)."
   [cards]
-  (let [newest-first #(sort-by (fn [c] (recent/->ms (:timestamp c))) > %)
-        waiting?     :has-dialog?
-        unread?      #(and (:unread? %) (not (:busy? %)))
-        running?     :busy?]
-    (->> (concat (newest-first (filter waiting? cards))
-                 (newest-first (filter #(and (not (waiting? %)) (unread? %)) cards))
-                 (newest-first (filter #(and (not (waiting? %)) (not (unread? %)) (running? %)) cards)))
-         (keep :session-id)
-         distinct
-         vec)))
+  (let [by-time  (fn [cmp cs] (sort-by #(recent/->ms (:timestamp %)) cmp cs))
+        ids      #(->> % (keep :session-id) distinct vec)
+        waiting? :has-dialog?
+        unread?  #(and (:unread? %) (not (:busy? %)))
+        running? :busy?
+        waiting  (ids (by-time < (filter waiting? cards)))]
+    {:waiting waiting
+     :others  (->> (concat (by-time > (filter #(and (not (waiting? %)) (unread? %)) cards))
+                           (by-time > (filter #(and (not (waiting? %)) (not (unread? %)) (running? %)) cards)))
+                   ids)}))
 
 (defn active-cards
   "The dashboard's Active card (xi.ext.home.web): `cards` (session-status maps,
@@ -234,18 +235,19 @@
 
 (defn next-attention-jump
   "Where the next press of the jump-to-attention key goes: `{:sid :visited}`,
-   or nil when `order` (see `attention-order`) holds nothing but `cur`.
-   `visited` is the set of sessions the current chain of presses already
-   landed on. They are skipped, so repeated presses walk the whole order
-   (dialog → unread → running) instead of bouncing between the top two while
-   a dialog stays pending. Once the order is exhausted the chain restarts from
-   the top."
-  [order cur visited]
-  (let [skip (conj visited cur)]
-    (if-let [sid (first (remove skip order))]
-      {:sid sid :visited (conj skip sid)}
-      (when-let [sid (first (remove #{cur} order))]
-        {:sid sid :visited #{cur sid}}))))
+   or nil when there is nowhere to go. While any session waits on a dialog,
+   presses cycle through `:waiting` (see `attention-order`) and nothing else.
+   Once none waits they walk `:others`, skipping `visited` (the sessions the
+   current chain of presses already landed on), and stop at its end."
+  [{:keys [waiting others]} cur visited]
+  (if (seq waiting)
+    (let [after (next (drop-while #(not= cur %) waiting))
+          sid   (or (first after) (first waiting))]
+      (when (not= sid cur)
+        {:sid sid :visited visited}))
+    (let [skip (conj visited cur)]
+      (when-let [sid (first (remove skip others))]
+        {:sid sid :visited (conj skip sid)}))))
 
 (defn sidebar-session-order
   "Flattened session-ids as shown in the drawer sidebar

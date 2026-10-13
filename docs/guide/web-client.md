@@ -287,7 +287,7 @@ are. The common ones:
 | `Alt+j` / `Alt+k` | Next / previous sidebar row, skipping collapsed groups |
 | `Alt+Shift+J` / `Alt+Shift+K` | Next / previous row in the same sidebar group; on the open chat's card, into its buffers |
 | `Alt+n` | New chat |
-| `Alt+u` | Jump to the chat that needs you most: one waiting on a permission request, then the newest finished chat with unread output, then the newest running one. Press again to move on to the next |
+| `Alt+u` | Jump to the chat that needs you most. While chats wait on a permission request, presses cycle through only those, oldest first. Otherwise they walk finished chats with unread output, then running ones (newest first), and stop after the last |
 | `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would (mark all as read, hide all from Recent — pinned chats are skipped — close idle rooms) |
 | `Alt+a` / `Alt+d` | Allow / deny the pending permission request |
 | `Alt+x` | Stop the running turn |
