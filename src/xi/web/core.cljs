@@ -3103,7 +3103,8 @@
            (.preventDefault e))))
      #js {:passive false})))
 
-;; TEMP: on-screen palette scroll diagnostics for iOS — remove after.
+;; TEMP: on-screen palette scroll diagnostics for iOS — remove after. Off
+;; unless localStorage has "xi/debug-palette-scroll" (any value).
 (defn- install-palette-scroll-debug! []
   (let [box (.createElement js/document "div")
         c   (atom {})
@@ -3293,7 +3294,8 @@
       (.addEventListener mql "change"
                          (fn [e] (dispatch! {:type :web/set-wide :wide? (.-matches e)}))))
     (install-sidebar-swipe! state dispatch!)
-    (install-palette-scroll-debug!)
+    (when (some? (.getItem js/localStorage "xi/debug-palette-scroll"))
+      (install-palette-scroll-debug!))
     ;; Prevent iOS Safari smart-zoom (double-tap & pinch).
     (.addEventListener js/document "gesturestart" (fn [e] (.preventDefault e)))
     (.addEventListener js/document "gesturechange" (fn [e] (.preventDefault e)))
