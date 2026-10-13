@@ -109,13 +109,16 @@ a.btn:hover { text-decoration: none; }
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  color: var(--fg-0);
-  font-weight: 650;
-  font-size: 1.05rem;
 }
 .brand:hover { text-decoration: none; }
-.logo-mark { color: var(--accent); }
+.logo-mark { display: block; }
+/* The wordmark's gradient follows the theme's accent, as in the web client
+   (style.css .launch-logo-stop-*): the attributes are the default theme's. */
+@supports (color: oklch(from red l c h)) {
+  .logo-stop-start { stop-color: oklch(from var(--accent-500) 0.652 c calc(h + 57)); }
+  .logo-stop-mid   { stop-color: oklch(from var(--accent-500) 0.580 c calc(h + 10)); }
+  .logo-stop-end   { stop-color: oklch(from var(--accent-500) 0.632 calc(c * 0.58) calc(h - 38)); }
+}
 
 .site-nav {
   margin-left: auto;

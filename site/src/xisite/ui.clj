@@ -8,11 +8,20 @@
             [xisite.theme :as theme]))
 
 (def ^:private logo
-  [:svg.logo-mark {:viewBox "0 0 32 32" :width "28" :height "28" :aria-hidden "true"}
-   [:rect {:x "1" :y "1" :width "30" :height "30" :rx "8" :fill "currentColor"}]
-   [:text {:x "16" :y "22.5" :text-anchor "middle" :font-size "19"
-           :font-family "Georgia, 'Times New Roman', serif" :font-style "italic"
-           :fill "var(--bg-0)"} "ξ"]])
+  "The web client's gradient wordmark (xi.web.views/launch-logo); main.css
+   turns its stops with the theme's accent like the client's style.css."
+  [:svg.logo-mark {:viewBox "0 0 55 40" :width "30" :height "22" :aria-hidden "true"}
+   [:defs
+    [:linearGradient {:id "logo-gradient" :gradientUnits "userSpaceOnUse"
+                      :x1 "0" :y1 "0" :x2 "64" :y2 "40"}
+     [:stop.logo-stop-start {:offset "0" :stop-color "#e83fb4"}]
+     [:stop.logo-stop-mid {:offset "0.55" :stop-color "#8b4cf0"}]
+     [:stop.logo-stop-end {:offset "1" :stop-color "#3b8fd6"}]]]
+   [:g {:fill "url(#logo-gradient)"}
+    [:polygon {:points "0,0 9,0 36,40 27,40"}]
+    [:polygon {:points "27,0 36,0 9,40 0,40"}]
+    [:rect {:x "46" :y "0" :width "9" :height "9"}]
+    [:rect {:x "46" :y "15" :width "9" :height "25"}]]])
 
 (def ^:private github-icon
   [:svg {:viewBox "0 0 24 24" :width "16" :height "16" :aria-hidden "true"
@@ -53,7 +62,7 @@
         changelog? (= path "/changelog/")]
     [:header.site-header
      [:div.site-header-inner
-      [:a.brand {:href "/"} logo [:span "xi"]]
+      [:a.brand {:href "/" :aria-label "Xi home"} logo]
       [:nav.site-nav
        (nav-button {:href "/docs/" :active? (and docs? (not= path "/docs/getting-started/"))} "Docs")
        (nav-button {:href "/docs/getting-started/" :active? (= path "/docs/getting-started/")} "Install")
