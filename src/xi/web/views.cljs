@@ -2622,17 +2622,25 @@
     :attrs    {:data-key-action "sidebar/toggle"}}))
 
 (defn- message-circle-icon
-  []
-  [:svg {:class ["icon" "icon-sm"]
-         :xmlns "http://www.w3.org/2000/svg"
-         :viewBox "0 0 24 24"
-         :fill "none"
-         :stroke "currentColor"
-         :stroke-width "2"
-         :stroke-linecap "round"
-         :stroke-linejoin "round"
-         :aria-hidden "true"}
-   [:path {:d "M7.9 20A9 9 0 1 0 4 16.1L2 22Z"}]])
+  "The chat icon, which the clj-ui-framework icon set lacks."
+  ([] (message-circle-icon nil))
+  ([class]
+   [:svg {:class ["icon" "icon-sm" class]
+          :xmlns "http://www.w3.org/2000/svg"
+          :viewBox "0 0 24 24"
+          :fill "none"
+          :stroke "currentColor"
+          :stroke-width "2"
+          :stroke-linecap "round"
+          :stroke-linejoin "round"
+          :aria-hidden "true"}
+    [:path {:d "M7.9 20A9 9 0 1 0 4 16.1L2 22Z"}]]))
+
+(defn- with-leading-icon
+  "A cmd/command-item rendered without `:icon`, given `svg` in the icon slot —
+   for icons outside the framework set."
+  [[tag attrs & children] svg]
+  (into [tag attrs svg] children))
 
 (defn- more-vertical-icon
   []
@@ -2679,7 +2687,7 @@
                             :replicant/key (or key id)
                             :title title
                             :on {:click (fn [e] (hide! e) (on-click))}}
-                   (icon/icon {:icon-name icon :size :sm})
+                   (if (keyword? icon) (icon/icon {:icon-name icon :size :sm}) icon)
                    [:span {:class ["buffer-menu-title"]} title]
                    (when (seq people)
                      [:span {:class ["buffer-menu-people"]} (avatar-stack people)])
@@ -2704,7 +2712,7 @@
        :align :center
        :class "sidebar-more-menu buffer-menu"
        :attrs {:replicant/key "buffer-menu"}}
-      (item {:id "chat" :icon :terminal :title "Chat"
+      (item {:id "chat" :icon (message-circle-icon) :title "Chat"
              :active? (not active) :people (people-of :chat)
              :on-click #(switch! :chat)})
       (for [[id buf] (buffers/ordered buffers)
@@ -3074,7 +3082,7 @@
                                               :session-id session-id})
                                   (dispatch! {:type :subagent/promote
                                               :room-id room-id :sub-id id})))}}
-         (icon/icon {:icon-name :message-circle :size :sm})])
+         (message-circle-icon)])
       (when-not (= :running status)
         [:button {:class ["subagent-dismiss"]
                   :title "Dismiss"
@@ -4603,8 +4611,9 @@
                                                        :page :chat
                                                        :session-id session-id}))}}
                 search? (assoc :data-command-search-only "true"))
-      (icon/icon {:icon-name (if has-dialog? :alert-circle :terminal)
-                  :size :sm :class "command-item-icon"})
+      (if has-dialog?
+        (icon/icon {:icon-name :alert-circle :size :sm :class "command-item-icon"})
+        (message-circle-icon "command-item-icon"))
       [:span {:class ["command-item-label"]} label]
       [:div {:class ["command-item-status"]}
        (card-status-indicator {:busy? busy? :error? error? :unread? unread? :active? active?})]])))
@@ -4948,11 +4957,12 @@
                         :when (and room (not= id active))
                         :let [chat? (= :chat id)
                               title (if chat? "Chat" (buffers/label id buf))]]
-                    (cmd/command-item
-                     {:icon (if chat? :terminal (buffer-icon (buffers/kind id buf)))
-                      :value (str "buffer " (if chat? "chat" title))
-                      :on-click (fn [_] (switch! id))}
-                     title))}
+                    (cond-> (cmd/command-item
+                             {:icon (when-not chat? (buffer-icon (buffers/kind id buf)))
+                              :value (str "buffer " (if chat? "chat" title))
+                              :on-click (fn [_] (switch! id))}
+                             title)
+                      chat? (with-leading-icon (message-circle-icon "command-item-icon"))))}
           {:heading "Other sessions"
            :items (for [{:keys [id kind title session-id session-name]} others]
                     (cmd/command-item
