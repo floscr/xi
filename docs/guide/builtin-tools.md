@@ -99,16 +99,18 @@ instead of guessing. A found id can be resumed with `xi --session <id>`; see
 ## Sub-agents
 
 A sub-agent is a second agent that runs a task in its own context and reports
-back, so the research or review it does never fills the main chat.
+back, so the research or review it does never fills the main chat. It gets
+the chat's last messages and the path to its transcript with the task, so
+the task can refer to the conversation.
 
 | Tool | Does | Asks |
 | --- | --- | --- |
-| `spawn_subagent` | Start a sub-agent with a task description and an optional label. Returns an id at once; the work runs in the background. The sub-agent starts with no context but the task. | Every time; `a` stops asking for this chat |
+| `spawn_subagent` | Start a sub-agent with a task description and an optional label. Returns an id at once; the work runs in the background. | Every time; `a` stops asking for this chat |
 | `list_subagents` | The chat's sub-agents with status, running time and a line of recent output. | Never |
 | `subagent_result` | The final output of a sub-agent, or a notice that it is still running. | Never |
 | `stop_subagent` | Stop one by id. | Never |
 
-`/subagents` shows them in the chat; the web client has a panel for them
+`/subagent <task>` starts one yourself; `/subagents` shows them in the chat; the web client has a panel for them
 below the conversation and lists them in the sidebar with the chat's
 [buffers](web-client.md#buffers).
 The `subagent-confirm` default rule is what asks; see

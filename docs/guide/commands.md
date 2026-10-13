@@ -48,6 +48,7 @@ message. `/help` lists everything that is available in the current setup.
 | `/term [command …]` | Open a [terminal](web-client.md#terminals) in the chat's directory: your shell, or the command |
 | `/holds`, `/release` | Show who holds the repository's git index when two chats share it; force it free |
 | `/ps`, `/kill <pid>` | Background processes the agent started; stop one |
+| `/subagent <task>`, `/sa` | Run the task in a [sub-agent](builtin-tools.md#sub-agents), also while the agent works; no confirmation |
 | `/subagents` | Background sub-agents of this chat |
 | `/debug` | Copy debugging details to the clipboard |
 

@@ -94,10 +94,11 @@
                     ;; spawn needs the parent transcript path and runs
                     ;; server-side, so forward the click; the :subagent/spawn
                     ;; it causes comes back as a mirrored broadcast.
-                    :subagent/explain-call
-                    (fn [_st ev]
-                      (when-not (:remote? ev)
-                        {:effects [[:ws/send ev]]})))
+                    :subagent/explain-call forward
+                    ;; The queue popover's "Run in a sub-agent": the queue
+                    ;; and the spawn are server state, both come back as
+                    ;; mirrored broadcasts.
+                    :subagent/run-queued forward)
    :fx       {:subagent/start            (fn [_ _] nil)
               :subagent/promote!         (fn [_ _] nil)
               :subagent/scroll-into-view scroll-into-view!}})

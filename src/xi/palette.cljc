@@ -38,7 +38,8 @@
    and TUI Ctrl+P) and the web '/' suggestion popup — the same items on every
    surface. `:while-busy?` marks non-interrupting commands: read-only views
    that neither mutate session state nor interrupt the running turn, so they
-   may be submitted while the agent is busy. Each entry is display metadata;
+   may be submitted while the agent is busy; `:takes-args?` ones are completed
+   into the composer for their argument instead of run when picked. Each entry is display metadata;
    the actual handler is resolved by name in the assembly's command registry."
   [{:name "help"     :description "Show available commands" :while-busy? true}
    {:name "model"    :description "Show or set model"}
@@ -61,6 +62,9 @@
                   {:name "session-git"     :description "Session edits still uncommitted (vs the last commit)"}
                   {:name "session-commits" :description "Diff of commits made this session"}]}
    {:name "commit"   :description "Review changes and create a git commit"}
+   ;; Starts a background turn of its own; the running one goes on.
+   {:name "subagent" :aliases ["sa"] :description "Run a task in a background sub-agent (/subagent <task>)"
+    :while-busy? true :takes-args? true}
    {:name "review"   :description "Review git changes against the code-review methodology"
     :subcommands [{:name "staged" :description "Review staged changes vs HEAD"}]}
    {:name "debug"    :description "Copy debug info to clipboard" :while-busy? true}
@@ -81,9 +85,10 @@
    each subcommand becomes a `parent sub` entry (e.g. \"diff staged\").
    A parent's :aliases ride along for alias-aware matching."
   [commands]
-  (mapcat (fn [{:keys [name description subcommands aliases]}]
+  (mapcat (fn [{:keys [name description subcommands aliases takes-args?]}]
             (cons (cond-> {:name name :description description}
-                    aliases (assoc :aliases aliases))
+                    aliases     (assoc :aliases aliases)
+                    takes-args? (assoc :takes-args? true))
                   (map (fn [{sub-name :name sub-desc :description}]
                          {:name (str name " " sub-name) :description sub-desc})
                        subcommands)))

@@ -1916,7 +1916,7 @@ body {
   -webkit-box-orient: vertical;
 }
 
-.queue-item-remove {
+.queue-item-action {
   flex-shrink: 0;
 }
 

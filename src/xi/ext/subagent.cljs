@@ -153,16 +153,41 @@
                         :summary summary
                         :messages (session/read-session-messages summary)})))))))
 
-(defn- explain-call
-  "h/explain-call with the parent transcript's path (a node-only lookup), so
-   the explanation sub-agent can read the full conversation when the excerpt
-   in its prompt isn't enough."
-  [st {:keys [room-id] :as ev}]
+(defn- room-transcript
+  "The transcript path of the room's session (a node-only lookup), or nil."
+  [st room-id]
   (let [room (state/get-room st room-id)
         sess (:session room)]
-    (h/explain-call st (assoc ev :transcript
-                              (session/transcript-path (or (:cwd sess) (:cwd room))
-                                                       (:provider-session-id sess))))))
+    (session/transcript-path (or (:cwd sess) (:cwd room))
+                             (:provider-session-id sess))))
+
+(defn- spawn
+  "h/spawn with the parent transcript's path, so every sub-agent can read the
+   full parent conversation when the excerpt in its system prompt isn't
+   enough."
+  [st {:keys [room-id transcript parent-context?] :as ev}]
+  (h/spawn st (cond-> ev
+                (and (nil? transcript) (not (false? parent-context?)))
+                (assoc :transcript (room-transcript st room-id)))))
+
+(defn- explain-call
+  "h/explain-call with the parent transcript's path, for the same reason."
+  [st {:keys [room-id] :as ev}]
+  (h/explain-call st (assoc ev :transcript (room-transcript st room-id))))
+
+(defn- queued->subagent
+  "Run the queued prompt at `index` in a sub-agent instead of after the
+   current turn: drop it from the queue and spawn it. User-initiated (the web
+   queue popover), so no spawn confirmation."
+  [st {:keys [room-id index]}]
+  (when-let [{:keys [text images]} (get (vec (get-in st [:rooms room-id :agent :queued]))
+                                        index)]
+    (let [text (str/trim (or text ""))]
+      {:effects [[:app/dispatch {:type :prompt/queue-remove :room-id room-id :index index}]
+                 [:app/dispatch (cond-> {:type :subagent/spawn :room-id room-id
+                                         :task text :prompt text}
+                                  (str/blank? text) (assoc :label "Queued prompt")
+                                  (seq images)      (assoc :images images))]]})))
 
 ;; ── Tools (registry fns; dispatch!/get-state/room-id come from the tool ctx) ──
 
@@ -178,7 +203,7 @@
                       "user must approve every spawn.")
     :input_schema {:type "object"
                    :properties {:task  {:type "string"
-                                        :description "The full task/instructions for the sub-agent (it starts fresh with no other context, so be self-contained)."}
+                                        :description "The task for the sub-agent. It is given an excerpt of this conversation and the path to its full transcript, so refer to what was discussed instead of restating it."}
                                 :label {:type "string"
                                         :description "Short label for the sub-agent in the UI (optional)."}}
                    :required ["task"]}}
@@ -288,6 +313,16 @@
   [st {:keys [room-id]}]
   {:state (assoc-in st [:rooms room-id :ui :active-buffer] :subagents)})
 
+(defn- cmd-subagent
+  "/subagent <task>: spawn a sub-agent on the task. User-initiated, so no
+   spawn confirmation; runs while the agent is busy too."
+  [_st {:keys [room-id args]}]
+  (let [task (str/trim (or args ""))]
+    {:effects [[:app/dispatch
+                (if (str/blank? task)
+                  {:type :ui/status :room-id room-id :text "Usage: /subagent <task>"}
+                  {:type :subagent/spawn :room-id room-id :task task :prompt task})]]}))
+
 ;; ── System prompt ─────────────────────────────────────────────────────────────
 
 (def ^:private system-prompt
@@ -300,8 +335,8 @@
        "immediately with an id; it does NOT block you. The user must approve "
        "each spawn. Poll it with `list_subagents` and read its final output "
        "with `subagent_result` once it is done; `stop_subagent` cancels one. "
-       "Make each task self-contained — the sub-agent starts fresh with no "
-       "other context."))
+       "The sub-agent is given an excerpt of this conversation and the path "
+       "to its full transcript, so the task need not restate the context."))
 
 ;; ── Extension ─────────────────────────────────────────────────────────────────
 
@@ -312,7 +347,10 @@
    :tool-definitions tool-defs
    :tool-registry    tool-registry
    :handlers         (assoc h/handlers
+                            :subagent/spawn spawn
                             :room/close on-room-close
+                            ;; The web queue popover's "Run in a sub-agent".
+                            :subagent/run-queued queued->subagent
                             :subagent/abort abort-sub
                             ;; the web sidebar's rows (roomless, by session)
                             :session/subagent-stop    (session-sub-handler :subagent/abort)
@@ -332,4 +370,7 @@
    :roomless-events  #{:session/subagent-stop :session/subagent-dismiss}
    :commands         [{:name "subagents"
                        :description "View this room's background sub-agents"
-                       :handler cmd-subagents}]})
+                       :handler cmd-subagents}
+                      {:name "subagent" :aliases ["sa"]
+                       :description "Run a task in a background sub-agent (/subagent <task>)"
+                       :handler cmd-subagent}]})

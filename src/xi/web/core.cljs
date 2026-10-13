@@ -1315,6 +1315,14 @@
                                                   (dissoc :web/palette-page :web/palette-open?))
                                        :effects [[:palette/close nil]
                                                  [:projects/sync-textarea {:text new-text}]]}))
+          ;; Replace the draft (a command picked for its argument, "/subagent ").
+          :compose/prefill        (fn [st {:keys [text draft-key]}]
+                                    {:state   (-> st
+                                                  (assoc-in [:web/drafts draft-key] text)
+                                                  (dissoc :web/palette-page :web/palette-open?))
+                                     :effects [[:palette/close nil]
+                                               [:projects/sync-textarea {:text text}]
+                                               [:compose/focus nil]]})
           :projects/new-session   (fn [st {:keys [cwd]}]
                                     (-> (open-pending-room st (fresh-pending-room st cwd))
                                         (assoc-in [:state :web/sidebar-open?] false)))

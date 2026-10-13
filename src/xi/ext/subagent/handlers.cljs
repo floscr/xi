@@ -56,23 +56,74 @@
        "result — that final message is what the parent agent reads back. Do "
        "not ask the parent questions; make reasonable assumptions and proceed."))
 
+;; ── Parent conversation ──────────────────────────────────────────────────────
+
+(def ^:private context-max-msg-chars 1500)
+(def ^:private context-recent-entries 12)
+
+(defn- clip [s n]
+  (let [s (str s)]
+    (if (> (count s) n)
+      (str (subs s 0 n) "\n… (" (- (count s) n) " more characters)")
+      s)))
+
+(defn- recent-context
+  "A transcript excerpt of history `entries`: the last prompts and replies
+   (clipped), tool calls as one-liners, thinking dropped."
+  [entries]
+  (->> entries
+       (remove #(= :thinking (:kind %)))
+       (take-last context-recent-entries)
+       (keep (fn [{:keys [kind text tool arguments is-error]}]
+               (case kind
+                 :user      (str "[user]\n" (clip text context-max-msg-chars))
+                 :text      (str "[assistant]\n" (clip text context-max-msg-chars))
+                 :tool-call (str "[tool call] " (util/strip-mcp-prefix (str tool)) " "
+                                 (clip (pr-str arguments) 200)
+                                 (when is-error " → error"))
+                 nil)))
+       (str/join "\n\n")))
+
+(defn parent-context
+  "The parent conversation for a sub-agent's system prompt: an excerpt of the
+   room's history and the transcript path to widen it, so whoever spawns one
+   (the LLM, a button, an extension) never has to restate the context. nil
+   when there is neither."
+  [room transcript]
+  (let [recent (recent-context (:history room))]
+    (when (or (seq recent) transcript)
+      (str "## The parent conversation\n"
+           "The conversation you were spawned from, most recent last.\n\n"
+           (when (seq recent) (str recent "\n\n"))
+           (if transcript
+             (str "The full parent transcript is the JSONL file " transcript
+                  " — read or grep it when the excerpt doesn't cover what the "
+                  "task refers to.")
+             "There is no transcript on disk; work from the excerpt above.")))))
+
 (defn child-system
   "System prompt for a sub-agent turn: the room's base system (AGENTS.md etc.)
-   + the sub-agent preamble + any task-specific system text."
-  [room extra]
-  (->> [(get-in room [:agent :system]) SUBAGENT_PREAMBLE extra]
+   + the sub-agent preamble + the parent conversation (unless
+   `parent-context?` is false) + any task-specific system text."
+  [room {:keys [system transcript parent-context?]}]
+  (->> [(get-in room [:agent :system])
+        SUBAGENT_PREAMBLE
+        (when-not (false? parent-context?) (parent-context room transcript))
+        system]
        (remove str/blank?)
        (str/join "\n\n")))
 
 ;; ── State handlers (pure) ─────────────────────────────────────────────────────
 
-(defn- spawn
+(defn spawn
   "Append a sub-agent entry and kick off its turn. The provider settings come
-   from the room's agent; the child runs a FRESH context (no resume).
+   from the room's agent; the child runs a FRESH context (no resume) that
+   knows the parent conversation through its system prompt (child-system;
+   `:transcript` is added by the node ext, `:parent-context? false` opts out).
 
    Emits the :subagent/start effect — the node build runs the turn; the web
    build registers a no-op for it (the turn only ever runs server-side)."
-  [st {:keys [room-id sub-id task label prompt system]}]
+  [st {:keys [room-id sub-id task label prompt images] :as ev}]
   (when-let [room (state/get-room st room-id)]
     (let [sub-id (or sub-id (gen-id "sa"))
           child  {:id      sub-id
@@ -84,16 +135,17 @@
       {:state   (update-in st [:rooms room-id :ext ext-id :agents]
                            (fnil conj []) child)
        :effects [[:subagent/start
-                  {:room-id         room-id
-                   :sub-id          sub-id
-                   :prompt          (or prompt task)
-                   :system          (child-system room system)
-                   :model           (get-in room [:agent :model])
-                   :provider        (get-in room [:agent :provider])
-                   :effort          (get-in room [:agent :effort])
-                   :cwd             (:cwd room)
-                   ;; An agent profile's tool allowlist binds sub-agents too.
-                   :only-tools      (get-in room [:agent :only-tools])}]]})))
+                  (cond-> {:room-id         room-id
+                           :sub-id          sub-id
+                           :prompt          (or prompt task)
+                           :system          (child-system room ev)
+                           :model           (get-in room [:agent :model])
+                           :provider        (get-in room [:agent :provider])
+                           :effort          (get-in room [:agent :effort])
+                           :cwd             (:cwd room)
+                           ;; An agent profile's tool allowlist binds sub-agents too.
+                           :only-tools      (get-in room [:agent :only-tools])}
+                    (seq images) (assoc :images images))]]})))
 
 (defn- text-delta [st {:keys [room-id sub-id text]}]
   (when (find-child st room-id sub-id)
@@ -256,14 +308,6 @@
 
 (def ^:private explain-max-arg-chars 6000)
 (def ^:private explain-max-diff-chars 6000)
-(def ^:private explain-max-msg-chars 1500)
-(def ^:private explain-recent-entries 12)
-
-(defn- clip [s n]
-  (let [s (str s)]
-    (if (> (count s) n)
-      (str (subs s 0 n) "\n… (" (- (count s) n) " more characters)")
-      s)))
 
 (defn- format-arguments
   "`key: value` lines for a tool call's arguments (strings verbatim, so code
@@ -276,24 +320,6 @@
                      (str (name k) ": " (clip (if (string? v) v (pr-str v))
                                               explain-max-arg-chars)))
                    arguments))))
-
-(defn- recent-context
-  "The parent conversation before the call as a transcript excerpt: the last
-   prompts and replies (clipped), earlier tool calls as one-liners, thinking
-   dropped."
-  [entries]
-  (->> entries
-       (remove #(= :thinking (:kind %)))
-       (take-last explain-recent-entries)
-       (keep (fn [{:keys [kind text tool arguments is-error]}]
-               (case kind
-                 :user      (str "[user]\n" (clip text explain-max-msg-chars))
-                 :text      (str "[assistant]\n" (clip text explain-max-msg-chars))
-                 :tool-call (str "[tool call] " (util/strip-mcp-prefix (str tool)) " "
-                                 (clip (pr-str arguments) 200)
-                                 (when is-error " → error"))
-                 nil)))
-       (str/join "\n\n")))
 
 (defn explain-prompt
   "The explanation sub-agent's prompt: the gated call, its ask, the parent
@@ -378,6 +404,8 @@
                                        :sub-id  (explain-sub-id call-id)
                                        :label   (str "Explain " tool)
                                        :task    (str "Explain the " tool " call awaiting approval")
+                                       ;; the prompt carries its own excerpt
+                                       :parent-context? false
                                        :prompt  (explain-prompt
                                                  {:entry      entry
                                                   :dialog     dialog

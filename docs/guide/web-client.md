@@ -67,6 +67,10 @@ projects** in the sidebar opens the project list (`/projects`).
   reads the call, the conversation and the session transcript and says what
   the call does, why the agent wants it and the risk. The answer appears
   under the tool block and stays there after you decide.
+- **Queue messages.** A message sent while the agent works waits for the
+  turn to end; the number in the action row opens the queue. Its ▶ runs a
+  message in a [sub-agent](builtin-tools.md#sub-agents) right away instead,
+  × drops it.
 - **Read what the agent did.** Tool calls and thinking are collapsed blocks.
   Open one in place, or switch the appearance settings (gear in the sidebar
   footer) to keep them open.

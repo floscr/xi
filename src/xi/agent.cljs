@@ -137,7 +137,7 @@
      ;; in every client but never replayed to the model.
      (remove :no-llm? history))))
 
-(defn- prompt-with-attachment-paths
+(defn prompt-with-attachment-paths
   "Append the on-disk paths of attached files to the provider prompt (not the
    history entry) so file tools and sub-agents can reach them."
   [prompt images]

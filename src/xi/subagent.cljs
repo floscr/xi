@@ -87,7 +87,7 @@
                       make-config-dir! remove-config-dir!]}]
    {:subagent/start
     (fn [{:keys [dispatch! get-state]}
-         {:keys [room-id sub-id prompt system model provider cwd effort only-tools]}]
+         {:keys [room-id sub-id prompt images system model provider cwd effort only-tools]}]
       (let [prov     (agent/resolve-provider providers {:provider provider :model model})
             ;; Run the sub-agent's turn against a throwaway CLAUDE_CONFIG_DIR so
             ;; the Claude CLI session it leaves behind lands in a temp dir, not
@@ -123,7 +123,7 @@
             {:keys [promise abort!]}
             ((:start-turn! prov)
              (cond-> (merge {:room-id room-id
-                             :prompt  prompt
+                             :prompt  (agent/prompt-with-attachment-paths prompt images)
                              :model   model
                              :provider provider
                              :cwd     cwd
@@ -133,6 +133,7 @@
                             (callbacks dispatch! room-id sub-id))
                policy1                  (assoc :tool-policy policy1)
                only-tools               (assoc :only-tools only-tools)
+               (seq images)             (assoc :images images)
                extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
                extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
                client-pid             (assoc :client-pid client-pid)

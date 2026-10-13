@@ -1448,12 +1448,24 @@
       (dispatch! (cond-> {:type :web/command :room-id room-id :name name}
                    args (assoc :args args))))))
 
+(defn- pick-command!
+  "A command picked in the suggestion popup or the palette: one that
+   `:takes-args?` is completed into the composer (\"/subagent \") for its
+   argument, any other runs at once (and the typed \"/…\" is cleared)."
+  [dispatch! room-id draft-key {:keys [name takes-args?]}]
+  (if takes-args?
+    (dispatch! {:type :compose/prefill :draft-key draft-key :text (str "/" name " ")})
+    (do (dispatch-command! dispatch! room-id name)
+        (when-let [^js el (compose-textarea-el)]
+          (set! (.-value el) ""))
+        (dispatch! {:type :compose/clear-draft :draft-key draft-key}))))
+
 (defn- command-suggestions
   [dispatch! room-id draft-key commands selected-index]
   (when (seq commands)
     [:div {:class ["slash-dropdown"]}
      (map-indexed
-      (fn [i {:keys [name description]}]
+      (fn [i {:keys [name description] :as cmd}]
         (let [selected? (= i selected-index)]
           [:button {:class ["slash-item"
                             (when selected? "slash-item--selected")]
@@ -1461,11 +1473,7 @@
                     (fn [{:replicant/keys [^js node]}]
                       (when selected?
                         (.scrollIntoView node #js {:block "nearest"})))
-                    :on {:click (fn [_]
-                                  (dispatch-command! dispatch! room-id name)
-                                  (when-let [^js el (compose-textarea-el)]
-                                    (set! (.-value el) ""))
-                                  (dispatch! {:type :compose/clear-draft :draft-key draft-key}))
+                    :on {:click (fn [_] (pick-command! dispatch! room-id draft-key cmd))
                          :mouseenter (fn [_]
                                        (dispatch! {:type :cmd/select :index i}))}}
            [:span {:class ["slash-item-name"]} (str "/" name)]
@@ -1536,7 +1544,14 @@
           (if (seq t)
             t
             (str (count images) " image" (when (not= 1 (count images)) "s"))))]
-       [:button {:class ["icon-btn" "icon-btn--sm" "queue-item-remove"]
+       [:button {:class ["icon-btn" "icon-btn--sm" "queue-item-action"]
+                 :title "Run in a sub-agent now" :aria-label "Run in a sub-agent now"
+                 :on {:click (fn [_]
+                               (dispatch! {:type :subagent/run-queued
+                                           :room-id room-id :index idx}))}}
+        (icon/icon {:icon-name :play :size :sm})]
+       [:button {:class ["icon-btn" "icon-btn--sm" "queue-item-action"]
+                 :title "Remove from queue" :aria-label "Remove from queue"
                  :on {:click (fn [_]
                                (dispatch! {:type :prompt/queue-remove
                                            :room-id room-id :index idx}))}}
@@ -1651,13 +1666,8 @@
                         (when (= "insertLineBreak" (.-inputType e))
                           (.preventDefault e)
                           (if cmd-open?
-                            (let [sel (min (or cmd-selected 0) (dec (count cmd-matches)))
-                                  cmd-name (:name (nth cmd-matches sel))]
-                              (dispatch-command! dispatch! room-id cmd-name)
-                              (when-let [^js el (compose-textarea-el)]
-                                (set! (.-value el) ""))
-                              (dispatch! {:type :compose/clear-draft
-                                          :draft-key draft-key}))
+                            (let [sel (min (or cmd-selected 0) (dec (count cmd-matches)))]
+                              (pick-command! dispatch! room-id draft-key (nth cmd-matches sel)))
                             (let [v (.. e -target -value)]
                               (when (or (not busy?) (submittable-while-busy? v))
                                 (submit-compose! dispatch! room-id session-id
@@ -1677,12 +1687,7 @@
                                               :index (mod (inc sel) (count cmd-matches))}))
                               ("enter" "tab")
                               (do (.preventDefault e)
-                                  (let [cmd-name (:name (nth cmd-matches sel))]
-                                    (dispatch-command! dispatch! room-id cmd-name)
-                                    (when-let [^js el (compose-textarea-el)]
-                                      (set! (.-value el) ""))
-                                    (dispatch! {:type :compose/clear-draft
-                                                :draft-key draft-key})))
+                                  (pick-command! dispatch! room-id draft-key (nth cmd-matches sel)))
                               "escape"
                               (do (.preventDefault e)
                                   (when-let [^js el (compose-textarea-el)]
@@ -4803,17 +4808,21 @@
    label))
 
 (defn- palette-command-item
-  [dispatch! room-id {:keys [name description]}]
+  [dispatch! room-id dkey {:keys [name description takes-args?]}]
   (cmd/command-item
    {:icon :terminal
     :value (str name " " description)
     :description description
-    :on-click (fn [_] (dispatch-command! dispatch! room-id name))}
+    :on-click (fn [_]
+                (if takes-args?
+                  (dispatch! {:type :compose/prefill :draft-key dkey :text (str "/" name " ")})
+                  (dispatch-command! dispatch! room-id name)))}
    name))
 
 (defn- palette-commands-page
   [state dispatch!]
   (let [room-id  (:id (state/active-room state))
+        dkey     (draft-key state)
         recents  (:web/recent-commands state)
         by-name  (into {} (map (juxt :name identity)) web-commands)
         recent   (keep by-name recents)
@@ -4821,9 +4830,9 @@
     [:div
      (when (seq recent)
        (apply cmd/command-group {:heading "Recent"}
-         (map #(palette-command-item dispatch! room-id %) recent)))
+         (map #(palette-command-item dispatch! room-id dkey %) recent)))
      (apply cmd/command-group {:heading (if (seq recent) "All commands" "Commands")}
-       (map #(palette-command-item dispatch! room-id %) the-rest))]))
+       (map #(palette-command-item dispatch! room-id dkey %) the-rest))]))
 
 (defn- palette-snippets-page
   "Snippets as a palette sub-page, grouped into project (from the snippets
@@ -5399,12 +5408,17 @@
                   "Prune all")))))
      (when room
        (apply cmd/command-group {:heading "Commands"}
-         (for [{:keys [name description]} (palette/expand-commands web-commands)]
+         (for [{:keys [name description takes-args?]} (palette/expand-commands web-commands)]
            (cmd/command-item
             {:icon :terminal
              :value (str name " " description)
-             :on-click (if (= name "model")
+             :on-click (cond
+                         (= name "model")
                          (fn [_] (dispatch! {:type :palette/open-models}))
+                         takes-args?
+                         (fn [_] (dispatch! {:type :compose/prefill :draft-key (draft-key state)
+                                             :text (str "/" name " ")}))
+                         :else
                          (fn [_] (dispatch-command! dispatch! (:id room) name)))}
             name))))
      ;; Pinned last row (kept visible under any filter, see pin-palette-items!).
