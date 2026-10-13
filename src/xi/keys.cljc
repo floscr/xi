@@ -234,6 +234,8 @@
    :git/status              {:label "Git status" :surface #{:web}}
    :git/log                 {:label "Git log" :surface #{:web}}
    :palette/open            {:label "Command palette" :surface #{:web}}
+   :hints/show              {:label "Link hints: click a button or link by typing its label" :surface #{:web}}
+   :hints/sidebar           {:label "Link hints on the sidebar (opens the drawer)" :surface #{:web}}
    :projects/pick           {:label "Pick a project" :surface #{:web}}
    :skills/search           {:label "Search skills" :surface #{:web}}
    :themes/pick             {:label "Change color theme" :surface #{:web}}

@@ -161,7 +161,8 @@ web page.
 ### Vim-style keys
 
 The web client binds no single-letter navigation by default. These actions
-are available for `:mode/navigate`:
+are available for `:mode/navigate`; [Keyboard navigation](keyboard-navigation.md)
+shows how they fit together:
 
 | Action | Does |
 | --- | --- |
@@ -173,6 +174,8 @@ are available for `:mode/navigate`:
 | `:prompt/prev` / `:prompt/next` | Jump between your messages in the chat. The first `:prompt/prev` lands on the newest; `:prompt/next` on the last goes back to the bottom |
 | `:diff/next-hunk` / `:diff/prev-hunk` | Next / previous hunk in a diff |
 | `:nav/back` / `:nav/forward` | Back / forward through the pages, chats and buffers you opened (the browser history), like vim's `Ctrl+o` / `Ctrl+i`. Back stops at the first page Xi opened |
+| `:hints/show` | [Link hints](keyboard-navigation.md#link-hints): label every button, link and sidebar row on screen; type a label to click it |
+| `:hints/sidebar` | Link hints on the sidebar only, opening the drawer when it is closed |
 
 ```clojure title="~/.config/xi/config.edn"
 :keys {:web {:mode/navigate  {"i" :compose/focus

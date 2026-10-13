@@ -33,6 +33,7 @@
             [xi.web.dashboard :as dashboard]
             [xi.web.demo :as demo]
             [xi.web.key-hints :as key-hints]
+            [xi.web.link-hints :as link-hints]
             [xi.web.flip :as flip]
             [xi.web.keymap :as keymap]
             [xi.web.models :as models]
@@ -2622,6 +2623,11 @@
                             :event {:type :palette/open-file-finder :scope :edited}})
   (keymap/register-action! {:id :buffers/switch :event {:type :palette/open-buffers}})
   (keymap/register-action! {:id :palette/open :event {:type :palette/open}})
+  (keymap/register-action! {:id :hints/show :run (fn [_ _ _] (link-hints/show!))})
+  (keymap/register-action! {:id :hints/sidebar
+                            :run (fn [_ dispatch! _]
+                                   (link-hints/show-sidebar! #(dispatch! {:type :sidebar/open})
+                                                             #(dispatch! {:type :sidebar/close})))})
   (keymap/register-action! {:id :projects/pick :event {:type :palette/open-projects :action :drill}})
   ;; Web twin of the projects extension's TUI :project/open.
   (keymap/register-action! {:id :project/open :event {:type :palette/open-projects :action :insert}})

@@ -75,6 +75,7 @@ lines; each page line is `- [Title](file.md) — one-line hook`.
 - [Sessions](sessions.md) — resume, go back with `/tree`, summarise, trim and roll over
 - [The web client](web-client.md) — the same session on any device, pairing, offline
 - [Keyboard shortcuts](keyboard.md) — every key on both clients, the layers they apply in, and how to change them
+- [Keyboard navigation](keyboard-navigation.md) — the web client without a mouse: link hints, moving between chats, scrolling
 - [Slash commands](commands.md) — the commands you type into the chat
 - [Command line](command-line.md) — every subcommand and flag of `xi`
 

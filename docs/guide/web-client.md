@@ -297,7 +297,8 @@ are. The common ones:
 | `Alt+b` | Switch buffer |
 
 The full list, the layers a key applies in, and how to change any of them in
-`config.edn`: [Keyboard shortcuts](keyboard.md).
+`config.edn`: [Keyboard shortcuts](keyboard.md). Using the client without a
+mouse, with link hints: [Keyboard navigation](keyboard-navigation.md).
 
 ## Appearance
 

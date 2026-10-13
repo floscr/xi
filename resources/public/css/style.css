@@ -4300,6 +4300,46 @@ code a:hover,
   transform: translateY(-50%);
 }
 
+/* Link hints (xi.web.link-hints): a top-layer popover over the viewport,
+   one Vimium-yellow badge at each clickable's top-left corner. The typed
+   prefix dims; badges whose label no longer matches get [hidden]. Fixed
+   colours on purpose: they must pop on every theme. */
+.link-hints {
+  position: fixed;
+  inset: 0;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  background: transparent;
+  pointer-events: none;
+  z-index: 2147483647;
+}
+.link-hint {
+  position: absolute;
+  padding: 1px 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #2b2100;
+  background: linear-gradient(#fff785, #ffc542);
+  border: 1px solid #c38a22;
+  border-radius: 3px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
+}
+.link-hint[hidden] {
+  display: none;
+}
+.link-hint-typed {
+  color: #b07d10;
+}
+
 /* Trailing "new chat" button on project-directory cards (replaces the old
    chevron): clicking the card navigates into the project, this button starts
    a fresh chat. stopPropagation keeps the two actions separate. */
