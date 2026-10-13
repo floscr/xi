@@ -5,18 +5,32 @@
             [xisite.pages :as pages]
             [xisite.theme :as theme]))
 
+(def ^:private plain-routes
+  "Pages that don't need the guide parsed."
+  {"/" pages/home
+   "/tour/" pages/tour-page
+   "/changelog/" pages/changelog})
+
 (defn routes
   "Map of path (trailing slash, root as \"/\") → html string."
   []
   (let [sections (docs/sections)
         pages (docs/pages sections)]
     (merge
-     {"/" (pages/home)
-      "/tour/" (pages/tour-page)
-      "/changelog/" (pages/changelog)
-      "/docs/" (pages/docs-index sections)}
+     (update-vals plain-routes #(%))
+     {"/docs/" (pages/docs-index sections)}
      (into {} (for [page pages]
                 [(:path page) (pages/docs-page sections page)])))))
+
+(defn render
+  "The html for `path` (with or without its trailing slash), or nil. For the
+   dev server: the home page and each tour iframe skip parsing the guide
+   (~0.8 s), which every docs page needs."
+  [path]
+  (let [paths [path (str path "/")]]
+    (if-let [page (some plain-routes paths)]
+      (page)
+      (some (routes) paths))))
 
 ;; The stage iframe's web client: the release :tour build (`bb tour:build` at
 ;; the repo root) and the web client's own stylesheet, served at /tour/.

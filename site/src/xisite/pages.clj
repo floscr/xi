@@ -255,6 +255,11 @@ xi clients user iPhone bob      # pin a paired phone to bob")
      (button/button {:variant :secondary :href "/docs/getting-started/"} "Get started")
      (button/button {:variant :ghost :href "/docs/"} "Read the docs")]]])
 
+(def ^:private tape-fetch-script
+  "Starts loading the ?tape= while main.js downloads; xi.web.core/tour-init!
+   takes the parsed tape from window.xiTape."
+  "(function(){var t=new URLSearchParams(location.search).get('tape');if(t)window.xiTape=fetch(t.indexOf('/')<0?'/tours/'+t+'.json':t).then(function(r){return r.json()})})()")
+
 (defn tour-page
   "/tour/: the web client alone, for the stage iframe. Shares the site's
    framework CSS, runtime and stored light/dark choice."
@@ -265,6 +270,7 @@ xi clients user iPhone bob      # pin a paired phone to bob")
      [:meta {:charset "utf-8"}]
      [:meta {:name "viewport" :content "width=device-width,initial-scale=1"}]
      [:meta {:name "robots" :content "noindex"}]
+     [:script (h/raw tape-fetch-script)]
      [:script (h/raw theme/head-script)]
      [:title "Xi tour"]
      [:link {:rel "stylesheet" :href "/css/ui.css"}]

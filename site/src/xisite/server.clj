@@ -51,14 +51,13 @@
         (and (not= uri "/") (fs/regular-file? static)) (static-response static)
         (and guide-img (fs/regular-file? guide-img)) (static-response guide-img)
         :else
-        (let [pages (build/routes)]
-          (if-let [html (or (pages uri) (pages (str uri "/")))]
-            {:status 200
-             :headers {"Content-Type" "text/html; charset=utf-8"}
-             :body html}
-            {:status 404
-             :headers {"Content-Type" "text/plain; charset=utf-8"}
-             :body (str "404 — no route for " uri)}))))))
+        (if-let [html (build/render uri)]
+          {:status 200
+           :headers {"Content-Type" "text/html; charset=utf-8"}
+           :body html}
+          {:status 404
+           :headers {"Content-Type" "text/plain; charset=utf-8"}
+           :body (str "404 — no route for " uri)})))))
 
 (defn- wrap-errors [handler]
   (fn [req]
@@ -73,7 +72,7 @@
 (defn start! [{:keys [port] :or {port 4322}}]
   (let [url (str "http://localhost:" port)]
     (try
-      (http/run-server (wrap-errors handle) {:port port})
+      (http/run-server (wrap-errors #'handle) {:port port})
       (catch java.net.BindException _
         (binding [*out* *err*]
           (println (str "Port " port " is already in use — a dev server is probably already running at " url)))

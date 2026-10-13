@@ -31,6 +31,32 @@
     });
   });
 
+  // ---- tour prefetch -------------------------------------------------------
+  // The tour iframes below load only once in view; fetch what they need while
+  // the page sits idle, so they start from cache (~1.7 MB before gzip). Once
+  // one frame has started, its own load fills the cache for the rest.
+  var tourFrames = Array.prototype.slice.call(document.querySelectorAll('.stage-frame, .phone-frame'));
+  if (tourFrames.length) {
+    var prefetch = function () {
+      if (tourFrames.some(function (f) { return f.getAttribute('src'); })) return;
+      var urls = ['/tour/main.js', '/tour/style.css', '/css/tour.css'];
+      tourFrames.forEach(function (f) {
+        var tape = new URL(f.getAttribute('data-src'), location.href).searchParams.get('tape');
+        if (tape && tape.indexOf('/') < 0) urls.push('/tours/' + tape + '.json');
+      });
+      urls.filter(function (u, i) { return urls.indexOf(u) === i; }).forEach(function (u) {
+        var link = document.createElement('link');
+        link.rel = 'prefetch';
+        link.href = u;
+        document.head.appendChild(link);
+      });
+    };
+    var idle = window.requestIdleCallback || function (f) { setTimeout(f, 200); };
+    var whenIdle = function () { idle(prefetch); };
+    if (document.readyState === 'complete') whenIdle();
+    else window.addEventListener('load', whenIdle);
+  }
+
   // ---- tour stage ----------------------------------------------------------
   // The iframe renders the web client at 1280x800 (xisite.pages/stage);
   // scale it to the frame. It loads (and the tour starts) once the stage is

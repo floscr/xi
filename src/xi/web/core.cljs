@@ -3177,8 +3177,8 @@
   [tape variant-name]
   (tour/contain-focus!)
   (embed/listen!)
-  (-> (js/fetch (tape-url tape))
-      (.then #(.json %))
+  (-> (or (unchecked-get js/window "xiTape") ; the site's /tour/ page starts it early
+          (.then (js/fetch (tape-url tape)) #(.json %)))
       (.then (fn [json]
                (let [tape (js->clj json :keywordize-keys true)
                      {:keys [steps mirror? pointer]} (tour/variant tape variant-name)
