@@ -5362,6 +5362,14 @@
                            :off "off"
                            "auto (only when away)"))))
              :always
+             (conj (let [on? (:terminal-hints? (appearance/effective-in state))]
+                     (cmd/command-item
+                      {:icon (if on? :eye-off :eye)
+                       :value "terminal tooltips diagnostics lint hints toggle"
+                       :on-click (fn [_] (dispatch! {:type :appearance/set
+                                                     :key :terminal-hints? :value (not on?)}))}
+                      (if on? "Hide terminal tooltips" "Show terminal tooltips"))))
+             :always
              (into (let [mode  (or (:web/theme-mode state) "auto")
                          dark? (case mode
                                  "dark"  true

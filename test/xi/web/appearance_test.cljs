@@ -8,7 +8,8 @@
       (is (true? (:super-collapsed? app)))
       (is (= :collapsed (:tool-blocks app)))
       (is (= :collapsed (:thinking-blocks app)))
-      (is (= :summary (:tool-args app)))))
+      (is (= :summary (:tool-args app)))
+      (is (true? (:terminal-hints? app)))))
   (testing "the retired viewer-mode toggle is gone: viewer mode is always on"
     (is (not (contains? (appearance/effective nil) :viewer-mode?)))
     (is (= {} (appearance/normalize {:viewer-mode? false}))
@@ -18,8 +19,10 @@
            (set (keys (appearance/effective {})))))))
 
 (deftest overrides-win
-  (let [app (appearance/effective {:super-collapsed? false :tool-blocks :open})]
+  (let [app (appearance/effective {:super-collapsed? false :tool-blocks :open
+                                   :terminal-hints? false})]
     (is (false? (:super-collapsed? app)))
+    (is (false? (:terminal-hints? app)))
     (is (= :open (:tool-blocks app)))
     (is (= :collapsed (:thinking-blocks app)) "untouched keys keep their default")))
 
@@ -34,7 +37,7 @@
     (testing "effective-in reads both layers from state"
       (is (= {:super-collapsed? true
               :tool-blocks :collapsed :thinking-blocks :open
-              :tool-args :summary}
+              :tool-args :summary :terminal-hints? true}
              (appearance/effective-in {:web/appearance-config configured
                                        :web/appearance {:tool-blocks :collapsed}}))))))
 

@@ -17,6 +17,7 @@
             [ui.button :as button]
             [ui.icon :as icon]
             [xi.keys :as keys]
+            [xi.web.appearance :as appearance]
             [xi.web.clipboard :as clipboard]
             [xi.web.keymap :as keymap]))
 
@@ -324,12 +325,7 @@
     (when (and (nat-int? row) (nat-int? col) (seq items))
       {:row row :col col :items (vec (take 20 items))})))
 
-(defn- hide-hint! [term-id]
-  (when-let [^js box (get-in @instances [term-id :hint])]
-    (.remove box)
-    (swap! instances update term-id dissoc :hint)))
-
-(defn- hint-el [{:keys [items]}]
+(defn- hint-box [{:keys [items]}]
   (let [box (.createElement js/document "div")]
     (set! (.-className box) "popover-content terminal-hint-popup")
     (.setAttribute box "role" "tooltip")
@@ -366,20 +362,35 @@
       (set! (.. box -style -top) (str top "px"))
       (set! (.. box -style -left) (str left "px")))))
 
-(defn- show-hint! [term-id hint]
-  (hide-hint! term-id)
-  (when-let [{:keys [^js term ^js node]} (get @instances term-id)]
-    (let [box (hint-el hint)]
-      (.appendChild node box)
-      (place-hint! term box hint)
-      (swap! instances assoc-in [term-id :hint] box))))
+(defn- render-hint!
+  "Show terminal `term-id`'s last :hint, none while :hints? (the
+   :terminal-hints? appearance setting) is off. It stays remembered, so
+   turning tooltips back on shows it without the program sending it again."
+  [term-id]
+  (when-let [{:keys [^js term ^js node ^js box hint hints?]} (get @instances term-id)]
+    (some-> box (.remove))
+    (swap! instances update term-id dissoc :box)
+    (when (and hints? hint)
+      (let [box (hint-box hint)]
+        (.appendChild node box)
+        (place-hint! term box hint)
+        (swap! instances assoc-in [term-id :box] box)))))
+
+(defn- set-hint! [term-id hint]
+  (when (contains? @instances term-id)
+    (swap! instances assoc-in [term-id :hint] hint)
+    (render-hint! term-id)))
+
+(defn- set-hints-on! [term-id on?]
+  (when (and (contains? @instances term-id)
+             (not= on? (get-in @instances [term-id :hints?])))
+    (swap! instances assoc-in [term-id :hints?] on?)
+    (render-hint! term-id)))
 
 (defn- on-hint-osc [term-id]
   (fn [payload]
     (when-not (contains? @replaying term-id)
-      (if-let [hint (osc-hint payload)]
-        (show-hint! term-id hint)
-        (hide-hint! term-id)))
+      (set-hint! term-id (osc-hint payload)))
     true))
 
 (defn- ctrl-key?
@@ -392,7 +403,7 @@
        (not (or (.-shiftKey e) (.-altKey e) (.-metaKey e)))
        (not= "v" (str/lower-case (.-key e)))))
 
-(defn- mount! [^js node term-id]
+(defn- mount! [^js node term-id hints?]
   (-> (load-lib!)
       (.then
        (fn [_]
@@ -421,10 +432,11 @@
              (.. term -parser (registerOscHandler clipboard-osc (on-osc52 term-id)))
              (.. term -parser (registerOscHandler hint-osc (on-hint-osc term-id)))
              (.onData term #(send! {:type :terminal/input :term-id term-id :text %}))
-             (.onResize term #(do (hide-hint! term-id) (send-size! term-id term)))
+             (.onResize term #(do (set-hint! term-id nil) (send-size! term-id term)))
              (.addEventListener (.-textarea term) "focus" #(send-size! term-id term))
              (.observe observer node)
-             (swap! instances assoc term-id {:term term :fit fit :observer observer :node node})
+             (swap! instances assoc term-id {:term term :fit fit :observer observer :node node
+                                             :hints? hints?})
              (attach! term-id term)
              (when-not @skip-mount-focus? (.focus term))))))
       (.catch #(js/console.error "[terminal]" %))))
@@ -470,7 +482,7 @@
   (case type
     :terminal/output (do (when-let [^js term (get-in @instances [term-id :term])]
                            (if reset?
-                             (do (hide-hint! term-id)
+                             (do (set-hint! term-id nil)
                                  (.reset term)
                                  (swap! replaying conj term-id)
                                  (.write term text #(swap! replaying disj term-id)))
@@ -532,21 +544,26 @@
   "The `:terminal` buffer `buffer-id` of `room`. `gone?`: the server no longer
    runs it (xi.ext.terminal.web keeps that per term id)."
   [dispatch! state room buffer-id {:keys [term-id title error exit-code] :as buffer} gone?]
-  [:div {:class ["file-tab" "terminal-tab"]}
-   [:div {:class ["file-tab-header"]}
-    (icon/icon {:icon-name :terminal :size :sm})
-    [:span {:class ["file-tab-path"]} title]
-    (when-let [k (keys/shortcut (keymap/keymap state) [:mode/terminal] :terminal/leave)]
-      [:span {:class ["terminal-hint"]} (str k " leaves the terminal")])]
-   (when (or error (some? exit-code) gone?)
-     (ended-bar dispatch! (:id room) buffer-id buffer gone?))
-   (when-not error
-     [:div {:class ["terminal-host"]
-            :replicant/key (str "term-" term-id)
-            ;; changes with the theme, so on-update runs and re-colours xterm
-            :data-theme (str (hash [(:web/theme-mode state) (:web/themes state)
-                                    (:web/theme-draft state)]))
-            :replicant/on-mount (fn [{:replicant/keys [node]}] (mount! node term-id))
-            :replicant/on-update (fn [{:replicant/keys [node]}] (retheme! term-id node))
-            :replicant/on-unmount (fn [_] (unmount! term-id))}])
-   (toolbar dispatch! buffer state)])
+  (let [hints? (:terminal-hints? (appearance/effective-in state))]
+    [:div {:class ["file-tab" "terminal-tab"]}
+     [:div {:class ["file-tab-header"]}
+      (icon/icon {:icon-name :terminal :size :sm})
+      [:span {:class ["file-tab-path"]} title]
+      (when-let [k (keys/shortcut (keymap/keymap state) [:mode/terminal] :terminal/leave)]
+        [:span {:class ["terminal-hint"]} (str k " leaves the terminal")])]
+     (when (or error (some? exit-code) gone?)
+       (ended-bar dispatch! (:id room) buffer-id buffer gone?))
+     (when-not error
+       [:div {:class ["terminal-host"]
+              :replicant/key (str "term-" term-id)
+              ;; changes with the theme, so on-update runs and re-colours xterm
+              :data-theme (str (hash [(:web/theme-mode state) (:web/themes state)
+                                      (:web/theme-draft state)]))
+              ;; and with the tooltip setting, so on-update applies it
+              :data-hints (str hints?)
+              :replicant/on-mount (fn [{:replicant/keys [node]}] (mount! node term-id hints?))
+              :replicant/on-update (fn [{:replicant/keys [node]}]
+                                     (retheme! term-id node)
+                                     (set-hints-on! term-id hints?))
+              :replicant/on-unmount (fn [_] (unmount! term-id))}])
+     (toolbar dispatch! buffer state)]))

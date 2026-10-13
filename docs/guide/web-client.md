@@ -188,7 +188,9 @@ terminal** in the ⋮ menu and the command palette opens a shell.
   `{"row": 4, "col": 12, "items": [{"severity": "error", "text": "…", "source": "clj-kondo"}]}`:
   `row` and `col` count from 0, `severity` is `error`, `warn`, `info` or
   `hint`, `source` is optional. An empty payload hides the tooltip; a
-  resize hides it too, so send it again on one.
+  resize hides it too, so send it again on one. **Hide terminal tooltips**
+  in the command palette turns them off for your user (**Show terminal
+  tooltips** turns them back on).
 - **Clipboard.** A program copies to the clipboard of the device you use
   with OSC 52 (`ESC ] 52 ; c ; <base64> BEL`). Reading the clipboard this way
   is not supported; paste with the browser. In Neovim:

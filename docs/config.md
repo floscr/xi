@@ -61,6 +61,7 @@ mode); there is no switch for that.
 | `:tool-blocks` | `:collapsed` | `:open` or `:collapsed` for tool call details. A tool awaiting Allow/Deny is always open. |
 | `:thinking-blocks` | `:collapsed` | `:open` or `:collapsed` for thinking blocks. |
 | `:tool-args` | `:summary` | What a tool call's header shows next to the tool name: `:summary` (a per-tool one-liner: the command, the path, the pattern) or `:all` (every argument as `k=v`, values cut at 80 characters). |
+| `:terminal-hints?` | `true` | Show the tooltips a terminal program sends (OSC 7475, e.g. nvim's diagnostics). The command palette's **Hide / Show terminal tooltips** toggles it. |
 
 ## Feature flags
 

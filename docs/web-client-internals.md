@@ -136,7 +136,10 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   JSON): a `.popover-content` div appended to the terminal host and placed
   `position: fixed` from `.xterm-screen`'s rect and the grid size, outside
   the render loop like the rest of the terminal. A replay, an xterm resize
-  or an empty payload removes it.
+  or an empty payload removes it. The last hint is kept per terminal and
+  only drawn while the `:terminal-hints?` appearance setting is on (passed
+  in by `view`, `:data-hints` makes `on-update` apply a toggle), so turning
+  it back on redraws it without the program resending.
   Prompts go the other way, server-side: `xi.ext.terminal.socket` (one
   0600 Unix socket per server process) takes `POST /send` with the
   per-spawn token `xi.ext.terminal.pty` puts in the child env, maps it to

@@ -28,11 +28,14 @@
      :tool-args        :summary | :all — what a tool call's header shows
                        next to the tool name: a per-tool one-liner (the
                        command, the path, the pattern) or every argument
-                       as `k=v`"
+                       as `k=v`
+     :terminal-hints?  show the tooltips a terminal program sends (OSC
+                       7475, xi.web.terminal)"
   {:super-collapsed? true
    :tool-blocks      :collapsed
    :thinking-blocks  :collapsed
-   :tool-args        :summary})
+   :tool-args        :summary
+   :terminal-hints?  true})
 
 (def choices
   "Allowed values per setting; anything else is ignored by `normalize`
@@ -41,7 +44,8 @@
   {:super-collapsed? #{true false}
    :tool-blocks      #{:open :collapsed}
    :thinking-blocks  #{:open :collapsed}
-   :tool-args        #{:summary :all}})
+   :tool-args        #{:summary :all}
+   :terminal-hints?  #{true false}})
 
 (defn normalize
   "Keep only the known settings of `m` whose values are allowed (`choices`).
