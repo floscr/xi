@@ -122,11 +122,12 @@
    `:transcript` is added by the node ext, `:parent-context? false` opts out).
 
    Emits the :subagent/start effect — the node build runs the turn; the web
-   build registers a no-op for it (the turn only ever runs server-side)."
+   build registers a no-op for it (the turn only ever runs server-side).
+   Needs the event's :sub-id: every client mirrors it (the node ext supplies
+   a missing one)."
   [st {:keys [room-id sub-id task label prompt images] :as ev}]
-  (when-let [room (state/get-room st room-id)]
-    (let [sub-id (or sub-id (gen-id "sa"))
-          child  {:id      sub-id
+  (when-let [room (and sub-id (state/get-room st room-id))]
+    (let [child  {:id      sub-id
                   :label   (or label (default-label task))
                   :task    task
                   :status  :running

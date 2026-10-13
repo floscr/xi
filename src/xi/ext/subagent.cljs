@@ -164,11 +164,15 @@
 (defn- spawn
   "h/spawn with the parent transcript's path, so every sub-agent can read the
    full parent conversation when the excerpt in its system prompt isn't
-   enough."
-  [st {:keys [room-id transcript parent-context?] :as ev}]
-  (h/spawn st (cond-> ev
-                (and (nil? transcript) (not (false? parent-context?)))
-                (assoc :transcript (room-transcript st room-id)))))
+   enough. A spawn without a :sub-id (/subagent, a queued prompt,
+   /canvas-review) is dispatched again with one: clients mirror the event, so
+   the id must travel in it rather than be minted by each process."
+  [st {:keys [room-id sub-id transcript parent-context?] :as ev}]
+  (if-not sub-id
+    {:effects [[:app/dispatch (assoc ev :sub-id (gen-id "sa"))]]}
+    (h/spawn st (cond-> ev
+                  (and (nil? transcript) (not (false? parent-context?)))
+                  (assoc :transcript (room-transcript st room-id))))))
 
 (defn- explain-call
   "h/explain-call with the parent transcript's path, for the same reason."

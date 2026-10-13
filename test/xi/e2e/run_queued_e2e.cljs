@@ -86,7 +86,14 @@
                                (let [from (count @(:events client))]
                                  ((:send! client) {:type :input/submit :room-id room-id
                                                    :text "/sa summarize the chat again"})
-                                 (-> (h/await-event client (of-type :subagent/spawn room-id) {:from from})
+                                 (-> (h/await-event client #(and ((of-type :subagent/spawn room-id) %) (:sub-id %))
+                                                    {:from from})
                                      (.then (fn [spawn]
-                                              (is (= "summarize the chat again" (:prompt spawn)))))))))))))
+                                              (is (= "summarize the chat again" (:prompt spawn)))
+                                              (h/await-event client #(and ((of-type :subagent/turn-end room-id) %)
+                                                                          (= (:sub-id spawn) (:sub-id %)))
+                                                             {:from from})))
+                                     (.then (fn [end]
+                                              (is (some? end)
+                                                  "the client mirrors the id the server's turn runs under")))))))))))
                    (.finally (:stop! server))))))))))

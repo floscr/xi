@@ -44,7 +44,19 @@
   (is (= [{:path "/a.png"}]
          (:images (start-payload
                    (h/spawn (base-state)
-                            {:room-id "r1" :task "t" :images [{:path "/a.png"}]}))))))
+                            {:room-id "r1" :sub-id "sa-1" :task "t" :images [{:path "/a.png"}]}))))))
+
+(deftest a-spawn-without-an-id-gets-one-before-it-applies
+  ;; clients mirror the spawn: an id minted per process would differ
+  (let [spawn (get-in sa-ext/extension [:handlers :subagent/spawn])
+        res   (spawn (base-state) {:type :subagent/spawn :room-id "r1" :task "t"})
+        [[fx ev]] (:effects res)]
+    (is (nil? (:state res)))
+    (is (= :app/dispatch fx))
+    (is (str/starts-with? (:sub-id ev) "sa-"))
+    (is (= "t" (:task ev)))
+    (is (nil? (h/spawn (base-state) {:room-id "r1" :task "t"}))
+        "the shared handler never mints one")))
 
 (deftest subagent-command-spawns-the-task
   (let [cmd (some #(when (= "subagent" (:name %)) %) (:commands sa-ext/extension))
