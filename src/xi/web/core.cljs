@@ -2367,11 +2367,42 @@
    (:web/sidebar-buffers-open st) (:web/sidebar-open? st)
    (get-in st [:web/route :session-id]) (get-in st [:web/route :page])])
 
+(defn- compose-caret
+  "The composer's node and selection while it holds focus. Its
+   data-draft-key (views/sync-compose-draft!) tells a rebuilt composer for
+   the same chat from another chat's."
+  []
+  (let [^js active (.-activeElement js/document)]
+    (when (and active (some-> (.closest active ".compose-input-wrapper textarea")
+                              (identical? active)))
+      {:node      active
+       :draft-key (.getAttribute active "data-draft-key")
+       :start     (.-selectionStart active)
+       :end       (.-selectionEnd active)
+       :direction (.-selectionDirection active)})))
+
+(defn- restore-compose-caret!
+  "Keep the composer focused, caret in place, across a render that rebuilt
+   or moved its textarea: a fresh one focuses with the caret at 0. Skipped
+   when the render handed focus to something else (a dialog's input)."
+  [{:keys [^js node draft-key start end direction]}]
+  (let [^js active (.-activeElement js/document)
+        ^js ta     (.querySelector js/document ".compose-input-wrapper textarea")]
+    (when (and ta
+               (not (and (identical? ta node) (identical? active ta)))
+               (= draft-key (.getAttribute ta "data-draft-key"))
+               (or (nil? active)
+                   (identical? active (.-body js/document))
+                   (identical? active ta)))
+      (.focus ta #js {:preventScroll true})
+      (.setSelectionRange ta start end direction))))
+
 (defn- render! [app-state dispatch!]
   (let [root (el "app")
         hiccup (views/root-view app-state dispatch! @pages-ref)
         sig    (sidebar-layout-sig-of app-state)
-        snap   (when (not= sig @sidebar-layout-sig) (flip/snapshot))]
+        snap   (when (not= sig @sidebar-layout-sig) (flip/snapshot))
+        caret  (compose-caret)]
     (reset! sidebar-layout-sig sig)
     (try
       (r/render root hiccup)
@@ -2386,6 +2417,7 @@
           (catch :default e2
             (js/console.error "[xi-web] recovery render also failed:" e2)
             (vswap! r/state dissoc root)))))
+    (some-> caret restore-compose-caret!)
     (flip/play! snap))
   (let [t (title/page-title app-state)]
     (when (not= t (.-title js/document))
