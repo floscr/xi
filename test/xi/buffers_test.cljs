@@ -66,3 +66,22 @@
                                      "c2" {:user "alice" :buffer "file:a"}}}))
       "two devices of one user count once")
   (is (= {} (buffers/viewers {}))))
+(def recency-bufs
+  {"file:a" {:kind :file :title "a" :opened-at 100}
+   "file:b" {:kind :file :title "b" :opened-at 200}
+   :events  {:title "Events" :opened-at 300}})
+
+(deftest by-recency
+  (testing "never viewed: newest opened first"
+    (is (= [:events "file:b" "file:a"]
+           (map key (buffers/by-recency recency-bufs nil)))))
+  (testing "a view outranks a later opening"
+    (is (= ["file:a" :events "file:b"]
+           (map key (buffers/by-recency recency-bufs {"file:a" 500 "file:b" 250})))))
+  (testing "ties keep opening order"
+    (is (= ["x" "y"]
+           (map key (buffers/by-recency {"y" {:title "y"} "x" {:title "x"}} nil))))))
+
+(deftest last-viewed
+  (is (nil? (buffers/last-viewed nil)))
+  (is (= :chat (buffers/last-viewed {"file:a" 10 :chat 20}))))

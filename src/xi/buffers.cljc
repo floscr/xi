@@ -66,6 +66,21 @@
   (sort-by (fn [[id buf]] [(or (:opened-at buf) 0) (label id buf)])
            buffers))
 
+(defn by-recency
+  "The `[id buffer]` pairs of a buffers map, most recently viewed first.
+   `access` maps id → ms of its last view (the web client's
+   :web/buffer-access); one never viewed ranks by its `:opened-at`."
+  [buffers access]
+  (sort-by (fn [[id buf]] (max (get access id 0) (or (:opened-at buf) 0)))
+           >
+           (ordered buffers)))
+
+(defn last-viewed
+  "The id `access` (id → ms) stamped last, nil when empty."
+  [access]
+  (when (seq access)
+    (key (apply max-key val access))))
+
 (defn summaries
   "The lobby-sized view of a buffers map: `[{:id :kind :title} …]` in opening
    order. What the sidebar lists for a session whose room is closed."

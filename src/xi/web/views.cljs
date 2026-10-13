@@ -4903,41 +4903,41 @@
 (defn- buffer-palette-groups
   "The palette's buffer rows as `{:heading :items}` groups: the room in view's
    buffers, other sessions' buffers (a pick opens that chat on it), then buffer
-   actions. The view in front and empty groups are left out."
+   actions. Buffers list most recently viewed first (:web/buffer-access); the
+   view in front and empty groups are left out."
   [state dispatch!]
   (let [room      (state/active-room state)
         room-id   (:id room)
         cur-sid   (get-in state [:web/route :session-id])
-        own       (buffers/ordered (get-in room [:ui :buffers]))
+        access    (:web/buffer-access state)
+        own       (get-in room [:ui :buffers])
         active    (get-in room [:ui :active-buffer] :chat)
+        ;; the chat ranks among its buffers, listed once there are any
+        mru       (buffers/by-recency (cond-> own (seq own) (assoc :chat {}))
+                                      (get access (get-in room [:session :id])))
         name-of   (fn [sid]
                     (or (some #(when (= sid (:session-id %)) (or (:name %) (:session-name %)))
                               (concat (get-in state [:lobby :sessions])
                                       (get-in state [:lobby :rooms])))
                         "New session"))
-        others    (for [[sid bufs] (get-in state [:lobby :buffers])
-                        :when (not= sid cur-sid)
-                        b bufs]
-                    (assoc b :session-id sid :session-name (name-of sid)))
+        others    (->> (for [[sid bufs] (get-in state [:lobby :buffers])
+                             :when (not= sid cur-sid)
+                             b bufs]
+                         (assoc b :session-id sid :session-name (name-of sid)))
+                       (sort-by #(get-in access [(:session-id %) (:id %)] 0) >))
         switch!   (fn [id]
                     (dispatch! {:type :diff/clear-selection})
                     (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id id}))]
     (->> [{:heading "Buffers"
-           :items (concat
-                   (when (and room (seq own) (not= active :chat))
-                     [(cmd/command-item
-                       {:icon :terminal
-                        :value "buffer chat"
-                        :on-click (fn [_] (switch! :chat))}
-                       "Chat")])
-                   (for [[id buf] own
-                         :when (not= id active)
-                         :let [title (buffers/label id buf)]]
-                     (cmd/command-item
-                      {:icon (buffer-icon (buffers/kind id buf))
-                       :value (str "buffer " title)
-                       :on-click (fn [_] (switch! id))}
-                      title)))}
+           :items (for [[id buf] mru
+                        :when (and room (not= id active))
+                        :let [chat? (= :chat id)
+                              title (if chat? "Chat" (buffers/label id buf))]]
+                    (cmd/command-item
+                     {:icon (if chat? :terminal (buffer-icon (buffers/kind id buf)))
+                      :value (str "buffer " (if chat? "chat" title))
+                      :on-click (fn [_] (switch! id))}
+                     title))}
           {:heading "Other sessions"
            :items (for [{:keys [id kind title session-id session-name]} others]
                     (cmd/command-item

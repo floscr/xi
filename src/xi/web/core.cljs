@@ -1457,6 +1457,9 @@
                                     :effects [[:palette/reset-filter nil]
                                               [:palette/reopen nil]]})
           :buffer/pending-clear  (fn [st _] {:state (dissoc st :web/pending-buffer)})
+          :buffer/viewed         (fn [st {:keys [session-id buffer-id] :as ev}]
+                                   {:state (assoc-in st [:web/buffer-access session-id buffer-id]
+                                                     (:event/ts ev))})
           ;; Fuzzy file finder: the page ranks the room's flat file list
           ;; client-side. :action is :open (view) or :insert (path into the
           ;; draft). :in-dialog? (Tab from the project picker) keeps the dialog
@@ -1909,6 +1912,20 @@
       (when (and cur (not= cur @buffer-presence-sent))
         (reset! buffer-presence-sent cur)
         (dispatch! {:type :client/update :buffer (second cur)})))))
+
+(defn- buffer-access-tap
+  "Stamp the view the chat on screen shows in :web/buffer-access
+   (session-id → buffer-id → ms) whenever it changes: the buffer palette lists
+   most recently viewed first (xi.buffers/by-recency)."
+  [dispatch!]
+  (fn [event state]
+    (let [room (state/active-room state)
+          sid  (get-in room [:session :id])
+          view (get-in room [:ui :active-buffer] buffers/chat)]
+      (when (and sid
+                 (not= :buffer/viewed (:type event))
+                 (not= view (buffers/last-viewed (get-in state [:web/buffer-access sid]))))
+        (dispatch! {:type :buffer/viewed :session-id sid :buffer-id view})))))
 
 (defn- pending-buffer-tap
   "Open the buffer a sidebar / palette row asked for (:web/pending-buffer,
@@ -2992,6 +3009,7 @@
     (add-tap! (view-sync-tap dispatch!))
     (add-tap! (prefetch/tap dispatch!))
     (add-tap! (buffer-presence-tap dispatch!))
+    (add-tap! (buffer-access-tap dispatch!))
     (add-tap! (pending-command-tap dispatch!))
     (add-tap! (optimistic-tap dispatch!))
     (add-tap! (record-command-tap dispatch!))
