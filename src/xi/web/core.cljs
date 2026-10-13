@@ -185,6 +185,16 @@
                                   [:ws/send {:type :session/mark-read :session-id sid}]]))
                     unread)}))
 
+(defn- close-all-session-buffers
+  "One :session/buffer-close per session with buffers open (live or parked,
+   xi.server.room-manager/session-buffers); sub-agent rows are left alone."
+  [st _]
+  {:effects (into []
+                  (keep (fn [[sid rows]]
+                          (when (some #(not= :subagent (:kind %)) rows)
+                            [:ws/send {:type :session/buffer-close :session-id sid}])))
+                  (get-in st [:lobby :buffers]))})
+
 (defn- dismiss-all
   "Hide every visible idle session from Recent: flip the local :dismissed?
    overlay, then forward a :dismissed/toggle per session. Pinned, dismissed
@@ -998,6 +1008,7 @@
           :room/leave            forward
           :rooms/prune           forward
           :session/buffer-close  forward
+          :sessions/buffers-close-all close-all-session-buffers
           ;; Sub-agent panel toggles are client-local (xi.ext.subagent.web);
           ;; forwarding them would double-toggle via the broadcast echo.
           :lobby/state           lobby-state

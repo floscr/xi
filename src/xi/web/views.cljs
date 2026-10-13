@@ -4912,8 +4912,9 @@
 (defn- buffer-palette-groups
   "The palette's buffer rows as `{:heading :items}` groups: the room in view's
    buffers, other sessions' buffers (a pick opens that chat on it), then buffer
-   actions. Buffers list most recently viewed first (:web/buffer-access); the
-   view in front and empty groups are left out."
+   actions (close this room's, or every session's but sub-agents). Buffers list
+   most recently viewed first (:web/buffer-access); the view in front and empty
+   groups are left out."
   [state dispatch!]
   (let [room      (state/active-room state)
         room-id   (:id room)
@@ -4936,7 +4937,11 @@
                        (sort-by #(get-in access [(:session-id %) (:id %)] 0) >))
         switch!   (fn [id]
                     (dispatch! {:type :diff/clear-selection})
-                    (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id id}))]
+                    (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id id}))
+        all-open  (->> (vals (get-in state [:lobby :buffers]))
+                       (mapcat identity)
+                       (remove #(= :subagent (:kind %)))
+                       count)]
     (->> [{:heading "Buffers"
            :items (for [[id buf] mru
                         :when (and room (not= id active))
@@ -4956,12 +4961,19 @@
                                                     :session-id session-id :buffer-id id}))}
                      (str title " · " session-name)))}
           {:heading "Buffer actions"
-           :items (when (seq own)
-                    [(cmd/command-item
-                      {:icon :x
-                       :value "close all buffers"
-                       :on-click (fn [_] (dispatch! {:type :ui/buffers-close-all :room-id room-id}))}
-                      (str "Close all buffers (" (count own) ")"))])}]
+           :items (concat
+                   (when (seq own)
+                     [(cmd/command-item
+                       {:icon :x
+                        :value "close all buffers"
+                        :on-click (fn [_] (dispatch! {:type :ui/buffers-close-all :room-id room-id}))}
+                       (str "Close all buffers (" (count own) ")"))])
+                   (when (pos? all-open)
+                     [(cmd/command-item
+                       {:icon :x
+                        :value "close all buffers of every session kill"
+                        :on-click (fn [_] (dispatch! {:type :sessions/buffers-close-all}))}
+                       (str "Close buffers of all sessions (" all-open ")"))]))}]
          (keep (fn [{:keys [items] :as g}]
                  (when (seq items) (assoc g :items (vec items)))))
          vec)))

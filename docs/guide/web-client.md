@@ -139,8 +139,9 @@ refreshes it in place.
   avatars of the people looking at it right now, in the pill's list and in
   the sidebar; the Chat row shows who is on the conversation.
 - **Closing.** The × on a row (in the pill's list or in the sidebar) closes
-  one; "Close all buffers" clears the chat's. Closing is for everyone in the
-  chat: the buffer list is shared, which buffer each person is looking at is
+  one; "Close all buffers" clears the chat's, and "Close buffers of all
+  sessions" in the palette clears every chat's (sub-agents stay). Closing is
+  for everyone in the chat: the buffer list is shared, which buffer each person is looking at is
   their own, so opening a diff on your phone never flips your laptop.
 - **How long they live.** Buffers survive leaving the chat and coming back,
   on any device, as long as the server runs. They are not saved to disk: a
