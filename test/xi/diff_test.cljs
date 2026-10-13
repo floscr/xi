@@ -39,6 +39,16 @@
       (is (= (concat (repeat 5 "foo.txt") (repeat 2 "bar.txt"))
              line-files)))))
 
+(deftest line-key-survives-lines-added-above
+  (let [key-of (fn [text] (->> (diff/diff-rows (diff/parse-diff-text text))
+                               (filter #(= "bar.txt" (:filename %)))
+                               (filter #(= :add (get-in % [:line :type])))
+                               first diff/line-key))
+        ;; foo.txt gains a line: every :sel-idx in bar.txt shifts by one
+        grown  (str/replace sample "+added line\n" "+added line\n+another\n")]
+    (is (= ["bar.txt" :add nil 10] (key-of sample)))
+    (is (= (key-of sample) (key-of grown)))))
+
 ;; ── selection-range ──
 
 (deftest selection-range-normalizes

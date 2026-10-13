@@ -96,8 +96,7 @@
   {:state (-> st (dissoc :web/diff-sel) (update :web/cr dissoc :composing?))})
 
 (defn- cr-compose-toggle
-  "Toggle the selection popover between its pill and the comment-compose panel
-   (mirrors the diff view's :diff/modify-toggle)."
+  "Toggle the selection popover between its pill and the comment-compose panel."
   [st _]
   {:state (update-in st [:web/cr :composing?] not)})
 

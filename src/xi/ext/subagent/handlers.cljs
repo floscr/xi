@@ -272,20 +272,59 @@
 ;; It spawns an ordinary sub-agent whose id is derived from the tool call's
 ;; (explain-<call-id>), so the block finds its explanation in the mirrored
 ;; :agents list — streaming while it runs, kept after the ask is answered —
-;; with no extra state. The Sub-agents panel hides these (explain-sub?).
+;; with no extra state. The Sub-agents panel hides these (inline-sub?).
 
 (def ^:private explain-prefix "explain-")
+
+;; The diff viewer's Ask action (xi.web.core diff-ask-submit) spawns its
+;; question sub-agents the same way; their answer renders under the selection.
+(def ^:private ask-prefix "ask-")
+
+(defn ask-sub-id []
+  (gen-id "ask"))
 
 (defn explain-sub-id
   "Sub-agent id of the explanation for tool call `call-id` — one per call."
   [call-id]
   (str explain-prefix call-id))
 
-(defn explain-sub?
-  "An explanation sub-agent (the web Explain button's)? Those render under
-   their tool block instead of in the Sub-agents panel."
+(defn inline-sub?
+  "A sub-agent whose answer renders where it was asked (a tool block's
+   Explain, the diff viewer's Ask) instead of in the Sub-agents panel."
   [sub-id]
-  (and (string? sub-id) (str/starts-with? sub-id explain-prefix)))
+  (and (string? sub-id)
+       (or (str/starts-with? sub-id explain-prefix)
+           (str/starts-with? sub-id ask-prefix))))
+
+(defn ask-prompt
+  "The diff Ask sub-agent's prompt. `earlier` ([{:question :answer}]) is the
+   thread so far about the same lines, so a follow-up reads in context."
+  [question snippet earlier]
+  (str "The user is reading the diff of this session's changes and asks about "
+       "the selected lines.\n\n"
+       "```diff\n" snippet "\n```\n\n"
+       (when (seq earlier)
+         (str "## Earlier in this thread\n"
+              (str/join "\n\n" (map (fn [{q :question a :answer}]
+                                      (str "**Q:** " q "\n\n**A:** " a))
+                                    earlier))
+              "\n\n"))
+       "## Question\n" question "\n\n"
+       "Answer the question directly, in concise markdown. Read files in the "
+       "working directory or the parent transcript when the snippet doesn't "
+       "say enough. Use read-only tools only: don't edit files or run anything "
+       "with side effects."))
+
+(defn ask-suggestions
+  "One-tap questions for a diff selection whose lines have `types`
+   (:add / :delete / :context)."
+  [types]
+  (let [changed (disj (set types) :context)]
+    (cond
+      (= #{:delete} changed) ["Why was this removed?" "Does anything still depend on it?"]
+      (= #{:add} changed)    ["Why was this added?" "What could this break?"]
+      (seq changed)          ["What does this change do?" "What could this break?"]
+      :else                  ["What does this do?" "Where is this used?"])))
 
 (defn find-explain
   "The explanation child of tool call `call-id` in `agents`, or nil."

@@ -588,11 +588,12 @@
 
 (defn subagent-summaries
   "The lobby-sized rows of a room's background sub-agents in spawn order,
-   `[{:id :kind :subagent :title :status} …]`, Explain sub-agents excluded."
+   `[{:id :kind :subagent :title :status} …]`, inline sub-agents (Explain,
+   diff Ask) excluded."
   [room]
   (into []
         (keep (fn [{:keys [id label task status]}]
-                (when-not (sa/explain-sub? id)
+                (when-not (sa/inline-sub? id)
                   {:id     id
                    :kind   :subagent
                    :title  (or label task "sub-agent")

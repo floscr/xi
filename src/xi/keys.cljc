@@ -222,6 +222,9 @@
    :diff/next-file          {:label "Next file"}
    :diff/prev-file          {:label "Previous file"}
    ;; web
+   :diff/ask-selection      {:label "Ask a sub-agent about the selected lines" :surface #{:web}}
+   :diff/modify-selection   {:label "Modify the selected lines" :surface #{:web}}
+   :diff/explain-selection  {:label "Explain the selected lines in the chat" :surface #{:web}}
    :sidebar/toggle          {:label "Toggle the sidebar" :surface #{:web}}
    :session/jump-attention  {:label "Jump to the chat that needs you" :surface #{:web}}
    :session/next            {:label "Next sidebar item" :surface #{:web}}
@@ -351,7 +354,10 @@
          :buffer/diff        {"q"      :buffer/close
                               "escape" :buffer/close
                               "] f"    :diff/next-file
-                              "[ f"    :diff/prev-file}
+                              "[ f"    :diff/prev-file
+                              "enter"  :diff/ask-selection
+                              "m"      :diff/modify-selection
+                              "e"      :diff/explain-selection}
          :buffer/file        {"q"      :buffer/close
                               "escape" :buffer/close}
          ;; keys of :mode/terminal skip the program (xi.web.terminal):

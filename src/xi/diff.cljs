@@ -129,6 +129,12 @@
               (swap! rows conj {:row :line :filename filename :line l :sel-idx idx}))))))
     @rows))
 
+(defn line-key
+  "Identity of a diff line row that survives a reload of the same diff (its
+   :sel-idx shifts when lines above it change)."
+  [{:keys [filename line]}]
+  [filename (:type line) (:old-line line) (:new-line line)])
+
 (defn selection-range
   "Normalize a {:anchor :head} selection into [lo hi] inclusive, or nil."
   [{:keys [anchor head]}]

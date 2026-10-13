@@ -87,12 +87,29 @@
 
 (deftest explain-helpers
   (is (= "explain-tc-9" (h/explain-sub-id "tc-9")))
-  (is (h/explain-sub? "explain-tc-9"))
-  (is (not (h/explain-sub? "sa-1")))
-  (is (not (h/explain-sub? nil)))
+  (is (h/inline-sub? "explain-tc-9"))
+  (is (h/inline-sub? (h/ask-sub-id)))
+  (is (not (h/inline-sub? "sa-1")))
+  (is (not (h/inline-sub? nil)))
   (is (= {:id "explain-tc-9" :status :done}
          (h/find-explain [{:id "sa-1"} {:id "explain-tc-9" :status :done}] "tc-9")))
   (is (nil? (h/find-explain [{:id "sa-1"}] "tc-9"))))
+
+(deftest ask-prompt-carries-question-snippet-and-follow-up
+  (let [p (h/ask-prompt "Why drop this?" "-(foo)" nil)]
+    (is (str/includes? p "```diff\n-(foo)\n```"))
+    (is (str/includes? p "## Question\nWhy drop this?"))
+    (is (not (str/includes? p "Earlier in this thread"))))
+  (let [p (h/ask-prompt "And this?" "-(foo)" [{:question "Why?" :answer "Dead code."}
+                                               {:question "Safe?" :answer "Yes."}])]
+    (is (str/includes? p "## Earlier in this thread\n**Q:** Why?\n\n**A:** Dead code.\n\n**Q:** Safe?"))
+    (is (str/includes? p "## Question\nAnd this?"))))
+
+(deftest ask-suggestions-follow-the-selected-line-types
+  (is (= "Why was this removed?" (first (h/ask-suggestions [:delete :context :delete]))))
+  (is (= "Why was this added?" (first (h/ask-suggestions [:add]))))
+  (is (= "What does this change do?" (first (h/ask-suggestions [:add :delete]))))
+  (is (= "What does this do?" (first (h/ask-suggestions [:context])))))
 
 (deftest web-half-forwards-the-click
   (let [handler (get-in web/extension [:handlers :subagent/explain-call])

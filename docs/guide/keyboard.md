@@ -77,6 +77,7 @@ Web client:
 | `Esc` | Leave the text field | `:compose/blur` | `:mode/compose` |
 | `q`, `Esc` | Leave the diff or file view, back to the chat (the buffer stays open) | `:buffer/close` | `:buffer/diff`, `:buffer/file` |
 | `] f` / `[ f` | Next / previous file in the diff | `:diff/next-file` / `:diff/prev-file` | `:buffer/diff` |
+| `Enter` / `m` / `e` | With diff lines selected: ask a sub-agent about them, modify them, explain them in the chat | `:diff/ask-selection` / `:diff/modify-selection` / `:diff/explain-selection` | `:buffer/diff` |
 | `` Ctrl+` `` | Leave the terminal: keys go back to Xi (the key left of `1` on any layout) | `:terminal/leave` | `:mode/terminal` |
 | `Alt+\` | Leave the terminal (the US `\` key; on ISO layouts also the key left of `Z`) | `:terminal/leave` | `:mode/terminal` |
 | `i`, `Enter` | Back into the terminal | `:terminal/focus` | `:buffer/terminal` |

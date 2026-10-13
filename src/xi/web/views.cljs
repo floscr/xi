@@ -2118,8 +2118,9 @@
         body))))
 
 (def ^:private diff-body-cache
-  "file group → [dispatch! range shown body-hiccup]: files the selection
-   doesn't touch keep returning the identical hiccup."
+  "file group → [dispatch! range shown after-line body-hiccup]: files the
+   selection and the inline cards don't touch keep returning the identical
+   hiccup."
   (js/WeakMap.))
 
 (defn- diff-group-range
@@ -2187,13 +2188,16 @@
    anchored to the selected range. Opts: :state (the app state, for the
    extensions' file menu entries), :highlight / :reviewed (sets of :sel-idx, review
    canvas), :line-suffix ((fn [sel-idx]) → hiccup, inline comment threads),
+   :after-line ({xi.diff/line-key [hiccup …]}, rendered after that line; unlike
+   :line-suffix it keeps the body cache of files it doesn't touch),
    :collapsed (folded filenames; present ⇒ headers toggle :diff/toggle-file),
    :expanded (filenames shown in full; present ⇒ size-limited by
    diff-row-budget with :diff/show-all), :md-code (the :web/md-diff-code set;
    present ⇒ markdown files render as a rendered diff with a toggle keyed
    [:diff filename])."
   ([dispatch! rows range toolbar] (diff-rows-view dispatch! rows range toolbar nil))
-  ([dispatch! rows range toolbar {:keys [state highlight reviewed line-suffix collapsed expanded md-code]}]
+  ([dispatch! rows range toolbar {:keys [state highlight reviewed line-suffix after-line
+                                         collapsed expanded md-code]}]
   (let [grammar-cache (atom {})
         grammar-for (fn [f] (or (@grammar-cache f)
                                 (let [g (diff-file-grammar f)]
@@ -2252,9 +2256,11 @@
                [:div {:class ["diff-file-md"]} md-body])
              (when-not (or folded? (and md-body (not md-code?)))
                (let [file-range (diff-group-range group range)
-                     [c-dispatch c-range c-shown c-body] (when cache-body? (.get diff-body-cache group))]
+                     after      (into {} (filter #(= filename (first (key %)))) after-line)
+                     [c-dispatch c-range c-shown c-after c-body]
+                     (when cache-body? (.get diff-body-cache group))]
                  (if (and c-body (identical? c-dispatch dispatch!) (= c-range file-range)
-                          (= c-shown shown))
+                          (= c-shown shown) (= c-after after))
                    c-body
                    (let [body
                [:div {:class ["diff-file-body"]}
@@ -2269,13 +2275,13 @@
                                                    (<= (first range) sel-idx (second range))))
                            hl?       (boolean (and highlight sel-idx (highlight sel-idx)))
                            rev?      (boolean (and reviewed sel-idx (reviewed sel-idx)))
-                           suffix    (when line-suffix (line-suffix sel-idx))]
-                       (if suffix
-                         (list (diff-line-view dispatch! (grammar-for (:filename r))
-                                               selected? line sel-idx (str "l" k) hl? rev?)
-                               suffix)
-                         (diff-line-view dispatch! (grammar-for (:filename r))
-                                         selected? line sel-idx (str "l" k) hl? rev?)))
+                           suffix    (when line-suffix (line-suffix sel-idx))
+                           cards     (when (seq after) (seq (get after (diff/line-key r))))
+                           line-el   (diff-line-view dispatch! (grammar-for (:filename r))
+                                                     selected? line sel-idx (str "l" k) hl? rev?)]
+                       (if (or suffix cards)
+                         (list line-el suffix cards)
+                         line-el))
                      nil)))
                (if shown (take shown body-rows) body-rows))
               (when shown
@@ -2287,7 +2293,7 @@
                        :on-click (fn [_] (dispatch! {:type :diff/show-all :filename filename}))}
                       (str "Show " hidden " more line" (when (not= 1 hidden) "s")))])))]]
                      (when cache-body?
-                       (.set diff-body-cache group #js [dispatch! file-range shown body]))
+                       (.set diff-body-cache group #js [dispatch! file-range shown after body]))
                      body))))]))
         file-groups)
        (empty-state/empty-state {} "No changes."))
@@ -2336,84 +2342,201 @@
             (.addEventListener vv "resize" h)
             (.addEventListener vv "scroll" h)))))))
 
-(defn- diff-region-view
-  [rows range]
-  (let [grammar-cache (atom {})
-        grammar-for (fn [f] (or (@grammar-cache f)
-                                (let [g (diff-file-grammar f)]
-                                  (swap! grammar-cache assoc f g) g)))
-        sel-rows (filter (fn [{:keys [row sel-idx]}]
-                           (and (= :line row) sel-idx
-                                (<= (first range) sel-idx (second range))))
-                         rows)]
-    [:div {:class ["diff-region"]}
-     (map-indexed
-      (fn [i {:keys [line filename]}]
-        (diff-line-view (fn [_]) (grammar-for filename)
-                        false line nil (str "region-" i)))
-      sel-rows)]))
+(def ^:private diff-intents
+  "The composer's switch: what its text does (xi.web.core diff-compose-submit)."
+  [{:intent :ask     :label "Ask"     :placeholder "Ask about these lines…"}
+   {:intent :explain :label "Explain" :placeholder "Explain in the chat — what to focus on (optional)…"}
+   {:intent :modify  :label "Modify"  :placeholder "Describe the change to make…"}])
 
-(defn- diff-action-bar
-  "Toolbar for a diff selection (Clear / Modify / Goto / Explain); Modify swaps
-   it for a panel that sends an instruction for the selected region
-   (full-screen on small screens)."
-  [dispatch! room-id rows range modify?]
-  (let [n (when range (inc (- (second range) (first range))))
-        anchor-attrs {:replicant/key "diff-sel-toolbar"
-                      :replicant/on-mount position-sel-toolbar!
-                      :replicant/on-update position-sel-toolbar!}
-        submit-modify!
-        (fn [_]
-          (when-let [el (.getElementById js/document "diff-modify-input")]
-            (dispatch! {:type :diff/modify-submit
-                        :room-id room-id :text (.-value el)})))]
-    (if modify?
-      [:div {:replicant/key "diff-modify-panel"
-             :replicant/on-render position-modify-panel!
-             :class ["diff-sel-anchor" "diff-sel-anchor--modify"
-                     "popover-content" "popover-content--bottom"]}
-       [:div {:class ["diff-modify-head"]}
-        [:span {:class ["popover-title"]}
-         (str "Modify " n " line" (when (not= 1 n) "s"))]
-        (button/button
-         {:variant :ghost :size :sm
-          :on-click (fn [_] (dispatch! {:type :diff/modify-toggle}))}
-         "Cancel")]
-       (diff-region-view rows range)
-       [:textarea {:id "diff-modify-input"
-                   :class ["form-textarea" "diff-modify-input"]
-                   :placeholder "Describe the change to make to the selected code…"
-                   :rows 3
-                   :replicant/on-mount (fn [{:replicant/keys [^js node]}]
-                                         (.focus node #js {:preventScroll true}))
-                   :on {:keydown (fn [^js e]
-                                   (when (and (= "Enter" (.-key e)) (.-metaKey e))
-                                     (.preventDefault e) (submit-modify! e)))}}]
-       [:div {:class ["diff-modify-foot"]}
-        (button/button
-         {:variant :primary :size :sm
-          :on-click submit-modify!}
-         "Send")]]
-      [:div (assoc anchor-attrs :class ["diff-sel-anchor"])
-       (toolbar/toolbar
-        {}
-        (button/button
-         {:variant :ghost :size :sm
-          :aria-label "Clear selection"
-          :on-click (fn [_] (dispatch! {:type :diff/clear-selection}))}
-         (icon/icon {:icon-name :x :size :sm}))
-        (button/button
-         {:variant :ghost :size :sm
-          :on-click (fn [_] (dispatch! {:type :diff/modify-toggle}))}
-         "Modify")
-        (button/button
-         {:variant :ghost :size :sm
-          :on-click (fn [_] (dispatch! {:type :diff/goto :room-id room-id}))}
-         "Goto")
-        (button/button
-         {:variant :primary :size :sm
-          :on-click (fn [_] (dispatch! {:type :diff/explain :room-id room-id}))}
-         "Explain"))])))
+(defn- enter-submits
+  "Keydown handler: Enter sends, Shift+Enter breaks the line."
+  [submit!]
+  (fn [^js e]
+    (when (and (= "Enter" (.-key e)) (not (.-shiftKey e)) (not (.-isComposing e)))
+      (.preventDefault e)
+      (submit! e))))
+
+(defn- diff-composer
+  "The selection's composer, opened from diff-sel-pill and attached under the
+   range's last line: a gutter rail ties it to the range, the text goes where
+   the Ask / Explain / Modify switch says and the suggestion chips ask right
+   away."
+  [dispatch! room-id rows range intent]
+  (let [sel-rows (filterv (fn [{:keys [row sel-idx]}]
+                            (and (= :line row) sel-idx (<= (first range) sel-idx (second range))))
+                          rows)
+        n        (count sel-rows)
+        file     (:filename (peek sel-rows))
+        intent   (or intent :ask)
+        {:keys [placeholder]} (some #(when (= intent (:intent %)) %) diff-intents)
+        submit!  (fn [_]
+                   (when-let [el (.getElementById js/document "diff-compose-input")]
+                     (dispatch! {:type :diff/compose-submit :room-id room-id :text (.-value el)})))]
+    [:div {:class ["diff-thread" "diff-thread--compose"] :replicant/key "diff-composer"}
+     [:div {:class ["diff-thread-head"]}
+      [:span (str n " line" (when (not= 1 n) "s") " selected")]
+      [:span {:class ["diff-thread-spacer"]}]
+      (button/button {:variant :ghost :size :sm :attrs {:aria-label (str "Open " file)}
+                      :on-click (fn [_] (dispatch! {:type :file/open :path file}))}
+                     (icon/icon {:icon-name :external-link :size :sm}))
+      (button/button {:variant :ghost :size :sm :attrs {:aria-label "Clear selection"}
+                      :on-click (fn [_] (dispatch! {:type :diff/clear-selection}))}
+                     (icon/icon {:icon-name :x :size :sm}))]
+     (form/form-textarea-auto
+      {:placeholder placeholder
+       :max-rows    6
+       :class       "diff-thread-input"
+       :attrs       {:id "diff-compose-input"
+                     :replicant/on-mount
+                     (fn [{:replicant/keys [^js node]}]
+                       (.focus node #js {:preventScroll true}))
+                     :on {:keydown (enter-submits submit!)}}})
+     (when (= :ask intent)
+       [:div {:class ["diff-thread-chips"]}
+        (for [q (sa/ask-suggestions (map (comp :type :line) sel-rows))]
+          (chip/chip {:on-click (fn [_] (dispatch! {:type :diff/ask-submit :room-id room-id :text q}))
+                      :attrs {:replicant/key q}}
+                     q))])
+     [:div {:class ["diff-thread-foot"]}
+      (into (button-group/button-group {:variant :boxed :attrs {:aria-label "What the text does"}})
+            (for [{i :intent :keys [label]} diff-intents]
+              (button-group/button-group-item
+               {:active (= i intent)
+                :attrs {:aria-pressed (str (= i intent))}
+                :on-click (fn [_] (dispatch! {:type :diff/intent :intent i}))}
+               label)))
+      [:span {:class ["diff-thread-spacer"]}]
+      [:span {:class ["diff-thread-kbd"]} "↵"]
+      (button/button {:variant :primary :size :sm :attrs {:aria-label "Send"} :class "diff-thread-send"
+                      :on-click submit!}
+                     (icon/icon {:icon-name :arrow-up :size :sm}))]]))
+
+(defn- diff-sel-pill
+  "Floating actions for a diff selection, a frosted capsule anchored to its
+   last line without taking layout space (position-sel-toolbar!), so extending
+   the range never shifts the diff. Ask and Modify open the inline composer;
+   Explain sends straight to the chat. Each shows its :buffer/diff key
+   (xi.keys :diff/*-selection)."
+  [dispatch! state room-id file]
+  (let [item (fn [{:keys [label action variant on-click]}]
+               (button/button
+                {:variant (or variant :ghost) :size :sm :class "diff-sel-pill-btn"
+                 :on-click on-click}
+                label
+                (when-let [k (keymap/shortcut state action)]
+                  [:kbd {:class ["diff-sel-pill-key"]} k])))]
+    [:div {:class ["diff-sel-anchor" "diff-sel-pill"]
+           :replicant/key "diff-sel-pill"
+           :replicant/on-mount position-sel-toolbar!
+           :replicant/on-update position-sel-toolbar!}
+     (button/button {:variant :ghost :size :sm :class "diff-sel-pill-btn" :attrs {:aria-label "Clear selection"}
+                     :on-click (fn [_] (dispatch! {:type :diff/clear-selection}))}
+                    (icon/icon {:icon-name :x :size :sm}))
+     [:span {:class ["diff-sel-pill-sep"]}]
+     (item {:label "Modify" :action :diff/modify-selection
+            :on-click (fn [_] (dispatch! {:type :diff/intent :intent :modify}))})
+     (item {:label "Explain" :action :diff/explain-selection
+            :on-click (fn [_] (dispatch! {:type :diff/explain :room-id room-id}))})
+     (button/button {:variant :ghost :size :sm :class "diff-sel-pill-btn" :attrs {:aria-label (str "Open " file)}
+                     :on-click (fn [_] (dispatch! {:type :file/open :path file}))}
+                    (icon/icon {:icon-name :external-link :size :sm}))
+     (item {:label (list (icon/icon {:icon-name :zap :size :sm}) "Ask")
+            :action :diff/ask-selection :variant :primary
+            :on-click (fn [_] (dispatch! {:type :diff/intent :intent :ask}))})]))
+
+(defn- ask-activity
+  "What a running ask sub-agent is doing: its latest tool call as `tool
+   target`, or nil before the first one."
+  [history]
+  (when-let [{:keys [tool arguments]} (last (filter #(= :tool-call (:kind %)) history))]
+    (let [target (some #(get arguments %) [:path :file_path :pattern :query :command :code])]
+      (str (util/strip-mcp-prefix (str tool))
+           (when target (str " " (let [t (str/trim (str target))]
+                                    (if (> (count t) 60) (str (subs t 0 60) "…") t))))))))
+
+(defn- ask-meta
+  "`9s · 3 tool calls` for the thread's children."
+  [children]
+  (let [ms    (reduce + (keep (fn [{:keys [started ended]}] (when (and started ended) (- ended started)))
+                              children))
+        calls (count (filter #(= :tool-call (:kind %)) (mapcat :history children)))]
+    (str/join " · " (cond-> []
+                      (pos? ms)    (conj (format-elapsed (js/Math.round (/ ms 1000))))
+                      (pos? calls) (conj (str calls " tool call" (when (not= 1 calls) "s")))))))
+
+(defn- diff-ask-turn [{:keys [question sub-id]} child]
+  (let [status   (or (:status child) :running)
+        running? (= :running status)
+        text     (or (:result child) (sa/final-text (:history child)))]
+    [:div {:class ["diff-thread-turn"] :replicant/key sub-id}
+     [:div {:class ["diff-thread-q"]} question]
+     (cond
+       (seq text)
+       [:div {:class ["diff-thread-a" "post-content"]} (render-md text)]
+
+       running?
+       (list
+        [:div {:class ["diff-thread-activity"] :replicant/key "act"}
+         [:span {:class ["agent-status-spinner--sm"]}]
+         [:span (or (ask-activity (:history child)) "Thinking…")]]
+        [:div {:class ["diff-thread-skeleton"] :replicant/key "sk"} [:i] [:i] [:i]])
+
+       :else
+       [:div {:class ["diff-thread-a" "diff-thread-a--empty"]}
+        (if (= :stopped status) "Stopped." "The answer failed.")])]))
+
+(defn- diff-ask-card
+  "A diff Ask thread (xi.web.core diff-ask-submit) attached after the lines it
+   asks about: each question with its sub-agent's streamed answer (`child-of`
+   sub-id → child, nil until the server echoes the spawn) and a reply field,
+   or a one-line summary when collapsed."
+  [dispatch! room-id {:keys [id turns collapsed?]} child-of]
+  (let [children (mapv (comp child-of :sub-id) turns)
+        running  (some (fn [[t c]] (when (or (nil? c) (= :running (:status c))) t))
+                       (map vector turns children))
+        input-id (str "diff-ask-reply-" id)
+        reply!   (fn [_]
+                   (when-let [el (.getElementById js/document input-id)]
+                     (dispatch! {:type :diff/ask-follow-up :ask-id id :text (.-value el)})))
+        toggle!  (fn [_] (dispatch! {:type :diff/ask-collapse-toggle :ask-id id}))]
+    (if collapsed?
+      [:div {:class ["diff-thread-mini" (when running "diff-thread-mini--running")]
+             :replicant/key (str "ask-" id)
+             :on {:click toggle!}}
+       [:span {:class ["diff-thread-dot"]}]
+       [:span {:class ["diff-thread-mini-q"]} (:question (peek turns))]
+       [:span {:class ["diff-thread-mini-status"]}
+        (cond running "answering…"
+              (< 1 (count turns)) (str (count turns) " questions")
+              :else "answered")]
+       (icon/icon {:icon-name :chevron-right :size :sm})]
+      [:div {:class ["diff-thread" (if running "diff-thread--running" "diff-thread--done")]
+             :replicant/key (str "ask-" id)}
+       [:div {:class ["diff-thread-head"]}
+        [:span {:class ["diff-thread-agent"]} (icon/icon {:icon-name :zap :size :sm}) "sub-agent"]
+        (let [m (ask-meta children)] (when (seq m) [:span (str "· " m)]))
+        [:span {:class ["diff-thread-spacer"]}]
+        (when running
+          (button/button {:variant :ghost :size :sm
+                          :on-click (fn [_] (dispatch! {:type :subagent/abort :room-id room-id
+                                                        :sub-id (:sub-id running)}))}
+                         "Stop"))
+        (button/button {:variant :ghost :size :sm :attrs {:aria-label "Collapse"} :on-click toggle!}
+                       (icon/icon {:icon-name :chevron-down :size :sm}))
+        (button/button {:variant :ghost :size :sm :attrs {:aria-label "Close thread"}
+                        :on-click (fn [_] (dispatch! {:type :diff/ask-close :ask-id id}))}
+                       (icon/icon {:icon-name :x :size :sm}))]
+       (map diff-ask-turn turns children)
+       (when-not running
+         [:div {:class ["diff-thread-reply"]}
+          (form/form-textarea-auto
+           {:placeholder "Reply…"
+            :max-rows    4
+            :class       "diff-thread-input"
+            :attrs       {:id input-id :on {:keydown (enter-submits reply!)}}})
+          (button/button {:variant :ghost :size :sm :attrs {:aria-label "Send reply"} :class "diff-thread-send"
+                          :on-click reply!}
+                         (icon/icon {:icon-name :arrow-up :size :sm}))])])))
 
 (def ^:private diff-methods
   "Selectable diff sources. :title is the buffer title :diff/load assigns, used
@@ -2537,11 +2660,27 @@
         (let [chunk (subs text pos)]
           (cond-> out (seq chunk) (conj (ansi-span state chunk))))))))
 
+(defn- diff-inline-cards
+  "diff-rows-view's :after-line, {line-key [card …]}: the selection's composer
+   (once an action opened it) under its last line, then the room's Ask threads
+   under theirs."
+  [dispatch! state room-id rows range]
+  (let [child-of #(sa/find-child state room-id %)
+        last-row (when (and range (:web/diff-intent state))
+                   (some #(when (= (second range) (:sel-idx %)) %) rows))]
+    (reduce (fn [m {:keys [anchor] :as ask}]
+              (update m anchor (fnil conj []) (diff-ask-card dispatch! room-id ask child-of)))
+            (if last-row
+              {(diff/line-key last-row)
+               [(diff-composer dispatch! room-id rows range (:web/diff-intent state))]}
+              {})
+            (filter #(= room-id (:room-id %)) (:web/diff-asks state)))))
+
 (defn- diff-tab-view
   "The diff buffer as the active tab: git diffs get the interactive viewer,
    difftastic diffs read-only ANSI-colored text."
   [dispatch! state room-id diff-buffer]
-  (let [{sel :web/diff-sel modify? :web/diff-modify? collapsed :web/diff-collapsed
+  (let [{sel :web/diff-sel collapsed :web/diff-collapsed
          expanded :web/diff-expanded md-code :web/md-diff-code} state
         engine (or (:engine diff-buffer) :git)
         git?   (not= engine :difft)
@@ -2558,12 +2697,14 @@
        (commit-info-header c))
      (if (= engine :difft)
        (into [:pre {:class ["diff-difft"]}] (difft-spans (:text diff-buffer)))
-       (let [range (diff/selection-range sel)]
-         (diff-rows-view dispatch! rows range
-                         (when range
-                           (diff-action-bar dispatch! room-id rows range modify?))
+       (let [range (diff/selection-range sel)
+             pill  (when (and range (not (:web/diff-intent state)))
+                     (diff-sel-pill dispatch! state room-id
+                                    (some #(when (= (second range) (:sel-idx %)) (:filename %)) rows)))]
+         (diff-rows-view dispatch! rows range pill
                          {:state state :collapsed collapsed :expanded (or expanded #{})
-                          :md-code (or md-code #{})})))]))
+                          :md-code (or md-code #{})
+                          :after-line (diff-inline-cards dispatch! state room-id rows range)})))]))
 
 (defn- file-tab-view
   [dispatch! state {:keys [path text]}]
@@ -3187,8 +3328,8 @@
 (defn- subagents-panel [dispatch! room]
   (let [room-id (:id room)
         {:keys [agents collapsed?]} (get-in room [:ext :subagents])
-        ;; Explain sub-agents render under their tool block instead.
-        agents  (remove #(sa/explain-sub? (:id %)) agents)]
+        ;; Explain / diff Ask sub-agents render where they were asked.
+        agents  (remove #(sa/inline-sub? (:id %)) agents)]
     (when (seq agents)
       (let [running (count (filter #(= :running (:status %)) agents))
             open?   (not collapsed?)]
@@ -3401,7 +3542,7 @@
         buffer-kind (when active-buffer (buffers/kind active-buf active-buffer))
         ;; Sub-agents list with the buffers; one opened in front (subagent-view)
         ;; names no buffer.
-        sub-agents (remove #(sa/explain-sub? (:id %)) (get-in room [:ext :subagents :agents]))
+        sub-agents (remove #(sa/inline-sub? (:id %)) (get-in room [:ext :subagents :agents]))
         sub-view   (when-not active-buffer
                      (some #(when (= active-buf (:id %)) %) sub-agents))
         has-tabs?  (boolean (or (seq buffers) (seq sub-agents)))

@@ -5425,6 +5425,224 @@ code a:hover,
   resize: none;
 }
 
+/* The diff selection's floating actions (xi.web.views diff-sel-pill): a
+   frosted capsule over the code; every item fully round so the filled Ask
+   sits concentric inside it. */
+.diff-sel-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--bg-1) 72%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--fg-0) 8%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--fg-0) 6%, transparent),
+    0 14px 34px -8px rgb(0 0 0 / 0.6);
+}
+
+.diff-sel-pill .diff-sel-pill-btn {
+  border-radius: 999px;
+  gap: 6px;
+}
+
+.diff-sel-pill-key {
+  font-family: "SF Mono", "Cascadia Code", monospace;
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.diff-sel-pill-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: color-mix(in srgb, var(--fg-0) 10%, transparent);
+}
+
+/* Touch screens have no keyboard for the key hints; keep the capsule compact. */
+@media (hover: none) {
+  .diff-sel-pill-key { display: none; }
+}
+
+/* Inline diff threads (xi.web.views diff-composer / diff-ask-card): attached
+   under the lines they're about, joined to them by a gutter rail. They sit in
+   the horizontally scrolling file body, so they stick to its left edge and take
+   its visible width (container query units), not the code's. */
+.diff-file-body {
+  container-type: inline-size;
+}
+
+.diff-line--selected {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.diff-thread {
+  --thread-rail: var(--accent);
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: min(46rem, calc(100cqi - var(--size-4)));
+  margin: 0 0 var(--size-3);
+  padding: var(--size-2) var(--size-3) var(--size-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  background: var(--bg-1);
+  border: var(--border-0);
+  border-left: 3px solid var(--thread-rail);
+  border-radius: 0 var(--radius-md, 10px) var(--radius-md, 10px) 0;
+  white-space: normal;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: var(--font-sm);
+  line-height: 1.55;
+  color: var(--fg-0);
+}
+
+.diff-thread--done { --thread-rail: color-mix(in srgb, var(--fg-2) 45%, transparent); }
+.diff-thread--compose {
+  box-shadow: 0 10px 28px -12px rgb(0 0 0 / 0.5);
+}
+
+.diff-thread-head {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  min-height: 28px;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+.diff-thread-spacer { flex: 1; }
+
+.diff-thread-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.diff-thread-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: var(--font-sm);
+  resize: none;
+}
+
+.diff-thread--compose .diff-thread-input {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.diff-thread-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-1);
+}
+
+.diff-thread-foot,
+.diff-thread-reply {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+}
+
+.diff-thread-reply { align-items: flex-end; }
+
+.diff-thread-kbd {
+  font-family: "SF Mono", "Cascadia Code", monospace;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  border: var(--border-0);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 0 5px;
+}
+
+.diff-thread-send { border-radius: 999px; flex-shrink: 0; }
+
+.diff-thread-turn + .diff-thread-turn {
+  padding-top: var(--size-2);
+  border-top: 1px dashed color-mix(in srgb, var(--fg-2) 35%, transparent);
+}
+
+.diff-thread-q {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  margin-bottom: 2px;
+}
+
+.diff-thread-a {
+  max-height: 50vh;
+  overflow: auto;
+  opacity: 0.94;
+}
+
+.diff-thread-a > :first-child { margin-top: 0; }
+.diff-thread-a > :last-child { margin-bottom: 0; }
+.diff-thread-a--empty { color: var(--fg-2); }
+
+.diff-thread-activity {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  color: var(--fg-1);
+  font-size: var(--font-xs);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.diff-thread-skeleton { display: flex; flex-direction: column; gap: 7px; padding: 4px 0 2px; }
+.diff-thread-skeleton i {
+  height: 9px;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--bg-2), color-mix(in srgb, var(--fg-2) 30%, var(--bg-2)), var(--bg-2));
+  background-size: 200% 100%;
+  animation: diff-thread-shimmer 1.4s linear infinite;
+}
+.diff-thread-skeleton i:nth-child(1) { width: 92%; }
+.diff-thread-skeleton i:nth-child(2) { width: 74%; }
+.diff-thread-skeleton i:nth-child(3) { width: 40%; }
+@keyframes diff-thread-shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .diff-thread-skeleton i { animation: none; } }
+
+/* A collapsed thread: one line under its anchor. */
+.diff-thread-mini {
+  position: sticky;
+  left: 0;
+  box-sizing: border-box;
+  width: min(46rem, calc(100cqi - var(--size-4)));
+  margin: 0 0 var(--size-2);
+  padding: var(--size-1) var(--size-3);
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  border-left: 3px solid color-mix(in srgb, var(--fg-2) 45%, transparent);
+  background: linear-gradient(90deg, var(--bg-1), transparent);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.diff-thread-mini-q {
+  color: var(--fg-0);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.diff-thread-mini-status { color: var(--fg-2); flex-shrink: 0; }
+.diff-thread-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success, #4ade80); flex-shrink: 0; }
+.diff-thread-mini--running { border-left-color: var(--accent); }
+.diff-thread-mini--running .diff-thread-dot { background: var(--accent); }
+
 /* Difftastic output: read-only structural diff, colored from its ANSI */
 .diff-difft {
   flex: 1;
