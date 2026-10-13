@@ -3183,11 +3183,15 @@
                (let [tape (js->clj json :keywordize-keys true)
                      {:keys [steps mirror? pointer]} (tour/variant tape variant-name)
                      post!     #(.postMessage js/parent % "*")
+                     client    #(some-> @app-ref :state deref)
                      transport (tour/create!
                                 tape
                                 {:on-status on-connection-status
                                  :on-send   #(post! #js {:xiTour "sent" :type %})
-                                 :on-done   #(post! #js {:xiTour "done"})})]
+                                 :on-done   #(post! #js {:xiTour "done"})
+                                 :room-of   #(get-in (client) [:rooms %])})
+                     ;; the visitor reading an earlier session holds the autopilot
+                     visiting? #((:visit? transport) (get-in (client) [:web/route :session-id]))]
                  (when mirror?
                    (.addEventListener
                     js/window "message"
@@ -3199,7 +3203,7 @@
                    ;; the page replays the sends this frame missed while loading
                    (post! #js {:xiTour "ready"}))
                  (real-init! {:transport transport})
-                 (tour/autopilot! steps pointer))))))
+                 (tour/autopilot! steps pointer visiting?))))))
 
 (defn ^:export init! []
   (js/console.log "[xi-web] starting")

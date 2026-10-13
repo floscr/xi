@@ -14,7 +14,7 @@ autopilot would act (click Allow before it does, for example).
 | `<tour>/steps.json` | `gates` (sends the replay waits for), `steps`, which the autopilot plays in the visitor's place (see `xi.web.tour`), and `variants`: other runs of the same tape, picked with `?variant=` (`{steps, pointer: "touch", mirror: true}`). |
 | `../public/tours/<tour>.json` | The baked tape the site serves. |
 | `scripts/tour-seed.mjs` | The throwaway HOME `/tmp/xi-tour-home`: projects `acme-web` and `acme-api`, earlier sessions, the trusted client key. |
-| `scripts/tour-record.mjs` | Headless recorder: connects as a web client, runs `record.mjs`, writes the raw frames to `/tmp`, bakes. |
+| `scripts/tour-record.mjs` | Headless recorder: connects as a web client, runs `record.mjs`, then joins each earlier session for the tape's `visits`, writes the raw frames to `/tmp`, bakes. |
 | `scripts/tour-bake.mjs` | Raw frames → tape: `/tmp/xi-tour-home` becomes `/home/dev`, sends keep only their type, the `:join-token` becomes a slot the player fills. Refuses to bake if a frame still names the repo or your HOME. |
 
 ## Record
@@ -77,6 +77,13 @@ frames play back with their recorded spacing (idle gaps capped at 1.5 s), and
 absolute times are shifted so "25m ago" stays 25 minutes ago. At a recorded
 send of a gate type the tape waits until the client sends the same type: the
 autopilot's click, or the visitor's. Other recorded sends are skipped.
+
+The visitor can open sessions from the sidebar. A join of an earlier
+session plays the tape's `visits` entry for it (what the server answered
+when the recorder joined it); a join of the tour's own session re-sends the
+client's mirror of its room, which kept following the tape meanwhile. Neither
+counts as a gate, and the autopilot waits while the visitor is on an earlier
+session.
 
 ## Adding a tour
 

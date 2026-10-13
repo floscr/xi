@@ -64,25 +64,53 @@
 
 ;; ── Transport ────────────────────────────────────────────────────────────────
 
+(def ^:private visit-ms
+  "How long a session the visitor opens takes to answer, as from a server."
+  120)
+
 (defn create!
   "A transport that replays `tape` (parsed JSON, keywordized). opts:
    :on-status (fn [connected?]), :on-done (fn []), :on-send (fn [type],
-   for each gate-type send the client makes). Besides the ws-transport keys
-   it returns :mirror! (fn [type]): pass a gate another client of the same
-   tape sent, so a client that only watches (the session list beside the
-   chat) keeps pace with it."
-  [tape {:keys [on-status on-done on-send]}]
+   for each gate-type send the client makes), :room-of (fn [room-id] → the
+   client's mirror of that room). Besides the ws-transport keys it returns
+   :mirror! (fn [type]): pass a gate another client of the same tape sent,
+   so a client that only watches (the session list beside the chat) keeps
+   pace with it; and :visit? (fn [session-id]): an earlier session the tape
+   answers joins for.
+
+   A join of a session (the visitor opening it from the sidebar) is no gate:
+   an earlier one plays the tape's recorded answer (:visits); the tour's own
+   room is re-sent from the client's mirror, which kept following the tape."
+  [tape {:keys [on-status on-done on-send room-of]}]
   (let [frames  (:frames tape)
         gates   (set (:gates tape))
+        visits  (into {} (map (juxt :id :frames)) (:visits tape))
         offset  (- (js/Date.now) (:recordedAt tape))
         ;; :auth/hello is the transport's own send, made on connect
         player  (atom {:i 0 :prev-t 0 :sent {"auth/hello" 1} :waiting nil
-                       :dispatch nil})]
-    (letfn [(emit! [data]
-              (when-let [ev (wire/decode (-> data
-                                             (fill-echoes (:echoes @player))
-                                             (shift-times offset)))]
-                ((:dispatch @player) (assoc ev :remote? true))))
+                       :dispatch nil
+                       ;; session id → room id, for the tape's own rooms
+                       :own {}})]
+    (letfn [(dispatch! [ev]
+              ((:dispatch @player) (assoc ev :remote? true)))
+            (decode [data]
+              (wire/decode (-> data
+                               (fill-echoes (:echoes @player))
+                               (shift-times offset))))
+            (emit! [data]
+              (when-let [ev (decode data)]
+                (when (= :room/joined (:type ev))
+                  (swap! player assoc-in [:own (get-in ev [:room :session :id])] (:room-id ev)))
+                (dispatch! ev)))
+            (visit! [session-id]
+              (js/setTimeout
+               (fn []
+                 (if-let [answer (get visits session-id)]
+                   (run! #(some-> (decode %) dispatch!) answer)
+                   (let [room-id (get-in @player [:own session-id])]
+                     (when-let [room (and room-id room-of (room-of room-id))]
+                       (dispatch! {:type :room/joined :room-id room-id :room room})))))
+               visit-ms))
             (play! []
               (let [{:keys [i sent prev-t]} @player
                     {:keys [op t data] gate :type :as step} (advance frames gates sent i)]
@@ -108,11 +136,14 @@
               (when-let [token (:join-token event)]
                 (swap! player assoc-in [:echoes :join-token] token))
               (let [sent-type (event-type event)]
-                (when (and on-send (contains? gates sent-type))
-                  (on-send sent-type))
-                (gate! sent-type)))]
+                (if (and (= :room/join (:type event)) (:session-id event))
+                  (visit! (:session-id event))
+                  (do (when (and on-send (contains? gates sent-type))
+                        (on-send sent-type))
+                      (gate! sent-type)))))]
       {:effects       {:ws/send (fn [_ event] (send! event))}
        :mirror!       gate!
+       :visit?        #(contains? visits %)
        :set-dispatch! (fn [dispatch!]
                         (swap! player assoc :dispatch dispatch!)
                         (js/setTimeout (fn []
@@ -151,17 +182,21 @@
     (.querySelector js/document (or click typed enter))))
 
 (defn- await-el
-  "Resolves to the step's element once it is in the DOM, or nil after 10 s."
-  [step]
+  "Resolves to the step's element once it is in the DOM, or nil after 10 s
+   not counting the time `paused?` holds (the visitor reading another
+   session, where the element can't be)."
+  [step paused?]
   (js/Promise.
    (fn [res]
-     (let [deadline (+ (js/Date.now) 10000)]
-       ((fn poll []
+     ((fn poll [left]
+        (if (paused?)
+          (js/setTimeout #(poll left) 200)
           (if-let [el (find-el step)]
             (res el)
-            (if (> (js/Date.now) deadline)
+            (if (neg? left)
               (res nil)
-              (js/setTimeout poll 100)))))))))
+              (js/setTimeout #(poll (- left 100)) 100)))))
+      10000))))
 
 ;; :mouse draws an arrow pointer, :touch a fingertip dot (phone layouts)
 (def ^:private pointer (atom :mouse))
@@ -230,18 +265,20 @@
               (this-as el
                 (when @user? (.apply native el (into-array args)))))))))
 
-(defn- run-step! [{:keys [wait waitText text enter after] typed :type :as step}]
+(defn- run-step! [{:keys [wait waitText text enter after] typed :type :as step} paused?]
   (cond
     wait     (sleep wait)
-    waitText (await-el step)
+    waitText (await-el step paused?)
     :else
     (-> (sleep (or after 0))
-        (.then #(await-el step))
+        (.then #(await-el step paused?))
         (.then (fn [^js el]
                  (when el
                    (-> (move-to! el)
                        (.then (fn []
                                 (cond
+                                  ;; the visitor opened another session meanwhile
+                                  (paused?) (run-step! (dissoc step :after) paused?)
                                   typed (type-text! el text)
                                   enter (.dispatchEvent
                                          el (js/KeyboardEvent. "keydown"
@@ -263,9 +300,9 @@
 
 (defn autopilot!
   "Play `steps` in order with a :mouse or :touch `pointer`; resolves when
-   the last one ran."
-  [steps pointer-kind]
+   the last one ran. A step waits while `paused?` holds."
+  [steps pointer-kind paused?]
   (reset! pointer pointer-kind)
-  (reduce (fn [p step] (.then p #(run-step! step)))
+  (reduce (fn [p step] (.then p #(run-step! step paused?)))
           (js/Promise.resolve)
           steps))

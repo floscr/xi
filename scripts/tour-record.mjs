@@ -12,6 +12,10 @@
  * async ({ send, until, sleep, cwd }) => …; `send` takes a flat map whose
  * strings starting with ":" are keywords, `until` resolves to the first frame
  * (raw transit) containing every given substring.
+ *
+ * Afterwards it joins each earlier session (seeded before the tour ran) and
+ * keeps what the server answers as the raw file's `visits`, so the replay can
+ * open them when the visitor clicks one in the sidebar.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -40,10 +44,13 @@ const t0 = performance.now();
 const now = () => Math.round(performance.now() - t0);
 const frames = [];
 const waiters = [];
+// set while recording a visit: its frames stay out of the tape
+let visitFrames = null;
 
 ws.addEventListener("message", (e) => {
   const data = String(e.data);
-  frames.push([now(), "in", data]);
+  if (visitFrames) visitFrames.push(data);
+  else frames.push([now(), "in", data]);
   for (const w of [...waiters]) {
     if (w.parts.every((p) => data.includes(p))) {
       waiters.splice(waiters.indexOf(w), 1);
@@ -64,6 +71,25 @@ const until = (...parts) =>
   });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// the seeded sessions, before the tour adds its own
+const earlier = fs.readdirSync(path.join(TOUR_HOME, ".config", "xi", "sessions"), { recursive: true })
+  .filter((f) => f.endsWith(".json"))
+  .map((f) => path.basename(f, ".json"));
+
+// What joining `sid` answers: the room's own frames (snapshot, resumed
+// history, presence), not the lobby broadcasts around them.
+const visit = async (sid) => {
+  visitFrames = [];
+  ws.send(encode({ type: ":room/join", target: "new", "session-id": sid }));
+  const joined = await until('"~:room/joined"', sid);
+  await until('"~:session/resumed"', sid);
+  await sleep(300);
+  const roomId = joined.match(/"~:room-id","([^"]+)"/)[1];
+  const own = visitFrames.filter((d) => d.includes(`"~:room-id","${roomId}"`));
+  visitFrames = null;
+  return { id: sid, frames: own };
+};
+
 await new Promise((resolve, reject) => {
   ws.addEventListener("open", resolve);
   ws.addEventListener("error", () => reject(new Error("no tour server on :7479 — run `bb tour " + tour + "`")));
@@ -73,11 +99,13 @@ await until('"~:auth/ok"');
 
 await play({ send, until, sleep, cwd: (project) => path.join(TOUR_HOME, project) });
 await sleep(800);
+const visits = [];
+for (const sid of earlier) visits.push(await visit(sid));
 ws.close();
 
 // raw frames still carry the tour HOME path and the client key: keep them out
 // of the repo, only the baked tape ships
 const raw = path.join("/tmp", `xi-tour-${tour}-raw.json`);
-fs.writeFileSync(raw, JSON.stringify({ recordedAt: Date.now() - now(), frames }));
-console.log(`Recorded ${frames.length} frames → ${raw}`);
+fs.writeFileSync(raw, JSON.stringify({ recordedAt: Date.now() - now(), frames, visits }));
+console.log(`Recorded ${frames.length} frames, ${visits.length} visits → ${raw}`);
 execFileSync("bun", [path.join(REPO, "scripts", "tour-bake.mjs"), raw, tour], { stdio: "inherit" });

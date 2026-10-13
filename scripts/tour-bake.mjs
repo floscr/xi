@@ -4,8 +4,9 @@
  *
  *   bun scripts/tour-bake.mjs <raw.json> <tour>
  *
- * <raw.json> is {recordedAt, frames: [[t, "in"|"out", transit] …]}, captured
- * in the browser against `bb tour <tour>` (see site/tours/README.md). Writes
+ * <raw.json> is {recordedAt, frames: [[t, "in"|"out", transit] …],
+ * visits: [{id, frames: [transit …]} …]}, captured against `bb tour <tour>`
+ * by scripts/tour-record.mjs (see site/tours/README.md). Writes
  * site/public/tours/<tour>.json:
  *   - the tour HOME (/tmp/xi-tour-home) becomes /home/dev, so no local path
  *     ships; a frame still naming this repo or the real HOME aborts the bake
@@ -13,6 +14,8 @@
  *   - values the client makes up and the server echoes (:join-token) become
  *     @@join-token@@; the player fills in the replaying client's own
  *   - times start at 0
+ *   - :visits (what joining each earlier session answers) get the same path
+ *     rewrite and leak check
  *   - :gates, :steps and :variants (other runs of the same tape, picked with
  *     ?variant=) come from site/tours/<tour>/steps.json
  */
@@ -49,8 +52,12 @@ const frames = raw.frames.map(([t, dir, data]) =>
     ? [t - t0, "out", typeOf(data)]
     : [t - t0, "in", fillEchoes(data.split(TOUR_HOME).join("/home/dev"))]);
 
+const visits = (raw.visits || []).map(({ id, frames: answer }) =>
+  ({ id, frames: answer.map((data) => data.split(TOUR_HOME).join("/home/dev")) }));
+
 const leaks = [REPO, os.homedir()];
-const leaked = frames.filter(([, , d]) => leaks.some((p) => d.includes(p)));
+const leaked = [...frames.map(([, , d]) => d), ...visits.flatMap((v) => v.frames)]
+  .filter((d) => leaks.some((p) => d.includes(p)));
 if (leaked.length) {
   console.error(`refusing to bake: ${leaked.length} frames still name ${leaks.join(" or ")}`);
   process.exit(1);
@@ -58,10 +65,11 @@ if (leaked.length) {
 
 const out = path.join(REPO, "site", "public", "tours", `${tour}.json`);
 fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, JSON.stringify({ version: 1, recordedAt: raw.recordedAt, gates, steps, variants, frames }));
+fs.writeFileSync(out, JSON.stringify({ version: 1, recordedAt: raw.recordedAt, gates, steps, variants, frames, visits }));
 
 const sends = frames.filter(([, d]) => d === "out").map(([, , ty]) => ty);
 console.log(`Baked ${out}`);
 console.log(`  ${frames.length} frames, ${(fs.statSync(out).size / 1024).toFixed(1)} KB`);
 console.log(`  sends: ${sends.join(", ")}`);
 console.log(`  gates: ${gates.join(", ")}`);
+console.log(`  visits: ${visits.length}`);
