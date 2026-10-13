@@ -43,6 +43,14 @@
   "`guarded-patterns` as one alternation regex."
   (alt-re guarded-patterns))
 
+(def yolo-guarded-patterns
+  "The `guarded-patterns` sane yolo mode still asks for: pushing, and wiping
+   disks. Public: the clj gate tags its guarded-command confirm with them."
+  ["git push" "mkfs" "dd if=" ":(){ "])
+
+(def ^:private yolo-guarded-command-re
+  (alt-re yolo-guarded-patterns))
+
 (def ^:private chained-bash-msg
   (str "bash: chained/piped shell commands are disabled — rewrite "
        "this with the clj tool (sandboxed Clojure REPL): (cat f) "
@@ -204,9 +212,36 @@
 
 (defn- leak-ask
   "The :ask action of the secret-leak rules: `msg`, yes/no only (no [a]lways —
-   every call asks), refused when no client can answer."
+   every call asks), refused when no client can answer, asked in sane yolo."
   [msg]
-  {:type :ask :message msg :options [:yes :no] :unanswered :deny})
+  {:type :ask :message msg :options [:yes :no] :unanswered :deny :guard :sane})
+
+;; ── Yolo mode (toggled by xi.ext.yolo /yolo) ──────────────────────────────────
+;;
+;; Which asks a yolo level answers is the ask's `:guard` (xi.dialog/auto-confirm?);
+;; what sane yolo refuses outright is a rule here.
+
+(def ^:private yolo-sane-on {:yolo {:level :sane}})
+
+(def ^:private system-dir-src
+  "A system directory, or anything under one: `/`, the home dir (`~`,
+   `$HOME`, `/home/<user>`, `/Users/<user>`) itself, and the top-level
+   system trees."
+  (str "(?:/|~/?|\\$HOME/?|/(?:home|Users)(?:/[^/\\s'\"]+)?/?"
+       "|/(?:bin|boot|dev|etc|lib|lib32|lib64|nix|opt|proc|root|run|sbin|srv|sys|usr|var"
+       "|System|Library|Applications)(?:/[^\\s'\"]*)?)"))
+
+(def system-rm-re
+  "An `rm` command segment with an operand in a system directory
+   (`system-dir-src`). Public for tests."
+  (re-pattern (str "(?:^|[;&|(]\\s*)(?:\\S*/)?rm(?:\\s+[^\\n;&|]*?)?\\s['\"]?"
+                   system-dir-src
+                   "['\"]?(?=$|[\\s;&|)])")))
+
+(def ^:private system-rm-msg
+  (str "Blocked: yolo mode does not remove system directories (/, the home "
+       "directory, /usr, /etc, /nix, …). If it is really meant, ask the user to "
+       "run it or to turn yolo mode off."))
 
 ;; ── Plan mode (read-only exploration; toggled by xi.ext.plan-mode /plan) ──────
 
@@ -456,6 +491,14 @@
               :message (str "`{cli}` is not installed on this machine (not on PATH). "
                             "Do not retry it; use a program that is installed.")}}]
 
+   ;; Sane yolo mode refuses what it would otherwise wave through: removing a
+   ;; system directory. Before every allow that could cover an `rm` (tmp
+   ;; cleanup, repository-scripts, sh-read-only). The clj gate also asks the
+   ;; engine about each builtin `(rm …)` target as `rm -r <resolved path>`.
+   ::yolo-sane
+   [{:match  {:tool #{:bash :sh} :command system-rm-re :when yolo-sane-on}
+     :action {:type :deny :message system-rm-msg}}]
+
    ;; Behavioral nudges (listed first so they win over the policy gates on
    ;; overlap — a harmless /tmp `rm` is steered, not asked).
    ::tmp-cleanup
@@ -549,19 +592,22 @@
    [{:match  {:tool #{:write :edit} :path sensitive-write-re}
      :action {:type :ask
               :message "Write to a sensitive path (Mail / .ssh / .gnupg / .password-store)?"
-              :options [:yes :no]}}]
+              :options [:yes :no]
+              :guard   :sane}}]
 
    ::protected-writes
    [{:match  {:tool #{:write :edit} :path protected-write-re}
      :action {:type :ask
               :message "Write to a protected path (.env / .git/ / node_modules/)?"
-              :options [:yes :no]}}]
+              :options [:yes :no]
+              :guard   :sane}}]
 
    ::outside-writes
    [{:match  {:tool #{:write :edit} :outside :cwd}
      :action {:type :ask
               :message "Write outside the project repo?"
-              :options [:yes :no :repo]}}]
+              :options [:yes :no :repo]
+              :guard   :sane}}]
 
    ::write-gates
    [::sensitive-writes ::protected-writes ::outside-writes]
@@ -589,21 +635,25 @@
               :unanswered :deny}}]
 
    ;; Bash gates: remote shells are blocked outright; destructive patterns ask
-   ;; (for bb task command lines too).
+   ;; (for bb task command lines too), pushing and disk wiping in sane yolo too.
    ::bash-guards
    [{:match  {:tool :bash :command remote-shell-re}
      :action {:type :deny
               :message (str "Blocked: remote shell commands (ssh, scp, rsync, "
                             "sftp) are not allowed.")}}
+    {:match  {:tool #{:bash :bb} :command yolo-guarded-command-re}
+     :action {:type :ask :message "Guarded command — proceed?" :options [:yes :no]
+              :guard :sane}}
     {:match  {:tool #{:bash :bb} :command guarded-command-re}
      :action {:type :ask :message "Guarded command — proceed?" :options [:yes :no]}}]
 
    ;; Restarting/stopping the server drops every connected session — always
-   ;; ask (bash, the bb tool, and clj (sh …) alike). The executors run an
-   ;; approved one detached so the agent's own turn gets a result.
+   ;; ask (bash, the bb tool, and clj (sh …) alike), in either yolo level. The
+   ;; executors run an approved one detached so the agent's own turn gets a
+   ;; result.
    ::server-control
    [{:match  {:tool #{:bash :bb :sh} :command server-control-re}
-     :action {:type :ask :options [:yes :no]}}]
+     :action {:type :ask :options [:yes :no] :guard :always}}]
 
    ;; External MCP servers are third-party code: a call to a server that isn't
    ;; trusted is confirmed (with an informative server/tool/arguments block
@@ -720,6 +770,7 @@
   "The built-in default tier, as bundle aliases in precedence order. A rules
    file's `:defaults` replaces this vector."
   [::not-installed
+   ::yolo-sane
    ::tmp-cleanup
    ::no-auto-memory
    ::extension-credentials

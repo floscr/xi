@@ -145,7 +145,8 @@
        (ask! {:dispatch! dispatch! :state (get-state)}
              {:room-id room-id
               :dialog  (cond-> {:type :confirm :message message}
-                         (:options opts) (assoc :options (:options opts)))})))))
+                         (:options opts) (assoc :options (:options opts))
+                         (:guard opts)   (assoc :guard (:guard opts)))})))))
 
 (defn- gate!
   "Decide opening `argv` in `cwd` for `user` → Promise of nil when it may run,

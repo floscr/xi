@@ -245,6 +245,24 @@
                      (is (not (contains? plain :hardened?)) "a session-rule ask does not"))
                    (done)))))))
 
+(deftest an-ask-carries-its-yolo-guard
+  (async done
+    (let [seen (atom [])
+          ask  (fn [guard]
+                 (let [action (cond-> {:type :ask} (some? guard) (assoc :guard guard))
+                       c      (assoc (ctx (state-with [:ext :rules :rules]
+                                                      {:match {:tool :bash} :action action}))
+                                     :confirm! (fn [_ opts]
+                                                 (swap! seen conj (:guard opts))
+                                                 (js/Promise.resolve true)))]
+                   (rules-ext/tool-policy {:name "bash" :arguments {:command "ls"}} c)))]
+      (-> (reduce (fn [p g] (.then p #(ask g))) (js/Promise.resolve nil)
+                  [nil true :sane :always])
+          (.then (fn [_]
+                   (is (= [nil :sane :sane :always] @seen)
+                       "`:guard true` is :sane; no guard, no key")
+                   (done)))))))
+
 (deftest ask-rule-recommend-spawns-subagent-and-blocks
   (async done
     (let [rule       {:match {:tool :bash} :action {:type :ask}}

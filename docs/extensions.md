@@ -113,7 +113,7 @@ xi.web.core ── web-extensions (xi.config/web) → ext/instantiate → ext/co
 Extension state lives in two places:
 
 - **Room-scoped** `[:rooms rid :ext <id>]` — rides in the `:room/joined`
-  snapshot, mirrors to clients. Used for: plan-mode and yolo `:enabled?`.
+  snapshot, mirrors to clients. Used for: plan-mode `:enabled?` and yolo `:level`.
 - **Process-local** `[:ext <id>]` — never crosses the wire. Used for:
   the rules engine's server-session rules.
 
@@ -497,7 +497,7 @@ namespace docstring is the authoritative description.
 |-----------|--------------|
 | rules | Declarative rules engine — every allow/deny/confirm policy; `/rules`. Loaded first. User docs: [rules](guide/rules.md), [reference](guide/rules-reference.md); the engine's request shape and `decide!` live in `xi.ext.rules` / `xi.rules.store`. |
 | plan-mode | Read-only exploration mode (`/plan`, 📋 badge). The read-only policy itself is a default rule. |
-| yolo | Skip confirmations for a room (`/yolo`, 🔥 badge; has a web half that mirrors the flag and shows a header chip). `/yolo` dispatches `:ext.yolo/set`, the echoed event every client reduces. The flag is `:persist-room` (off removes the key), so a reaped or restarted room gets it back. The skipping is in `xi.ext.core/create-dialogs`: while the flag is on a `:confirm` resolves yes without opening (`xi.dialog/auto-confirm?`), so rule asks, the clj gate's prompts and sub-agent spawns all run; turning it on dispatches a yes `:ui/dialog-response` for each such dialog already open. The rules engine tags hardened-tier asks `:hardened?` so they still open; denies and nudges are untouched. |
+| yolo | Skip confirmations for a room at a level, `:sane` or `:relentless` (`/yolo [sane\|relentless\|off]`, 🔥 / 🔥🔥 badge; has a web half that mirrors the level and shows a header chip). `/yolo` dispatches `:ext.yolo/set {:level}`, the echoed event every client reduces. The level is `:persist-room` (off removes the key), so a reaped or restarted room gets it back. The skipping is in `xi.ext.core/create-dialogs`: a `:confirm` the level answers resolves yes without opening (`xi.dialog/auto-confirm?`), so rule asks, the clj gate's prompts and sub-agent spawns all run; setting a level dispatches a yes `:ui/dialog-response` for each such dialog already open. Which level answers an ask is its `:guard`: the rules engine copies a rule action's `:guard` (`:sane`, `:always`; `xi.rules/guard`) onto the dialog, and the clj gate tags its own guarded confirms (out-of-project rm dirs, `yolo-guarded-patterns`). `:sane` answers unguarded asks only, `:relentless` all but `:always`. Hardened-tier asks are tagged `:hardened?` and always open; denies and nudges are untouched. What sane yolo refuses outright is the `xi.rules.defaults/yolo-sane` bundle (`:when {:yolo {:level :sane}}`). |
 
 **Agent tools**
 

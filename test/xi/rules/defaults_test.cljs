@@ -488,7 +488,7 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 43 (count defaults/default-rules))))
+    (is (= 45 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
@@ -545,3 +545,41 @@
       (is (str/ends-with? (rules/decision-message r nil) "\n\nUse bb http-server."))))
   (testing "the bundle is first in the default tier"
     (is (= :xi.rules.defaults/not-installed (first defaults/default-aliases)))))
+
+;; ── Yolo mode ────────────────────────────────────────────────────────────────
+
+(defn- sane [req] (assoc req :state {:yolo {:level :sane}}))
+
+(deftest sane-yolo-denies-removing-system-dirs
+  (testing "an rm of a system directory, or anything under one, is denied"
+    (doseq [cmd ["rm -rf /" "rm -rf /usr" "rm -r /etc/nixos" "rm -rf ~" "rm -rf ~/"
+                 "rm -rf $HOME" "rm -rf \"/nix/store\"" "rm -rf /home/x" "rm -rf /Users/x/"
+                 "rm -rf ./build /var/lib/x" "ls && rm -rf /boot"]]
+      (is (= :deny (action-type (sane {:tool :bash :command cmd}))) cmd)
+      (is (= :deny (action-type (sane {:tool :sh :cli "rm" :command cmd}))) cmd)))
+  (testing "project, home-subdirectory and tmp removals are not"
+    (doseq [cmd ["rm -rf ./build" "rm -rf ~/code/x" "rm -rf /home/x/code" "rm -rf /tmp/x"
+                 "git rm -r src" "rm -rf build/usr"]]
+      (is (not (re-find defaults/system-rm-re cmd)) cmd)))
+  (testing "only while the room is in sane yolo"
+    (is (= :ask (action-type {:tool :bash :command "rm -rf /usr"})) "off: the guarded ask")
+    (is (= :ask (action-type (assoc {:tool :bash :command "rm -rf /usr"}
+                                    :state {:yolo {:level :relentless}})))
+        "relentless: the guarded ask, which it answers")))
+
+(deftest yolo-guards-on-the-defaults
+  (let [guard (fn [req] (get-in (rules/first-match defaults/default-rules req) [:action :guard]))]
+    (testing "sane yolo still asks"
+      (is (= :sane (guard {:tool :write :path "/home/x/.ssh/config"})))
+      (is (= :sane (guard {:tool :write :path ".env"})))
+      (is (= :sane (guard {:tool :write :path "/etc/x" :outside-cwd? true})))
+      (is (= :sane (guard {:tool :bash :command "printenv"})))
+      (is (= :sane (guard {:tool :read :path "/home/x/.env"})))
+      (is (= :sane (guard {:tool :bash :command "git push origin master"}))))
+    (testing "relentless still asks before restarting the server"
+      (is (= :always (guard {:tool :bb :command "bb serve:restart"})))
+      (is (= :always (guard {:tool :sh :cli "bb" :command "bb serve:stop"}))))
+    (testing "everything else is answered by both levels"
+      (is (nil? (guard {:tool :bash :command "rm -rf build"})))
+      (is (nil? (guard {:tool :sh :cli "cargo" :command "cargo build"})))
+      (is (nil? (guard {:tool-name "spawn_subagent"}))))))

@@ -1230,8 +1230,9 @@
                                   " outside the project repo?"))
                        resolved repo)
                       (cond-> {}
-                        repo   (assoc :options [:yes :no :allow-repo])
-                        target (assoc :target target)))
+                        repo                 (assoc :options [:yes :no :allow-repo])
+                        target               (assoc :target target)
+                        (rules/guard action) (assoc :guard (rules/guard action))))
             (.then (fn [answer]
                      (cond
                        (= answer :repo)
@@ -1875,10 +1876,12 @@
 
 (defn- confirm-all!
   [confirm! prompts]
-  (reduce (fn [chain {:keys [prompt target]}]
+  (reduce (fn [chain {:keys [prompt target guard]}]
             (.then chain (fn [ok?]
                            (if ok?
-                             (confirm! prompt (when target {:target target}))
+                             (confirm! prompt (cond-> {}
+                                                target (assoc :target target)
+                                                guard  (assoc :guard guard)))
                              false))))
           (js/Promise.resolve true)
           prompts))
@@ -1922,7 +1925,10 @@
                   (-> (confirm! (str "Recursively delete directory `" p "`"
                                      (when outside? " — OUTSIDE the project repo")
                                      "?")
-                                (when-let [t (rm-ask-target code p)] {:target t}))
+                                (cond-> {}
+                                  (rm-ask-target code p) (assoc :target (rm-ask-target code p))
+                                  ;; sane yolo still asks before deleting outside the project
+                                  outside?               (assoc :guard :sane)))
                       (.then (fn [yes?]
                                (if yes?
                                  (cond-> acc
@@ -2162,13 +2168,24 @@
                                   "unnecessary — /tmp is temporary and cleared "
                                   "automatically; skip the rm unless you need "
                                   "the space back."))]))))
-            denied   (some (fn [c]
-                             (let [r (cmd-decision c)]
-                               (when (= :deny (get-in r [:action :type]))
-                                 {:cmd (:command c)
-                                  :message (rules/decision-message
-                                            r (str "clj: `" (:command c) "` is denied by policy."))})))
-                           cmds)
+            denied   (or (some (fn [c]
+                                 (let [r (cmd-decision c)]
+                                   (when (= :deny (get-in r [:action :type]))
+                                     {:cmd (:command c)
+                                      :message (rules/decision-message
+                                                r (str "clj: `" (:command c) "` is denied by policy."))})))
+                               cmds)
+                         ;; a builtin (rm p) asks the engine as `rm -r <p>`, resolved
+                         ;; like the deletion itself (the link, not its target)
+                         (some (fn [p]
+                                 (let [abs (paths/real-resolve-nofollow (or cwd (.cwd js/process)) p)
+                                       r   (cmd-decision {:command (str "rm -r " abs)
+                                                          :argv    ["rm" "-r" abs]})]
+                                   (when (= :deny (get-in r [:action :type]))
+                                     {:cmd (str "(rm " p ")")
+                                      :message (rules/decision-message
+                                                r (str "clj: `(rm " p ")` is denied by policy."))})))
+                               (rm-targets-of scan)))
             ;; Arg-scoped :ask rules confirm that exact command even when its CLI is
             ;; allowed; CLI-wide asks stay with per-CLI approval.
             asks      (->> cmds
@@ -2178,14 +2195,16 @@
                                                 (rules/arg-scoped? r))
                                        {:command (:command c)
                                         :message (rules/decision-message r nil)
+                                        :guard   (rules/guard (:action r))
                                         :refuse-unanswered? (= :deny (get-in r [:action :unanswered]))})))))
             rule-asks (->> asks
-                           (map (fn [{:keys [command message]}]
+                           (map (fn [{:keys [command message guard]}]
                                   {:prompt (if message
                                              (str message "\n\n" command)
                                              (str "Run `" command "`?"))
                                    :target (command-ask-target code command)
-                                   :argv   (literal-argv command)}))
+                                   :argv   (literal-argv command)
+                                   :guard  guard}))
                            distinct)
             unanswerable (->> asks (filter :refuse-unanswered?) (map :command) distinct)
             ;; (sh "rm" …) is auto-allowed, rm -rf included; a background rm runs
@@ -2201,7 +2220,10 @@
             confirms (concat rule-asks
                              (map (fn [cmd] {:prompt (str "Guarded command: " cmd)
                                              :target (command-ask-target code cmd)
-                                             :argv   (literal-argv cmd)})
+                                             :argv   (literal-argv cmd)
+                                             :guard  (when (some #(str/includes? cmd %)
+                                                                 rules-defaults/yolo-guarded-patterns)
+                                                       :sane)})
                                   guarded))
             ;; Recursive (rm dir) deletions get their own confirm; an in-repo (or
             ;; tmp) dir skips it only on an arg-scoped engine :allow — a `:path`

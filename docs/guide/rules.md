@@ -56,18 +56,34 @@ so it can change course instead of retrying.
 
 ## Yolo mode
 
-`/yolo` stops the dialog for the current chat: every call that would ask
-runs instead, until you run `/yolo` again. It works while the agent is busy;
-turning it on also allows the asks already open. The terminal
-prompt shows 🔥 and the web chat header a `Yolo` chip while it is on (click
-the chip to turn it off). The mode is saved with the chat: it stays on
-across turns, chat switches and server restarts.
+Yolo mode stops most dialogs for the current chat: a call that would ask
+runs instead. It has two levels:
+
+| Command | Level | Still asks |
+| --- | --- | --- |
+| `/yolo` | Sane | Writes outside the project and into `.env`, `.git/` or key directories; secret leaks (environment dumps, credential files, secret CLIs); `git push`, `mkfs`, `dd`; deleting a directory outside the project; server restarts. Removing a system directory (`/`, the home directory, `/usr`, `/etc`, `/nix`, …) is denied. |
+| `/yolo relentless` | Relentless | Server restarts (`bb serve:restart`, `serve:stop`). |
+
+`/yolo` again, or `/yolo off`, turns it off; `/yolo sane` switches back
+from relentless. It works while the agent is busy, and raising the level
+allows the open asks it would have skipped. The terminal prompt shows 🔥
+(sane) or 🔥🔥 (relentless), the web chat header a `Yolo` or `Relentless`
+chip (click it to turn yolo off). The level is saved with the chat: it
+stays across turns, chat switches and server restarts.
 
 It skips confirmations only: rule asks, the [clj tool](clj-tool.md)'s own
 prompts (programs, paths outside the project, directory deletions) and
 sub-agent starts. A rule that denies or nudges still does, plan mode still
 blocks writes, and the hardened tier still asks for its own dialogs (writes
-into `.git/hooks` or `.git/config`).
+into `.git/hooks` or `.git/config`) at both levels.
+
+To keep one of your own asks in sane mode, give its action `:guard :sane`;
+`:guard :always` keeps it in relentless mode too:
+
+```clojure
+{:match  {:tool :sh :cli "terraform" :command #"\bapply\b"}
+ :action {:type :ask :guard :always}}
+```
 
 ## Writing your own rules
 

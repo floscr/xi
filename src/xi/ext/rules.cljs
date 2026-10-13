@@ -20,9 +20,10 @@
      :deny  → an error result instead of running it
      :nudge → a non-error steering result instead of running it
      :ask   → raise a confirm dialog; on :always persist a session allow-rule
-              (while the room's yolo mode is on the dialog resolves yes by
-              itself — xi.ext.core/create-dialogs; a hardened-tier ask is
-              tagged :hardened? so it still opens)
+              (in yolo mode the dialog resolves yes by itself unless the
+              action's :guard keeps it open at that level —
+              xi.dialog/auto-confirm?; a hardened-tier ask is tagged
+              :hardened? so it always opens)
      :hint  → never decides; its message is appended to the deciding rule's
               (deny / nudge / ask) text — see xi.rules/first-match
 
@@ -282,7 +283,7 @@
                                     with recommend-a-rule
      {:decision :nudge :message m}  a :nudge rule
      {:decision :pass}              an unknown action type"
-  [{:keys [type message options unanswered hints scope grant]} req {:keys [confirm! dispatch! room-id recommend-rule?]}]
+  [{:keys [type message options unanswered hints scope grant] :as action} req {:keys [confirm! dispatch! room-id recommend-rule?]}]
   (let [deny-reason (volatile! nil)]
     (case type
       :allow {:decision :allow}
@@ -304,6 +305,7 @@
                       (let [diff (ask-diff req)]
                         (cond-> {:options (recommend-options options req recommend-rule?)}
                           diff                 (assoc :diff diff)
+                          (rules/guard action) (assoc :guard (rules/guard action))
                           ;; never auto-answered by yolo mode
                           (= :hardened scope) (assoc :hardened? true))))
                      (.then (fn [ans]

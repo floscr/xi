@@ -464,7 +464,7 @@
                        ;; Raise a confirm dialog and resolve to the answer; it waits in the room
                        ;; even with no client connected (prompt mode resolves the safe default,
                        ;; xi.ext.core/create-dialogs). opts: :options, :diff, :call, :target,
-                       ;; :block, :hardened?, :on-reason (see xi.dialog).
+                       ;; :block, :hardened?, :guard, :on-reason (see xi.dialog).
                        :confirm!  (when ask!
                                     (fn confirm!
                                       ([message] (confirm! message nil))
@@ -479,7 +479,9 @@
                                                          (:target opts)  (assoc :target (:target opts))
                                                          (:block opts)   (assoc :block (:block opts))
                                                          ;; a hardened-tier ask: yolo mode never answers it
-                                                         (:hardened? opts) (assoc :hardened? true))}))))}
+                                                         (:hardened? opts) (assoc :hardened? true)
+                                                         ;; which yolo levels leave it open (xi.dialog/auto-confirm?)
+                                                         (:guard opts)     (assoc :guard (:guard opts)))}))))}
              policy1 (when tool-policy
                      (fn [tool-call]
                        (tool-policy tool-call (dialog/scope-confirm-to-call tool-ctx tool-call))))

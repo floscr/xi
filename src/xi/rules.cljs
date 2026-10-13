@@ -444,6 +444,16 @@
   [rule fallback]
   (with-hints (or (get-in rule [:action :message]) fallback) (:hints rule)))
 
+(defn guard
+  "The yolo guard of an ask `action` → :sane (sane yolo still asks, `:guard
+   true` too), :always (relentless too) or nil. The dialog carries it as
+   :guard (xi.dialog/auto-confirm?)."
+  [action]
+  (case (:guard action)
+    (true :sane) :sane
+    :always      :always
+    nil))
+
 (defn needs-nodes?
   "True when any rule carries a `:node` matcher, so the store should parse the
    target with tree-sitter to populate `:nodes`."

@@ -1396,6 +1396,47 @@
                    (fs/rmSync dir #js {:recursive true :force true})
                    (done)))))))
 
+(defn- sane-yolo-ctx [prompts]
+  (assoc (gate-ctx) :cwd (os/tmpdir)
+         :get-state (fn [] {:rooms {"r" {:ext {:yolo {:level :sane}}}}})
+         :confirm! (fn [msg & [opts]]
+                     (swap! prompts conj [msg (:guard opts)])
+                     (js/Promise.resolve true))))
+
+(deftest gate-sane-yolo-denies-removing-system-dirs
+  ;; xi.rules.defaults/yolo-sane: the builtin (rm …) asks the engine as
+  ;; `rm -r <path>`, so a system directory is refused before any dialog.
+  (async done
+    (let [prompts (atom [])
+          ctx     (sane-yolo-ctx prompts)]
+      (-> (js/Promise.all
+           #js [(gate {:name "clj" :arguments {:code "(rm \"/usr/share/xi-no-such-dir\")"}} ctx)
+                (gate {:name "clj" :arguments {:code "(sh \"rm\" \"-rf\" \"/etc\")"}} ctx)])
+          (.then (fn [results]
+                   (doseq [res results]
+                     (is (:intercepted res))
+                     (is (str/includes? (intercepted-text res) "system directories")))
+                   (is (empty? @prompts) "refused without a dialog")
+                   (done)))))))
+
+(deftest gate-tags-the-asks-sane-yolo-keeps
+  (async done
+    (let [prompts (atom [])
+          ctx     (sane-yolo-ctx prompts)]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code "(sh \"git\" \"push\")"}} ctx))
+          (.then (fn [_]
+                   (is (some (fn [[msg guard]]
+                               (and (str/includes? msg "Guarded command: git push")
+                                    (= :sane guard)))
+                             @prompts)
+                       "the guarded git push confirm carries :guard :sane")
+                   (is (some (fn [[msg guard]]
+                               (and (str/includes? msg "allow running `git`") (nil? guard)))
+                             @prompts)
+                       "the CLI approval is unguarded")
+                   (done)))))))
+
 (defn- mk-git-repo
   "A temp git repo (index only) with a tracked `src/` dir and an untracked
    `scratch/` dir; returns its canonical path."

@@ -2637,14 +2637,20 @@
 
 (defn- yolo-chip
   "Chat header chip while the room's yolo mode is on (xi.ext.yolo); a click
-   runs /yolo to turn it off."
+   runs /yolo off."
   [dispatch! room]
-  (when (get-in room [:ext :yolo :enabled?])
+  (when-let [[flame label title]
+             (case (get-in room [:ext :yolo :level])
+               :sane       ["🔥" "Yolo"
+                            "Yolo mode: tool calls run without asking, except risky ones."]
+               :relentless ["🔥🔥" "Relentless"
+                            "Relentless yolo mode: every tool call runs without asking."]
+               nil)]
     (chip/chip {:attrs    {:class ["yolo-chip"]
-                           :title "Yolo mode: tool calls run without asking. Click to turn it off."}
-                :on-click (fn [_] (dispatch-command! dispatch! (:id room) "yolo"))}
-      [:span {:class ["yolo-chip-flame"]} "🔥"]
-      "Yolo")))
+                           :title (str title " Click to turn it off.")}
+                :on-click (fn [_] (dispatch-command! dispatch! (:id room) "yolo off"))}
+      [:span {:class ["yolo-chip-flame"]} flame]
+      label)))
 
 (defn shorten-path
   [path]

@@ -55,7 +55,7 @@ Every field present must hold. An absent field is no constraint.
 | `:mcp-server` | An MCP server id | String or glob. |
 | `:mcp-tool` | An MCP tool name | String or glob; `"*"` for any. |
 | `:mcp-trusted` | `true` / `false` | Whether the server is trusted right now. |
-| `:when` | A sub-map of the chat's extension state | `{:plan-mode {:enabled? true}}`, `{:agent {:id "root"}}` for an agent profile's chats, `{:agent {}}` for any profile. |
+| `:when` | A sub-map of the chat's extension state | `{:plan-mode {:enabled? true}}`, `{:yolo {:level :sane}}` (or `:relentless`) while [yolo mode](rules.md#yolo-mode) is on, `{:agent {:id "root"}}` for an agent profile's chats, `{:agent {}}` for any profile. |
 | `:user` | The user the call acts for | String (exact or glob), regex or set: the user id. A map: a sub-map of the user's profile in `config.edn` `:users`, `{:id … :name … :meta …}`, e.g. `{:meta {:team "ops"}}`; `{}` is any user. In a map, a set value is one of (`{:meta {:team #{"ops" "infra"}}}`), and a value also matches a collection that holds it (`{:meta {:roles "admin"}}` matches `:roles ["admin" "dev"]`). The user is whoever sent the chat's latest prompt (a sub-agent acts for its parent's), else the server's own user; for `:terminal`, whoever opens it. While `config.edn` is invalid a map matches every user unless the rule is `:allow`, so a restriction keyed on `:meta` keeps applying. |
 | `:outside` | `:cwd` | The target resolves outside the working directory and the temp directory. |
 | `:credential` | `:read` | The target is in a credential directory (`.ssh`, `.gnupg`, `.password-store`, …). |
@@ -78,7 +78,7 @@ option when it has one, else the chat's directory.
 | `:allow` | Runs the call. No later rule is consulted. For a clj `(sh …)` rule: without `:command`, `:path`, `:within`, `:tracked`, `:host` or `:read-only` it allows the program; with one of them it allows only the exact matched command. |
 | `:deny` | Blocks it. The agent sees `:message`. |
 | `:nudge` | Blocks it, but reports `:message` as a hint rather than an error. |
-| `:ask` | Shows a dialog. `:message` replaces the default text. `:options` defaults to `[:yes :no :always]`; `:unanswered :deny` refuses the call when nobody can answer instead of letting it through. |
+| `:ask` | Shows a dialog. `:message` replaces the default text. `:options` defaults to `[:yes :no :always]`; `:unanswered :deny` refuses the call when nobody can answer instead of letting it through. `:guard :sane` (or `true`) keeps the dialog in sane [yolo mode](rules.md#yolo-mode); `:guard :always` keeps it in relentless mode too. |
 | `:hint` | Decides nothing. Matching continues, and `:message` is appended under the message of the first deciding rule below it (a deny, nudge or ask). Several hints stack in order. A hint above an allow, or with no deciding rule below it, is dropped. |
 
 A `:message` may contain `{cli}` (the program of a clj `(sh …)` call) and
@@ -141,19 +141,20 @@ list; inline rule maps may be mixed in.
 | Bundle | Does |
 | --- | --- |
 | `not-installed` | Deny: a clj `(sh …)` program that is not on PATH. An instant error naming the program, before any dialog; a `:hint` rule in your file adds the system-specific advice. |
+| `yolo-sane` | Deny, in sane yolo mode: `rm` of a system directory or anything under one (`/`, the home directory, `/usr`, `/etc`, `/nix`, `/var`, `/opt`, …), through `bash`, a clj `(sh …)` call or the clj `(rm …)` helper. |
 | `tmp-cleanup` | Nudge: `rm` under `/tmp` is unnecessary. |
 | `no-auto-memory` | Nudge: writes into a Claude auto-memory directory are skipped. |
 | `extension-credentials` | Deny: extensions reading or writing credential paths. |
 | `extension-data` | Allow: extensions in their own data directory. |
 | `xi-sessions` | Allow: reads under `~/.config/xi/sessions`. |
 | `claude-sessions` | Allow: reads under `~/.claude/projects`. |
-| `env` | Ask, yes or no only, refused when nobody can answer, with a warning that the output goes to the LLM provider: a dump of the whole environment — `env`, `printenv`, `export -p`, a bare `set`, `declare -x`, or `/proc/<pid>/environ` read with any tool (`env-dump`); a read of a credential file — the hidden credential directories (`.aws`, `.kube`, `.gnupg`, `.password-store`, `.config/gh`, `.config/xi`, `.netrc`, `.npmrc`), `.env` and `.env.*` (not `.example`, `.sample`, `.template`, `.dist`), `*credentials.json`, `.git-credentials`, `.docker/config.json`, `.pgpass`, `.pypirc` — through the read and grep tools or a command line that names one (`secret-reads`); a command that prints a secret — `pass <name>`, `gopass show`, `op read`, `op item get`, `bw get`, `secret-tool lookup`, `gh auth token`, `vault kv get`, `agenix`/`age`/`sops --decrypt` (`secret-clis`). One variable (`printenv NAME`, `(env "NAME")`) is free. |
+| `env` | Ask, yes or no only, refused when nobody can answer, kept in sane yolo mode, with a warning that the output goes to the LLM provider: a dump of the whole environment — `env`, `printenv`, `export -p`, a bare `set`, `declare -x`, or `/proc/<pid>/environ` read with any tool (`env-dump`); a read of a credential file — the hidden credential directories (`.aws`, `.kube`, `.gnupg`, `.password-store`, `.config/gh`, `.config/xi`, `.netrc`, `.npmrc`), `.env` and `.env.*` (not `.example`, `.sample`, `.template`, `.dist`), `*credentials.json`, `.git-credentials`, `.docker/config.json`, `.pgpass`, `.pypirc` — through the read and grep tools or a command line that names one (`secret-reads`); a command that prints a secret — `pass <name>`, `gopass show`, `op read`, `op item get`, `bw get`, `secret-tool lookup`, `gh auth token`, `vault kv get`, `agenix`/`age`/`sops --decrypt` (`secret-clis`). One variable (`printenv NAME`, `(env "NAME")`) is free. |
 | `plan-mode` | While `/plan` is on: allow `tasks/todo.md`, deny other writes and mutating commands. |
-| `write-gates` | Ask: writes into mail or key directories (`sensitive-writes`); into `.env`, `.git/`, `node_modules/` (`protected-writes`); outside the working directory, with the `r` option (`outside-writes`). |
+| `write-gates` | Ask, kept in sane yolo mode: writes into mail or key directories (`sensitive-writes`); into `.env`, `.git/`, `node_modules/` (`protected-writes`); outside the working directory, with the `r` option (`outside-writes`). |
 | `bash-chained` | Deny: composed `bash` commands; use the clj tool. |
 | `bb-trust` | Ask before `bb` runs with an untrusted `bb.edn`; `a` trusts the file. |
-| `bash-guards` | Deny remote shells; ask on destructive patterns (`rm -rf`, `chmod -R`, `git push`, `kill`, …), also in bb task lines. |
-| `server-control` | Ask on `bb serve:restart` / `serve:stop`; run detached once approved. |
+| `bash-guards` | Deny remote shells; ask on destructive patterns (`rm -rf`, `chmod -R`, `git push`, `kill`, …), also in bb task lines. `git push`, `mkfs` and `dd if=` asks are kept in sane yolo mode. |
+| `server-control` | Ask on `bb serve:restart` / `serve:stop`, in both yolo levels too; run detached once approved. |
 | `mcp-confirm` | Ask on a call to an untrusted MCP server; `a` trusts it. |
 | `subagent-confirm` | Ask on every `spawn_subagent`. |
 | `extension-sh` | Ask on every program an extension runs. |
@@ -186,8 +187,10 @@ gates, as the built-in order does. `:defaults []` turns the tier off.
   the pending dialog.
 - `/clj allow <cli>` and `/clj revoke <cli>` add and remove a chat rule for
   a program.
-- `/yolo` toggles [yolo mode](rules.md#yolo-mode) for the chat: asks run
-  without a dialog; denies, nudges and the hardened tier still apply.
+- `/yolo` toggles sane [yolo mode](rules.md#yolo-mode) for the chat;
+  `/yolo relentless`, `/yolo sane` and `/yolo off` set the level. Asks run
+  without a dialog unless their `:guard` keeps them at that level; denies,
+  nudges and the hardened tier still apply.
 
 ## Extensions and rules
 

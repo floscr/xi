@@ -73,7 +73,10 @@
                   {:name "reload" :description "Clear the rules-file cache"}]}
    {:name "plan"     :description "Toggle plan mode (read-only exploration)"}
    ;; Flipping the flag mid-turn is the point: the next ask runs instead.
-   {:name "yolo"     :description "Toggle yolo mode (run tool calls without asking)" :while-busy? true}
+   {:name "yolo"     :description "Toggle yolo mode (run tool calls without asking)" :while-busy? true
+    :subcommands [{:name "sane"       :description "Run tool calls without asking, except risky ones"}
+                  {:name "relentless" :description "Run every tool call without asking"}
+                  {:name "off"        :description "Ask again"}]}
    ;; Answer the pending permission ask — only ever useful mid-turn.
    {:name "allow"    :aliases ["a"] :description "Allow the pending permission request" :while-busy? true
     :subcommands [{:name "always" :description "Allow and don't ask again"}
