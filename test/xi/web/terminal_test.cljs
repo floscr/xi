@@ -21,3 +21,28 @@
     (is (nil? (terminal/osc52-text "c;?")))
     (is (nil? (terminal/osc52-text "c")))
     (is (nil? (terminal/osc52-text "c;!!!")))))
+
+(defn- hint-payload [data]
+  (js/btoa (apply str (map char (.encode (js/TextEncoder.) (js/JSON.stringify (clj->js data)))))))
+
+(deftest osc-hint-reads-a-tooltip
+  (testing "a cell and its items; unknown severities read as info"
+    (is (= {:row 3 :col 7
+            :items [{:severity "error" :text "Unresolved symbol: fo→" :source "clj-kondo"}
+                    {:severity "info" :text "line 1\nline 2" :source nil}]}
+           (terminal/osc-hint
+            (hint-payload {:row 3 :col 7
+                           :items [{:severity "error" :text "Unresolved symbol: fo→" :source "clj-kondo"}
+                                   {:severity "fatal" :text "line 1\nline 2" :source ""}]})))))
+  (testing "items without text are dropped"
+    (is (= ["kept"]
+           (->> (terminal/osc-hint (hint-payload {:row 0 :col 0
+                                                  :items [{:text ""} {:text 5} "x" {:text "kept"}]}))
+                :items (map :text)))))
+  (testing "empty, broken or itemless payloads hide it"
+    (is (nil? (terminal/osc-hint "")))
+    (is (nil? (terminal/osc-hint "!!!")))
+    (is (nil? (terminal/osc-hint (js/btoa "not json"))))
+    (is (nil? (terminal/osc-hint (hint-payload {:row 0 :col 0 :items []}))))
+    (is (nil? (terminal/osc-hint (hint-payload {:row -1 :col 0 :items [{:text "x"}]}))))
+    (is (nil? (terminal/osc-hint (hint-payload [1 2 3]))))))

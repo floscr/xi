@@ -5490,6 +5490,37 @@ code a:hover,
   font-size: var(--font-sm);
 }
 
+/* A program's tooltip at a cell (OSC 7475, xi.web.terminal): a popover panel
+   placed by the terminal; clicks pass through to it. */
+.terminal-hint-popup {
+  z-index: 20;
+  max-width: min(36rem, calc(100vw - var(--size-4)));
+  padding: var(--size-2) var(--size-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  pointer-events: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--font-xs);
+  line-height: 1.45;
+}
+
+.terminal-hint-item {
+  padding-left: var(--size-2);
+  border-left: 2px solid var(--accent);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.terminal-hint-item--error { border-left-color: var(--danger); }
+.terminal-hint-item--warn  { border-left-color: var(--warning); }
+.terminal-hint-item--hint  { border-left-color: var(--fg-2); }
+
+.terminal-hint-source {
+  margin-left: var(--size-2);
+  color: var(--fg-2);
+}
+
 /* System-prompt tab (/prompt): per-part collapsible cards */
 .prompt-tab-body {
   flex: 1;

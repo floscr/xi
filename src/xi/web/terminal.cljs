@@ -273,16 +273,19 @@
 
 (def clipboard-osc 52)
 
+(defn- base64-text [data]
+  (try
+    (.decode (js/TextDecoder.)
+             (.from js/Uint8Array (js/atob data) #(.charCodeAt % 0)))
+    (catch :default _ nil)))
+
 (defn osc52-text
   "The text an OSC 52 payload (\"c;aGk=\") puts on the clipboard, nil for a
    query or broken base64."
   [payload]
   (let [[_ data] (str/split (str payload) #";" 2)]
     (when (and data (not= "?" data))
-      (try
-        (.decode (js/TextDecoder.)
-                 (.from js/Uint8Array (js/atob data) #(.charCodeAt % 0)))
-        (catch :default _ nil)))))
+      (base64-text data))))
 
 (defn- on-osc52 [term-id]
   (fn [payload]
@@ -290,6 +293,93 @@
       (when-let [text (osc52-text payload)]
         (-> (clipboard/copy! text)
             (.catch #(js/console.warn "[terminal] clipboard:" %)))))
+    true))
+
+;; ── OSC 7475: a hint at a cell ──
+;; ESC ] 7475 ; <base64 JSON> BEL, the JSON {"row" "col" "items" [{"severity"
+;; "text" "source"}]}: a tooltip under that cell (0-based) of the screen, as
+;; the dotfiles' nvim sends the diagnostics under its cursor. An empty
+;; payload, or no items, hides it. Text only, never HTML.
+
+(def hint-osc 7475)
+
+(def ^:private hint-severities #{"error" "warn" "info" "hint"})
+
+(defn- hint-item [{:keys [severity text source]}]
+  (when (and (string? text) (not (str/blank? text)))
+    {:severity (if (contains? hint-severities severity) severity "info")
+     :text     text
+     :source   (when (and (string? source) (not (str/blank? source))) source)}))
+
+(defn- parse-json [s]
+  (try (js->clj (js/JSON.parse s) :keywordize-keys true)
+       (catch :default _ nil)))
+
+(defn osc-hint
+  "The hint an OSC 7475 payload shows → {:row :col :items}, nil to hide it
+   (empty, broken, or nothing to show)."
+  [payload]
+  (let [{:keys [row col items]} (some-> (base64-text (str/trim (str payload))) parse-json)
+        items (when (sequential? items) (keep #(when (map? %) (hint-item %)) items))]
+    (when (and (nat-int? row) (nat-int? col) (seq items))
+      {:row row :col col :items (vec (take 20 items))})))
+
+(defn- hide-hint! [term-id]
+  (when-let [^js box (get-in @instances [term-id :hint])]
+    (.remove box)
+    (swap! instances update term-id dissoc :hint)))
+
+(defn- hint-el [{:keys [items]}]
+  (let [box (.createElement js/document "div")]
+    (set! (.-className box) "popover-content terminal-hint-popup")
+    (.setAttribute box "role" "tooltip")
+    (doseq [{:keys [severity text source]} items]
+      (let [row (.createElement js/document "div")
+            msg (.createElement js/document "span")]
+        (set! (.-className row) (str "terminal-hint-item terminal-hint-item--" severity))
+        (set! (.-textContent msg) text)
+        (.appendChild row msg)
+        (when source
+          (let [src (.createElement js/document "span")]
+            (set! (.-className src) "terminal-hint-source")
+            (set! (.-textContent src) source)
+            (.appendChild row src)))
+        (.appendChild box row)))
+    box))
+
+(defn- place-hint!
+  "Below cell row/col of `term`'s screen, above it when the screen ends
+   first; kept inside the screen sideways. The box is position: fixed."
+  [^js term ^js box {:keys [row col]}]
+  (when-let [screen (some-> (.-element term) (.querySelector ".xterm-screen"))]
+    (let [r      (.getBoundingClientRect screen)
+          cell-w (/ (.-width r) (max 1 (.-cols term)))
+          cell-h (/ (.-height r) (max 1 (.-rows term)))
+          w      (.-offsetWidth box)
+          h      (.-offsetHeight box)
+          below  (+ (.-top r) (* (inc row) cell-h) 2)
+          above  (- (+ (.-top r) (* row cell-h)) h 2)
+          top    (if (and (> (+ below h) (.-bottom r)) (>= above (.-top r))) above below)
+          left   (-> (+ (.-left r) (* col cell-w))
+                     (min (- (.-right r) w))
+                     (max (.-left r)))]
+      (set! (.. box -style -top) (str top "px"))
+      (set! (.. box -style -left) (str left "px")))))
+
+(defn- show-hint! [term-id hint]
+  (hide-hint! term-id)
+  (when-let [{:keys [^js term ^js node]} (get @instances term-id)]
+    (let [box (hint-el hint)]
+      (.appendChild node box)
+      (place-hint! term box hint)
+      (swap! instances assoc-in [term-id :hint] box))))
+
+(defn- on-hint-osc [term-id]
+  (fn [payload]
+    (when-not (contains? @replaying term-id)
+      (if-let [hint (osc-hint payload)]
+        (show-hint! term-id hint)
+        (hide-hint! term-id)))
     true))
 
 (defn- ctrl-key?
@@ -329,8 +419,9 @@
                                                     :else           true)))
              (.. term -parser (registerOscHandler osc-code (on-osc term-id)))
              (.. term -parser (registerOscHandler clipboard-osc (on-osc52 term-id)))
+             (.. term -parser (registerOscHandler hint-osc (on-hint-osc term-id)))
              (.onData term #(send! {:type :terminal/input :term-id term-id :text %}))
-             (.onResize term #(send-size! term-id term))
+             (.onResize term #(do (hide-hint! term-id) (send-size! term-id term)))
              (.addEventListener (.-textarea term) "focus" #(send-size! term-id term))
              (.observe observer node)
              (swap! instances assoc term-id {:term term :fit fit :observer observer :node node})
@@ -379,7 +470,8 @@
   (case type
     :terminal/output (do (when-let [^js term (get-in @instances [term-id :term])]
                            (if reset?
-                             (do (.reset term)
+                             (do (hide-hint! term-id)
+                                 (.reset term)
                                  (swap! replaying conj term-id)
                                  (.write term text #(swap! replaying disj term-id)))
                              (.write term text)))

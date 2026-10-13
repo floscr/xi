@@ -132,6 +132,11 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   scrollback are dropped (`replaying`, cleared by `write`'s callback).
   An OSC 52 handler puts the decoded text on the clipboard
   (`xi.web.clipboard`, shared with the copy buttons); queries get no answer.
+  An OSC 7475 handler shows a tooltip at a screen cell (`osc-hint`, base64
+  JSON): a `.popover-content` div appended to the terminal host and placed
+  `position: fixed` from `.xterm-screen`'s rect and the grid size, outside
+  the render loop like the rest of the terminal. A replay, an xterm resize
+  or an empty payload removes it.
   Prompts go the other way, server-side: `xi.ext.terminal.socket` (one
   0600 Unix socket per server process) takes `POST /send` with the
   per-spawn token `xi.ext.terminal.pty` puts in the child env, maps it to
