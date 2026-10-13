@@ -157,9 +157,10 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   Blocks carry
   `data-file-path` / `data-diff-path` / `data-diff-text` for the delegated
   listener in `xi.web.core` (plus `:lang` from a `pre.language-*`);
-  `xi.diff/tool-diff->unified` converts the tool diff format. A diff viewer's file header is a `ui.context-menu` trigger
-  (`diff-file-menu-items`: View file via `:file/open`, Copy path); the
-  trigger wrapper is the sticky element. git prints root-relative paths, so
+  `xi.diff/tool-diff->unified` converts the tool diff format. File headers (diff viewer, review canvas, file tab) are
+  `views/file-header`, a `ui.context-menu` trigger (`file-menu-items`: View
+  file via `:file/open`, Copy path, then the `:block-menu-items` for
+  `{:path}`); the trigger is the sticky element. git prints root-relative paths, so
   the file-view extension resolves against the room cwd and then its git
   root.
   The diff viewer (`diff-rows-view`) stays responsive on huge diffs three

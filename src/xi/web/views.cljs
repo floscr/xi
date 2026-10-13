@@ -2130,26 +2130,41 @@
           (recur (next gs) 0 (conj out left))))
       out)))
 
-(defn- diff-file-menu-items
-  "ui.context-menu entries for a file header in the diff viewer: View file
-   (:file/open — not for deleted files, which are gone from disk) and Copy
-   path."
-  [dispatch! filename status]
+(defn- file-menu-items
+  "ui.context-menu entries for a file header: View file (:file/open), Copy
+   path, then the extensions' entries for the file (xi.web.block-menu, block
+   {:path}). A file `gone?` from disk (deleted in a diff) only offers Copy
+   path; `view?` false drops View file (the file's own viewer)."
+  [dispatch! state path {:keys [gone? view?] :or {view? true}}]
   (cond-> []
-    (not= status :deleted)
+    (and view? (not gone?))
     (conj {:label    "View file"
            :icon     :file-text
-           :on-click #(dispatch! {:type :file/open :path filename})})
+           :on-click #(dispatch! {:type :file/open :path path})})
     true
     (conj {:label    "Copy path"
            :icon     :copy
-           :on-click #(copy! dispatch! filename)})))
+           :on-click #(copy! dispatch! path)})
+    (not gone?)
+    (into (map (fn [{:keys [label icon event]}]
+                 {:label label :icon (or icon :chevron-right)
+                  :on-click #(dispatch! event)}))
+          (block-menu/items {:path path} state))))
+
+(defn file-header
+  "A file's header with the file menu on right-click / long-press
+   (file-menu-items). The trigger is the outermost element (`:class`), so a
+   sticky header stays sticky. Opts also take file-menu-items' :gone? / :view?."
+  [dispatch! state path {:keys [class] :as opts} & children]
+  (into (context-menu/context-menu-trigger
+         {:items (file-menu-items dispatch! state path opts) :class class})
+        children))
 
 (defn diff-rows-view
-  "Flattened diff rows as a scrollable view grouped by file (sticky header
-   with a right-click / long-press menu, diff-file-menu-items,
-   horizontally scrollable body), the selection `toolbar` anchored to the
-   selected range. Opts: :highlight / :reviewed (sets of :sel-idx, review
+  "Flattened diff rows as a scrollable view grouped by file (sticky
+   file-header, horizontally scrollable body), the selection `toolbar`
+   anchored to the selected range. Opts: :state (the app state, for the
+   extensions' file menu entries), :highlight / :reviewed (sets of :sel-idx, review
    canvas), :line-suffix ((fn [sel-idx]) → hiccup, inline comment threads),
    :collapsed (folded filenames; present ⇒ headers toggle :diff/toggle-file),
    :expanded (filenames shown in full; present ⇒ size-limited by
@@ -2157,7 +2172,7 @@
    present ⇒ markdown files render as a rendered diff with a toggle keyed
    [:diff filename])."
   ([dispatch! rows range toolbar] (diff-rows-view dispatch! rows range toolbar nil))
-  ([dispatch! rows range toolbar {:keys [highlight reviewed line-suffix collapsed expanded md-code]}]
+  ([dispatch! rows range toolbar {:keys [state highlight reviewed line-suffix collapsed expanded md-code]}]
   (let [grammar-cache (atom {})
         grammar-for (fn [f] (or (@grammar-cache f)
                                 (let [g (diff-file-grammar f)]
@@ -2193,9 +2208,9 @@
                     (not= status :deleted) (assoc :data-file-path filename))
              ;; The trigger is the sticky element: wrapping the header in a
              ;; plain div would confine its stickiness to the wrapper's height.
-             (context-menu/context-menu-trigger
-              {:items (diff-file-menu-items dispatch! filename status)
-               :class "diff-file-header-wrap"}
+             (file-header
+              dispatch! state filename
+              {:class "diff-file-header-wrap" :gone? (= status :deleted)}
               [:div (cond-> {:class ["diff-file-header"
                                      (when collapse? "diff-file-header--clickable")]}
                       collapse?
@@ -2503,10 +2518,11 @@
 
 (defn- diff-tab-view
   "The diff buffer as the active tab: git diffs get the interactive viewer,
-   difftastic diffs read-only ANSI-colored text. `md-code` is the
-   :web/md-diff-code set."
-  [dispatch! room-id diff-buffer sel modify? collapsed expanded md-code]
-  (let [engine (or (:engine diff-buffer) :git)
+   difftastic diffs read-only ANSI-colored text."
+  [dispatch! state room-id diff-buffer]
+  (let [{sel :web/diff-sel modify? :web/diff-modify? collapsed :web/diff-collapsed
+         expanded :web/diff-expanded md-code :web/md-diff-code} state
+        engine (or (:engine diff-buffer) :git)
         git?   (not= engine :difft)
         rows   (when git? (diff-rows-for-text (:text diff-buffer)))
         filenames (when git?
@@ -2525,17 +2541,17 @@
          (diff-rows-view dispatch! rows range
                          (when range
                            (diff-action-bar dispatch! room-id rows range modify?))
-                         {:collapsed collapsed :expanded (or expanded #{})
+                         {:state state :collapsed collapsed :expanded (or expanded #{})
                           :md-code (or md-code #{})})))]))
 
 (defn- file-tab-view
-  [{:keys [path text]}]
+  [dispatch! state {:keys [path text]}]
   (let [ext     (file-ext path)
         grammar (grammars/get-grammar ext)]
     ;; data-file-path: the code-block menu offers the file to extensions
     [:div {:class ["file-tab"] :data-file-path path}
-     [:div {:class ["file-tab-header"]}
-      [:span {:class ["file-tab-path"]} path]]
+     (file-header dispatch! state path {:class "file-tab-header" :view? false}
+                  [:span {:class ["file-tab-path"]} path])
      (if (contains? md-diff/markdown-exts ext)
        [:div {:class ["file-tab-md"]}
         [:div {:class ["post-content"]} (md/render text)]]
@@ -4683,7 +4699,8 @@
         :else
         (diff-rows-view dispatch!
                         (diff-rows-for-text text)
-                        nil nil {:expanded (or (:web/diff-expanded state) #{})
+                        nil nil {:state    state
+                                 :expanded (or (:web/diff-expanded state) #{})
                                  :md-code  (or (:web/md-diff-code state) #{})}))]]))
 
 (defn- palette-chat-item

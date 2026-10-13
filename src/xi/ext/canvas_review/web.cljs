@@ -593,7 +593,7 @@
                                                       :text nil}))}
                        "Send"))])))
 
-(defn- node-card [dispatch! diff-text range {:keys [reviewed comments open composing?]} current? [id {:keys [kind x y w] :as n}]]
+(defn- node-card [dispatch! diff-text range {:keys [state reviewed comments open composing?]} current? [id {:keys [kind x y w] :as n}]]
   [:div {:class (cond-> ["cr-node" (str "cr-node--" (name (or kind :comment)))]
                   current? (conj "cr-node--current"))
          :data-cr-node id
@@ -615,7 +615,8 @@
                                         rows)))]
            (views/diff-rows-view dispatch! rows range
                                  (when anchor-here? (cr-action-bar dispatch! range composing?))
-                                 {:highlight (highlight-idx rows (:highlight n))
+                                 {:state     state
+                                  :highlight (highlight-idx rows (:highlight n))
                                   :reviewed  reviewed
                                   :line-suffix (fn [idx]
                                                  (when-let [cs (get comments idx)]
@@ -736,7 +737,7 @@
           [:svg {:class ["cr-edges"]}]
           (for [entry (sort-by (fn [[_ n]] [(:y n) (:x n)]) nodes)]
             (node-card dispatch! (:diff cr) range
-                       {:reviewed reviewed :comments comments :open open
+                       {:state state :reviewed reviewed :comments comments :open open
                         :composing? composing?}
                        (= (first entry) cur-node) entry))])
        (when (seq items)

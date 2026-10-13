@@ -448,7 +448,8 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
   `add-tap!` at init (e.g. fire a stashed action once `:room/joined` arrives).
 - **`:block-menu-items`** — `(fn [block state] → items)`, asked when the
   code-block menu opens (`xi.web.views/code-copy-menu`); `block` is `{:text
-  :path :line :lang :diff-path}`. Registered in `xi.web.block-menu` (fns, so outside
+  :path :line :lang :diff-path}`. File headers (`xi.web.views/file-header`)
+  ask it with `{:path}` on each render. Registered in `xi.web.block-menu` (fns, so outside
   the state, like `xi.web.palette-items`).
 - **`:terminal-toolbar-items`** — `(fn [buffer state] → items)`, the floating
   buttons of a terminal buffer; an item `:send`s text into the terminal or

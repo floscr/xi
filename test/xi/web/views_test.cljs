@@ -1,5 +1,6 @@
 (ns xi.web.views-test
   (:require [cljs.test :refer [deftest is testing]]
+            [xi.web.block-menu :as block-menu]
             [xi.web.views :as views]))
 
 ;; ── timeline post memo (typing lag on long chats) ─────────────────────────────
@@ -134,3 +135,28 @@
       (is (nil? (target [{:kind :user :text "hi"} {:kind :text :text "ok"} err] 2)))
       (is (nil? (target [{:kind :user :text "hi"} {:kind :text :text "ok"}] 1)))
       (is (nil? (target [err] 0))))))
+
+;; ── file-header menu ────────────────────────────────────────────────────────
+
+(deftest file-menu-items-offer-extension-entries
+  (let [items     @#'views/file-menu-items
+        registry  @#'block-menu/registry
+        sent      (atom [])
+        dispatch! #(swap! sent conj %)
+        labels    #(mapv :label %)]
+    (block-menu/register! :test/vim
+                          (fn [{:keys [path text]} _]
+                            (when path
+                              [{:label "Open in vim" :event {:type :vim/open :path path}}])))
+    (try
+      (testing "View file, Copy path, then the extensions' entries for {:path}"
+        (let [menu (items dispatch! {} "a.clj" {})]
+          (is (= ["View file" "Copy path" "Open in vim"] (labels menu)))
+          ((:on-click (last menu)))
+          (is (= [{:type :vim/open :path "a.clj"}] @sent))))
+      (testing "the file's own viewer drops View file"
+        (is (= ["Copy path" "Open in vim"]
+               (labels (items dispatch! {} "a.clj" {:view? false})))))
+      (testing "a file gone from disk only offers Copy path"
+        (is (= ["Copy path"] (labels (items dispatch! {} "a.clj" {:gone? true})))))
+      (finally (swap! registry dissoc :test/vim)))))
