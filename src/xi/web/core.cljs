@@ -1050,8 +1050,8 @@
                                                                         :x x :y y})})
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
           ;; Floating Copy button for a tapped code block (attach-code-copy-listener!).
-          :code/menu-open        (fn [st {:keys [text path lang diff-path diff-text x y]}]
-                                   {:state (assoc st :web/code-menu {:text text :path path :lang lang
+          :code/menu-open        (fn [st {:keys [text path line lang diff-path diff-text x y]}]
+                                   {:state (assoc st :web/code-menu {:text text :path path :line line :lang lang
                                                                      :diff-path diff-path
                                                                      :diff-text diff-text
                                                                      :x x :y y})})
@@ -2234,6 +2234,7 @@
                                                    (.closest (str "[" a "]"))
                                                    (.getAttribute a)))
                               path (attr "data-file-path")
+                              line (some-> (attr "data-file-line") parse-long)
                               diff-path (attr "data-diff-path")
                               diff-text (attr "data-diff-text")
                               lang (some->> (some-> node (.closest "pre") .-className)
@@ -2248,6 +2249,7 @@
                                         :x (.-clientX e)
                                         :y (.-clientY e)}
                                  path (assoc :path path)
+                                 (and path line) (assoc :line line)
                                  lang (assoc :lang lang)
                                  diff-text (assoc :diff-path diff-path
                                                   :diff-text diff-text)))

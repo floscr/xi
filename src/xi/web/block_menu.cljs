@@ -2,9 +2,10 @@
   "Extension entries of the code-block menu (right-click / tap on a code
    block, xi.web.views/code-copy-menu). A provider is an extension's
    `:block-menu-items`: (fn [block state] → [{:label str :icon kw :event {…}}
-   …]), asked each time the menu opens, where `block` is {:text :path :lang
-   :diff-path} — :path when the block belongs to a tool call naming a file,
-   :lang for a fenced code block. Its entries show below the core ones.
+   …]), asked each time the menu opens, where `block` is {:text :path :line
+   :lang :diff-path} — :path when the block belongs to a tool call or diff
+   naming a file (:line for a diff line), :lang for a fenced code block. Its
+   entries show below the core ones.
 
    The registry holds fns, so it lives outside the app state (like
    xi.web.palette-items); built-in web halves register at init, user web

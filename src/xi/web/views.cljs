@@ -2022,6 +2022,7 @@
                  "")
         sign   (case type :add "+" :delete "-" " ")]
     [:div (cond-> {:class cls :replicant/key row-key}
+            (#{:add :context} type) (assoc :data-file-line new-line)
             sel-idx (assoc :on {:click (fn [_] (dispatch! {:type :diff/select-line
                                                            :idx sel-idx}))}))
      [:span {:class ["diff-ln"] :data-ln old-nr}]
@@ -2156,9 +2157,12 @@
                 md-body    (when (and md-code (md-diff/markdown-path? filename))
                              (diff-group-md-body group))
                 md-code?   (contains? md-code md-key)]
-            [:div {:class ["diff-file"
-                           (when folded? "diff-file--collapsed")]
-                   :replicant/key filename}
+            ;; data-file-path: the code-block menu on a line offers the file
+            ;; to extensions (xi.web.block-menu), data-file-line the line
+            [:div (cond-> {:class ["diff-file"
+                                   (when folded? "diff-file--collapsed")]
+                           :replicant/key filename}
+                    (not= status :deleted) (assoc :data-file-path filename))
              ;; The trigger is the sticky element: wrapping the header in a
              ;; plain div would confine its stickiness to the wrapper's height.
              (context-menu/context-menu-trigger
@@ -3018,7 +3022,7 @@
          (icon/icon {:icon-name :code :size :sm})
          [:span "View diff"]])
       (for [{:keys [label icon event]}
-            (block-menu/items (select-keys menu [:text :path :lang :diff-path]) state)]
+            (block-menu/items (select-keys menu [:text :path :line :lang :diff-path]) state)]
         [:button {:class ["bubble-menu-item"]
                   :on {:click (fn [e]
                                 (.stopPropagation e)
