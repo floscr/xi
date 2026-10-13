@@ -27,6 +27,7 @@
             [xi.web.appearance :as appearance]
             [xi.web.block-menu :as block-menu]
             [xi.web.buffer-views :as buffer-views]
+            [xi.web.clipboard :as clipboard]
             [xi.web.dashboard :as dashboard]
             [xi.web.theme :as ctheme]
             [xi.web.keymap :as keymap]
@@ -111,37 +112,6 @@
 
 ;; ── Clipboard ─────────────────────────────────────────────────────────────────
 
-(defn- fallback-copy!
-  "Synchronous textarea-based clipboard copy for contexts without
-   navigator.clipboard (iOS over plain HTTP). The textarea setup follows
-   clipboard.js's iOS recipe: readonly, in-viewport, non-zooming font,
-   explicit setSelectionRange."
-  [text]
-  (let [el      (.createElement js/document "textarea")
-        scroll-y (or (.-pageYOffset js/window)
-                     (.. js/document -documentElement -scrollTop)
-                     0)]
-    (set! (.-value el) text)
-    (.setAttribute el "readonly" "")
-    (set! (.. el -style -position) "absolute")
-    (set! (.. el -style -left) "-9999px")
-    (set! (.. el -style -top) (str scroll-y "px"))
-    (set! (.. el -style -fontSize) "12pt")    ;; prevent iOS auto-zoom
-    (.appendChild js/document.body el)
-    (.focus el)
-    (.select el)
-    (.setSelectionRange el 0 (.. el -value -length))
-    (.execCommand js/document "copy")
-    (.removeChild js/document.body el)))
-
-(defn- copy-to-clipboard!
-  [text]
-  (if (and (some? js/navigator.clipboard) js/window.isSecureContext)
-    (-> (.writeText js/navigator.clipboard text)
-        (.catch (fn [_] (fallback-copy! text))))
-    (do (fallback-copy! text)
-        (js/Promise.resolve))))
-
 (def ios?
   (let [ua       (or (some-> js/navigator .-userAgent) "")
         platform (or (some-> js/navigator .-platform) "")
@@ -158,7 +128,7 @@
   [dispatch! text]
   (if (needs-copy-dialog?)
     (dispatch! {:type :copy/open :text text})
-    (-> (copy-to-clipboard! text)
+    (-> (clipboard/copy! text)
         (.then (fn [_] (dispatch! {:type :copy/flash}))))))
 
 (defn- copy-dialog-overlay

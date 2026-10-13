@@ -17,6 +17,7 @@
             [ui.button :as button]
             [ui.icon :as icon]
             [xi.keys :as keys]
+            [xi.web.clipboard :as clipboard]
             [xi.web.keymap :as keymap]))
 
 ;; ── Transport ────────────────────────────────────────────────────────────────
@@ -232,6 +233,32 @@
         (@run-action-ref id)))
     true))
 
+;; ── OSC 52: the program sets the clipboard ──
+;; ESC ] 52 ; <selections> ; <base64> BEL, as nvim's osc52 provider writes it.
+;; Writes only: answering a query (`?`) would hand the clipboard to whatever
+;; runs in the terminal.
+
+(def clipboard-osc 52)
+
+(defn osc52-text
+  "The text an OSC 52 payload (\"c;aGk=\") puts on the clipboard, nil for a
+   query or broken base64."
+  [payload]
+  (let [[_ data] (str/split (str payload) #";" 2)]
+    (when (and data (not= "?" data))
+      (try
+        (.decode (js/TextDecoder.)
+                 (.from js/Uint8Array (js/atob data) #(.charCodeAt % 0)))
+        (catch :default _ nil)))))
+
+(defn- on-osc52 [term-id]
+  (fn [payload]
+    (when-not (contains? @replaying term-id)
+      (when-let [text (osc52-text payload)]
+        (-> (clipboard/copy! text)
+            (.catch #(js/console.warn "[terminal] clipboard:" %)))))
+    true))
+
 (defn- ctrl-key?
   "A plain Ctrl+key the terminal should own outright: the program gets it,
    the browser's binding (Firefox's Ctrl+D bookmark, Ctrl+F find, …) never
@@ -268,6 +295,7 @@
                                                     (ctrl-key? e)   (do (.preventDefault e) true)
                                                     :else           true)))
              (.. term -parser (registerOscHandler osc-code (on-osc term-id)))
+             (.. term -parser (registerOscHandler clipboard-osc (on-osc52 term-id)))
              (.onData term #(send! {:type :terminal/input :term-id term-id :text %}))
              (.onResize term #(send-size! term-id term))
              (.addEventListener (.-textarea term) "focus" #(send-size! term-id term))

@@ -130,6 +130,8 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   `keymap/run-action!` (installed by core via `set-run-action!`), limited to
   `program-actions` since any output can carry it; OSCs in a replayed
   scrollback are dropped (`replaying`, cleared by `write`'s callback).
+  An OSC 52 handler puts the decoded text on the clipboard
+  (`xi.web.clipboard`, shared with the copy buttons); queries get no answer.
   Prompts go the other way, server-side: `xi.ext.terminal.socket` (one
   0600 Unix socket per server process) takes `POST /send` with the
   per-spawn token `xi.ext.terminal.pty` puts in the child env, maps it to

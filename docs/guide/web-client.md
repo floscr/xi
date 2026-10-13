@@ -169,6 +169,25 @@ terminal** in the ⋮ menu and the command palette opens a shell.
   `buffers/switch`, `files/find`, `files/find-edited`, `git/status`,
   `git/log`, `projects/pick`, `skills/search`, `themes/pick`, `keys/show`,
   `sidebar/toggle`, `buffer/close`, `terminal/leave`.
+- **Clipboard.** A program copies to the clipboard of the device you use
+  with OSC 52 (`ESC ] 52 ; c ; <base64> BEL`). Reading the clipboard this way
+  is not supported; paste with the browser. In Neovim:
+
+  ```lua
+  -- p pastes the last yank: Xi answers no clipboard query
+  local osc52, last = require("vim.ui.clipboard.osc52"), { {}, "v" }
+  local function copy(reg)
+    local send = osc52.copy(reg)
+    return function(lines, regtype) last = { lines, regtype }; send(lines, regtype) end
+  end
+  local function paste() return last end
+  vim.g.clipboard = {
+    name = "OSC 52",
+    copy = { ["+"] = copy("+"), ["*"] = copy("*") },
+    paste = { ["+"] = paste, ["*"] = paste },
+  }
+  ```
+
 - **Prompts from a program.** A program can send its chat a prompt, or
   start a sub-agent there, through the socket in `XI_TERM_SOCK`, with the
   token in `XI_TERM_TOKEN`. The prompt counts as sent by whoever opened the

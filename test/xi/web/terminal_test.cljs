@@ -11,3 +11,13 @@
     (is (nil? (terminal/osc-action "permission/allow")))
     (is (nil? (terminal/osc-action "")))
     (is (nil? (terminal/osc-action nil)))))
+
+(deftest osc52-puts-text-on-the-clipboard
+  (testing "base64 decodes as UTF-8, whichever selection is named"
+    (is (= "hi" (terminal/osc52-text "c;aGk=")))
+    (is (= "hi" (terminal/osc52-text ";aGk=")))
+    (is (= "äö→" (terminal/osc52-text "c;w6TDtuKGkg=="))))
+  (testing "a query or broken payload sets nothing"
+    (is (nil? (terminal/osc52-text "c;?")))
+    (is (nil? (terminal/osc52-text "c")))
+    (is (nil? (terminal/osc52-text "c;!!!")))))
