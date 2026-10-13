@@ -1,6 +1,7 @@
 (ns xisite.server
   "Dev server: renders pages per request, serves public/ and the guide's images."
   (:require [babashka.fs :as fs]
+            [babashka.process :as process]
             [clojure.stacktrace :as stacktrace]
             [org.httpkit.server :as http]
             [xisite.build :as build]
@@ -69,13 +70,50 @@
             :body (str "500 — " (ex-message e) "\n\n"
                        (with-out-str (stacktrace/print-stack-trace e)))}))))
 
+;; ── Restart ──
+;; A second `bb dev` replaces the running one, like the root bb.edn's
+;; *:restart tasks. Only a listener whose cwd is this site dir counts as
+;; "our" dev server; anything else on the port is left alone.
+
+(defn- listener-pid [port]
+  (let [{:keys [out]} (process/shell {:out :string :err :string :continue true}
+                                     "ss" "-ltnpH" (str "sport = :" port))]
+    (some->> out (re-find #"pid=(\d+)") second parse-long)))
+
+(defn- site-dev-server? [pid]
+  (try (= (str (fs/real-path (str "/proc/" pid "/cwd")))
+          (str (fs/real-path ".")))
+       (catch Exception _ false)))
+
+(defn- alive? [pid]
+  (fs/exists? (str "/proc/" pid)))
+
+(defn- stop-previous! [port]
+  (when-let [pid (listener-pid port)]
+    (when (site-dev-server? pid)
+      (println (str "Stopping the running site dev server (pid " pid ") …"))
+      (process/shell {:continue true} "kill" (str pid))
+      (loop [n 0]
+        (when (and (< n 20) (alive? pid))
+          (Thread/sleep 250)
+          (recur (inc n))))
+      (when (alive? pid)
+        (process/shell {:continue true} "kill" "-9" (str pid))
+        (Thread/sleep 250))
+      true)))
+
+(defn- run-server! [port]
+  (http/run-server (wrap-errors #'handle) {:port port}))
+
 (defn start! [{:keys [port] :or {port 4322}}]
   (let [url (str "http://localhost:" port)]
     (try
-      (http/run-server (wrap-errors #'handle) {:port port})
+      (run-server! port)
       (catch java.net.BindException _
-        (binding [*out* *err*]
-          (println (str "Port " port " is already in use — a dev server is probably already running at " url)))
-        (System/exit 1)))
+        (or (and (stop-previous! port)
+                 (try (run-server! port) (catch java.net.BindException _ nil)))
+            (do (binding [*out* *err*]
+                  (println (str "Port " port " is already in use by another process (" url ")")))
+                (System/exit 1)))))
     (livereload/watch!)
     (println (str "Dev server running at " url))))

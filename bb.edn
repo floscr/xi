@@ -260,7 +260,7 @@
    :task (shell {:dir "packages/mcp-bb-example"} "bb" "test")}
 
   site:dev
-  {:doc "Serve the home page + docs site (site/, rendered from docs/guide) on :4322 with live reload"
+  {:doc "Serve the home page + docs site (site/, rendered from docs/guide) on :4322 with live reload; replaces a site dev server already running there"
    :task (shell {:dir "site"} "bb" "dev")}
 
   tour:build

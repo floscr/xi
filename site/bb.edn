@@ -7,7 +7,7 @@
         markdown-clj/markdown-clj {:mvn/version "1.12.3"}}
  :tasks
  {dev
-  {:doc "Dev server on :4322 — renders every request from docs/guide + src, live-reloads the browser on change"
+  {:doc "Dev server on :4322 — renders every request from docs/guide + src, live-reloads the browser on change. Stops a site dev server already holding the port first"
    :requires ([xisite.server :as server])
    :task (do (server/start! {:port (or (some-> (System/getenv "PORT") parse-long) 4322)})
              (deref (promise)))}
