@@ -114,3 +114,29 @@ session.
    shown as a keycap; the full step list is in `xi.web.tour`), and the gate
    types.
 4. `bb tour:record <name>`, then replay it as above.
+
+A tour with no model turn (the palette, navigate mode, buffers) keeps
+`fake-llm.edn` as `{}`; its `record.mjs` only connects and sends what the
+client would.
+
+## Release videos
+
+Under a release's heading on `/changelog/`, a slideshow plays a few short
+tours in one stage, the most important features and UI fixes of that
+release. `releases.edn` lists them per version:
+
+```clojure
+{"0.4.0" [{:tour "0.4.0-palette" :title "Switch themes from the palette"}
+          {:tour "0.4.0-navigate" :title "Navigate mode: j/k, gg, SPC"}]}
+```
+
+Each slide is an ordinary tour (`site/tours/<tour>/`, recorded with
+`bb tour:record <tour>`), named after its release. Keep one to ~20 seconds
+showing one thing; the slideshow (`xisite.pages/slideshow`, `site.js`)
+shows its title as it starts and moves to the next slide 2.5 s after the
+tour is done, with Replay after the last. The chips below the stage jump to
+a slide. The `xi-release` skill asks which changes go in when cutting a
+release.
+
+Tapes replay in the current web client, so a protocol change can break an
+old release's slides: re-record them with `bb tour:record <tour>`.

@@ -1,6 +1,8 @@
 (ns xisite.pages
   "Page renderers: home, docs index, docs page. Each returns a full html string."
-  (:require [hiccup2.core :as h]
+  (:require [clojure.edn :as edn]
+            [clojure.string :as str]
+            [hiccup2.core :as h]
             [ui.badge :as badge]
             [ui.button :as button]
             [ui.button-group :as button-group]
@@ -182,6 +184,24 @@ xi clients user iPhone bob      # pin a paired phone to bob")
 
 ;; --- Tour stage (a recorded session replayed in the real web client) ---
 
+(defn- tour-src [tour] (str "/tour/?tape=" tour))
+
+(defn- stage-window
+  "A browser window around a tour iframe (`frame-attrs`); `overlay` sits over
+   the viewport."
+  [frame-attrs & [overlay]]
+  [:div.stage-window
+   [:div.stage-bar
+    [:span.stage-dots [:i] [:i] [:i]]
+    [:span.stage-url "localhost:7474"]
+    (button/button {:variant :ghost :size :sm :icon-left :refresh :class "stage-replay"
+                    :attrs {:type "button" :hidden true}}
+                   "Replay")]
+   [:div.stage-viewport
+    [:iframe.stage-frame (merge {:title "Xi's web client replaying a recorded session"}
+                                frame-attrs)]
+    overlay]])
+
 (defn- stage
   "The web client in a window frame, replaying site/public/tours/<tour>.json
    through /tour/. site.js loads the iframe (data-src) once the stage is in
@@ -191,18 +211,25 @@ xi clients user iPhone bob      # pin a paired phone to bob")
   [tour caption & [{:keys [phone-variant]}]]
   [:section.stage
    [:figure.stage-figure
-    [:div.stage-window
-     [:div.stage-bar
-      [:span.stage-dots [:i] [:i] [:i]]
-      [:span.stage-url "localhost:7474"]
-      (button/button {:variant :ghost :size :sm :icon-left :refresh :class "stage-replay"
-                      :attrs {:type "button" :hidden true}}
-                     "Replay")]
-     [:div.stage-viewport
-      [:iframe.stage-frame (cond-> {:data-src (str "/tour/?tape=" tour)
-                                    :title "Xi's web client replaying a recorded session"}
-                             phone-variant (assoc :data-phone-src (str "/tour/?tape=" tour "&variant=" phone-variant)))]]]
+    (stage-window (cond-> {:data-src (tour-src tour)}
+                    phone-variant (assoc :data-phone-src (str (tour-src tour) "&variant=" phone-variant))))
     [:figcaption caption]]])
+
+(defn- slideshow
+  "A release's video: its slides' tours played one after another in one
+   stage window, each opening on its title; the chips below jump to a slide
+   (site.js)."
+  [slides]
+  [:figure.slideshow
+   (stage-window {:data-src (tour-src (:tour (first slides)))}
+                 [:div.slideshow-title {:aria-hidden "true"}])
+   [:div.slideshow-chapters
+    (map-indexed
+     (fn [i {:keys [tour title]}]
+       (chip/chip {:active (zero? i)
+                   :attrs {:type "button" :data-slide-src (tour-src tour) :data-slide-title title}}
+         (str (inc i) ". " title)))
+     slides)]])
 
 ;; --- Theming section (themes the site and its previews, site/public/js/theme-demo.js) ---
 
@@ -482,10 +509,20 @@ xi clients user iPhone bob      # pin a paired phone to bob")
                       [:strong nav-title]
                       (when (seq summary) [:span summary]))])]]))))
 
+(defn- with-release-videos
+  "Each release's slideshow (core/releases-file) right under its `## X.Y.Z - date` heading."
+  [html releases]
+  (str/replace html #"(<h2 id=\"[^\"]*\">(\d+\.\d+\.\d+)\b.*?</h2>)"
+               (fn [[_ heading version]]
+                 (if-let [slides (seq (get releases version))]
+                   (str heading (h/html (slideshow slides)))
+                   heading))))
+
 (defn changelog
   "The release notes: CHANGELOG.md at the repo root, set like a docs page without the sidebar."
   []
-  (let [{:keys [title summary body]} (md/split-title (slurp core/changelog-file))]
+  (let [{:keys [title summary body]} (md/split-title (slurp core/changelog-file))
+        releases (edn/read-string (slurp core/releases-file))]
     (ui/render-page
      (ui/layout
       {:title (str title " · Xi")
@@ -495,7 +532,7 @@ xi clients user iPhone bob      # pin a paired phone to bob")
       [:div.changelog-shell
        [:article.docs-content
         [:h1 title]
-        (h/raw (md/render-body body))]]))))
+        (h/raw (with-release-videos (md/render-body body) releases))]]))))
 
 (defn docs-page [sections {:keys [title summary html headings path source-path prev next]}]
   (ui/render-page

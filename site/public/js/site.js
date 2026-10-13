@@ -3,6 +3,7 @@
 //   - the shared theme: follow a change made in another tab or a preview
 //   - the docs sidebar toggle on small screens
 //   - the tour stage on the home page: scaling and Replay
+//   - the release videos on /changelog/: tours played as slides
 //   - the live phones: scaling, starting together, looping.
 (function () {
   // ---- shared theme --------------------------------------------------------
@@ -59,13 +60,16 @@
   // the page sits idle, so they start from cache (~1.7 MB before gzip). Once
   // one frame has started, its own load fills the cache for the rest.
   var tourFrames = Array.prototype.slice.call(document.querySelectorAll('.stage-frame, .phone-frame'));
+  var tourSrcs = tourFrames.map(function (f) { return f.getAttribute('data-src'); })
+    .concat(Array.prototype.map.call(document.querySelectorAll('[data-slide-src]'),
+                                     function (c) { return c.getAttribute('data-slide-src'); }));
   if (tourFrames.length) {
     var prefetch = function () {
       if (tourFrames.some(function (f) { return f.getAttribute('src'); })) return;
       var urls = ['/tour/main.js', '/tour/style.css', '/tour/theme.css',
                   '/tour/ui-runtime.js', '/css/tour.css'];
-      tourFrames.forEach(function (f) {
-        var tape = new URL(f.getAttribute('data-src'), location.href).searchParams.get('tape');
+      tourSrcs.forEach(function (src) {
+        var tape = new URL(src, location.href).searchParams.get('tape');
         if (tape && tape.indexOf('/') < 0) urls.push('/tours/' + tape + '.json');
       });
       urls.filter(function (u, i) { return urls.indexOf(u) === i; }).forEach(function (u) {
@@ -90,7 +94,22 @@
   var TOUR_WIDTH = 1280;
   var PHONE_WIDTH = 390;
   var STAGE_PHONE_QUERY = '(max-width: 820px)';
-  Array.prototype.forEach.call(document.querySelectorAll('.stage-window'), function (win) {
+  var fitStage = function (viewport) {
+    var fit = function () {
+      viewport.style.setProperty('--stage-scale', String(viewport.clientWidth / TOUR_WIDTH));
+    };
+    fit();
+    if (window.ResizeObserver) new ResizeObserver(fit).observe(viewport);
+    else window.addEventListener('resize', fit);
+  };
+  var whenInView = function (el, start) {
+    if (!window.IntersectionObserver) return start();
+    var seen = new IntersectionObserver(function (entries) {
+      if (entries.some(function (e) { return e.isIntersecting; })) { seen.disconnect(); start(); }
+    }, { threshold: 0.4 });
+    seen.observe(el);
+  };
+  Array.prototype.forEach.call(document.querySelectorAll('.stage .stage-window'), function (win) {
     var viewport = win.querySelector('.stage-viewport');
     var frame = win.querySelector('.stage-frame');
     var replay = win.querySelector('.stage-replay');
@@ -122,6 +141,43 @@
       // the client pushed /chat/<id> into the frame's history: start over at src
       frame.src = src;
     });
+  });
+
+  // ---- release videos ------------------------------------------------------
+  // A .slideshow (xisite.pages/slideshow) plays its slides' tours in one
+  // stage, each opening on its title over the viewport, and moves on a
+  // moment after a tour posts done; Replay after the last. A chip jumps to
+  // its slide.
+  var SLIDE_PAUSE = 2500;
+  Array.prototype.forEach.call(document.querySelectorAll('.slideshow'), function (show) {
+    var viewport = show.querySelector('.stage-viewport');
+    var frame = show.querySelector('.stage-frame');
+    var replay = show.querySelector('.stage-replay');
+    var title = show.querySelector('.slideshow-title');
+    var chips = Array.prototype.slice.call(show.querySelectorAll('[data-slide-src]'));
+    var current = 0;
+    var next = null;
+    var titleTimer = null;
+    var go = function (i) {
+      clearTimeout(next);
+      clearTimeout(titleTimer);
+      current = i;
+      replay.hidden = true;
+      chips.forEach(function (c, j) { c.classList.toggle('chip-active', j === i); });
+      title.textContent = (i + 1) + ' / ' + chips.length + '  ' + chips[i].getAttribute('data-slide-title');
+      title.classList.add('is-shown');
+      titleTimer = setTimeout(function () { title.classList.remove('is-shown'); }, 2200);
+      frame.src = chips[i].getAttribute('data-slide-src');
+    };
+    fitStage(viewport);
+    whenInView(viewport, function () { if (!frame.getAttribute('src')) go(0); });
+    window.addEventListener('message', function (e) {
+      if (e.source !== frame.contentWindow || !e.data || e.data.xiTour !== 'done') return;
+      if (current + 1 < chips.length) next = setTimeout(function () { go(current + 1); }, SLIDE_PAUSE);
+      else replay.hidden = false;
+    });
+    chips.forEach(function (c, i) { c.addEventListener('click', function () { go(i); }); });
+    replay.addEventListener('click', function () { go(0); });
   });
 
   // ---- live phones ---------------------------------------------------------

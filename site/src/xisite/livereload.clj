@@ -4,7 +4,7 @@
   (:require [babashka.fs :as fs]
             [clojure.string :as str]))
 
-(def ^:private roots ["src" "public" "../docs/guide" "../CHANGELOG.md"])
+(def ^:private roots ["src" "public" "tours/releases.edn" "../docs/guide" "../CHANGELOG.md"])
 
 (def ^:private watched-exts #{"clj" "css" "js" "svg" "md" "edn" "html"})
 

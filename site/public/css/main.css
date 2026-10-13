@@ -569,6 +569,30 @@ a.btn:hover { text-decoration: none; }
   padding: 40px 24px 80px;
 }
 
+/* A release's video under its heading (xisite.pages/slideshow, site.js):
+   the tour stage, a title over it as each slide starts, chapters below. */
+.slideshow { margin: 20px 0 32px; }
+.slideshow-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.96);
+  max-width: 80%;
+  padding: 14px 22px;
+  border-radius: var(--radius-lg);
+  background: rgb(0 0 0 / 0.72);
+  color: #fff;
+  font-size: clamp(1rem, 2.4vw, 1.5rem);
+  font-weight: 600;
+  text-align: center;
+  white-space: pre-wrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .35s, transform .35s;
+}
+.slideshow-title.is-shown { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.slideshow-chapters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+
 .docs-shell {
   max-width: var(--wrap);
   margin: 0 auto;

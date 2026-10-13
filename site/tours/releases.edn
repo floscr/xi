@@ -1,0 +1,9 @@
+;; The release videos on /changelog/: per version, the slides played under its
+;; heading, in order. Each slide is a tour (site/tours/<tour>/, baked to
+;; site/public/tours/<tour>.json) and the title shown while it plays. Picked
+;; with the user when cutting a release (the xi-release skill); see
+;; site/tours/README.md, "Release videos".
+;;
+;; {"0.4.0" [{:tour "0.4.0-palette" :title "Switch themes from the palette"}
+;;           {:tour "0.4.0-navigate" :title "Navigate mode: j/k, gg, SPC"}]}
+{}

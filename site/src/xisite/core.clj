@@ -15,6 +15,10 @@
 ;; The release notes, kept at the repo root and rendered at /changelog/.
 (def changelog-file "../CHANGELOG.md")
 
+;; Each release's video on /changelog/: version → slides, each a recorded tour
+;; (site/tours/README.md, "Release videos").
+(def releases-file "tours/releases.edn")
+
 ;; Where the reference docs live on the forge, for guide links that point at
 ;; ../something.md (outside docs/guide).
 (def reference-docs-url (str repo-url "/blob/master/docs/"))
