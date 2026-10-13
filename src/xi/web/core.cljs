@@ -1653,6 +1653,7 @@
         (let [s (get-state)]
           (repaint-closed-drawer! (:web/wide? s) (:web/sidebar-open? s))))))
    :nav/back     router/back-effect
+   :nav/forward  (fn [_ _] (.forward js/history))
    :projects/sync-textarea
    (fn [_ {:keys [text]}]
      (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
@@ -1917,10 +1918,21 @@
   (fn [event state]
     (when (= :room/joined (:type event))
       (when-let [{:keys [session-id buffer-id]} (:web/pending-buffer state)]
-        (dispatch! {:type :buffer/pending-clear})
+        ;; the switch first: the view sync waits for the clear
         (when (= session-id (get-in event [:room :session :id]))
           (when-let [ev (router/buffer-open-event (:room-id event) (:room event) buffer-id)]
-            (dispatch! ev)))))))
+            (dispatch! ev)))
+        (dispatch! {:type :buffer/pending-clear})))))
+
+(defn- view-sync-tap
+  "Keep the URL on the chat's current view (xi.web.router/view-change). The
+   handler re-reads the state, so a sync queued behind a later switch is a
+   no-op."
+  [dispatch!]
+  (fn [event state]
+    (when (and (not= :route/view-sync (:type event))
+               (router/view-change state))
+      (dispatch! {:type :route/view-sync}))))
 
 (defn- pending-submit-tap
   "Fire a stashed message once the room it was aimed at joins, matched by the
@@ -2545,6 +2557,12 @@
   (keymap/register-action! {:id :themes/pick :event {:type :palette/open-themes}})
   (keymap/register-action! {:id :projects/open
                             :event {:type :route/navigate :page :home}})
+  ;; Vim's Ctrl+O / Ctrl+I over the browser history; back only while the app
+  ;; owns an entry to return to, so it never leaves Xi.
+  (keymap/register-action! {:id :nav/back
+                            :when (fn [_] (pos? @router/nav-depth))
+                            :event {:type :nav/back}})
+  (keymap/register-action! {:id :nav/forward :event {:type :nav/forward}})
   (keymap/register-action! {:id :chat/hide
                             :when chat-session-id
                             :run (fn [st dispatch! _]
@@ -2971,6 +2989,7 @@
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
     (add-tap! (pending-buffer-tap dispatch!))
+    (add-tap! (view-sync-tap dispatch!))
     (add-tap! (prefetch/tap dispatch!))
     (add-tap! (buffer-presence-tap dispatch!))
     (add-tap! (pending-command-tap dispatch!))

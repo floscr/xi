@@ -4,7 +4,9 @@
 
    Routes:
      /                  → {:page :home} (the dashboard, xi.web.dashboard)
-     /chat/:session-id  → {:page :chat :session-id sid}
+     /chat/:session-id  → {:page :chat :session-id sid :buffer-id :chat}
+     /chat/:sid/:buffer → {:page :chat :session-id sid :buffer-id id} (a diff,
+                          file, … of the chat; view-sync keeps it current)
      /projects           → {:page :home :dir :projects} (project list)
      /projects/all       → {:page :home :dir :all} (every session)
      /projects/:cwd      → {:page :home :dir <decoded-cwd>}
@@ -15,6 +17,7 @@
    seeds the initial route from the URL and forwards popstate as a
    `:replace?`-tagged navigate."
   (:require [clojure.string :as str]
+            [xi.buffers :as buffers]
             [xi.core.state :as state]))
 
 ;; ── Path <-> route ───────────────────────────────────────────────────────────
@@ -25,6 +28,24 @@
   [routes]
   (if (satisfies? IDeref routes) @routes routes))
 
+(defn- buffer->segment
+  "The URL segment of a chat's view (xi.buffers ids): none for the chat, a
+   singleton's name (`prompt`), else the encoded string id (`diff%3Agit`)."
+  [id]
+  (cond
+    (or (nil? id) (= buffers/chat id)) nil
+    (keyword? id) (name id)
+    :else (js/encodeURIComponent id)))
+
+(defn- segment->buffer
+  "Inverse of buffer->segment: string ids carry a `kind:` prefix, so a
+   segment without a colon names a singleton."
+  [seg]
+  (if (nil? seg)
+    buffers/chat
+    (let [id (js/decodeURIComponent seg)]
+      (if (str/includes? id ":") id (keyword id)))))
+
 (defn parse-path
   "URL path → route map. Extension routes (keyed by first segment) take
    precedence; their :parse fn receives the remaining segments."
@@ -34,7 +55,9 @@
     (if-let [entry (get routes (first segments))]
       ((:parse entry) (vec (rest segments)))
       (case (first segments)
-      "chat" {:page :chat :session-id (second segments)}
+      "chat" (let [[_ sid seg] segments]
+               (cond-> {:page :chat :session-id sid}
+                 sid (assoc :buffer-id (segment->buffer seg))))
       "git-status" (cond-> {:page :git-status}
                      (second segments)
                      (assoc :cwd (js/decodeURIComponent (str/join "/" (rest segments)))))
@@ -49,11 +72,13 @@
 (defn route->path
   "Route map → URL path. Extension :path fns (keyed by page) take
    precedence over the built-ins."
-  [routes {:keys [page session-id file task-id dir cwd number] :as route}]
+  [routes {:keys [page session-id buffer-id dir cwd] :as route}]
   (if-let [f (some #(get-in % [:path page]) (vals (routes-of routes)))]
     (f route)
     (case page
-    :chat (if session-id (str "/chat/" session-id) "/chat")
+    :chat (if session-id
+            (str "/chat/" session-id (some->> (buffer->segment buffer-id) (str "/")))
+            "/chat")
     :git-status (if cwd (str "/git-status/" (js/encodeURIComponent cwd)) "/git-status")
     ;; :home — use /projects/:cwd when drilling into a directory
     (cond
@@ -162,8 +187,9 @@
    :page :home | :chat, :session-id (chat only), :params (an extension route's
    own), :replace? (popstate / initial load), :keep-url? (a deep link into a
    page whose route is still loading, see pending-extension-path?)."
-  [roomless st {:keys [page session-id file task-id dir cwd number params replace? keep-url?]}]
+  [roomless st {:keys [page session-id buffer-id file task-id dir cwd number params replace? keep-url?]}]
   (let [route      (cond-> {:page page :session-id session-id}
+                     buffer-id    (assoc :buffer-id buffer-id)
                      file         (assoc :file file)
                      task-id      (assoc :task-id task-id)
                      dir          (assoc :dir dir)
@@ -319,19 +345,23 @@
       (assoc-in [:rooms room-id :ui :active-buffer] view))))
 
 (defn with-buffer
-  "Wrap a navigate result to also open buffer `buffer-id` of the target chat:
-   switch now when already viewing it, else remember it as :web/pending-buffer
-   for the pending-buffer tap (xi.web.core)."
+  "Wrap a navigate result to also open buffer `buffer-id` of the target chat,
+   :web/pending-buffer until it is open (view-change waits on it): switch now
+   when already viewing it, else after the join (pending-buffer tap,
+   xi.web.core)."
   [st {:keys [page session-id buffer-id]} result]
   (if-not (and buffer-id (= page :chat) session-id)
     result
-    (let [active (state/active-room st)]
+    (let [active  (state/active-room st)
+          pending (assoc-in result [:state :web/pending-buffer]
+                            {:session-id session-id :buffer-id buffer-id})]
       (if (= session-id (get-in active [:session :id]))
         (if-let [ev (buffer-open-event (:id active) active buffer-id)]
-          (update result :effects (fnil conj []) [:app/dispatch ev])
+          (update pending :effects (fnil into [])
+                  [[:app/dispatch ev]
+                   [:app/dispatch {:type :buffer/pending-clear}]])
           result)
-        (assoc-in result [:state :web/pending-buffer]
-                  {:session-id session-id :buffer-id buffer-id})))))
+        pending))))
 
 (defn navigate
   "navigate* (the route, history and room change) plus `:buffer-id`: open that
@@ -339,13 +369,50 @@
   [roomless st ev]
   (with-buffer st ev (navigate* roomless st ev)))
 
+;; ── View sync ──
+;; A buffer switch in the chat on screen is a history entry too, so back
+;; returns to the previous view. The view-sync tap (xi.web.core) dispatches
+;; :route/view-sync whenever view-change finds the route behind.
+
+(defn view-change
+  "The view the chat on screen shows when the route names another, else nil.
+   Waits while a navigation's buffer is still pending (with-buffer)."
+  [st]
+  (let [{:keys [page session-id buffer-id]} (:web/route st)
+        room (state/active-room st)
+        view (get-in room [:ui :active-buffer] buffers/chat)]
+    (when (and (= :chat page) session-id
+               (= session-id (get-in room [:session :id]))
+               (not= session-id (get-in st [:web/pending-buffer :session-id]))
+               (not= view buffer-id))
+      view)))
+
+(defn- open-view?
+  [room id]
+  (or (= buffers/chat id) (contains? (get-in room [:ui :buffers]) id)))
+
+(defn view-sync
+  "Put the chat's current view in the route and URL: a new history entry,
+   or a replaced one when the route named no view yet (a chat opened on its
+   restored view) or one since closed (back onto a closed buffer)."
+  [st _]
+  (when-let [view (view-change st)]
+    (let [route    (:web/route st)
+          replace? (not (and (:buffer-id route)
+                             (open-view? (state/active-room st) (:buffer-id route))))
+          route    (assoc route :buffer-id view)]
+      {:state   (assoc st :web/route route)
+       :effects [[:history/push {:route route :replace? replace?}]]})))
+
 (defn handlers
   "Router handler map over the extension route table (a map or an atom —
    read per navigation, so routes added later count)."
   [routes]
   {:route/navigate       (fn [st ev] (navigate (roomless-pages routes) st ev))
    :room/join-burst-end  join-burst-end
-   :nav/back             nav-back})
+   :route/view-sync      view-sync
+   :nav/back             nav-back
+   :nav/forward          (fn [_ _] {:effects [[:nav/forward]]})})
 
 ;; ── History effect + init (impure edge) ──────────────────────────────────────
 
@@ -405,5 +472,9 @@
     (dispatch! (route->ev))
     (.addEventListener js/window "popstate"
                        (fn [_]
-                         (swap! nav-depth #(max 0 (dec %)))
+                         ;; popstate fires for forward moves too: the entry's
+                         ;; own depth is right in both directions
+                         (if-let [d (some-> js/history.state (.-navDepth))]
+                           (reset! nav-depth d)
+                           (swap! nav-depth #(max 0 (dec %))))
                          (dispatch! (route->ev))))))

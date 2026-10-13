@@ -172,6 +172,7 @@ are available for `:mode/navigate`:
 | `:scroll/top` | Scroll to the top; in a chat this shows every earlier message first |
 | `:prompt/prev` / `:prompt/next` | Jump between your messages in the chat. The first `:prompt/prev` lands on the newest; `:prompt/next` on the last goes back to the bottom |
 | `:diff/next-hunk` / `:diff/prev-hunk` | Next / previous hunk in a diff |
+| `:nav/back` / `:nav/forward` | Back / forward through the pages, chats and buffers you opened (the browser history), like vim's `Ctrl+o` / `Ctrl+i`. Back stops at the first page Xi opened |
 
 ```clojure title="~/.config/xi/config.edn"
 :keys {:web {:mode/navigate  {"i" :compose/focus
@@ -182,7 +183,9 @@ are available for `:mode/navigate`:
                               "G" :timeline/bottom
                               "g g" :scroll/top
                               "[" :prompt/prev
-                              "]" :prompt/next}
+                              "]" :prompt/next
+                              "ctrl+o" :nav/back
+                              "ctrl+i" :nav/forward}
              :buffer/diff     {"[" :diff/prev-hunk
                                "]" :diff/next-hunk
                                "] f" nil          ; "]" alone would shadow these

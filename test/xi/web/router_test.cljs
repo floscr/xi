@@ -40,8 +40,13 @@
     (is (= {:page :home} (router/parse-path routes nil)))))
 
 (deftest parse-path-chat
-  (is (= {:page :chat :session-id "abc-123"}
-         (router/parse-path routes "/chat/abc-123"))))
+  (is (= {:page :chat :session-id "abc-123" :buffer-id :chat}
+         (router/parse-path routes "/chat/abc-123")))
+  (testing "a buffer: string ids encoded, singletons by name"
+    (is (= {:page :chat :session-id "s" :buffer-id "file:/a/b.clj"}
+           (router/parse-path routes (str "/chat/s/" (js/encodeURIComponent "file:/a/b.clj")))))
+    (is (= {:page :chat :session-id "s" :buffer-id :prompt}
+           (router/parse-path routes "/chat/s/prompt")))))
 
 (deftest parse-path-projects
   (testing "bare /projects is the project list"
@@ -83,7 +88,10 @@
 
 (deftest parse-roundtrips
   (doseq [[label route] [["home"        {:page :home}]
-                          ["chat"        {:page :chat :session-id "sid1"}]
+                          ["chat"        {:page :chat :session-id "sid1" :buffer-id :chat}]
+                          ["chat diff"   {:page :chat :session-id "sid1" :buffer-id "diff:commit:abc"}]
+                          ["chat file"   {:page :chat :session-id "sid1" :buffer-id "file:/a b/c.md"}]
+                          ["chat canvas" {:page :chat :session-id "sid1" :buffer-id :canvas}]
                           ["project dir" {:page :home :dir "/home/user/code"}]
                           ["all sessions" {:page :home :dir :all}]
                           ["pr detail"   {:page :pr-detail :number 7 :cwd "/home/user"}]]]
@@ -346,9 +354,12 @@
                  (assoc-in [:rooms "r1" :ui :buffers "file:a"] {:kind :file :title "a"})
                  (assoc :active-room "r1"))
           {:keys [state effects]} (nav st {:page :chat :session-id "s1" :buffer-id "file:a"})]
-      (is (nil? (:web/pending-buffer state)))
-      (is (some #(= % [:app/dispatch {:type :ui/buffer-switch :room-id "r1" :buffer-id "file:a"}])
-                effects))))
+      (is (= {:session-id "s1" :buffer-id "file:a"} (:web/pending-buffer state))
+          "pending until the switch has run, so the view sync waits for it")
+      (is (= [[:app/dispatch {:type :ui/buffer-switch :room-id "r1" :buffer-id "file:a"}]
+              [:app/dispatch {:type :buffer/pending-clear}]]
+             (filterv #(= :app/dispatch (first %))
+                      (remove #(= :session/mark-read (:type (second %))) effects))))))
   (testing "no buffer: nothing stashed"
     (is (nil? (:web/pending-buffer (:state (nav {:page :chat :session-id "s1"})))))))
 
@@ -381,6 +392,31 @@
       (is (some #(= % [:app/dispatch {:type :ui/buffer-switch :room-id "r1" :buffer-id :chat}])
                 (:effects (nav (on "diff:session-edits")
                                {:page :chat :session-id "s1" :buffer-id :chat})))))))
+
+(deftest view-sync-follows-buffer-switches
+  (let [room   (-> (state/make-room "r1" {:session {:id "s1"}})
+                   (assoc-in [:ui :buffers "diff:git"] {:kind :diff :title "d"}))
+        on     (fn [route-buf view]
+                 (-> (state/initial-state)
+                     (assoc-in [:rooms "r1"] (assoc-in room [:ui :active-buffer] view))
+                     (assoc :active-room "r1"
+                            :web/route (cond-> {:page :chat :session-id "s1"}
+                                         route-buf (assoc :buffer-id route-buf)))))
+        pushed (fn [res] (second (first (:effects res))))]
+    (testing "a switch away from the route's view is a new entry"
+      (let [res (router/view-sync (on :chat "diff:git") {})]
+        (is (= "diff:git" (get-in res [:state :web/route :buffer-id])))
+        (is (= {:route {:page :chat :session-id "s1" :buffer-id "diff:git"} :replace? false}
+               (pushed res)))))
+    (testing "a chat opened without a view replaces with the one it landed on"
+      (is (true? (:replace? (pushed (router/view-sync (on nil "diff:git") {}))))))
+    (testing "back onto a closed buffer replaces it with the chat"
+      (is (true? (:replace? (pushed (router/view-sync (on "file:gone" :chat) {}))))))
+    (testing "in sync, another session's room, or a buffer still pending: nothing"
+      (is (nil? (router/view-sync (on "diff:git" "diff:git") {})))
+      (is (nil? (router/view-change (assoc-in (on :chat "diff:git") [:web/route :session-id] "s2"))))
+      (is (nil? (router/view-change (assoc (on :chat "diff:git")
+                                           :web/pending-buffer {:session-id "s1" :buffer-id :chat})))))))
 
 (deftest buffer-open-event-routes-buffers-and-sub-agents
   (let [room (-> (state/make-room "r1" {:session {:id "s1"}})

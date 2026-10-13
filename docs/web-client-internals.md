@@ -195,7 +195,12 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
 - The router lives in the atom (`:web/route`): `:route/navigate` is a pure
   handler emitting `[:history/push]` and room join/leave dispatches
   (`xi.web.router`); `popstate` re-dispatches with `:replace? true`. Deep
-  links `/chat/:sid` hydrate from cache, then join over WS. Extension routes
+  links `/chat/:sid` hydrate from cache, then join over WS. The chat's view
+  is in the route (`/chat/:sid/:buffer`, `:buffer-id`): `view-sync-tap`
+  dispatches `:route/view-sync` when the view differs from the route, which
+  pushes an entry (replaces when the route named none, or a closed buffer).
+  It waits while `:web/pending-buffer` is set: a navigation's buffer switch
+  runs as a later event (taps run before a handler's effects). Extension routes
   are consulted before the built-in ones. A path whose first segment is
   unknown falls back to home but keeps its URL (`pending-extension-path?`,
   `:keep-url?`): a user extension's page is re-routed once its web half has

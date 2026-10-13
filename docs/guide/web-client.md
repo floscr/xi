@@ -109,6 +109,10 @@ refreshes it in place.
   the order you opened them (the one in front is tinted). `Alt+b` opens the same list in the command
   palette: type to filter, Enter to switch. `q` or `Esc` in a diff or file
   view goes back to the chat; the buffer stays open.
+- **In the URL.** The address names the buffer you are looking at
+  (`/chat/<id>/diff%3Agit`), so a reload or a shared link opens it, and
+  each switch is a browser history entry: Back returns to the previous view.
+  Back onto a buffer closed since lands on the chat.
 - **In the sidebar.** A session with buffers says so under its name ("3
   buffers"). Click the count to unfold the rows under the card, again to fold
   them; the browser remembers which you left open. The row of the buffer you
