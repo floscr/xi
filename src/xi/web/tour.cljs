@@ -162,6 +162,8 @@
 ;;                           visitor can click it themselves
 ;;   {:type css :text s}     type into a textarea, a key at a time
 ;;   {:enter css}            press Enter in it
+;;   {:key "g g"}            press keys on the page, space-separated chords
+;;                           ("Alt+u", "G", "Space"), each shown as a keycap
 
 (defn- sleep [ms] (js/Promise. (fn [res] (js/setTimeout res ms))))
 
@@ -251,6 +253,59 @@
           (js/Promise.resolve)
           (type-stops text)))
 
+(def ^:private named-keys
+  {"Space" " " "Esc" "Escape" "Escape" "Escape" "Enter" "Enter" "Tab" "Tab"
+   "Up" "ArrowUp" "Down" "ArrowDown" "Left" "ArrowLeft" "Right" "ArrowRight"
+   "Backspace" "Backspace"})
+
+(defn key-init
+  "A chord as written in a {:key} step (\"Alt+Shift+p\", \"G\", \"Space\") → the
+   KeyboardEvent init map. An upper-case letter implies Shift."
+  [chord]
+  (let [parts (str/split chord #"\+")
+        mods  (set (map str/lower-case (butlast parts)))
+        k     (last parts)
+        key   (get named-keys k k)
+        upper (re-matches #"[A-Z]" key)]
+    {:key      key
+     :code     (cond
+                 (re-matches #"[a-zA-Z]" key) (str "Key" (str/upper-case key))
+                 (re-matches #"\d" key)       (str "Digit" key)
+                 (= " " key)                  "Space"
+                 :else                        key)
+     :ctrlKey  (contains? mods "ctrl")
+     :altKey   (contains? mods "alt")
+     :metaKey  (contains? mods "meta")
+     :shiftKey (or (contains? mods "shift") (some? upper))}))
+
+(defn- keycap! [chord]
+  (let [el (.createElement js/document "kbd")]
+    (set! (.-textContent el) chord)
+    (set! (.. el -style -cssText)
+          (str "position:fixed;left:50%;bottom:48px;z-index:2147483647;pointer-events:none;"
+               "transform:translateX(-50%);padding:10px 18px;border-radius:10px;"
+               "font:600 22px/1 ui-monospace,monospace;color:#fff;background:rgba(17,17,17,.82);"
+               "box-shadow:0 8px 24px rgba(0,0,0,.35);transition:opacity .4s"))
+    (.append (.-body js/document) el)
+    (js/setTimeout #(set! (.. el -style -opacity) "0") 700)
+    (js/setTimeout #(.remove el) 1100)))
+
+(defn- press-keys!
+  "Each chord of `keys` as a keydown on the focused element (the page's
+   keymap listens on document), a keycap shown for each."
+  [keys]
+  (reduce (fn [p chord]
+            (.then p (fn []
+                       (keycap! chord)
+                       (.dispatchEvent (or (.-activeElement js/document) (.-body js/document))
+                                       (js/KeyboardEvent.
+                                        "keydown"
+                                        (clj->js (assoc (key-init chord)
+                                                        :bubbles true :cancelable true))))
+                       (sleep 900))))
+          (js/Promise.resolve)
+          (str/split (str/trim keys) #"\s+")))
+
 (defn contain-focus!
   "In an iframe, ignore the app's programmatic focus until the visitor clicks
    inside: focusing moves the embedding page's keyboard focus (and can scroll
@@ -265,10 +320,11 @@
               (this-as el
                 (when @user? (.apply native el (into-array args)))))))))
 
-(defn- run-step! [{:keys [wait waitText text enter after] typed :type :as step} paused?]
+(defn- run-step! [{:keys [wait waitText text enter after] typed :type pressed :key :as step} paused?]
   (cond
     wait     (sleep wait)
     waitText (await-el step paused?)
+    pressed  (-> (sleep (or after 0)) (.then #(press-keys! pressed)))
     :else
     (-> (sleep (or after 0))
         (.then #(await-el step paused?))

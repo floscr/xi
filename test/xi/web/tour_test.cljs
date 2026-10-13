@@ -46,5 +46,15 @@
     (is (= (count text) (peek stops)))
     (is (every? #(<= 1 % 3) (map - stops (cons 0 stops))))))
 
+(deftest key-init-reads-step-chords
+  (is (= {:key "u" :code "KeyU" :ctrlKey false :altKey true :metaKey false :shiftKey false}
+         (tour/key-init "Alt+u")))
+  (testing "an upper-case letter is shifted"
+    (is (:shiftKey (tour/key-init "G"))))
+  (testing "named keys"
+    (is (= [" " "Space"] ((juxt :key :code) (tour/key-init "Space"))))
+    (is (= "Escape" (:key (tour/key-init "Esc")))))
+  (is (= "Digit1" (:code (tour/key-init "Ctrl+1")))))
+
 (deftest event-type-is-the-keyword-without-colon
   (is (= "room/join" (tour/event-type {:type :room/join}))))

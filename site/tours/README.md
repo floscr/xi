@@ -106,5 +106,8 @@ session.
 1. `site/tours/<name>/fake-llm.edn`: the turn. Split text into several
    `{:text}` steps with `{:sleep}` between them so it streams.
 2. `record.mjs`: the sends, using `until` to wait for the server.
-3. `steps.json`: the same actions as clicks and typing, and the gate types.
+3. `steps.json`: the same actions as clicks, typing and key presses
+   (`{"key": "Ctrl+k"}`, `{"key": "g g"}`: space-separated chords, each
+   shown as a keycap; the full step list is in `xi.web.tour`), and the gate
+   types.
 4. `bb tour:record <name>`, then replay it as above.
