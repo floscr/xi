@@ -119,34 +119,50 @@
    :brightWhite         ["--fg-0" "#1f2328"]})
 
 (def ^:private tints
-  "Colours past the 16, xterm's `extendedAnsi` (index 16 on): --success and
-   --danger faintly over the background, for diff line backgrounds that
-   follow the theme like the 16 do (the dotfiles' nvim `xi` colorscheme)."
-  [["--success" "#22863a"] ["--danger" "#d73a49"]])
+  "Colours past the 16, xterm's `extendedAnsi` (index 16 on): diff line
+   backgrounds that follow the theme like the 16 do (the dotfiles' nvim `xi`
+   colorscheme). A custom theme's --diff-add-bg / --diff-del-bg
+   (xi.web.theme), else --success / --danger faintly over the background."
+  [["--diff-add-bg" "--success" "#22863a"] ["--diff-del-bg" "--danger" "#d73a49"]])
 
 (def ^:private tint-alpha 0.14)
 
 (defn- theme [node]
   (let [bg (css-var node "--bg-0" "#ffffff")]
     (clj->js (assoc (update-vals palette (fn [[k fallback]] (hex-color (css-var node k fallback))))
-                    :extendedAnsi (mapv (fn [[k fallback]]
-                                          (hex-color bg (css-var node k fallback) tint-alpha))
+                    :extendedAnsi (mapv (fn [[themed k fallback]]
+                                          (if-let [c (css-var node themed nil)]
+                                            (hex-color c)
+                                            (hex-color bg (css-var node k fallback) tint-alpha)))
                                         tints)))))
 
+(def ^:private base-font-size 13)
+
+(defn- font-size
+  "The base size times the theme's --code-scale (style.css, xi.web.theme)."
+  [node]
+  (let [scale (js/parseFloat (css-var node "--code-scale" "1"))]
+    (js/Math.round (* base-font-size (if (js/isFinite scale) scale 1)))))
+
+(defn- fit! [^js fit]
+  (try (.fit fit) (catch :default _ nil)))
+
 (defn- retheme!
-  "Follow a theme change: re-read the colours once its CSS vars are applied."
+  "Follow a theme change: re-read the colours and the font size once its CSS
+   vars are applied; a new size re-fits the grid."
   [term-id ^js node]
   (js/requestAnimationFrame
    (fn []
-     (when-let [^js term (get-in @instances [term-id :term])]
-       (set! (.. term -options -theme) (theme node))))))
+     (when-let [{:keys [^js term fit]} (get @instances term-id)]
+       (set! (.. term -options -theme) (theme node))
+       (let [size (font-size node)]
+         (when (not= size (.. term -options -fontSize))
+           (set! (.. term -options -fontSize) size)
+           (fit! fit)))))))
 
 (defn- attach! [term-id ^js term]
   (send! {:type :terminal/attach :term-id term-id
           :cols (.-cols term) :rows (.-rows term)}))
-
-(defn- fit! [^js fit]
-  (try (.fit fit) (catch :default _ nil)))
 
 ;; ── Size ──
 ;; A fit that changes cols/rows fires xterm's onResize, which tells the server
@@ -280,7 +296,7 @@
                                           :fontFamily  (str (css-var node "--font-mono"
                                                                      "ui-monospace, Menlo, monospace")
                                                             ", 'Symbols Nerd Font Mono'")
-                                          :fontSize    13
+                                          :fontSize    (font-size node)
                                           :scrollback  5000
                                           :theme       (theme node)})
                  fit      (FitAddon.)

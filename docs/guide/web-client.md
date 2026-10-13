@@ -163,8 +163,9 @@ terminal** in the ⋮ menu and the command palette opens a shell.
   resize, type in or come back to. When it exits with code 0, its buffer closes; any other exit
   keeps the output with **Restart** and **Close**. Closing the buffer ends the
   program. A server restart ends every terminal.
-- **Colours.** The terminal takes its colours from the current theme and
-  follows a theme switch at once. The 16 ANSI colours keep their usual
+- **Colours.** The terminal takes its colours and its font size (the
+  theme's code size, see [Color themes](#color-themes)) from the current
+  theme and follows a theme switch at once. The 16 ANSI colours keep their usual
   meaning and carry the code-block colours: 0 surface, 1 danger, 2 success,
   3 warning, 4 keyword, 5 symbol, 6 function, 7 secondary text, 8 comment,
   9 operator, 10 string, 11 warning, 12 accent, 13 number, 14 builtin, 15
@@ -302,9 +303,12 @@ defaults" drops them.
 "Color theme" in the same dialog holds your own themes next to the default
 one. A theme changes the hue and chroma of the gray and accent scales and
 the status colors (success, warning, danger: status dots, usage meters,
-errors), the page background of light and dark mode (each its own
+errors), the background of added and removed diff lines (in the chat, the
+diff view and the terminal: a color for each, which sets the hue, and how
+strongly they stand out; unset, they follow success and danger), the page background of light and dark mode (each its own
 color) with the sidebar a chosen step brighter or darker than it, the spacing base, the gap
-between paragraphs, the type scale and the corner radius; light and dark mode stay separate and both use
+between paragraphs, the type scale, the size of code (code blocks, tool
+output, diffs, the file viewer, the terminal) and the corner radius; light and dark mode stay separate and both use
 it. "New" opens the editor with the defaults and a set
 of presets to start from; the sliders change the page as you move them, and
 "Save" (or the dialog's "Done") keeps the result under the name you typed;

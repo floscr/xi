@@ -16,7 +16,11 @@
   "`:bg-light` / `:bg-dark` are each mode's page background, a `color?`
    string (white, gray-950); `:sidebar-shift` the OKLCH lightness the sidebar
    sits away from it (negative = darker), the same in both modes;
-   `:paragraph-space` the gap between markdown paragraphs, in em."
+   `:paragraph-space` the gap between markdown paragraphs, in em;
+   `:code-scale` a multiplier on every code font size (style.css --code-scale);
+   `:diff-strength` how far diff line backgrounds stand out from the page.
+   `:diff-add-color` / `:diff-del-color` (no default: the success / danger
+   color) give those backgrounds their hue and chroma."
   {:gray-hue      285
    :gray-chroma   1
    :accent-hue    286
@@ -28,6 +32,8 @@
    :paragraph-space 0.75
    :font-base     1
    :font-ratio    1.25
+   :code-scale    1
+   :diff-strength 1
    :radius-scale  1
    :success-color "oklch(0.705 0.185 152)"
    :warning-color "oklch(0.79 0.159 76)"
@@ -45,11 +51,14 @@
    :paragraph-space [0 2]
    :font-base     [0.75 1.25]
    :font-ratio    [1.05 1.5]
+   :code-scale    [0.7 1.5]
+   :diff-strength [0 2.5]
    :radius-scale  [0 2]})
 
 (def color-keys
   "The parameters that hold a `color?` string (a color picker value)."
-  #{:bg-light :bg-dark :success-color :warning-color :danger-color})
+  #{:bg-light :bg-dark :success-color :warning-color :danger-color
+    :diff-add-color :diff-del-color})
 
 (defn hex-color? [s]
   (boolean (and (string? s) (re-matches #"#[0-9a-fA-F]{6}" s))))
@@ -210,19 +219,29 @@
   {:on-dark  {"fg-0" [0.975 0.15] "fg-1" [0.85 0.35] "fg-2" [0.53 0.5]}
    :on-light {"fg-0" [0.145 0.15] "fg-1" [0.425 0.35] "fg-2" [0.69 0.5]}})
 
+(defn diff-color
+  "The color the `side` (:add / :del) diff band takes its hue and chroma from."
+  [params side]
+  (let [p (merge defaults params)]
+    (case side
+      :add (or (:diff-add-color p) (:success-color p))
+      :del (or (:diff-del-color p) (:danger-color p)))))
+
 (defn- status-tints
   "Tokens that carry a status hue on a themed page, where a translucent status
-   wash over a colorful surface turns muddy: diff bands (add-bg / del-bg) at
-   a block's lightness in the status hue, and danger-fg, error text that
-   contrasts by lightness when the danger hue is the page's own."
+   wash over a colorful surface turns muddy: bands at a block's lightness in
+   a hue — diff lines (add-bg / del-bg, `diff-color` at `:diff-strength`) and
+   danger-bg (menus' danger hover) — and danger-fg, error text that contrasts
+   by lightness when the danger hue is the page's own."
   [p l dark?]
   (let [dir  (if dark? 1 -1)
-        band (fn [color-key]
-               (let [[_ c h] (color->oklch (get p color-key))]
-                 (oklch (clamp01 (+ l (* dir 0.06))) (min 0.07 c) h)))
+        band (fn [color strength]
+               (let [[_ c h] (color->oklch color)]
+                 (oklch (clamp01 (+ l (* dir 0.06 strength))) (min (* 0.07 strength) c) h)))
         [_ dc dh] (color->oklch (:danger-color p))]
-    {"add-bg"    (band :success-color)
-     "del-bg"    (band :danger-color)
+    {"add-bg"    (band (diff-color p :add) (:diff-strength p))
+     "del-bg"    (band (diff-color p :del) (:diff-strength p))
+     "danger-bg" (band (:danger-color p) 1)
      "danger-fg" (oklch (if dark? 0.85 0.45) (min 0.12 dc) dh)}))
 
 ;; style.css's stock syntax palettes (--hl-*): GitHub-like on a light page,
@@ -323,7 +342,8 @@
              (background-vars p)
              (into {} (map (fn [n] [(str "--size-" n) (rem-value (* (:size-base p) n))]))
                    (range 1 (inc size-steps)))
-             {"--paragraph-space" (str (trim-zeros (fixed (:paragraph-space p) 3)) "em")}
+             {"--paragraph-space" (str (trim-zeros (fixed (:paragraph-space p) 3)) "em")
+              "--code-scale"      (trim-zeros (fixed (:code-scale p) 3))}
              (into {} (map (fn [[power label]]
                              [(str "--font-" label)
                               (rem-value (* (:font-base p) (js/Math.pow (:font-ratio p) power)))]))
@@ -344,6 +364,12 @@
 (defn accent-swatches [params]
   (let [p (merge defaults params)]
     (mapv #(step-color % (:accent-hue p) (:accent-chroma p)) accent-steps)))
+
+(defn diff-swatches
+  "[added removed] on the light page, then on the dark one."
+  [params]
+  (let [{:keys [light dark]} (surfaces params)]
+    [(light "add-bg") (light "del-bg") (dark "add-bg") (dark "del-bg")]))
 
 (defn accent-color
   "The 500 accent stop of `params`, for a chip dot."

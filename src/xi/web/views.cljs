@@ -5632,9 +5632,10 @@
 
 (defn- theme-color
   "One color parameter of the draft: a swatch opening ui.color-picker in a
-   popover, limited to the formats xi.web.theme/color? accepts."
-  [dispatch! draft key label]
-  (let [v  (get-in draft [:params key])
+   popover, limited to the formats xi.web.theme/color? accepts. `fallback`
+   is what an unset parameter shows."
+  [dispatch! draft key label & [fallback]]
+  (let [v  (or (get-in draft [:params key]) fallback)
         id (str "theme-color-" (name key))]
     [:div {:class ["theme-slider"]}
      [:span {:class ["theme-slider-label"]} label]
@@ -5709,13 +5710,21 @@
        (theme-color dispatch! draft :success-color "Success")
        (theme-color dispatch! draft :warning-color "Warning")
        (theme-color dispatch! draft :danger-color "Danger"))
+     ;; --diff-add-bg / --diff-del-bg: diff line backgrounds; unset colors
+     ;; follow Success / Danger
+     (theme-section "Diff"
+       (theme-color dispatch! draft :diff-add-color "Added" (ctheme/diff-color params :add))
+       (theme-color dispatch! draft :diff-del-color "Removed" (ctheme/diff-color params :del))
+       (theme-slider dispatch! draft :diff-strength "Strength" {:min 0 :max 250 :step 5 :scale 100 :fmt percent})
+       (swatch-row (ctheme/diff-swatches params)))
      (theme-section "Spacing"
        (theme-slider dispatch! draft :size-base "Base" {:min 10 :max 50 :step 1 :scale 100 :fmt decimal})
        (theme-slider dispatch! draft :paragraph-space "Paragraphs"
                      {:min 0 :max 200 :step 5 :scale 100 :fmt (fn [v] (str (decimal v) "em"))}))
      (theme-section "Font"
        (theme-slider dispatch! draft :font-base "Base" {:min 75 :max 125 :step 1 :scale 100 :fmt decimal})
-       (theme-slider dispatch! draft :font-ratio "Ratio" {:min 105 :max 150 :step 1 :scale 100 :fmt decimal}))
+       (theme-slider dispatch! draft :font-ratio "Ratio" {:min 105 :max 150 :step 1 :scale 100 :fmt decimal})
+       (theme-slider dispatch! draft :code-scale "Code" {:min 70 :max 150 :step 5 :scale 100 :fmt percent}))
      (theme-section "Radius"
        (theme-slider dispatch! draft :radius-scale "Scale" {:min 0 :max 200 :step 5 :scale 100 :fmt percent}))
      [:div {:class ["theme-editor-actions"]}

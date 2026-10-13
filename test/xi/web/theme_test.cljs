@@ -13,7 +13,8 @@
       (is (= "4rem" (get vars "--size-16")))
       (is (= "0.25rem" (get vars "--size-1")))
       (is (= "10px" (get vars "--radius-md")))
-      (is (= "0.75em" (get vars "--paragraph-space")) "style.css's :root fallback"))
+      (is (= "0.75em" (get vars "--paragraph-space")) "style.css's :root fallback")
+      (is (= "1" (get vars "--code-scale")) "style.css's :root fallback"))
     (testing "backgrounds: white / gray-950 pages, the sidebar 2.5% darker"
       (is (= "oklch(1.000 0.0000 0.0)" (get vars "--theme-bg-light")))
       (is (= "oklch(0.975 0.0000 0.0)" (get vars "--theme-sidebar-light")))
@@ -21,8 +22,8 @@
       (is (= "oklch(0.122 0.0107 285.0)" (get vars "--theme-sidebar-dark"))))
     (testing "every managed property has a value"
       (is (= (set theme/var-names) (set (keys vars))))
-      (is (= 134 (count theme/var-names))
-          "11 gray + 11 accent + 33 status + 4 backgrounds + 46 surfaces + 16 sizes + paragraph + 8 fonts + 4 radii"))))
+      (is (= 137 (count theme/var-names))
+          "11 gray + 11 accent + 33 status + 4 backgrounds + 48 surfaces + 16 sizes + paragraph + code + 8 fonts + 4 radii"))))
 
 (deftest hex-to-oklch
   (let [[l c h] (theme/hex->oklch "#ff0000")]
@@ -61,7 +62,8 @@
 
 (deftest params-change-the-scales
   (let [vars (theme/css-vars {:gray-hue 60 :accent-chroma 2 :size-base 0.3
-                              :font-ratio 1.5 :radius-scale 0.5 :paragraph-space 1.2})]
+                              :font-ratio 1.5 :radius-scale 0.5 :paragraph-space 1.2
+                              :code-scale 1.25})]
     (is (= "oklch(0.530 0.0350 60.0)" (get vars "--gray-500")) "hue")
     (is (= "oklch(0.595 0.4000 286.0)" (get vars "--accent-500")) "chroma clamps at 0.4")
     (is (= "0.3rem" (get vars "--size-1")))
@@ -69,7 +71,8 @@
     (is (= "1.5rem" (get vars "--font-md")))
     (is (= "3px" (get vars "--radius-sm")))
     (is (= "2px" (get vars "--radius-xs")))
-    (is (= "1.2em" (get vars "--paragraph-space"))))
+    (is (= "1.2em" (get vars "--paragraph-space")))
+    (is (= "1.25" (get vars "--code-scale"))))
   (is (nil? (theme/css-vars nil)) "the default theme sets nothing"))
 
 (defn- lch [s] (mapv js/parseFloat (rest (re-find #"oklch\((\S+) (\S+) (\S+)\)" s))))
@@ -100,6 +103,23 @@
     (is (= "oklch(0.360 0.0700 25.0)" (get dark "del-bg")))
     (is (= "oklch(0.850 0.1200 25.0)" (get dark "danger-fg")) "light error text on a dark page")
     (is (= "oklch(0.450 0.1200 25.0)" (get light "danger-fg")))))
+
+(deftest diff-bands-follow-their-colors-and-strength
+  (testing "unset colors follow success / danger"
+    (is (= "oklch(0.705 0.185 152)" (theme/diff-color {} :add)))
+    (is (= "#22aa55" (theme/diff-color {:danger-color "#22aa55"} :del))))
+  (let [{:keys [dark light]} (theme/surfaces {:bg-dark "oklch(0.3 0.1 25)"
+                                              :diff-add-color "oklch(0.6 0.2 250)"
+                                              :diff-strength 2})]
+    (is (= "oklch(0.420 0.1400 250.0)" (get dark "add-bg"))
+        "the picked hue; twice the lightness step and chroma cap")
+    (is (= "oklch(0.420 0.1400 25.0)" (get dark "del-bg")) "still the danger hue")
+    (is (= "oklch(0.360 0.0700 25.0)" (get dark "danger-bg"))
+        "the menus' danger hover keeps the danger band at the stock strength")
+    (is (= "oklch(0.880 0.1400 250.0)" (get light "add-bg")) "darker on a light page"))
+  (is (= {:diff-add-color "#3366ff" :diff-strength 0.5}
+         (theme/normalize-params {:diff-add-color "#3366ff" :diff-del-color "red"
+                                  :diff-strength 0.5}))))
 
 (deftest status-scales-follow-their-colors
   (testing "the defaults reproduce theme.css"

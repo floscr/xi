@@ -23,6 +23,11 @@
    (xi.web.theme :paragraph-space). */
 :root { --paragraph-space: 0.75em; }
 
+/* Multiplier on the font size of code: markdown code, tool output, diffs, the
+   file viewer, the terminal (xi.web.terminal reads it). A color theme
+   overrides it (xi.web.theme :code-scale). */
+:root { --code-scale: 1; }
+
 html, body {
   margin: 0; padding: 0;
   overflow: hidden; position: fixed;
@@ -1037,7 +1042,7 @@ body {
   padding: 0.15em 0.4em;
   border-radius: 0.4rem;
   font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Fira Code', monospace;
-  font-size: 0.9em;
+  font-size: calc(0.9em * var(--code-scale));
 }
 
 .post--user .post-content code {
@@ -2426,7 +2431,7 @@ body {
   white-space: pre-wrap;
   word-break: break-all;
   font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
-  font-size: var(--font-xs);
+  font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.4;
   color: var(--fg-0);
   background-color: transparent;
@@ -2988,7 +2993,7 @@ code a:hover,
   --diff-del-bg: var(--theme-del-bg-light);
   --danger-fg: var(--theme-danger-fg-light);
   --menu-danger-fg: var(--theme-danger-fg-light, var(--danger-600));
-  --menu-danger-hover-bg: var(--theme-del-bg-light, var(--danger-50));
+  --menu-danger-hover-bg: var(--theme-danger-bg-light, var(--danger-50));
   --menu-danger-hover-fg: var(--theme-danger-fg-light, var(--danger-700));
   --menu-separator: var(--theme-border-0-light, var(--gray-200));
 }
@@ -3009,7 +3014,7 @@ code a:hover,
   --diff-del-bg: var(--theme-del-bg-dark);
   --danger-fg: var(--theme-danger-fg-dark);
   --menu-danger-fg: var(--theme-danger-fg-dark, var(--danger-400));
-  --menu-danger-hover-bg: var(--theme-del-bg-dark, var(--danger-950));
+  --menu-danger-hover-bg: var(--theme-danger-bg-dark, var(--danger-950));
   --menu-danger-hover-fg: var(--theme-danger-fg-dark, var(--danger-300));
   --menu-separator: var(--theme-border-0-dark, var(--gray-800));
 }
@@ -3031,7 +3036,7 @@ code a:hover,
     --diff-del-bg: var(--theme-del-bg-dark);
     --danger-fg: var(--theme-danger-fg-dark);
     --menu-danger-fg: var(--theme-danger-fg-dark, var(--danger-400));
-    --menu-danger-hover-bg: var(--theme-del-bg-dark, var(--danger-950));
+    --menu-danger-hover-bg: var(--theme-danger-bg-dark, var(--danger-950));
     --menu-danger-hover-fg: var(--theme-danger-fg-dark, var(--danger-300));
     --menu-separator: var(--theme-border-0-dark, var(--gray-800));
   }
@@ -4743,7 +4748,7 @@ code a:hover,
   -webkit-overflow-scrolling: touch;
   padding: 0;
   font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
-  font-size: var(--font-xs);
+  font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.5;
 }
 
@@ -4806,7 +4811,7 @@ code a:hover,
 
 .diff-hunk {
   font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
-  font-size: var(--font-xs);
+  font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.5;
   overflow-x: auto;
 }
@@ -4999,7 +5004,7 @@ code a:hover,
   -webkit-overflow-scrolling: touch;
   padding: var(--size-3) var(--size-4);
   font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
-  font-size: var(--font-xs);
+  font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.5;
   white-space: pre;
   color: var(--fg-0);
@@ -5062,7 +5067,7 @@ code a:hover,
   -webkit-overflow-scrolling: touch;
   padding: var(--size-3) var(--size-4);
   font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
-  font-size: var(--font-xs);
+  font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.5;
   white-space: pre;
   color: var(--fg-0);
@@ -5234,7 +5239,7 @@ code a:hover,
 .prompt-part-preview {
   padding: var(--size-2) var(--size-3);
   font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
-  font-size: var(--font-xs);
+  font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.5;
   color: var(--fg-2);
   white-space: pre-wrap;
