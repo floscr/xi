@@ -169,22 +169,165 @@ a.btn:hover { text-decoration: none; }
 
 /* ---------- home ---------- */
 
-.hero { padding: 96px 0 72px; }
-.hero h1 {
-  font-size: clamp(2.6rem, 6vw, 4.4rem);
-  max-width: 14ch;
-  margin-bottom: 24px;
-}
-.hero .lede { margin-bottom: 32px; }
-.hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 40px; }
-.hero .code-block { max-width: 640px; }
+/* ── Hero (xisite.pages/hero) ──
+   A spotlight in the logo's three colours turns behind the headline; the
+   logo tile and the install bar carry the same gradient on their border.
+   The colours follow the theme's accent like the header logo's stops. */
+@property --hero-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes hero-spin { to { --hero-angle: 360deg; } }
+@keyframes hero-in { from { opacity: 0; transform: translateY(10px); filter: blur(4px); } }
+/* the entrance: the pieces fade up one after another (delays below) */
+.hero-in { animation: hero-in 0.8s var(--hero-ease) both; }
 
-/* Home: the hero centres over the tour stage below it. */
-.home .hero { text-align: center; padding-bottom: 56px; }
-.home .hero h1,
-.home .hero .lede { margin-left: auto; margin-right: auto; }
-.home .hero-actions { justify-content: center; }
-.home .hero .code-block { margin: 0 auto; text-align: left; }
+.hero {
+  --hero-c1: #e83fb4;
+  --hero-c2: #8b4cf0;
+  --hero-c3: #3b8fd6;
+  --hero-beam-opacity: 0.2;
+  --hero-ease: cubic-bezier(0.23, 1, 0.32, 1);
+  position: relative;
+  isolation: isolate;
+  padding: 88px 0 64px;
+  text-align: center;
+}
+@supports (color: oklch(from red l c h)) {
+  .hero {
+    --hero-c1: oklch(from var(--accent-500) 0.652 c calc(h + 57));
+    --hero-c2: oklch(from var(--accent-500) 0.580 c calc(h + 10));
+    --hero-c3: oklch(from var(--accent-500) 0.632 calc(c * 0.58) calc(h - 38));
+  }
+}
+[data-theme="dark"] .hero { --hero-beam-opacity: 0.38; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .hero { --hero-beam-opacity: 0.38; }
+}
+
+.hero-bg {
+  position: absolute;
+  inset: -80px 0 -160px;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.hero-rays {
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(from 0deg at 50% 0%,
+    transparent 0 3deg, color-mix(in srgb, var(--fg-0) 3%, transparent) 3deg 3.6deg);
+  mask-image: radial-gradient(60% 70% at 50% 0%, #000, transparent 70%);
+}
+.hero-beam {
+  position: absolute;
+  left: 50%;
+  top: 140px;
+  width: 1100px;
+  height: 1100px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: conic-gradient(from var(--hero-angle),
+    transparent 0deg, var(--hero-c1) 40deg, transparent 95deg, transparent 160deg,
+    var(--hero-c2) 210deg, transparent 260deg, var(--hero-c3) 300deg, transparent 350deg);
+  filter: blur(70px);
+  opacity: var(--hero-beam-opacity);
+  mask-image: radial-gradient(closest-side, #000 25%, transparent 70%);
+  animation: hero-spin 28s linear infinite;
+}
+
+.hero-mark {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 24px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(var(--bg-1), var(--bg-1)) padding-box,
+    conic-gradient(from var(--hero-angle), var(--hero-c1), var(--hero-c2), var(--hero-c3), var(--hero-c1)) border-box;
+  box-shadow: 0 0 60px -10px color-mix(in srgb, var(--hero-c2) 60%, transparent);
+  animation: hero-spin 6s linear infinite, hero-in 0.8s var(--hero-ease) both;
+}
+
+.hero-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  padding: 5px 12px 5px 6px;
+  border: var(--border-0);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-1) 70%, transparent);
+  backdrop-filter: blur(8px);
+  color: var(--fg-1);
+  font-size: 0.78rem;
+}
+.hero-pill:hover { text-decoration: none; color: var(--fg-0); }
+.hero-pill b {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--fg-0);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+.hero-pill-arrow { color: var(--fg-2); transition: transform 0.2s var(--hero-ease); }
+.hero-pill:hover .hero-pill-arrow { transform: translateX(3px); }
+
+.hero h1 {
+  max-width: 14ch;
+  margin: 0 auto 24px;
+  font-size: clamp(2.6rem, 6vw, 4.4rem);
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+.hero-gradient {
+  background: linear-gradient(100deg, var(--hero-c1), var(--hero-c2) 50%, var(--hero-c3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hero .lede { margin: 0 auto 32px; text-wrap: pretty; }
+
+.hero-install {
+  display: flex;
+  max-width: 520px;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(var(--bg-1), var(--bg-1)) padding-box,
+    conic-gradient(from var(--hero-angle), var(--bg-2) 0deg, var(--hero-c1) 60deg, var(--hero-c2) 120deg,
+      var(--bg-2) 180deg, var(--bg-2) 240deg, var(--hero-c3) 300deg, var(--bg-2)) border-box;
+  text-align: left;
+  animation: hero-spin 8s linear infinite, hero-in 0.8s var(--hero-ease) both;
+}
+.hero-install code {
+  flex: 1;
+  padding: 13px 16px;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 0.82rem;
+  color: var(--fg-0);
+}
+.hero-install code span { color: var(--fg-2); user-select: none; }
+.hero-install .hero-copy { height: auto; border-radius: 0; padding-inline: 18px; }
+.hero-install .hero-copy:active { transform: scale(0.97); }
+
+.hero-hint { margin-top: 12px; color: var(--fg-2); font-size: 0.8rem; }
+.hero-actions { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+
+.hero-pill { animation-delay: 0.08s; }
+.hero h1 { animation-delay: 0.16s; }
+.hero .lede { animation-delay: 0.24s; }
+.hero-install { animation-delay: 0s, 0.32s; }
+.hero-hint { animation-delay: 0.36s; }
+.hero-actions { animation-delay: 0.44s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-beam, .hero-mark, .hero-install, .hero-in { animation: none; }
+}
 
 /* ── Tour stage: the web client in a window frame (xisite.pages/stage) ──
    The iframe renders at 1280x800; site.js sets --stage-scale to fit it. */

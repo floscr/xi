@@ -14,6 +14,23 @@
     });
   }
 
+  // ---- copy buttons ---------------------------------------------------------
+  // [data-copy] (the hero's install bar): copy the value, say so in the
+  // button's label (its last text node, after the icon) for a moment.
+  document.querySelectorAll('[data-copy]').forEach(function (btn) {
+    var label = btn.lastChild;
+    var text = label.nodeValue;
+    var timer;
+    btn.addEventListener('click', function () {
+      if (!navigator.clipboard) return;
+      navigator.clipboard.writeText(btn.getAttribute('data-copy')).then(function () {
+        label.nodeValue = 'Copied';
+        clearTimeout(timer);
+        timer = setTimeout(function () { label.nodeValue = text; }, 1600);
+      });
+    });
+  });
+
   // ---- tour stage ----------------------------------------------------------
   // The iframe renders the web client at 1280x800 (xisite.pages/stage);
   // scale it to the frame. It loads (and the tour starts) once the stage is

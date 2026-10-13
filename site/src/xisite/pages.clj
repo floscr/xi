@@ -14,10 +14,7 @@
 
 ;; --- Home ---
 
-(def ^:private install-sample
-  "bun install -g xi-agent
-xi server                  # start the server, web client on localhost:7474
-xi                         # connect a client")
+(def ^:private install-command "bun install -g xi-agent")
 
 (def ^:private extension-sample
   ";; ~/.config/xi/extensions/notes.cljs
@@ -230,6 +227,34 @@ xi clients user iPhone bob      # pin a paired phone to bob")
      (button-group/button-group-item {:attrs {:type "button" :data-mode "dark"}} "Dark")
      (button-group/button-group-item {:attrs {:type "button" :data-mode "light"}} "Light"))])
 
+(defn- hero
+  "The home page's intro: a spotlight in the logo's colours turning behind
+   the logo tile, headline and install bar (main.css, .hero-*). Copy
+   [data-copy] buttons are wired up in site.js."
+  []
+  [:section.hero
+   [:div.hero-bg {:aria-hidden "true"} [:div.hero-rays] [:div.hero-beam]]
+   [:div.wrap
+    [:div.hero-mark.hero-in
+     [:svg {:viewBox "0 0 55 40" :width "40" :height "30" :aria-hidden "true"} ui/logo-glyph]]
+    [:a.hero-pill.hero-in {:href "/changelog/"}
+     [:b (str "v" core/version)] "Open source · MIT · ClojureScript on Bun"
+     [:span.hero-pill-arrow {:aria-hidden "true"} "→"]]
+    [:h1.hero-in "A coding harness " [:span.hero-gradient "you can shape."]]
+    [:p.lede.hero-in
+     "A coding harness with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
+    [:div.hero-install.hero-in
+     [:code [:span {:aria-hidden "true"} "$ "] install-command]
+     (button/button {:variant :primary :icon-left :copy :class "hero-copy"
+                     :attrs {:type "button" :data-copy install-command}}
+                    "Copy")]
+    [:p.hero-hint.hero-in
+     "Then run " [:code "xi server"] " for the web client on " [:code "localhost:7474"]
+     ", or " [:code "xi"] " in a terminal."]
+    [:div.hero-actions.hero-in
+     (button/button {:variant :secondary :href "/docs/getting-started/"} "Get started")
+     (button/button {:variant :ghost :href "/docs/"} "Read the docs")]]])
+
 (defn tour-page
   "/tour/: the web client alone, for the stage iframe. Shares the site's
    framework CSS, runtime and stored light/dark choice."
@@ -257,15 +282,7 @@ xi clients user iPhone bob      # pin a paired phone to bob")
      :description core/site-description
      :path "/"
      :body-class "home"}
-    [:section.hero
-     [:div.wrap
-      [:h1 "A coding harness you can shape."]
-      [:p.lede
-       "A coding harness with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
-      [:div.hero-actions
-       (button/button {:variant :primary :size :lg :href "/docs/getting-started/"} "Get started")
-       (button/button {:variant :secondary :size :lg :href "/docs/"} "Read the docs")]
-      (code "sh" install-sample)]]
+    (hero)
 
     (stage "desk" "A recorded session, replayed in Xi's web client. Click Allow yourself, or let it run.")
 

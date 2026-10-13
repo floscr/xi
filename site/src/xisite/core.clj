@@ -8,6 +8,10 @@
 
 (def repo-url "https://github.com/floscr/xi")
 
+(def version
+  "Xi's version, from the repo's package.json (the hero's pill)."
+  (second (re-find #"\"version\"\s*:\s*\"([^\"]+)\"" (slurp "../package.json"))))
+
 ;; The release notes, kept at the repo root and rendered at /changelog/.
 (def changelog-file "../CHANGELOG.md")
 

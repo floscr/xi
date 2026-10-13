@@ -7,6 +7,15 @@
             [xisite.livereload :as livereload]
             [xisite.theme :as theme]))
 
+(def logo-glyph
+  "The wordmark's shapes in a 55x40 viewBox, filled with the header logo's
+   gradient: reusable on any page, since the header defines it."
+  [:g {:fill "url(#logo-gradient)"}
+   [:polygon {:points "0,0 9,0 36,40 27,40"}]
+   [:polygon {:points "27,0 36,0 9,40 0,40"}]
+   [:rect {:x "46" :y "0" :width "9" :height "9"}]
+   [:rect {:x "46" :y "15" :width "9" :height "25"}]])
+
 (def ^:private logo
   "The web client's gradient wordmark (xi.web.views/launch-logo); main.css
    turns its stops with the theme's accent like the client's style.css."
@@ -17,11 +26,7 @@
      [:stop.logo-stop-start {:offset "0" :stop-color "#e83fb4"}]
      [:stop.logo-stop-mid {:offset "0.55" :stop-color "#8b4cf0"}]
      [:stop.logo-stop-end {:offset "1" :stop-color "#3b8fd6"}]]]
-   [:g {:fill "url(#logo-gradient)"}
-    [:polygon {:points "0,0 9,0 36,40 27,40"}]
-    [:polygon {:points "27,0 36,0 9,40 0,40"}]
-    [:rect {:x "46" :y "0" :width "9" :height "9"}]
-    [:rect {:x "46" :y "15" :width "9" :height "25"}]]])
+   logo-glyph])
 
 (def ^:private github-icon
   [:svg {:viewBox "0 0 24 24" :width "16" :height "16" :aria-hidden "true"
