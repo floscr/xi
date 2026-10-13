@@ -9,8 +9,10 @@ Scripts get `clojure.core` and `clojure.string` (`str`), `clojure.set`
 (`set`), `clojure.walk` (`walk`), `clojure.edn` (`edn`), plus the helpers
 below. There is no host interop: no `js/`, no `aget`, no `eval`, no class
 constructors. `Math`, `Date` and `System/currentTimeMillis` exist;
-`System/getenv` does not (use `env`). `(catch Exception e …)` catches any
-error, and `(.getMessage e)` works.
+`System/getenv` does not (use `env`). Base64 works as in babashka:
+`(String. (.decode (java.util.Base64/getDecoder) s))` and
+`(.encodeToString (java.util.Base64/getEncoder) (.getBytes s))`.
+`(catch Exception e …)` catches any error, and `(.getMessage e)` works.
 
 In an [agent profile](agents.md)'s chats the tool is `:compute` unless the
 profile sets `:clj :full`: of the helpers below only `curl`, `now`, `sleep`,

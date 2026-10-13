@@ -43,7 +43,11 @@
                   "((Long/constructor.constructor \"return 1\"))"
                   "((Integer/constructor.constructor \"return 1\"))"
                   "((Instant/constructor.constructor \"return 1\"))"
-                  "((.. Math -constructor -constructor) \"return 1\")"]]
+                  "((.. Math -constructor -constructor) \"return 1\")"
+                  "((String/constructor \"return 1\"))"
+                  "((Base64/constructor.constructor \"return 1\"))"
+                  "((.. \"x\" -constructor -constructor) \"return 1\")"
+                  "((.. (java.util.Base64/getDecoder) -constructor -constructor) \"return 1\")"]]
       (is (blocked? code) code))))
 
 (deftest raw-js-access-and-eval-are-denied
@@ -87,6 +91,13 @@
     (is (= "=> true" (ev "(inst? (Date.))")))
     (is (= "=> 0" (ev "(.getTime (Date. 0))")))
     (is (= "=> \"1970-01-01T00:00:01.000Z\"" (ev "(str (Instant. 1000))")))))
+
+(deftest jvm-base64-idiom-works
+  (is (= "=> \"héllo\"" (ev "(String. (.decode (java.util.Base64/getDecoder) \"aMOpbGxv\"))")))
+  (is (= "=> \"aMOpbGxv\"" (ev "(.encodeToString (Base64/getEncoder) (.getBytes \"héllo\"))")))
+  (is (= "=> [-61 -87]" (ev "(vec (.getBytes \"é\"))")))
+  (is (= "=> \"hi\"" (ev "(String. (.decode (Base64/getDecoder) \"aGk=\\n\") \"UTF-8\")")))
+  (is (= "=> \"ABC\"" (ev "(.toUpperCase \"abc\")"))))
 
 (deftest compute-mode-has-no-file-program-or-socket-access
   (let [ev (partial ev* "compute-test" true)]

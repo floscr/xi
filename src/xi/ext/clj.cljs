@@ -38,6 +38,7 @@
             [sci.core :as sci]
             [xi.bb-trust :as bb-trust]
             [xi.dialog :as dialog]
+            [xi.ext.clj-bytes :as bytes]
             [xi.ext.clj-process :as proc]
             [xi.ext.clj-socket :as sock]
             [xi.git-lock :as git-lock]
@@ -932,20 +933,22 @@
                        ;; class, so `Class/constructor` can't reach js/Function. Instance interop
                        ;; still works: SCI keys it on the class name. System exposes the clock
                        ;; only (no getenv), keeping the env allowlist intact.
-                       :classes {'Math (sandbox/null-proto-copy js/Math)
-                                 'Thread  (sandbox/null-proto {:sleep (fn [ms] (proc/sleep-abortable opts ms))})
-                                 'System  (sandbox/null-proto {:currentTimeMillis (fn [] (js/Date.now))})
-                                 'Long    (sandbox/null-proto {:parseLong   (fn [s & [radix]]
-                                                                      (js/parseInt s (or radix 10)))})
-                                 'Integer (sandbox/null-proto {:parseInt    (fn [s & [radix]]
-                                                                      (js/parseInt s (or radix 10)))})
-                                 'Double  (sandbox/null-proto {:parseDouble (fn [s] (js/parseFloat s))})
-                                 ;; :constructor keeps (Date.) working; the 'Date key (the ctor's .name)
-                                 ;; allows instance interop.
-                                 'Date           {:class (sandbox/null-proto {}) :constructor date-ctor}
-                                 'java.util.Date {:class (sandbox/null-proto {}) :constructor date-ctor}
-                                 'java.time.Instant {:class instant-statics :constructor instant-ctor}
-                                 'Instant           {:class instant-statics :constructor instant-ctor}}})]
+                       :classes (merge
+                                 bytes/classes
+                                 {'Math (sandbox/null-proto-copy js/Math)
+                                  'Thread  (sandbox/null-proto {:sleep (fn [ms] (proc/sleep-abortable opts ms))})
+                                  'System  (sandbox/null-proto {:currentTimeMillis (fn [] (js/Date.now))})
+                                  'Long    (sandbox/null-proto {:parseLong   (fn [s & [radix]]
+                                                                       (js/parseInt s (or radix 10)))})
+                                  'Integer (sandbox/null-proto {:parseInt    (fn [s & [radix]]
+                                                                       (js/parseInt s (or radix 10)))})
+                                  'Double  (sandbox/null-proto {:parseDouble (fn [s] (js/parseFloat s))})
+                                  ;; :constructor keeps (Date.) working; the 'Date key (the ctor's .name)
+                                  ;; allows instance interop.
+                                  'Date           {:class (sandbox/null-proto {}) :constructor date-ctor}
+                                  'java.util.Date {:class (sandbox/null-proto {}) :constructor date-ctor}
+                                  'java.time.Instant {:class instant-statics :constructor instant-ctor}
+                                  'Instant           {:class instant-statics :constructor instant-ctor}})})]
     (sci/eval-string* ctx PRELUDE)
     ctx))
 
