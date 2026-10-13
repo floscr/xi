@@ -1,10 +1,12 @@
 (ns xi.rules.store
   "Rules store — loads the config rule files, merges the runtime scopes from
    app state, normalizes a tool call into a decision request, and enforces the
-   immutable hard-block (agents may never write the rules files).
+   immutable hard-block (agents may never write the global rules file; a
+   repo's `.xi/rules.edn` asks every time).
 
    Precedence (first match wins, top → bottom):
-     1. hard-coded immutable  (this namespace — see `hard-block`)
+     1. hard-coded immutable  (this namespace — see `hard-block-request`,
+                              `repo-rules-ask-request`)
      2. repo config           <repo>/.xi/rules.edn
      3. global config         ~/.config/xi/rules.edn
      4. server-session        process-local  [:ext :rules :rules]
@@ -184,21 +186,25 @@
 
 ;; ── Hard-coded immutable rules ──────────────────────────────────────────────
 
-(def ^:private rules-file-re
-  #"(?:\.config/xi/rules\.edn|[/\\]\.xi/rules\.edn)$")
-
-(def ^:private rules-file-loose-re
-  "Matches a rules-file path mentioned anywhere in a command/code string."
-  #"(?:\.config/xi/rules\.edn|\.xi/rules\.edn)")
+;; The global file is denied outright; the repo's `.xi/rules.edn` asks, every
+;; time (xi.ext.rules/decide*). The `*-loose-re` variants match a path
+;; mentioned anywhere in a command/code string.
+(def ^:private global-rules-file-re #"\.config/xi/rules\.edn$")
+(def ^:private global-rules-file-loose-re #"\.config/xi/rules\.edn")
+(def ^:private repo-rules-file-re #"[/\\]\.xi/rules\.edn$")
+(def ^:private repo-rules-file-loose-re #"\.xi/rules\.edn")
 
 (def ^:private write-token-re
   "Write indicators in a shell command or clj eval that would mutate a file."
   #"(?:>>?|\btee\b|\bsed\s+-i|\bcp\b|\bmv\b|\bdd\b|\bchmod\b|\bspit\b|writeFileSync|appendFileSync|\brm\b)")
 
 (def ^:private hard-block-msg
-  (str "Blocked (hard rule): agents may not modify the rules files "
-       "(~/.config/xi/rules.edn or <repo>/.xi/rules.edn). Ask the user to "
-       "edit them, or use the 'recommend a rule' flow on a guard dialog."))
+  (str "Blocked (hard rule): agents may not modify the global rules file "
+       "(~/.config/xi/rules.edn). Ask the user to edit it, or use the "
+       "'recommend a rule' flow on a guard dialog."))
+
+(def ^:private repo-rules-ask-msg
+  "Change this repo's permission rules (.xi/rules.edn)?")
 
 (defn- deny-result [msg]
   {:intercepted true
@@ -301,17 +307,42 @@
        "Path: " path "\n"
        "Repo: " (or repo "none (not inside a git repo)")))
 
+(defn- writes-rules-file?
+  "A write/edit targeting the file `file-re` matches, or a shell-ish command
+   naming it (`loose-re`) next to a write token."
+  [file-re loose-re {:keys [tool path command effective-cwd]}]
+  (boolean
+   (case tool
+     (:write :edit)   (and path (re-find file-re (expand-path effective-cwd (str path))))
+     (:bash :clj :sh) (let [c (str command)]
+                        (and (re-find loose-re c) (re-find write-token-re c)))
+     false)))
+
+(defn rules-file-path?
+  "True when the resolved path `abs` is a canonical rules file (global or a
+   repo's) or a `.xi` directory itself (a move onto it would swap one in);
+   xi.ext.clj refuses these in its write helpers."
+  [abs]
+  (boolean (or (re-find global-rules-file-re abs)
+               (re-find repo-rules-file-re abs)
+               (re-find #"[/\\]\.xi$" abs))))
+
 (defn hard-block-request
-  "The non-overridable check: a deny message when `req` would write a rules
-   file (a write/edit targeting one, or a shell-ish command naming one next to
-   a write token), else nil. Imperative on purpose: it must never be shadowed."
-  [{:keys [tool path command effective-cwd]}]
-  (when (case tool
-          (:write :edit)   (and path (re-find rules-file-re (expand-path effective-cwd (str path))))
-          (:bash :clj :sh) (let [c (str command)]
-                             (and (re-find rules-file-loose-re c) (re-find write-token-re c)))
-          false)
+  "The non-overridable check: a deny message when `req` would write the global
+   rules file, else nil. Imperative on purpose: it must never be shadowed."
+  [req]
+  (when (writes-rules-file? global-rules-file-re global-rules-file-loose-re req)
     hard-block-msg))
+
+(defn repo-rules-ask-request
+  "The confirm text when `req` would write a repo's `.xi/rules.edn`, else nil.
+   Checked right after hard-block-request, before every rule, so no allow rule,
+   grant or launch flag lifts it; xi.ext.rules asks as a hardened ask (never
+   auto-answered, denied when no client can answer)."
+  [req]
+  (when (and (not (hard-block-request req))
+             (writes-rules-file? repo-rules-file-re repo-rules-file-loose-re req))
+    repo-rules-ask-msg))
 
 (defn hard-block
   "`hard-block-request` for a tool call: an intercepted deny result, or nil."

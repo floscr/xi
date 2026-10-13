@@ -304,8 +304,9 @@
    CLI flag (never by the agent, which cannot relaunch the process). This is the
    engine-resident home for what used to be clj's private hard-blocks.
 
-   NOTE: the rules-file-write protection stays imperative in `store/hard-block`
-   (root-of-trust — not even flag-removable), and runs before this tier."
+   NOTE: the rules-file-write protection stays imperative in
+   `store/hard-block-request` / `store/repo-rules-ask-request` (root-of-trust —
+   not even flag-removable), and runs before this tier."
   [;; sudo: never allowed from the agent, for both the bash tool and clj sh-outs
    ;; (both carry :command).
    {:match  {:tool #{:sh :bash} :command hardened-sudo-re}
@@ -356,8 +357,9 @@
     :scope  :hardened}
    ;; xi rules files anywhere else (e.g. a dotfiles source that gets copied to
    ;; ~/.config/xi/rules.edn): any change is confirmed, every time. The
-   ;; canonical locations are already hard-blocked (store/hard-block); this
-   ;; covers the rest. A `rules.edn` only counts when it carries `:version`, so
+   ;; canonical locations are already handled before this tier (store/
+   ;; hard-block-request denies the global one, repo-rules-ask-request asks
+   ;; for a repo's); this covers the rest. A `rules.edn` only counts when it carries `:version`, so
    ;; unrelated tools' rules.edn files stay untouched. Hardened + no [a]lways,
    ;; so neither a session grant nor a config allow can skip the prompt — the
    ;; [r] repo grant covers the repo's other files (it lands in the session

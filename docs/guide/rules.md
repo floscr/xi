@@ -26,7 +26,8 @@ Xi ships with defaults that cover the usual cases. Out of the box:
 
 Some things are never allowed, whatever your rules say: `sudo`, remote
 shells and copies (`ssh`, `scp`, `rsync`), reading SSH private keys, and
-writing to the rules files themselves. Changing `config.edn` always asks,
+writing to `~/.config/xi/rules.edn`. Changing a project's `.xi/rules.edn`
+or `config.edn` always asks,
 even when it is a symlink into a dotfiles checkout the agent may otherwise
 edit. This is the **hardened tier**; only the person starting Xi can turn it
 off, with a command-line flag, and the agent cannot.
@@ -195,6 +196,10 @@ to end, including an extension that grants its own.
 A repository can carry its own rules in `.xi/rules.edn` at its root, with the
 same shape. They apply when the chat runs inside that repository and win over
 the global file.
+
+The agent may write this file, but every change asks, yes or no only. No rule
+or Yolo mode skips the question, and with no client attached to answer it the
+write is denied.
 
 `/rules save` (also in the `Ctrl`/`Cmd+K` palette) moves the rules you
 granted in the current chat into that file.

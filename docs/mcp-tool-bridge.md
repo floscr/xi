@@ -135,7 +135,8 @@ asks and `/commit` confirm work. Tool exec-fns get the same ctx.
 Tool-call policy (allow / deny / nudge / ask / confirm) is driven by the
 declarative **rules engine** (`xi.ext.rules` + `xi.rules.store` /
 `xi.rules`) — see the guide's [rules reference](guide/rules-reference.md) for the full reference. In precedence
-order: an immutable hard-block (agents can never write the rules files), a
+order: an immutable hard-block (agents can never write the global rules
+file; a repo's `.xi/rules.edn` asks every time), a
 hardened tier (`sudo`, remote-copy shells, …), repo/global config
 (`.xi/rules.edn`, `~/.config/xi/rules.edn`), runtime session rules, then the
 built-in defaults. Highlights the defaults still enforce:

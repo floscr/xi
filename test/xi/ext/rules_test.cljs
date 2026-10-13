@@ -69,6 +69,32 @@
                      (is (:is-error (:result out)))
                      (done))))))))
 
+(deftest repo-rules-file-asks-before-data-rules
+  (let [rule  {:match {:tool :write} :action {:type :allow}}
+        state (state-with [:ext :rules :rules] rule)
+        tc    {:name "write" :arguments {:path ".xi/rules.edn" :content "{}"}}
+        asked (atom nil)
+        answering (fn [ans]
+                    (assoc (ctx state) :confirm! (fn [text opts]
+                                                   (reset! asked [text opts])
+                                                   (js/Promise.resolve ans))))]
+    (async done
+      (-> (rules-ext/tool-policy tc (ctx state))
+          (.then (fn [out]
+                   (is (:is-error (:result out))
+                       "an :allow rule doesn't skip it, and no client to ask denies")
+                   (rules-ext/tool-policy tc (answering true))))
+          (.then (fn [out]
+                   (is (= tc out) "yes runs the write")
+                   (let [[text opts] @asked]
+                     (is (str/includes? text ".xi/rules.edn"))
+                     (is (:hardened? opts) "never answered by yolo mode")
+                     (is (not-any? #{:always :repo} (:options opts)) "no lasting grant"))
+                   (rules-ext/tool-policy tc (answering false))))
+          (.then (fn [out]
+                   (is (nil? out) "no blocks it")
+                   (done)))))))
+
 (deftest policy-fails-closed
   (testing "a throw while deciding denies the call instead of letting it run"
     (async done

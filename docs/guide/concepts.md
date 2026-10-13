@@ -53,8 +53,8 @@ you own, evaluated top to bottom, first match wins. A set of built-in defaults
 covers the common cases; a hardened tier covers the dangerous ones and cannot
 be overridden.
 
-The agent can never edit the rules files. See
-[Permissions and rules](rules.md).
+The agent can never edit your global rules file, and a project's rules file
+only after you confirm. See [Permissions and rules](rules.md).
 
 ## Extensions
 

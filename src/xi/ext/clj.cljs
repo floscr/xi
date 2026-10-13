@@ -213,7 +213,8 @@
    path asks at runtime via runtime-gate!. `{:nofollow? true}` keeps a
    final-component symlink as the target (entry-level ops: rm, mv). A `.git`
    directory is never writable from the helpers (git runs what its hooks and
-   config name)."
+   config name), nor is a rules file (a computed path would slip past the
+   rules engine's command scan; the write tool asks)."
   [opts p & [op {:keys [nofollow?]}]]
   (let [cwd      (opts-cwd opts)
         resolved (if nofollow?
@@ -225,6 +226,11 @@
       (throw (ex-info (str "clj: writing inside a .git directory is blocked (" p "): "
                            "git runs what .git/hooks and .git/config name. Use the "
                            "write tool or (sh \"git\" \"config\" …), which ask.")
+                      {})))
+    (when (rules-store/rules-file-path? resolved)
+      (throw (ex-info (str "clj: writing an xi rules file is blocked (" p "): "
+                           "use the write or edit tool (a repo's .xi/rules.edn "
+                           "asks; ~/.config/xi/rules.edn is off limits).")
                       {})))
     (if (or (paths/path-within? resolved real-cwd)
             (paths/within-tmp? cwd resolved)

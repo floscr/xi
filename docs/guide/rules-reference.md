@@ -23,7 +23,10 @@ file and the problem. `/rules` shows it.
 
 ## Order
 
-1. Immutable: the agent can never write a rules file, by any tool.
+1. Immutable: the agent can never write `~/.config/xi/rules.edn`, by any
+   tool. Writing `<repo>/.xi/rules.edn` asks every time, yes or no only; with
+   no client to answer, it is denied. The clj helpers (`spit`, `mv`, …)
+   refuse both paths and the `.xi` directory itself.
 2. Hardened tier (below). Not overridable; `--no-hardened-rules` at launch is
    the only way off.
 3. `<repo>/.xi/rules.edn`

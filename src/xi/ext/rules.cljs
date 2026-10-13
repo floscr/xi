@@ -5,7 +5,8 @@
    `:on-block`/`:do` accepted as aliases for `:match`/`:action`). Rules are
    loaded, in precedence order, from:
 
-     1. immutable hard-block (agents may never write the rules files)
+     1. immutable hard-block (agents may never write the global rules file;
+        a repo's .xi/rules.edn asks, every time)
      2. repo config     <repo>/.xi/rules.edn
      3. global config   ~/.config/xi/rules.edn
      4. server-session  process-local [:ext :rules]
@@ -383,18 +384,24 @@
   [req {:keys [get-state room-id] :as ctx}]
   (if-let [msg (store/hard-block-request req)]
     {:decision :deny :message msg}
-    (let [state   (when get-state (get-state))
-          ruleset (store/ordered-rules state room-id (:effective-cwd req))
-          req     (store/enrich-request req ruleset)
-          rule    (rules/first-match ruleset req)]
-      (cond
-        (nil? rule) {:decision :pass}
-        (granted? state room-id rule) {:decision :approved}
-        :else (apply-action (assoc (:action rule)
-                                   :hints (:hints rule)
-                                   :scope (:scope rule)
-                                   :grant (grant-key rule))
-                            req ctx)))))
+    (if-let [msg (store/repo-rules-ask-request req)]
+      ;; Every time: no [a]lways/[r]epo grant, never yolo-answered, denied
+      ;; when no client is attached to answer.
+      (apply-action {:type :ask :message msg :options [:yes :no]
+                     :unanswered :deny :scope :hardened}
+                    req ctx)
+      (let [state   (when get-state (get-state))
+            ruleset (store/ordered-rules state room-id (:effective-cwd req))
+            req     (store/enrich-request req ruleset)
+            rule    (rules/first-match ruleset req)]
+        (cond
+          (nil? rule) {:decision :pass}
+          (granted? state room-id rule) {:decision :approved}
+          :else (apply-action (assoc (:action rule)
+                                     :hints (:hints rule)
+                                     :scope (:scope rule)
+                                     :grant (grant-key rule))
+                              req ctx))))))
 
 (defn decide!
   "Decide a decision request (store/decision-request for tool calls,

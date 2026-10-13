@@ -74,13 +74,14 @@
         (fs/rmSync dir #js {:recursive true :force true})))))
 
 (deftest hard-block-denies-rules-file-writes
-  (testing "write/edit to a rules file is blocked"
+  (testing "write/edit to the global rules file is blocked"
     (is (denied? (store/hard-block {:name "write"
                                     :arguments {:path "~/.config/xi/rules.edn"}}
-                                   {:cwd "/tmp"})))
-    (is (denied? (store/hard-block {:name "edit"
-                                    :arguments {:file_path "/home/x/proj/.xi/rules.edn"}}
                                    {:cwd "/tmp"}))))
+  (testing "a repo's rules file asks instead"
+    (is (nil? (store/hard-block {:name "edit"
+                                 :arguments {:file_path "/home/x/proj/.xi/rules.edn"}}
+                                {:cwd "/tmp"}))))
   (testing "write to an ordinary file passes through"
     (is (nil? (store/hard-block {:name "write" :arguments {:path "/tmp/notes.txt"}}
                                 {:cwd "/tmp"})))
@@ -92,9 +93,10 @@
     (is (denied? (store/hard-block {:name "bash"
                                     :arguments {:command "echo x >> ~/.config/xi/rules.edn"}}
                                    {:cwd "/tmp"})))
-    (is (denied? (store/hard-block {:name "bash"
-                                    :arguments {:command "sed -i s/a/b/ .xi/rules.edn"}}
-                                   {:cwd "/tmp"}))))
+    (is (nil? (store/hard-block {:name "bash"
+                                 :arguments {:command "sed -i s/a/b/ .xi/rules.edn"}}
+                                {:cwd "/tmp"}))
+        "a repo's rules file asks instead"))
   (testing "reading a rules file via shell is allowed (no write token)"
     (is (nil? (store/hard-block {:name "bash"
                                  :arguments {:command "cat ~/.config/xi/rules.edn"}}
@@ -103,6 +105,27 @@
     (is (denied? (store/hard-block {:name "clj"
                                     :arguments {:code "(spit \"~/.config/xi/rules.edn\" \"[]\")"}}
                                    {:cwd "/tmp"})))))
+
+(deftest repo-rules-ask-request-covers-repo-rules-writes
+  (let [ask? (fn [tool-call]
+               (some? (store/repo-rules-ask-request
+                       (store/decision-request tool-call {:cwd "/home/x/proj"}))))]
+    (testing "write/edit and shell/clj writes of a repo's .xi/rules.edn ask"
+      (is (ask? {:name "write" :arguments {:path ".xi/rules.edn" :content "{}"}}))
+      (is (ask? {:name "edit" :arguments {:file_path "/home/x/proj/.xi/rules.edn"}}))
+      (is (ask? {:name "bash" :arguments {:command "sed -i s/a/b/ .xi/rules.edn"}}))
+      (is (ask? {:name "clj" :arguments {:code "(spit \".xi/rules.edn\" \"{}\")"}})))
+    (testing "reads, other files and the global file (denied outright) don't ask"
+      (is (not (ask? {:name "bash" :arguments {:command "cat .xi/rules.edn"}})))
+      (is (not (ask? {:name "write" :arguments {:path ".xi/notes.edn" :content "{}"}})))
+      (is (not (ask? {:name "write" :arguments {:path "~/.config/xi/rules.edn"}}))))))
+
+(deftest rules-file-path-covers-the-clj-helpers-targets
+  (is (store/rules-file-path? "/home/x/proj/.xi/rules.edn"))
+  (is (store/rules-file-path? "/home/x/.config/xi/rules.edn"))
+  (is (store/rules-file-path? "/home/x/proj/.xi") "a move onto .xi would swap one in")
+  (is (not (store/rules-file-path? "/home/x/proj/.xi/notes.edn")))
+  (is (not (store/rules-file-path? "/home/x/proj/src/rules.edn"))))
 
 (deftest decision-request-normalizes
   (testing "write tool call → request with tool + path + effective-cwd"
