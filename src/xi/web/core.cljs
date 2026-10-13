@@ -2642,6 +2642,7 @@
                              [:session/prev-sibling :prev true]]]
     (keymap/register-action! {:id id
                               :run (fn [st dispatch! _]
+                                     (terminal/skip-mount-focus!)
                                      (when-not (sidebar-nav/step! st dir sibling?)
                                        (session-step! st dispatch! dir)))}))
   (doseq [[id option] [[:permission/allow      :yes]

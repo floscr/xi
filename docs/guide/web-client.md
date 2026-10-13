@@ -157,7 +157,9 @@ terminal** in the ⋮ menu and the command palette opens a shell.
 - **Typing.** While the terminal has focus, keys go to the program, plain
   Ctrl keys too (Firefox's Ctrl+D does not bookmark). `` Ctrl+` `` or `Alt+\`
   leaves the terminal; then `Esc` goes back to the chat, `i` or `Enter` back into the
-  terminal ([keys](keyboard.md#default-keys)).
+  terminal ([keys](keyboard.md#default-keys)). A terminal you reach with
+  `Alt+J` / `Alt+K` (or `Alt+Shift+J` / `Alt+Shift+K`) does not take focus,
+  so the next press still switches sessions.
 - **Lifetime.** The program keeps running while you look at another buffer,
   leave the chat or reload the page, and every device in the chat sees the
   same screen. It takes the size of the window you use last: the one you

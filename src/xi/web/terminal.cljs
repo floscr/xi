@@ -203,6 +203,23 @@
 
 (defonce ^:private xi-key-ref (atom (constantly false)))
 
+;; Set by a keyboard walk through the sessions (xi.web.core's :session/next
+;; and friends): a terminal that walk lands on mounts without taking focus, as
+;; Alt+J would then reach the program instead of Xi. The next key or pointer
+;; press clears it; window capture runs before the keymap's document listener.
+(defonce ^:private skip-mount-focus? (atom false))
+
+(defonce ^:private input-listeners
+  (delay
+    (doseq [t ["keydown" "pointerdown"]]
+      (.addEventListener js/window t #(reset! skip-mount-focus? false) true))))
+
+(defn skip-mount-focus!
+  "Keep the terminal the current key press brings on screen unfocused."
+  []
+  @input-listeners
+  (reset! skip-mount-focus? true))
+
 (defn set-xi-key!
   "Install (fn [keydown-event] → bool): true for the keys Xi keeps while a
    terminal has focus (xi.web.keymap/terminal-key?, the :mode/terminal
@@ -318,7 +335,7 @@
              (.observe observer node)
              (swap! instances assoc term-id {:term term :fit fit :observer observer :node node})
              (attach! term-id term)
-             (.focus term)))))
+             (when-not @skip-mount-focus? (.focus term))))))
       (.catch #(js/console.error "[terminal]" %))))
 
 (defn- unmount! [term-id]
