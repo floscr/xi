@@ -36,6 +36,7 @@
             [xi.web.tool-views :as tool-views]
             [xi.web.viewer-group :as viewer-group]
             [ui.icon :as icon]
+            [ui.alert :as alert]
             [ui.form :as form]
             [ui.button :as button]
             [ui.button-group :as button-group]
@@ -1063,6 +1064,24 @@
   (when sender
     [:span {:class ["post-badge"]} (user-avatar sender)]))
 
+(defn- status-post
+  "A :status history entry as a ui.alert. Plain entries are a slim neutral
+   banner of :text; entries with a :title (shape in the xi.commands ns doc) show
+   :tone, :icon, :detail and :rows, :text being the TUI's rendering."
+  [{:keys [text title detail rows tone icon]}]
+  (let [rows (when (seq rows)
+               (into [:span {:class ["status-alert-rows"]}]
+                     (mapcat (fn [{:keys [label text tone]}]
+                               (let [cls #(cond-> [%] tone (conj (str "status-alert-row--" (name tone))))]
+                                 [[:span {:class (cls "status-alert-row-label")} label]
+                                  [:span {:class (cls "status-alert-row-text")} text]])))
+                     rows))]
+    [:div {:class (cond-> ["post" "post--assistant" "post--status"]
+                    (not title) (conj "post--status-slim"))}
+     (apply alert/alert {:variant tone :title title :icon-name (or icon :info)
+                         :class "status-alert" :attrs {:role "status"}}
+            (if title (remove nil? [detail rows]) [text]))]))
+
 (defn- entry->post [dispatch! entry]
   (case (:kind entry)
     :user
@@ -1173,8 +1192,7 @@
     (tool-post dispatch! entry)
 
     :status
-    [:div {:class ["post" "post--assistant"]}
-     [:div {:class ["post-content" "status-text"]} (:text entry)]]
+    (status-post entry)
 
     :error
     (let [msg (or (:message (:error entry)) (pr-str (:error entry)))]

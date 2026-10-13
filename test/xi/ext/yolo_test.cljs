@@ -58,6 +58,16 @@
     (is (nil? (yolo/level (:state ((set-handler) (with-room nil) {:room-id "r1" :level :max}))
                           "r1")))))
 
+(deftest status-entry-carries-the-banner
+  (testing "sane: a warning banner, the denied rule as a danger row"
+    (let [e (yolo/status-entry :sane)]
+      (is (= ["Yolo mode on" :warning] [(:title e) (:tone e)]))
+      (is (= ["Asks" "Denied"] (map :label (:rows e))))
+      (is (= [:danger] (keep :tone (:rows e))))
+      (is (re-find #"ON \(" (:text e)) "the TUI keeps the full sentence")))
+  (testing "off is a plain line"
+    (is (nil? (:title (yolo/status-entry nil))))))
+
 (deftest raising-the-level-allows-the-open-asks-it-answers
   (let [dialogs [{:id "d1" :type :confirm :message "write?"}
                  {:id "d2" :type :confirm :message "hardened" :hardened? true}

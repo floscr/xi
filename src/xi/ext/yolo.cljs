@@ -57,6 +57,21 @@
          :relentless "RELENTLESS (every tool call runs without asking, except server restarts)"
          "OFF")))
 
+(defn status-entry
+  "The history line for a level change; :text for the TUI, the rest for the
+   web client's banner (xi.commands ns doc)."
+  [level]
+  (merge {:kind :status :text (status-text level) :icon :zap}
+         (case level
+           :sane       {:title "Yolo mode on" :tone :warning
+                        :detail "Tool calls run without asking."
+                        :rows [{:label "Asks" :text "writes outside the project · secrets · git push · server restarts"}
+                               {:label "Denied" :text "removing system directories" :tone :danger}]}
+           :relentless {:title "Yolo mode relentless" :tone :danger
+                        :detail "Every tool call runs without asking."
+                        :rows [{:label "Asks" :text "server restarts"}]}
+           {})))
+
 (defn set-level
   "Reducer for :ext.yolo/set {:room-id :level}, :level nil being off; shared
    with the web half. Also allows the asks already waiting that the new level
@@ -69,8 +84,7 @@
           st'   (-> st
                     (update-in [:rooms room-id :ext ext-id]
                                #(if level (assoc % :level level) (dissoc % :level)))
-                    (update-in [:rooms room-id :history] conj
-                               {:kind :status :text (status-text level)}))
+                    (update-in [:rooms room-id :history] conj (status-entry level)))
           fx    (answer-open-asks st' room-id)]
       (cond-> {:state st'}
         (seq fx) (assoc :effects fx)))))

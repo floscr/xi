@@ -1614,6 +1614,30 @@ body {
 .error-text { color: var(--danger); }
 .status-text { color: var(--fg-2); font-style: italic; }
 
+/* ---- Status banner (:kind :status history entries, views/status-post) ----
+   A ui.alert; plain entries are the slim neutral form, titled ones carry a
+   tone, a detail line and label/text rows. */
+.post--status { padding: var(--size-1) 0; }
+.status-alert .alert-body { white-space: pre-wrap; }
+.post--status-slim .status-alert { padding: var(--size-2) var(--size-4); }
+.status-alert-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: var(--size-1) var(--size-3);
+  padding-top: var(--size-1);
+  white-space: normal;
+}
+.status-alert-row-label {
+  font-size: var(--font-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+.status-alert-row-text { color: var(--fg-1); }
+.status-alert-row--danger { color: var(--danger); opacity: 1; }
+
 /* ---- Error card (xi.error-info) ----
    A recognised agent error in plain language: title, when it is back, usage
    meter, raw error behind a toggle. */

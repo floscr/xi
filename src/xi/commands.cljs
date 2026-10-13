@@ -16,7 +16,10 @@
    :app/reload and :clipboard/copy.
 
    History gets a new entry kind here: {:kind :status :text ...} — command
-   output and status lines, rendered dim by the TUI."
+   output and status lines, rendered dim by the TUI. The web client shows
+   them as a banner; an entry may add :title, :detail, :tone (a ui.alert
+   variant), :icon and :rows [{:label :text :tone}] for a richer one there, :text
+   staying the full plain rendering."
   (:require [clojure.string :as str]
             [xi.buffers :as buffers]
             [xi.core.state :as state]
