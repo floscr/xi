@@ -92,6 +92,7 @@
                           ["chat diff"   {:page :chat :session-id "sid1" :buffer-id "diff:commit:abc"}]
                           ["chat file"   {:page :chat :session-id "sid1" :buffer-id "file:/a b/c.md"}]
                           ["chat canvas" {:page :chat :session-id "sid1" :buffer-id :canvas}]
+                          ["sub-agent"   {:page :chat :session-id "sid1" :buffer-id "sa-1x"}]
                           ["project dir" {:page :home :dir "/home/user/code"}]
                           ["all sessions" {:page :home :dir :all}]
                           ["pr detail"   {:page :pr-detail :number 7 :cwd "/home/user"}]]]
@@ -424,9 +425,9 @@
                  (assoc-in [:ext :subagents :agents] [{:id "sa-1" :status :done}]))]
     (is (= {:type :ui/buffer-switch :room-id "r1" :buffer-id "file:a"}
            (router/buffer-open-event "r1" room "file:a")))
-    (is (= {:type :subagent/reveal :room-id "r1" :sub-id "sa-1"}
+    (is (= {:type :ui/buffer-switch :room-id "r1" :buffer-id "sa-1"}
            (router/buffer-open-event "r1" room "sa-1"))
-        "a sub-agent's id (a sidebar row) reveals it in the panel")
+        "a sub-agent's id (a sidebar row) opens it as a view")
     (is (nil? (router/buffer-open-event "r1" room "file:gone"))
         "a stale row opens nothing")
     (testing "with-buffer on the session in view uses it"
@@ -434,6 +435,6 @@
                    (assoc-in [:rooms "r1"] room)
                    (assoc :active-room "r1"))]
         (is (has-dispatch? (:effects (nav st {:page :chat :session-id "s1" :buffer-id "sa-1"}))
-                           :subagent/reveal))
+                           :ui/buffer-switch))
         (is (not (has-dispatch? (:effects (nav st {:page :chat :session-id "s1" :buffer-id "file:gone"}))
                                 :ui/buffer-switch)))))))

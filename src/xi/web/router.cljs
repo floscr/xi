@@ -28,14 +28,20 @@
   [routes]
   (if (satisfies? IDeref routes) @routes routes))
 
+(def ^:private subagent-segment
+  "The URL prefix of a sub-agent's view: its id (`sa-…`) has no `kind:`."
+  "subagent:")
+
 (defn- buffer->segment
   "The URL segment of a chat's view (xi.buffers ids): none for the chat, a
-   singleton's name (`prompt`), else the encoded string id (`diff%3Agit`)."
+   singleton's name (`prompt`), else the encoded string id (`diff%3Agit`,
+   `subagent%3Asa-1` for a sub-agent)."
   [id]
   (cond
     (or (nil? id) (= buffers/chat id)) nil
     (keyword? id) (name id)
-    :else (js/encodeURIComponent id)))
+    (str/includes? id ":") (js/encodeURIComponent id)
+    :else (js/encodeURIComponent (str subagent-segment id))))
 
 (defn- segment->buffer
   "Inverse of buffer->segment: string ids carry a `kind:` prefix, so a
@@ -44,7 +50,10 @@
   (if (nil? seg)
     buffers/chat
     (let [id (js/decodeURIComponent seg)]
-      (if (str/includes? id ":") id (keyword id)))))
+      (cond
+        (str/starts-with? id subagent-segment) (subs id (count subagent-segment))
+        (str/includes? id ":") id
+        :else (keyword id)))))
 
 (defn parse-path
   "URL path → route map. Extension routes (keyed by first segment) take
@@ -317,17 +326,22 @@
   [_st {:keys [fallback]}]
   {:effects [[:nav/back {:fallback fallback}]]})
 
-(defn buffer-open-event
-  "The client-local event that shows row `buffer-id` of `room`:
-   :ui/buffer-switch for a buffer or :chat, :subagent/reveal for a background
-   sub-agent (they list with the buffers), nil when the room holds neither."
-  [room-id room buffer-id]
-  (cond
-    (or (= :chat buffer-id) (get-in room [:ui :buffers buffer-id]))
-    {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}
+(defn- open-view?
+  "Can `room` show view `id`: the chat, one of its buffers, or one of its
+   sub-agents (read-only, xi.web.views/subagent-view; they list with the
+   buffers but are not in them)."
+  [room id]
+  (boolean
+   (or (= buffers/chat id)
+       (contains? (get-in room [:ui :buffers]) id)
+       (some #(= id (:id %)) (get-in room [:ext :subagents :agents])))))
 
-    (some #(= buffer-id (:id %)) (get-in room [:ext :subagents :agents]))
-    {:type :subagent/reveal :room-id room-id :sub-id buffer-id}))
+(defn buffer-open-event
+  "The client-local :ui/buffer-switch that shows view `buffer-id` of `room`,
+   nil when the room holds no such view."
+  [room-id room buffer-id]
+  (when (open-view? room buffer-id)
+    {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}))
 
 (defn restore-view
   "Show joined room `room-id` on the view this client left its session on
@@ -341,7 +355,7 @@
                (get-in prev [:ui :active-buffer])
                (get-in st [:web/session-views sid]))]
     (cond-> st
-      (and sid (get-in room [:ui :buffers view]))
+      (and sid (open-view? room view))
       (assoc-in [:rooms room-id :ui :active-buffer] view))))
 
 (defn with-buffer
@@ -386,10 +400,6 @@
                (not= session-id (get-in st [:web/pending-buffer :session-id]))
                (not= view buffer-id))
       view)))
-
-(defn- open-view?
-  [room id]
-  (or (= buffers/chat id) (contains? (get-in room [:ui :buffers]) id)))
 
 (defn view-sync
   "Put the chat's current view in the route and URL: a new history entry,

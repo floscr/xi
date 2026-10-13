@@ -2679,13 +2679,16 @@
    [:circle {:cx "12" :cy "12" :r "1"}]
    [:circle {:cx "12" :cy "19" :r "1"}]])
 
+(def ^:private subagent-status-label
+  {:running "running" :done "done" :error "error" :stopped "stopped"})
+
 (defn- buffer-menu
-  "The topbar's view switch once the room has a buffer: a pill naming the
-   view in front, opening a popover listing the chat, every buffer (× closes
-   it for everyone) and \"Close all\". Switching
-   stays client-local; a virtual new chat keeps its buffers on the pending
-   room."
-  [dispatch! room-id active-buffer buffers people-of]
+  "The topbar's view switch once the room has a buffer or sub-agent: a pill
+   naming the view in front, opening a popover listing the chat, every buffer
+   (× closes it for everyone), the sub-agents (`sub-agents`, read-only views)
+   and \"Close all\". Switching stays client-local; a virtual new chat keeps
+   its buffers on the pending room."
+  [dispatch! room-id active-buffer buffers sub-agents people-of]
   (let [switch! (fn [buffer-id]
                   (dispatch! {:type :diff/clear-selection})
                   (dispatch! (if room-id
@@ -2700,8 +2703,13 @@
         hide!   (fn [^js e]
                   (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover)))
         active  (get buffers active-buffer)
-        kind    (when active (buffers/kind active-buffer active))
-        label   (if active (buffers/label active-buffer active) "Chat")
+        sub     (when-not active
+                  (some #(when (= active-buffer (:id %)) %) sub-agents))
+        kind    (cond active (buffers/kind active-buffer active)
+                      sub    :subagent)
+        label   (cond active (buffers/label active-buffer active)
+                      sub    (or (:label sub) "Sub-agent")
+                      :else  "Chat")
         menu-id "buffer-menu"
         item    (fn [{:keys [id icon title active? people on-click on-close key]}]
                   [:button {:class ["sidebar-more-item" "buffer-menu-item"
@@ -2735,7 +2743,7 @@
        :class "sidebar-more-menu buffer-menu"
        :attrs {:replicant/key "buffer-menu"}}
       (item {:id "chat" :icon (message-circle-icon) :title "Chat"
-             :active? (not active) :people (people-of :chat)
+             :active? (not (or active sub)) :people (people-of :chat)
              :on-click #(switch! :chat)})
       (for [[id buf] (buffers/ordered buffers)
             :let [title (buffers/label id buf)]]
@@ -2744,6 +2752,13 @@
                :people (people-of id)
                :on-click #(switch! id)
                :on-close #(close! id)}))
+      (for [{:keys [id label task status]} sub-agents]
+        (item {:id id :icon (buffer-icon :subagent)
+               :title (str (or label task "Sub-agent") " · "
+                           (get subagent-status-label status (name (or status :running))))
+               :active? (= id active-buffer)
+               :people (people-of id)
+               :on-click #(switch! id)}))
       (when (seq buffers)
         (list
          [:div {:class ["overflow-menu-divider"] :replicant/key "buffer-menu-divider"}]
@@ -3071,14 +3086,34 @@
   (when started
     (format-elapsed (quot (- (or ended (.now js/Date)) started) 1000))))
 
-(def ^:private subagent-status-label
-  {:running "running" :done "done" :error "error" :stopped "stopped"})
+(defn- subagent-actions
+  "A sub-agent's buttons, on its panel card and its view: stop while it runs,
+   then open as chat (promoting it to a session, once) and dismiss."
+  [dispatch! room-id {:keys [id status session-id]}]
+  (let [btn (fn [cls title ev icon]
+              [:button {:class [cls] :title title :replicant/key cls
+                        :on {:click (fn [e]
+                                      (.stopPropagation e)
+                                      (dispatch! ev))}}
+               icon])]
+    (if (= :running status)
+      (list (btn "subagent-stop" "Stop sub-agent"
+                 {:type :subagent/abort :room-id room-id :sub-id id}
+                 (icon/icon {:icon-name :circle-x :size :sm})))
+      (list (btn "subagent-open" "Open as chat"
+                 (if session-id
+                   {:type :route/navigate :page :chat :session-id session-id}
+                   {:type :subagent/promote :room-id room-id :sub-id id})
+                 (message-circle-icon))
+            (btn "subagent-dismiss" "Dismiss"
+                 {:type :subagent/dismiss :room-id room-id :sub-id id}
+                 (icon/icon {:icon-name :x :size :sm}))))))
 
 (defn- subagent-child
   "One sub-agent card. Children start collapsed (opt-in `:expanded?`): only
    an expanded child renders its streaming history, or several concurrent
    agents re-render the panel on every delta."
-  [dispatch! room-id {:keys [id label task status history result expanded? session-id] :as child}]
+  [dispatch! room-id {:keys [id label task status history expanded?] :as child}]
   (let [open? (boolean expanded?)]
     [:div {:class ["subagent-card" (str "subagent-card--" (name (or status :running)))]
            :replicant/key id
@@ -3094,33 +3129,7 @@
       [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
       (when-let [d (subagent-duration child)]
         [:span {:class ["subagent-card-dur"]} d])
-      (when-not (= :running status)
-        [:button {:class ["subagent-open"]
-                  :title "Open as chat"
-                  :on {:click (fn [e]
-                                (.stopPropagation e)
-                                (if session-id
-                                  (dispatch! {:type :route/navigate :page :chat
-                                              :session-id session-id})
-                                  (dispatch! {:type :subagent/promote
-                                              :room-id room-id :sub-id id})))}}
-         (message-circle-icon)])
-      (when-not (= :running status)
-        [:button {:class ["subagent-dismiss"]
-                  :title "Dismiss"
-                  :on {:click (fn [e]
-                                (.stopPropagation e)
-                                (dispatch! {:type :subagent/dismiss
-                                            :room-id room-id :sub-id id}))}}
-         (icon/icon {:icon-name :x :size :sm})])
-      (when (= :running status)
-        [:button {:class ["subagent-stop"]
-                  :title "Stop sub-agent"
-                  :on {:click (fn [e]
-                                (.stopPropagation e)
-                                (dispatch! {:type :subagent/abort
-                                            :room-id room-id :sub-id id}))}}
-         (icon/icon {:icon-name :circle-x :size :sm})])]
+      (subagent-actions dispatch! room-id child)]
      (when open?
        [:div {:class ["subagent-card-body"]}
         (when (seq task)
@@ -3161,6 +3170,36 @@
          (when open?
            [:div {:class ["subagents-list"]}
             (map (fn [c] (subagent-child dispatch! room-id c)) agents)])]))))
+
+(defn- subagent-view
+  "A sub-agent in place of the chat, opened from its sidebar or buffer-menu
+   row: its task and history as a read-only timeline under a header with its
+   status and actions. Its id stands in the room's :active-buffer though it
+   names no buffer (xi.web.router/buffer-open-event)."
+  [dispatch! room {:keys [id label task status history session-id] :as child}]
+  (let [room-id (:id room)
+        status  (or status :running)
+        post    (fn [k entry]
+                  (with-post-key k (entry->post dispatch! (assoc entry :room-id room-id
+                                                                 :cwd (:cwd room)))))]
+    [:div {:class ["file-tab" "subagent-view"] :replicant/key (str "subagent-view-" id)}
+     [:div {:class ["file-tab-header"]}
+      [:span {:class ["subagent-status" (str "subagent-status--" (name status))]}
+       (when (= :running status) (spinner))
+       (get subagent-status-label status (name status))]
+      [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
+      (when-let [d (subagent-duration child)]
+        [:span {:class ["subagent-card-dur"]} d])
+      (subagent-actions dispatch! room-id child)]
+     [:div {:class ["timeline"]}
+      [:div {:class ["timeline-content"]}
+       (when (seq task) (post "sv-task" {:kind :user :text task}))
+       (map-indexed (fn [i e] (post (str "sv-" i) e)) history)
+       (when (empty? history)
+         [:div {:class ["subagent-empty"] :replicant/key "sv-empty"}
+          (cond session-id            "Promoted to its own session: open it as a chat."
+                (= :running status)   "No output yet."
+                :else                 "No output.")])]]]))
 
 (defn- quick-replies-row
   "One-tap reply chips for the last assistant response (xi.quick-replies); a
@@ -3317,11 +3356,17 @@
         active-buf (get ui :active-buffer :chat)
         active-buffer (get buffers active-buf)
         buffer-kind (when active-buffer (buffers/kind active-buf active-buffer))
-        has-tabs?  (boolean (seq buffers))
+        ;; Sub-agents list with the buffers; one opened in front (subagent-view)
+        ;; names no buffer.
+        sub-agents (remove #(sa/explain-sub? (:id %)) (get-in room [:ext :subagents :agents]))
+        sub-view   (when-not active-buffer
+                     (some #(when (= active-buf (:id %)) %) sub-agents))
+        has-tabs?  (boolean (or (seq buffers) (seq sub-agents)))
         nav-ctx (prompt-nav-ctx state history)
         ;; Drops stage on the composer, so only while it is actually showing.
         deny-reason (:web/deny-reason state)
         drop-zone? (and (nil? buffer-kind)
+                        (nil? sub-view)
                         (not (string? (:text active-buffer)))
                         (not (:web/skill-form state))
                         (not (and room (= (:room-id deny-reason) (:id room))
@@ -3369,6 +3414,9 @@
 
          (and active-buffer (string? (:text active-buffer)))
          (text-tab-view active-buf active-buffer)
+
+         sub-view
+         (subagent-view dispatch! room sub-view)
 
          :else
        (list
@@ -3647,7 +3695,8 @@
   "The buffers open for a session (`:buffers` on the card), listed under it: a
    row navigates to the session on that buffer, × closes it for everyone. A
    live room's sub-agents list here too (`:kind :subagent`,
-   xi.server.room-manager/session-buffers) with stop / dismiss."
+   xi.server.room-manager/session-buffers): a row opens one read-only in
+   place of the chat (subagent-view), × stops / dismisses it."
   [dispatch! state {:keys [session-id buffers current? viewers]}]
   (let [room   (state/active-room state)
         active (when (and current? (= session-id (get-in room [:session :id])))
@@ -3656,7 +3705,7 @@
      (for [{:keys [id kind title status]} buffers
            :let [sub?     (= :subagent kind)
                  running? (and sub? (= :running status))
-                 people   (when-not sub? (sb/room-people state (get viewers id)))]]
+                 people   (sb/room-people state (get viewers id))]]
        [:button {:class ["session-buffer-row"
                          (when (= id active) "session-buffer-row--active")
                          (when sub? (str "session-buffer-row--sub-" (name (or status :running))))]

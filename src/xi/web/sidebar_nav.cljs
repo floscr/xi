@@ -51,10 +51,11 @@
   "Where the walk stands in `ks` (row keys in sidebar order) → {:idx :exact?}
    or nil. The first of `currents` (route-keys) that has a row wins; the
    `cursor` ({:key :idx} of the last step) breaks ties for a chat listed in
-   two groups, keeps a sub-agent row (it reveals the card without changing
-   the route) and stands in when the route has no row (a \"more\" row's
-   page). A cursor row that vanished (an opened draft) leaves `:exact?`
-   false: its successor now sits at `:idx`."
+   two groups, keeps a buffer row of the chat in view while that view is
+   still opening (the route stands on the chat until it has) and stands in
+   when the route has no row (a \"more\" row's page). A cursor row that
+   vanished (an opened draft) leaves `:exact?` false: its successor now sits
+   at `:idx`."
   [ks currents {:keys [key idx] :as cursor}]
   (let [at? (fn [k] (and (some? idx) (= k (get ks idx))))
         cur (some #(when (index-of ks %) %) currents)]

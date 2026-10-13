@@ -40,24 +40,18 @@
   (when-not (:remote? ev)
     {:effects [[:ws/send ev]]}))
 
-(defn- reveal
-  "A sidebar / palette row of a sub-agent (xi.web.router/buffer-open-event):
-   expand it in the panel (h/reveal) and scroll its card into view once the
-   expanded card has rendered."
-  [st {:keys [sub-id] :as ev}]
-  (some-> (h/reveal st ev)
-          (assoc :effects [[:subagent/scroll-into-view {:sub-id sub-id}]])))
-
-(defn- scroll-into-view!
-  "Bring the card of sub-agent `sub-id` (`data-sub-id` on .subagent-card,
-   xi.web.views) into the timeline's view. Deferred a frame so the re-render
-   that expands it has happened."
-  [_ {:keys [sub-id]}]
-  (js/requestAnimationFrame
-   (fn []
-     (when-let [el (.querySelector js/document
-                                   (str ".subagent-card[data-sub-id=\"" sub-id "\"]"))]
-       (.scrollIntoView el #js {:block "nearest" :behavior "smooth"})))))
+(defn- dismiss
+  "Apply the shared dismiss; a sub-agent this client had open in place of the
+   chat (xi.web.views/subagent-view) hands the view back to the chat. A click
+   here is forwarded so a reload doesn't bring the panel back."
+  [st {:keys [room-id] :as ev}]
+  (when-let [res (h/dismiss st ev)]
+    (let [view  (get-in st [:rooms room-id :ui :active-buffer])
+          gone? (and (h/find-child st room-id view)
+                     (not (h/find-child (:state res) room-id view)))]
+      (cond-> res
+        gone?              (assoc-in [:state :rooms room-id :ui :active-buffer] :chat)
+        (not (:remote? ev)) (assoc :effects [[:ws/send ev]])))))
 
 (def extension
   {:id       ext-id
@@ -73,13 +67,7 @@
                     (fn [_st ev]
                       (when-not (:remote? ev)
                         {:effects [[:ws/send ev]]}))
-                    ;; Dismiss mutates server state too (so a reload doesn't
-                    ;; bring the panel back): apply locally, forward the click.
-                    :subagent/dismiss
-                    (fn [st ev]
-                      (when-let [res (h/dismiss st ev)]
-                        (cond-> res
-                          (not (:remote? ev)) (assoc :effects [[:ws/send ev]]))))
+                    :subagent/dismiss dismiss
                     ;; A sidebar row's button (xi.web.views/session-buffer-rows):
                     ;; roomless, by session — the server finds the live room
                     ;; and re-dispatches the room event (xi.ext.subagent), which
@@ -88,8 +76,6 @@
                     :session/subagent-dismiss forward
                     :subagent/promote promote
                     :subagent/promoted promoted
-                    ;; This client's own view of the panel (like toggle-child).
-                    :subagent/reveal reveal
                     ;; Explain button on a permission-gated tool block: the
                     ;; spawn needs the parent transcript path and runs
                     ;; server-side, so forward the click; the :subagent/spawn
@@ -99,6 +85,5 @@
                     ;; and the spawn are server state, both come back as
                     ;; mirrored broadcasts.
                     :subagent/run-queued forward)
-   :fx       {:subagent/start            (fn [_ _] nil)
-              :subagent/promote!         (fn [_ _] nil)
-              :subagent/scroll-into-view scroll-into-view!}})
+   :fx       {:subagent/start    (fn [_ _] nil)
+              :subagent/promote! (fn [_ _] nil)}})

@@ -130,7 +130,9 @@ refreshes it in place.
 - **Sub-agents.** A chat's running or finished
   [sub-agents](builtin-tools.md#sub-agents) list under its card with the
   buffers ("2 buffers · 1 sub-agent"), a spinner on the ones still running.
-  A row opens the chat and unfolds that sub-agent in the Sub-agents panel.
+  A row shows the sub-agent in place of the chat, like a buffer: its task
+  and output, read-only, with buttons to stop it, open it as a chat of its
+  own or dismiss it. The topbar pill lists the chat's sub-agents too.
   The trailing button stops a running one or dismisses a finished one.
   Sub-agents live with the chat's room: once the room closes they are gone
   from the list.

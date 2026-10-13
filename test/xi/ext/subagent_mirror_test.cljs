@@ -8,6 +8,7 @@
             [xi.ext.core :as ext]
             [xi.ext.subagent :as sa-ext]
             [xi.ext.subagent.handlers :as h]
+            [xi.ext.subagent.web :as sa-web]
             [xi.client.subagents-buffer :as sab]
             [xi.tui.ansi :as ansi]
             [xi.client.ws-transport :as wst]))
@@ -36,17 +37,23 @@
              {:room-id "r1" :sub-id "sa-1" :aborted? false})]
     (is (= :done (child-status (:state te) "sa-1")))))
 
-(deftest reveal-expands-the-child-and-unfolds-the-panel
-  (let [st0 (-> (base-state)
-                (assoc-in [:rooms "r1" :ext :subagents :collapsed?] true))
-        st1 (:state ((:subagent/spawn h/handlers) st0
-                     {:room-id "r1" :sub-id "sa-1" :task "t" :prompt "t"}))
-        st2 (:state (h/reveal st1 {:room-id "r1" :sub-id "sa-1"}))]
-    (is (false? (get-in st2 [:rooms "r1" :ext :subagents :collapsed?])))
-    (is (true? (:expanded? (first (room-agents st2)))))
-    (is (= st2 (:state (h/reveal st2 {:room-id "r1" :sub-id "sa-1"})))
-        "idempotent: a second reveal keeps it expanded (no toggle)")
-    (is (nil? (h/reveal st1 {:room-id "r1" :sub-id "nope"})))))
+(deftest dismissing-the-sub-agent-in-view-returns-to-the-chat
+  (let [dismiss (get-in sa-web/extension [:handlers :subagent/dismiss])
+        st      (-> (base-state)
+                    (assoc-in [:rooms "r1" :ext :subagents :agents]
+                              [{:id "sa-1" :status :done} {:id "sa-2" :status :done}])
+                    (assoc-in [:rooms "r1" :ui :active-buffer] "sa-1"))
+        view    #(get-in (:state %) [:rooms "r1" :ui :active-buffer])]
+    (is (= :chat (view (dismiss st {:room-id "r1" :sub-id "sa-1"}))))
+    (is (= :chat (view (dismiss st {:room-id "r1"})))
+        "dismissing every finished one too")
+    (is (= "sa-1" (view (dismiss st {:room-id "r1" :sub-id "sa-2"})))
+        "another sub-agent's dismissal keeps the view")
+    (is (= [[:ws/send {:room-id "r1" :sub-id "sa-2"}]]
+           (:effects (dismiss st {:room-id "r1" :sub-id "sa-2"})))
+        "a click is forwarded")
+    (is (nil? (:effects (dismiss st {:room-id "r1" :sub-id "sa-1" :remote? true})))
+        "the server's echo is not")))
 
 (deftest sidebar-rows-act-on-sub-agents-by-session
   ;; roomless: the row names the session, the server finds the live room

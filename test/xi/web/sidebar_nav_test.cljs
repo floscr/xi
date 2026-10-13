@@ -38,7 +38,7 @@
     (is (nil? (nav/locate ks ["s:z"] nil))))
   (let [ks ["s:a" "b:a:sub1" "b:a:d1" "s:b"]]
     (is (= {:idx 1 :exact? true} (nav/locate ks ["s:a"] {:key "b:a:sub1" :idx 1}))
-        "a sub-agent row keeps its place: revealing it leaves the route on the chat")
+        "a buffer row keeps its place while its view is still opening")
     (is (= {:idx 2 :exact? true} (nav/locate ks ["b:a:d1" "s:a"] {:key "b:a:sub1" :idx 1}))
         "an open buffer beats the cursor")
     (is (= {:idx 3 :exact? true} (nav/locate ks ["s:b"] {:key "b:a:sub1" :idx 1}))
