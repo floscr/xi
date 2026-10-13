@@ -13,7 +13,11 @@
 
    The badges appear only after Alt has been held for `show-delay-ms`, so a
    quick Alt+j doesn't flash them, and they relabel when a key is released
-   with Alt still held (the action may have changed which buttons exist)."
+   with Alt still held (the action may have changed which buttons exist).
+
+   A closed popover marked `data-key-hints-open` (the permission Allow menu,
+   xi.web.views/confirm-split) opens while the badges show when it holds a
+   badged item, so its keys (Always, Allow repo, …) are visible too."
   (:require [xi.web.keymap :as keymap]))
 
 (def ^:private show-delay-ms 250)
@@ -23,6 +27,9 @@
   #{"Shift" "Control" "Meta" "AltGraph"})
 
 (defonce ^:private timer (atom nil))
+
+;; The popover show! opened, closed again by hide!.
+(defonce ^:private opened (atom nil))
 
 (defn- root [] (.-documentElement js/document))
 
@@ -42,12 +49,29 @@
                 (.setAttribute el "data-key-hint" k)
                 (.removeAttribute el "data-key-hint")))))
 
+(defn- open-menu!
+  "Open the first marked popover holding a badged item, unless one is open."
+  []
+  (when-let [^js menu (some-> (.querySelector js/document "[data-key-hints-open] [data-key-hint]")
+                              (.closest "[data-key-hints-open]"))]
+    (when-not (.matches menu ":popover-open")
+      (.showPopover menu)
+      (reset! opened menu))))
+
+(defn- close-menu! []
+  (when-let [^js menu @opened]
+    (reset! opened nil)
+    (when (and (.-isConnected menu) (.matches menu ":popover-open"))
+      (.hidePopover menu))))
+
 (defn- show! [state]
   (label! state)
-  (.setAttribute (root) "data-key-hints" ""))
+  (.setAttribute (root) "data-key-hints" "")
+  (open-menu!))
 
 (defn hide! []
   (cancel-timer!)
+  (close-menu!)
   (when (shown?)
     (.removeAttribute (root) "data-key-hints")
     (.forEach (.querySelectorAll js/document "[data-key-hint]")
@@ -71,7 +95,9 @@
   (cond
     (= "Alt" (.-key e))         (hide!)
     (and (.-altKey e) (shown?)) (js/requestAnimationFrame
-                                 #(when (shown?) (label! (get-state))))))
+                                 #(when (shown?)
+                                    (label! (get-state))
+                                    (open-menu!)))))
 
 (defn install!
   "Listen for Alt on the document. `get-state` returns the current app state."

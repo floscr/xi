@@ -655,7 +655,7 @@
           :side  :bottom
           :align :end
           :class "confirm-menu"
-          :attrs {:replicant/key id}}
+          :attrs {:replicant/key id :data-key-hints-open true}}
          menu)))]))
 
 (def ^:private confirm-menu-rank

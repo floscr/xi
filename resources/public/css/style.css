@@ -4290,6 +4290,15 @@ code a:hover,
   border-radius: 4px;
   pointer-events: none;
 }
+/* A menu row keeps its label and consequence readable: badge at the right. */
+[data-key-hints] .confirm-menu-item[data-key-hint] {
+  padding-right: calc(var(--size-2) + 6.5rem);
+}
+[data-key-hints] .confirm-menu-item[data-key-hint]::after {
+  left: auto;
+  right: var(--size-2);
+  transform: translateY(-50%);
+}
 
 /* Trailing "new chat" button on project-directory cards (replaces the old
    chevron): clicking the card navigates into the project, this button starts
