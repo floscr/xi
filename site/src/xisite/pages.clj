@@ -204,7 +204,7 @@ xi clients user iPhone bob      # pin a paired phone to bob")
                              phone-variant (assoc :data-phone-src (str "/tour/?tape=" tour "&variant=" phone-variant)))]]]
     [:figcaption caption]]])
 
-;; --- Theming section (live on a tour stage, site/public/js/theme-demo.js) ---
+;; --- Theming section (themes the site and its previews, site/public/js/theme-demo.js) ---
 
 (def ^:private theme-presets
   "[label hue] per preset chip; theme-demo.js builds the theme from the hue,
@@ -261,8 +261,9 @@ xi clients user iPhone bob      # pin a paired phone to bob")
   "(function(){var t=new URLSearchParams(location.search).get('tape');if(t)window.xiTape=fetch(t.indexOf('/')<0?'/tours/'+t+'.json':t).then(function(r){return r.json()})})()")
 
 (defn tour-page
-  "/tour/: the web client alone, for the stage iframe. Shares the site's
-   framework CSS, runtime and stored light/dark choice."
+  "/tour/: the web client alone, for the stage iframe. Ships the client's own
+   default theme and runtime (xisite.build/tour-files), not the site's; only
+   the stored light/dark choice is shared."
   []
   (ui/render-page
    [:html {:lang "en"}
@@ -273,12 +274,12 @@ xi clients user iPhone bob      # pin a paired phone to bob")
      [:script (h/raw tape-fetch-script)]
      [:script (h/raw theme/head-script)]
      [:title "Xi tour"]
-     [:link {:rel "stylesheet" :href "/css/ui.css"}]
+     [:link {:rel "stylesheet" :href "/tour/theme.css"}]
      [:link {:rel "stylesheet" :href "/tour/style.css"}]
      [:link {:rel "stylesheet" :href "/css/tour.css"}]]
     [:body
      [:div#app]
-     [:script {:src "/js/ui-runtime.js"}]
+     [:script {:src "/tour/ui-runtime.js"}]
      [:script {:src "/tour/main.js"}]]]))
 
 (defn home []
@@ -366,7 +367,7 @@ xi clients user iPhone bob      # pin a paired phone to bob")
       [:div.feature-text
        [:p.eyebrow "Themes"]
        [:h2 "Make it yours."]
-       [:p "Pick a background and an accent in the Appearance dialog. Xi derives the rest in OKLCH: surfaces, borders, text, status colors, diff bands and code all follow your color. Try a few on the session below."]
+       [:p "Pick a background and an accent in the Appearance dialog. Xi derives the rest in OKLCH: surfaces, borders, text, status colors, diff bands and code all follow your color. Try a few: this page and every live session on it follow."]
        [:p [:a {:href "/docs/web-client/#color-themes"} "Color themes →"]]]
       (theme-controls)]]
     (stage "desk" "The same session in your colors, live." {:phone-variant "phone"})

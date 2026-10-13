@@ -1,9 +1,32 @@
 // Tiny, dependency-free behaviour on top of the clj-ui-framework runtime
 // (/js/ui-runtime.js, loaded first, provides window.__uiTheme):
+//   - the shared theme: follow a change made in another tab or a preview
 //   - the docs sidebar toggle on small screens
 //   - the tour stage on the home page: scaling and Replay
 //   - the live phones: scaling, starting together, looping.
 (function () {
+  // ---- shared theme --------------------------------------------------------
+  // The page and its previews (/tour/, xi.web.embed) keep one theme in
+  // localStorage: the light/dark choice and a custom theme's CSS properties.
+  // The `storage` event reports a change made by any other of them;
+  // xisite.theme/head-script applies both before first paint.
+  var THEME_KEY = 'ui-theme';
+  var VARS_KEY = 'xi/theme-vars';
+  var applyVars = function () {
+    var style = document.documentElement.style;
+    var vars = null;
+    try { vars = JSON.parse(localStorage.getItem(VARS_KEY) || 'null'); } catch (e) {}
+    // <html> carries no custom properties but the theme's
+    for (var i = style.length - 1; i >= 0; i--) {
+      if (style[i].indexOf('--') === 0) style.removeProperty(style[i]);
+    }
+    for (var k in vars || {}) style.setProperty(k, vars[k]);
+  };
+  window.addEventListener('storage', function (e) {
+    if (e.key === THEME_KEY && window.__uiTheme) window.__uiTheme.set(e.newValue || 'auto');
+    else if (e.key === VARS_KEY) applyVars();
+  });
+
   // ---- docs sidebar -------------------------------------------------------
   var navToggle = document.querySelector('.docs-nav-toggle');
   var sidebar = document.getElementById('docs-sidebar');
@@ -39,7 +62,8 @@
   if (tourFrames.length) {
     var prefetch = function () {
       if (tourFrames.some(function (f) { return f.getAttribute('src'); })) return;
-      var urls = ['/tour/main.js', '/tour/style.css', '/css/tour.css'];
+      var urls = ['/tour/main.js', '/tour/style.css', '/tour/theme.css',
+                  '/tour/ui-runtime.js', '/css/tour.css'];
       tourFrames.forEach(function (f) {
         var tape = new URL(f.getAttribute('data-src'), location.href).searchParams.get('tape');
         if (tape && tape.indexOf('/') < 0) urls.push('/tours/' + tape + '.json');

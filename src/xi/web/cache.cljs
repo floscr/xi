@@ -406,7 +406,7 @@
     (store-set! themes-key themes)
     (store-remove! themes-key)))
 
-(def ^:private theme-vars-key "xi/theme-vars")
+(def theme-vars-key "xi/theme-vars")
 
 (defn save-theme-vars!
   "The active theme's CSS properties as plain JSON ({\"--gray-50\" \"oklch(…)\"}):
@@ -417,6 +417,11 @@
     (if (seq vars)
       (.setItem js/localStorage theme-vars-key (js/JSON.stringify (clj->js vars)))
       (.removeItem js/localStorage theme-vars-key))
+    (catch :default _ nil)))
+
+(defn load-theme-vars []
+  (try
+    (some-> (.getItem js/localStorage theme-vars-key) js/JSON.parse js->clj)
     (catch :default _ nil)))
 
 ;; ── Hydrate + persist ────────────────────────────────────────────────────────

@@ -33,10 +33,13 @@
       (some (routes) paths))))
 
 ;; The stage iframe's web client: the release :tour build (`bb tour:build` at
-;; the repo root) and the web client's own stylesheet, served at /tour/.
+;; the repo root) and the web client's own stylesheet, framework theme and
+;; runtime, served at /tour/ (the default theme, not the site's /css/ui.css).
 (def tour-files
-  {"/tour/main.js"   "../target/tour/main.js"
-   "/tour/style.css" "../resources/public/css/style.css"})
+  {"/tour/main.js"       "../target/tour/main.js"
+   "/tour/style.css"     "../resources/public/css/style.css"
+   "/tour/theme.css"     "../resources/public/theme.css"
+   "/tour/ui-runtime.js" "../resources/public/ui-runtime.js"})
 
 (defn- write-page! [staging path html]
   (let [dir (if (= path "/") staging (str staging path))]

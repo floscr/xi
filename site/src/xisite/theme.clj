@@ -1,29 +1,19 @@
 (ns xisite.theme
-  "The site's design tokens and component styles come from clj-ui-framework.
-   The theme is generated from the framework's tokens with the hues nudged
-   to the site's slate and blue, so the colours stay close to what the site
-   had before. Light, dark and the system setting are the framework's own:
-   `[data-theme=light|dark]` on <html>, or `prefers-color-scheme` when unset."
+  "The site's design tokens and component styles come from clj-ui-framework,
+   with its default tokens: the same theme the web client ships
+   (resources/public/theme.css), so the site matches its live previews.
+   Light, dark and the system setting are the framework's own:
+   `[data-theme=light|dark]` on <html>, or `prefers-color-scheme` when unset.
+
+   The site and its previews (/tour/, xi.web.embed) share the stored theme:
+   the light/dark choice and a custom theme's CSS properties, set from the
+   home page's theming section."
   (:require [ui.css.gen :as gen]))
-
-(def ^:private radii
-  "Rounder than the framework's 4/6/10/16px. The dark theme block carries its
-   own copy of every token, so these go into both."
-  {:radius-xs "6px" :radius-sm "8px" :radius-md "14px" :radius-lg "22px"})
-
-(def theme-opts
-  "Deep-merged over the framework's default tokens (purple on grey)."
-  {:scales {:color {:gray   {:hue 255 :chroma-scale 0.55}
-                    :accent {:hue 263 :chroma-scale 0.9}}}
-   ;; light theme: one step deeper than the framework's accent-500, which is
-   ;; what the site's blue always was. Dark keeps the framework's accent-400.
-   :tokens (merge {:accent "var(--accent-600)"} radii)
-   :themes {:dark radii}})
 
 (defn css
   "Framework tokens + every component's CSS, as one string."
   []
-  (gen/build-css theme-opts))
+  (gen/build-css {}))
 
 (defn js
   "The framework's pre-built browser runtime (theme switching lives in it)."
@@ -34,9 +24,15 @@
   "localStorage key the runtime's `__uiTheme` persists the choice under."
   "ui-theme")
 
+(def ^:private theme-vars-key
+  "localStorage key of a custom theme's CSS properties (xi.web.cache)."
+  "xi/theme-vars")
+
 (def head-script
-  "Runs before first paint so a stored light/dark choice doesn't flash the
-   other theme. Auto (nothing stored) leaves `data-theme` off, and the CSS
-   media query follows the system."
-  (str "(function(){try{var m=localStorage.getItem('" theme-storage-key "');"
-       "if(m==='light'||m==='dark')document.documentElement.setAttribute('data-theme',m);}catch(e){}})();"))
+  "Runs before first paint so a stored light/dark choice or custom theme
+   doesn't flash the default. Auto (nothing stored) leaves `data-theme` off,
+   and the CSS media query follows the system."
+  (str "(function(){try{var d=document.documentElement,m=localStorage.getItem('" theme-storage-key "');"
+       "if(m==='light'||m==='dark')d.setAttribute('data-theme',m);"
+       "var v=JSON.parse(localStorage.getItem('" theme-vars-key "')||'null');"
+       "if(v)for(var k in v)d.style.setProperty(k,v[k]);}catch(e){}})();"))

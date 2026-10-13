@@ -15,6 +15,51 @@
   --wrap: 1120px;
 }
 
+/* A custom theme from the theming section (xi.web.embed, stored for the site
+   and its previews) sets the gray/accent scales on <html> and, per mode,
+   --theme-bg-N-* / --theme-border-N-* / --theme-fg-N-*: route the surface,
+   border and text tokens through them like the web client's style.css does.
+   The fallbacks are the framework's own mapping. --page-bg is the client's
+   --sidebar-bg, so the page reads as the previews' sidebar. */
+:root {
+  --page-bg: var(--theme-sidebar-light, #f6f6f9);
+  --bg-0: var(--theme-bg-0-light, var(--gray-50));
+  --bg-1: var(--theme-bg-1-light, var(--gray-100));
+  --bg-2: var(--theme-bg-2-light, var(--gray-200));
+  --border-0: 1px solid var(--theme-border-0-light, var(--gray-200));
+  --border-1: 1px solid var(--theme-border-1-light, var(--gray-300));
+  --border-2: 1px solid var(--theme-border-2-light, var(--gray-500));
+  --fg-0: var(--theme-fg-0-light, var(--gray-950));
+  --fg-1: var(--theme-fg-1-light, var(--gray-600));
+  --fg-2: var(--theme-fg-2-light, var(--gray-400));
+}
+[data-theme="dark"] {
+  --page-bg: var(--theme-sidebar-dark, var(--bg-0));
+  --bg-0: var(--theme-bg-0-dark, var(--gray-950));
+  --bg-1: var(--theme-bg-1-dark, var(--gray-900));
+  --bg-2: var(--theme-bg-2-dark, var(--gray-800));
+  --border-0: 1px solid var(--theme-border-0-dark, var(--gray-800));
+  --border-1: 1px solid var(--theme-border-1-dark, var(--gray-700));
+  --border-2: 1px solid var(--theme-border-2-dark, var(--gray-500));
+  --fg-0: var(--theme-fg-0-dark, var(--gray-50));
+  --fg-1: var(--theme-fg-1-dark, var(--gray-300));
+  --fg-2: var(--theme-fg-2-dark, var(--gray-500));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page-bg: var(--theme-sidebar-dark, var(--bg-0));
+    --bg-0: var(--theme-bg-0-dark, var(--gray-950));
+    --bg-1: var(--theme-bg-1-dark, var(--gray-900));
+    --bg-2: var(--theme-bg-2-dark, var(--gray-800));
+    --border-0: 1px solid var(--theme-border-0-dark, var(--gray-800));
+    --border-1: 1px solid var(--theme-border-1-dark, var(--gray-700));
+    --border-2: 1px solid var(--theme-border-2-dark, var(--gray-500));
+    --fg-0: var(--theme-fg-0-dark, var(--gray-50));
+    --fg-1: var(--theme-fg-1-dark, var(--gray-300));
+    --fg-2: var(--theme-fg-2-dark, var(--gray-500));
+  }
+}
+
 /* ---------- base ---------- */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -30,7 +75,7 @@ html {
 
 body {
   margin: 0;
-  background: var(--bg-0);
+  background: var(--page-bg);
   color: var(--fg-0);
   font-family: var(--sans);
   min-height: 100vh;
@@ -91,7 +136,7 @@ a.btn:hover { text-decoration: none; }
   position: sticky;
   top: 0;
   z-index: 20;
-  background: color-mix(in srgb, var(--bg-0) 82%, transparent);
+  background: color-mix(in srgb, var(--page-bg) 82%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: var(--border-0);

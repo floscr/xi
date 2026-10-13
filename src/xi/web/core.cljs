@@ -1857,12 +1857,13 @@
    :cache/sidebar-buffers-open (fn [_ {:keys [session-ids]}] (cache/save-sidebar-buffers-open! session-ids))
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    :cache/themes (fn [_ {:keys [themes]}] (cache/save-themes! themes))
-   ;; Set / remove every theme-managed property on <html> (the embedding
-   ;; page's theme wins in a tour, xi.web.embed); a committed theme
-   ;; (:persist?) also refreshes the early-paint cache, a draft preview does not.
+   ;; Set / remove every theme-managed property on <html>; a committed theme
+   ;; (:persist?) also refreshes the early-paint cache, a draft preview does
+   ;; not. A tour wears the embedding site's theme instead (xi.web.embed).
    :theme/apply-vars (fn [_ {:keys [vars persist?]}]
-                       (embed/set-vars! vars)
-                       (when persist? (cache/save-theme-vars! vars)))
+                       (when-not (embed/active?)
+                         (embed/set-vars! vars)
+                         (when persist? (cache/save-theme-vars! vars))))
    :cache/user (fn [_ {:keys [user]}] (cache/save-cached-user! user))
    :cache/clear-watched (fn [_ _] (cache/clear-watched!))
    :cache/seed-room
@@ -1889,24 +1890,23 @@
                     msg-count    (assoc :cached-msg-count msg-count)
                     history-hash (assoc :cached-history-hash history-hash
                                         :cached-history-count (count history))))))
+   ;; In a tour the stored choice is shared with the site (xi.web.embed).
    :theme/apply  (fn [_ mode]
-                   ;; a tour's embedding page set its own (xi.web.embed)
-                   (when-not (embed/mode)
-                     (let [el js/document.documentElement]
-                       (.setAttribute el "data-no-transitions" "")
-                       (.-offsetHeight el)
-                       (js/requestAnimationFrame
-                        (fn [] (js/requestAnimationFrame
-                                (fn [] (.removeAttribute el "data-no-transitions")))))
-                       (case mode
-                         "light" (.setAttribute el "data-theme" "light")
-                         "dark"  (.setAttribute el "data-theme" "dark")
-                         (.removeAttribute el "data-theme"))
-                       (try
-                         (if (= mode "auto")
-                           (.removeItem js/localStorage "ui-theme")
-                           (.setItem js/localStorage "ui-theme" mode))
-                         (catch :default _)))))})
+                   (let [el js/document.documentElement]
+                     (.setAttribute el "data-no-transitions" "")
+                     (.-offsetHeight el)
+                     (js/requestAnimationFrame
+                      (fn [] (js/requestAnimationFrame
+                              (fn [] (.removeAttribute el "data-no-transitions")))))
+                     (case mode
+                       "light" (.setAttribute el "data-theme" "light")
+                       "dark"  (.setAttribute el "data-theme" "dark")
+                       (.removeAttribute el "data-theme"))
+                     (try
+                       (if (= mode "auto")
+                         (.removeItem js/localStorage "ui-theme")
+                         (.setItem js/localStorage "ui-theme" mode))
+                       (catch :default _))))})
 
 ;; ── Taps (cache persistence + unread polling + post-join URL) ─────────────────
 
@@ -3193,7 +3193,7 @@
    {xiTourSent: type} from the page."
   [tape variant-name]
   (tour/contain-focus!)
-  (embed/listen!)
+  (embed/listen! #(when-let [dispatch! @dispatch-ref] (dispatch! %)))
   (-> (or (unchecked-get js/window "xiTape") ; the site's /tour/ page starts it early
           (.then (js/fetch (tape-url tape)) #(.json %)))
       (.then (fn [json]

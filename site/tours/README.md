@@ -45,6 +45,19 @@ rather than after `main.js` runs. In an
 iframe the client ignores programmatic focus until the visitor clicks into
 it, so the tour never takes the page's keyboard focus or scroll.
 
+### Theme
+
+The site uses the web client's default theme (`xisite.theme`, the
+framework's default tokens, same as `resources/public/theme.css`), and the
+site and its previews share one stored theme: the light/dark choice
+(`ui-theme`) and a custom theme's CSS properties (`xi/theme-vars`), both in
+localStorage on the site's origin. A change anywhere reaches every other
+document through the `storage` event (`site.js`, `xi.web.embed`), so the
+client's own light/dark switch inside a preview switches the page too. The
+theming section (`site/public/js/theme-demo.js`) sends a hue to the stage
+after it; that client derives the properties (`xi.web.theme`) and stores
+them for everyone. A tour never applies or stores its own custom theme.
+
 ### Phones
 
 The web-client section's two phones (`xisite.pages/phone`) replay the same
