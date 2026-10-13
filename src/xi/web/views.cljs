@@ -4753,7 +4753,9 @@
             by-name  (into {} (map (juxt :name identity)) skills)
             recent   (keep by-name recents)
             the-rest (remove (comp (set recents) :name) skills)]
-        [:div
+        ;; Keyed: an unkeyed div would reuse the spinner's, which the
+        ;; command runtime has marked `hidden`.
+        [:div {:replicant/key :skill-page}
          (when (seq recent)
            (apply cmd/command-group {:heading "Recent"}
              (map #(palette-skill-item dispatch! %) recent)))
@@ -4841,7 +4843,7 @@
       [:div {:class ["command-empty"]} "No snippets found"]
 
       :else
-      [:div
+      [:div {:replicant/key :snippet-page}
        (when (seq project)
          (apply cmd/command-group {:heading "Project snippets"}
            (map #(snippet-command-item dispatch! dkey %) project)))
