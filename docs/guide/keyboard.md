@@ -172,6 +172,7 @@ shows how they fit together:
 | `:timeline/bottom` | Scroll to the bottom |
 | `:scroll/top` | Scroll to the top; in a chat this shows every earlier message first |
 | `:prompt/prev` / `:prompt/next` | Jump between your messages in the chat. The first `:prompt/prev` lands on the newest; `:prompt/next` on the last goes back to the bottom |
+| `:answer/prev` / `:answer/next` | Jump between the agent's answers: the last text of each turn, not the text between tool calls. From the bottom of the chat, `:answer/prev` lands on the newest |
 | `:diff/next-hunk` / `:diff/prev-hunk` | Next / previous hunk in a diff |
 | `:nav/back` / `:nav/forward` | Back / forward through the pages, chats and buffers you opened (the browser history), like vim's `Ctrl+o` / `Ctrl+i`. Back stops at the first page Xi opened |
 | `:hints/show` | [Link hints](keyboard-navigation.md#link-hints): label every button, link and sidebar row on screen; type a label to click it |
@@ -187,6 +188,8 @@ shows how they fit together:
                               "g g" :scroll/top
                               "[" :prompt/prev
                               "]" :prompt/next
+                              "{" :answer/prev
+                              "}" :answer/next
                               "ctrl+o" :nav/back
                               "ctrl+i" :nav/forward}
              :buffer/diff     {"[" :diff/prev-hunk

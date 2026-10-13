@@ -23,6 +23,7 @@
             [xi.naming :as naming]
             [xi.quick-replies :as quick-replies]
             [xi.util :as util]
+            [xi.web.answer-nav :as answer-nav]
             [xi.web.appearance :as appearance]
             [xi.web.block-menu :as block-menu]
             [xi.web.buffer-views :as buffer-views]
@@ -1796,6 +1797,7 @@
   :prompt-nav/resume
    (fn [_ _]
      (reset! auto-scroll? true)
+     (answer-nav/clear-mark!)
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
      (when-let [timeline (.querySelector js/document ".timeline")]
@@ -2185,9 +2187,18 @@
 (defn- max-scroll-top [^js el]
   (max 0 (- (.-scrollHeight el) (.-clientHeight el))))
 
+(defn- anchored-target
+  "The scrollTop that puts `anchor`'s top at viewport y `anchor-y`, measured
+   now: content loaded above it mid-scroll (maybe-load-earlier) moves it."
+  [^js el ^js anchor anchor-y]
+  (+ (.-scrollTop el) (- (.-top (.getBoundingClientRect anchor)) anchor-y)))
+
 (defn- key-scroll-frame! []
-  (when-let [{:keys [^js el target]} @key-scroll]
-    (let [target (min target (max-scroll-top el))
+  (when-let [{:keys [^js el target ^js anchor anchor-y]} @key-scroll]
+    (let [target (min (if (and anchor (.-isConnected anchor))
+                        (anchored-target el anchor anchor-y)
+                        target)
+                      (max-scroll-top el))
           cur    (.-scrollTop el)
           delta  (- target cur)]
       (if (or (<= (js/Math.abs delta) 1) (not (.-isConnected el)))
@@ -2197,7 +2208,8 @@
               step (if (< (js/Math.abs step) 1) (js/Math.sign delta) step)]
           (when (neg? delta) (mark-user-scroll-intent!))
           (set! (.-scrollTop el) (+ cur step))
-          (swap! key-scroll assoc :raf (js/requestAnimationFrame key-scroll-frame!)))))))
+          (swap! key-scroll assoc :target target
+                 :raf (js/requestAnimationFrame key-scroll-frame!)))))))
 
 (defn- key-scroll-base
   [^js el]
@@ -2220,6 +2232,14 @@
                             :raf (if (and raf (identical? pending-el el))
                                    raf
                                    (js/requestAnimationFrame key-scroll-frame!))})))))
+
+(defn- animate-scroll-to-anchor!
+  "Ease `el` until `anchor`'s top sits at viewport y `anchor-y`, re-aiming
+   every frame."
+  [^js el ^js anchor anchor-y]
+  (animate-scroll-to! el (anchored-target el anchor anchor-y))
+  (when @key-scroll
+    (swap! key-scroll assoc :anchor anchor :anchor-y anchor-y)))
 
 ;; The chat timeline goes through its event so hidden earlier entries are
 ;; revealed first; any other scroller (or a timeline too short to scroll)
@@ -2722,6 +2742,15 @@
                                      (dispatch! (if (>= (:web/prompt-nav st) (dec (:count ctx)))
                                                   {:type :timeline/scroll-to-bottom}
                                                   (assoc ctx :type :prompt-nav/next)))))})
+  ;; Reading an answer: stop following the bottom while it streams.
+  (doseq [[id dir] [[:answer/next :next] [:answer/prev :prev]]]
+    (keymap/register-action! {:id id
+                              :when chat-room
+                              :run (fn [st _ _]
+                                     (when (answer-nav/jump! dir
+                                                             (boolean (get-in (chat-room st) [:agent :busy?]))
+                                                             animate-scroll-to-anchor!)
+                                       (reset! auto-scroll? false)))}))
   (keymap/register-action! {:id :git/log
                             :when (fn [st] (some? (:id (state/active-room st))))
                             :event {:type :palette/open-commits :scope :log}})

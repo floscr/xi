@@ -19,6 +19,8 @@ A complete setup, explained in the sections below:
                              "G"      :timeline/bottom
                              "["      :prompt/prev
                              "]"      :prompt/next
+                             "{"      :answer/prev
+                             "}"      :answer/next
                              "ctrl+o" :nav/back
                              "ctrl+i" :nav/forward}}}
 ```
@@ -72,6 +74,12 @@ pages, chats and buffers you opened, like the browser's back and forward.
 - `:scroll/top` shows every earlier message and scrolls to the first;
   `:timeline/bottom` back to the newest.
 - `:prompt/prev` / `:prompt/next` jump between your own messages.
+- `:answer/prev` / `:answer/next` jump between the agent's answers: the last
+  text of each turn, skipping what it writes between tool calls. A running
+  turn's answer counts once the turn ends. The answer you land on gets a bar
+  on its left. From the bottom of the chat,
+  `:answer/prev` goes to the start of the newest answer; past the oldest
+  shown message it shows earlier ones.
 - `Alt+a` / `Alt+d` allow or deny a permission request, `Alt+x` stops the
   turn.
 

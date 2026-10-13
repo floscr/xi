@@ -1226,6 +1226,18 @@ body {
   outline-offset: 2px;
 }
 
+/* The answer the user has jumped to (xi.web.answer-nav): a bar in the
+   gutter, since an outline round a long answer reads as a frame. */
+.post--answer-target .post-body { position: relative; }
+.post--answer-target .post-body::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 calc(-1 * var(--size-3));
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent, #7c3aed);
+}
+
 /* Keep prompt-nav (scrollIntoView block:start) clear of the floating chat
    header/gradient. --chat-header-h is set on the mobile chat timeline and
    inherited here; it falls back to 0 elsewhere. */

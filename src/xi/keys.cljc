@@ -246,6 +246,8 @@
    :chat/delete             {:label "Delete this chat" :surface #{:web}}
    :prompt/prev             {:label "Previous message of yours" :surface #{:web}}
    :prompt/next             {:label "Next message of yours" :surface #{:web}}
+   :answer/next             {:label "Next answer of the agent" :surface #{:web}}
+   :answer/prev             {:label "Previous answer of the agent" :surface #{:web}}
    :diff/next-hunk          {:label "Next hunk" :surface #{:web}}
    :diff/prev-hunk          {:label "Previous hunk" :surface #{:web}}
    :buffers/switch          {:label "Switch buffer" :surface #{:web}}
