@@ -3428,21 +3428,16 @@
       (offline-badge state)
       (yolo-chip dispatch! room)
       (when has-tabs?
-        (buffer-menu dispatch! (:id room) active-buf buffers
+        (buffer-menu dispatch! (:id room) active-buf buffers sub-agents
                      (let [viewers (buffers/viewers room)]
                        (fn [id] (sb/room-people state (get viewers id))))))
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
      (case buffer-kind
        :diff
-       (diff-tab-view dispatch! (:id room) active-buffer
-                      (:web/diff-sel state)
-                      (:web/diff-modify? state)
-                      (:web/diff-collapsed state)
-                      (:web/diff-expanded state)
-                      (:web/md-diff-code state))
+       (diff-tab-view dispatch! state (:id room) active-buffer)
 
        :file
-       (file-tab-view active-buffer)
+       (file-tab-view dispatch! state active-buffer)
 
        :terminal
        (terminal/view dispatch! state room active-buf active-buffer
