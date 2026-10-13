@@ -133,7 +133,7 @@
     :diff/web-load :commits/web-load :files/web-list :file/web-read
     :dismissed/toggle :pinned/toggle :session/delete :session/mark-read
     :session/buffer-close
-    :rooms/prune})
+    :rooms/prune :chat/start})
 
 (def ^:private git-log-limit
   "Commits the web's git log page lists (newest first)."
@@ -516,9 +516,9 @@
       ;; Open a background chat seeded with a user message (:chat/start,
       ;; xi.server.room-manager); the requesting client, if any, is sent to it.
       :chat/start
-      (fn [{:keys [dispatch!]} {:keys [client-id cwd text]}]
+      (fn [{:keys [dispatch!]} {:keys [client-id cwd text user]}]
         (let [room-id (fresh-room-id)
-              {:keys [session room]} (build-room {:cwd cwd})]
+              {:keys [session room]} (build-room {:cwd cwd :user user})]
           (dispatch! {:type :room/create :room-id room-id :room room})
           (dispatch! {:type :prompt/submit :room-id room-id :text text})
           (when client-id

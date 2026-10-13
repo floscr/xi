@@ -41,7 +41,11 @@
     (is (= [[:chat/start {:text "do it" :cwd "/y"}]]
            (:effects (handle st {:type :chat/start :cwd "/y" :text "do it"}))))
     (is (empty? (:effects (handle st {:type :chat/start :room-id "r1" :text ""})))
-        "no message, no chat")))
+        "no message, no chat")
+    (is (= [[:chat/start {:text "do it" :cwd "/y" :user {:id "u"}}]]
+           (:effects (handle st {:type :chat/start :client-id "c1" :cwd "/y" :text "do it"
+                                 :user {:id "u"} :background? true})))
+        "a background chat keeps the sender where it is")))
 
 (deftest server-started-continues-cut-off-chats
   (is (= [[:sessions/resume-interrupted {}]]

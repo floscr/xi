@@ -4603,13 +4603,25 @@
       [:div {:class ["command-item-status"]}
        (card-status-indicator {:busy? busy? :error? error? :unread? unread? :active? active?})]])))
 
+
+(defn- keycaps
+  [display]
+  (into [:span {:class ["keycaps"]}]
+        (for [chord (str/split display #" ")]
+          (into [:span {:class ["keycap-chord"]}]
+                (for [k (str/split chord #"\+(?=.)")]
+                  [:kbd {:class ["keycap"]} k])))))
+
 (defn- project-actions
   "A project's palette actions as data ({:icon :label :on-click}): the rows of
    its second-level page, mirroring the project overflow menu plus
    :project-scoped extension nav items, open sessions last."
   [state dispatch! cwd]
   (concat
+   ;; Alt+Enter on this row opens the background-chat prompt (palette-alt-enter!).
    [{:icon :plus :label "New chat"
+     :shortcut (keycaps "Alt+Enter")
+     :attrs {:data-palette-new-chat cwd}
      :on-click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}
     {:icon :code :label "Git status"
      :on-click (fn [_] (dispatch! {:type :git-status/open :cwd cwd}))}
@@ -4628,8 +4640,25 @@
 
 (defn- palette-project-actions
   [state dispatch! cwd]
-  (for [{:keys [icon label on-click]} (project-actions state dispatch! cwd)]
-    (cmd/command-item {:icon icon :on-click on-click} label)))
+  (for [{:keys [label] :as action} (project-actions state dispatch! cwd)]
+    (cmd/command-item (select-keys action [:icon :on-click :shortcut :attrs]) label)))
+
+(defn- palette-new-chat-page
+  "A background chat's prompt as a palette sub-page: the palette input is the
+   prompt (:web/palette-prompt), Enter starts the chat in the page's cwd
+   without leaving the current view. The row's :value tracks the input so
+   ui-runtime's filter never hides it."
+  [state dispatch! {:keys [cwd label]}]
+  (let [prompt (or (:web/palette-prompt state) "")]
+    (cmd/command-group {:heading (str "New chat · " label)}
+      (cmd/command-item
+       {:icon :arrow-up
+        :value prompt
+        :description (if (str/blank? prompt) "Type a prompt" (shorten-path cwd))
+        :shortcut (keycaps "Enter")
+        :on-click (fn [_] (dispatch! {:type :palette/new-chat-start
+                                      :cwd cwd :text prompt}))}
+       "Start in the background"))))
 
 (defn- palette-search-page
   "Full-text session search as a palette sub-page. The palette input is the
@@ -4736,13 +4765,6 @@
          (apply cmd/command-group {:heading (if (seq recent) "All skills" "Skills")}
            (map #(palette-skill-item dispatch! %) the-rest))]))))
 
-(defn- keycaps
-  [display]
-  (into [:span {:class ["keycaps"]}]
-        (for [chord (str/split display #" ")]
-          (into [:span {:class ["keycap-chord"]}]
-                (for [k (str/split chord #"\+(?=.)")]
-                  [:kbd {:class ["keycap"]} k])))))
 
 (defn- palette-projects-page
   "Projects as a palette sub-page. :action says what a row does: :drill opens
@@ -5050,6 +5072,25 @@
         (do (.preventDefault e)
             (dispatch! {:type :palette/back}))))))
 
+(defn- palette-alt-enter!
+  "Alt+Enter on a row carrying `data-palette-new-chat` (a project's New chat)
+   opens the background-chat prompt page for its cwd. Listens on window in the
+   capture phase: ui-runtime.js takes Enter on document capture and would
+   pick the row."
+  [dispatch! ^js dialog]
+  (.addEventListener
+   js/window "keydown"
+   (fn [^js e]
+     (when (and (.-open dialog) (= "Enter" (.-key e)) (.-altKey e)
+                (not (or (.-ctrlKey e) (.-metaKey e) (.-shiftKey e))))
+       (when-let [cwd (some-> (.querySelector dialog ".command-item--active")
+                              (.. -dataset -paletteNewChat))]
+         (.preventDefault e)
+         (.stopPropagation e)
+         (dispatch! {:type :palette/open-new-chat :cwd cwd
+                     :label (shorten-path cwd)}))))
+   true))
+
 (def ^:private palette-quick-keys
   "sfghlqweryiotzcvbm")
 
@@ -5091,6 +5132,7 @@
         finder-page? (= :file-finder (:kind palette-page))
         buffers-page? (= :buffers (:kind palette-page))
         projects-page? (= :projects (:kind palette-page))
+        new-chat-page? (= :new-chat (:kind palette-page))
         names-only?  (boolean (get-in state [:web/palette-search :names-only?]))
         dialog-attrs {:id "cmdk" :hotkey "mod+k"
                       ;; Hold Alt → key badges on the first rows, Alt+key picks one.
@@ -5104,6 +5146,8 @@
                                                     "Find file…")
                                      buffers-page? "Switch buffer…"
                                      projects-page? "Find project…"
+                                     new-chat-page? (str "Prompt for a new chat in "
+                                                         (:label palette-page) "…")
                                      (= :theme (:kind palette-page)) "Switch color theme…"
                                      palette-page "Filter actions…"
                                      :else        "Type a command or search…")
@@ -5123,6 +5167,7 @@
                                   (.observe obs node
                                             #js {:attributes true
                                                  :attributeFilter #js ["open"]})
+                                  (palette-alt-enter! dispatch! node)
                                   ;; The runtime re-filters on every list re-render,
                                   ;; re-hiding the pinned row.
                                   (.observe (js/MutationObserver.
@@ -5139,7 +5184,9 @@
                                                 search-page?
                                                 (dispatch! {:type :palette/search-input :query v})
                                                 finder-page?
-                                                (dispatch! {:type :file-finder/input :query v}))))
+                                                (dispatch! {:type :file-finder/input :query v})
+                                                new-chat-page?
+                                                (dispatch! {:type :palette/prompt-input :query v}))))
                                    ;; A drill's close can land after the reopen;
                                    ;; a stale close must not blank the palette.
                                    :close (fn [^js e]
@@ -5173,6 +5220,7 @@
          :snippets       (palette-snippets-page state dispatch!)
          :commands       (palette-commands-page state dispatch!)
          :search         (palette-search-page state dispatch!)
+         :new-chat       (palette-new-chat-page state dispatch! palette-page)
          (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
            (palette-project-actions state dispatch! (:cwd palette-page)))))
 
@@ -5766,6 +5814,7 @@
 (def ^:private fixed-shortcuts
   [["Ctrl+K / Cmd+K" "Command palette"]
    ["Alt" "Palette: hold for key badges, Alt + badge key picks the row"]
+   ["Alt+Enter" "Palette, a project's New chat: type a prompt, start the chat in the background"]
    ["Tab" "Message box: expand the snippet word before the cursor"]
    ["Shift+Enter" "Message box: new line"]
    ["Ctrl+Enter" "On one of your messages: go back to before it and edit it"]])

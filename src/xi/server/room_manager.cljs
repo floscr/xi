@@ -431,12 +431,14 @@
 
 (defn- chat-start
   "Open a new chat seeded with `text` as its first user message; cwd defaults
-   to the dispatching room's, :client-id is sent to the new chat."
-  [st {:keys [room-id client-id cwd text]}]
+   to the dispatching room's, :client-id is sent to the new chat unless
+   :background? (the web palette's fire-and-forget chat)."
+  [st {:keys [room-id client-id cwd text user background?]}]
   (when (and (string? text) (seq text))
     {:effects [[:chat/start (cond-> {:text text
                                      :cwd  (or cwd (get-in st [:rooms room-id :cwd]))}
-                              client-id (assoc :client-id client-id))]]}))
+                              (and client-id (not background?)) (assoc :client-id client-id)
+                              user (assoc :user user))]]}))
 
 (defn- server-started
   "The server is listening: continue the chats a hard restart cut off mid-turn

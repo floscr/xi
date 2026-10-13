@@ -969,6 +969,19 @@
         {:state   (:state sub)
          :effects (into (vec (:effects opened)) (:effects sub))}))))
 
+(defn- palette-new-chat-start
+  "Enter on the palette's background-chat prompt: start the chat in `cwd` on
+   the server and close the palette. A blank prompt keeps the page open (the
+   runtime already closed the dialog, so it reopens)."
+  [st {:keys [cwd text]}]
+  (let [text (str/trim (or text ""))]
+    (if (str/blank? text)
+      {:state   (assoc st :web/palette-open? true :web/palette-drilling? true)
+       :effects [[:palette/reopen nil]]}
+      {:state   (dissoc st :web/palette-page :web/palette-open? :web/palette-prompt)
+       :effects [[:palette/close nil]
+                 [:ws/send {:type :chat/start :cwd cwd :text text :background? true}]]})))
+
 (defn- web-handlers [routes]
   (merge (router/handlers routes)
          user-state/handlers
@@ -1542,9 +1555,26 @@
             (when (= (str/trim (or query ""))
                      (str/trim (or (get-in st [:web/palette-search :query]) "")))
               {:state (assoc-in st [:web/palette-search :results] (vec sessions))}))
+          ;; A page with :back (the background-chat prompt) returns to it.
           :palette/back          (fn [st _]
-                                   {:state (dissoc st :web/palette-page)
+                                   {:state (if-let [back (get-in st [:web/palette-page :back])]
+                                             (assoc st :web/palette-page back)
+                                             (dissoc st :web/palette-page))
                                     :effects [[:palette/reset-filter nil]]})
+          ;; Alt+Enter on a project's New chat (xi.web.views/palette-alt-enter!):
+          ;; the palette input becomes the prompt, Enter starts the chat on the
+          ;; server (:chat/start) while this client stays where it is. Keyboard
+          ;; only, so the dialog never closed: no reopen.
+          :palette/open-new-chat (fn [st {:keys [cwd label]}]
+                                   {:state (assoc st
+                                                  :web/palette-page {:kind :new-chat :cwd cwd :label label
+                                                                     :back (:web/palette-page st)}
+                                                  :web/palette-prompt "")
+                                    :effects [[:palette/reset-filter nil]]})
+          :palette/prompt-input  (fn [st {:keys [query]}]
+                                   (when (= :new-chat (get-in st [:web/palette-page :kind]))
+                                     {:state (assoc st :web/palette-prompt query)}))
+          :palette/new-chat-start palette-new-chat-start
           ;; The palette's contents are gated on :web/palette-open? so hidden
           ;; items aren't rebuilt every render; a MutationObserver on the <dialog>
           ;; flips the flag when it opens. A drill's reopen keeps the sub-page
