@@ -116,7 +116,8 @@ refreshes it in place.
   come back to the diff you were reading from anywhere. The chat's own card
   opens it on the view you left it on (the chat after `Esc`, else the
   buffer); on the chat you are in, it goes back to the chat. `Alt+j` /
-  `Alt+k` enter a chat on its card, then step through its buffer rows.
+  `Alt+k` pass over buffer rows; on the card of the chat you are in,
+  `Alt+Shift+J` steps into them and `Alt+Shift+K` from the first back out.
 - **Sub-agents.** A chat's running or finished
   [sub-agents](builtin-tools.md#sub-agents) list under its card with the
   buffers ("2 buffers · 1 sub-agent"), a spinner on the ones still running.
@@ -260,7 +261,7 @@ are. The common ones:
 | `↑`/`↓`, `Alt+k`/`Alt+j` or `Ctrl+p`/`Ctrl+n` (in the `/` command list) | Move through the matching commands; `Enter` or `Tab` runs the selected one |
 | `G` | Scroll to the bottom |
 | `Alt+j` / `Alt+k` | Next / previous sidebar row, skipping collapsed groups |
-| `Alt+Shift+J` / `Alt+Shift+K` | Next / previous row in the same sidebar group, or among a chat's buffers |
+| `Alt+Shift+J` / `Alt+Shift+K` | Next / previous row in the same sidebar group; on the open chat's card, into its buffers |
 | `Alt+n` | New chat |
 | `Alt+u` | Jump to the chat that needs you most: one waiting on a permission request, then the newest finished chat with unread output, then the newest running one. Press again to move on to the next |
 | `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would (mark all as read, hide all from Recent — pinned chats are skipped — close idle rooms) |

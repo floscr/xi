@@ -4,10 +4,11 @@
    row carries `data-nav` (its key, e.g. \"s:<session-id>\", see
    xi.web.views/recent-sidebar*), so a collapsed group, whose rows aren't
    built, is skipped for free. A step clicks the target row, reusing its own
-   handler. The sibling walk stays inside the row's context: its sidebar
-   section, or the buffer list it hangs in.
+   handler. The plain walk passes over buffer rows; the sibling walk stays
+   inside the row's context (its sidebar section, or the buffer list it hangs
+   in) and is the way into the open chat's buffers.
 
-   Pure helpers (`route-keys`, `locate`, `step`) are tested in
+   Pure helpers (`route-keys`, `locate`, `step`, `target`) are tested in
    xi.web.sidebar-nav-test."
   (:require [clojure.string :as str]
             [xi.core.state :as state]))
@@ -76,24 +77,54 @@
               :else         (dec idx))]
       (max 0 (min (dec n) t)))))
 
+(defn- buffer-row? [k] (str/starts-with? (str k) "b:"))
+
 (defn- row-session
   "The session a row key belongs to: its session row or one of its buffer rows."
   [k]
   (cond
     (str/starts-with? (str k) "s:") (subs k 2)
-    (str/starts-with? (str k) "b:") (first (str/split (subs k 2) #":" 2))))
+    (buffer-row? k)                 (first (str/split (subs k 2) #":" 2))))
 
-(defn enter-at
-  "Target index `t` in `ks`, unless it is a buffer row of a session the row at
-   `from` (nil: none) isn't part of: the walk enters a chat on its session
-   row, which opens it on its last view (xi.web.router/restore-view)."
-  [ks from t]
-  (let [k (get ks t)]
-    (if (and (str/starts-with? (str k) "b:")
-             (not= (row-session k) (some-> (get ks from) row-session)))
-      (or (some #(when (= (get ks %) (str "s:" (row-session k))) %) (range t -1 -1))
-          t)
-      t)))
+(defn- session-row-at
+  "Index of the row `i` stands for in the plain walk: a buffer row's session
+   row, any other row itself."
+  [ks i]
+  (if (buffer-row? (get ks i))
+    (let [s (str "s:" (row-session (get ks i)))]
+      (or (some #(when (= (get ks %) s) %) (range i -1 -1)) i))
+    i))
+
+(defn target
+  "Index in `ks` to step to from `pos` (locate) in `dir`, or nil to stay. The
+   plain walk passes over buffer rows: a buffer stands for its session row.
+   The `sibling?` walk keeps to the current row's context (`ctxs`, one per
+   row); from the session row of the open chat (`session-id`) it steps down
+   into its buffers, and from the first buffer back up to that row."
+  [ks ctxs pos dir sibling? session-id]
+  (let [exact (when (:exact? pos) (:idx pos))
+        cur   (some->> exact (get ks))]
+    (cond
+      (and sibling? (= dir :next) (= cur (str "s:" session-id))
+           (buffer-row-of? cur (get ks (inc exact))))
+      (inc exact)
+
+      (and sibling? (= dir :prev) (buffer-row? cur)
+           (= (get ks (dec exact)) (str "s:" (row-session cur))))
+      (dec exact)
+
+      :else
+      (let [exact (if (and exact (not sibling?)) (session-row-at ks exact) exact)
+            scope (filterv (if (and sibling? exact)
+                             #(= (get ctxs exact) (get ctxs %))
+                             #(not (buffer-row? (get ks %))))
+                           (range (count ks)))
+            ;; pos within scope; a vanished row's successor is the first
+            ;; scope row at or after its index
+            spos  (cond exact {:idx (index-of scope exact) :exact? true}
+                        pos   {:idx (count (filter #(< % (:idx pos)) scope)) :exact? false})
+            t     (some->> (step (count scope) spos dir) (nth scope))]
+        (when-not (= t exact) t)))))
 
 ;; ── DOM ──────────────────────────────────────────────────────────────────────
 
@@ -109,28 +140,19 @@
 
 (defn step!
   "Click the next / previous visible sidebar row (`dir` :next / :prev); with
-   `sibling?` only rows sharing the current row's context. Returns false when
-   the sidebar isn't rendered (a closed mobile drawer), so the caller can fall
-   back to the plain session order."
+   `sibling?` only rows sharing the current row's context (see target).
+   Returns false when the sidebar isn't rendered (a closed mobile drawer), so
+   the caller can fall back to the plain session order."
   [st dir sibling?]
   (let [els (rows)
         ks  (mapv #(.. ^js % -dataset -nav) els)]
     (if (empty? els)
       false
-      (let [pos   (locate ks (route-keys st) @cursor)
-            ;; Indexes into els the walk may land on, and pos within them.
-            scope (if (and sibling? (:exact? pos))
-                    (let [ctx (context-of (nth els (:idx pos)))]
-                      (filterv #(identical? ctx (context-of (nth els %))) (range (count els))))
-                    (vec (range (count els))))
-            spos  (when pos
-                    (if (:exact? pos)
-                      {:idx (index-of scope (:idx pos)) :exact? true}
-                      pos))
-            t     (step (count scope) spos dir)]
-        (when (and t (not (and (:exact? spos) (= t (:idx spos)))))
-          (let [i       (enter-at ks (when (:exact? pos) (:idx pos)) (nth scope t))
-                ^js el  (nth els i)]
+      (let [pos        (locate ks (route-keys st) @cursor)
+            session-id (when (= :chat (get-in st [:web/route :page]))
+                         (get-in st [:web/route :session-id]))]
+        (when-let [i (target ks (mapv context-of els) pos dir sibling? session-id)]
+          (let [^js el (nth els i)]
             (reset! cursor {:key (nth ks i) :idx i})
             (.scrollIntoView el #js {:block "nearest"})
             (.click el)))

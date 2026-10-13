@@ -44,14 +44,30 @@
     (is (= {:idx 3 :exact? true} (nav/locate ks ["s:b"] {:key "b:a:sub1" :idx 1}))
         "another chat beats the cursor")))
 
-(deftest enter-at-test
-  (let [ks ["s:a" "s:b" "b:b:diff:session-edits" "b:b:sub1" "s:c"]]
-    (is (= 1 (nav/enter-at ks 4 3))
-        "walking up into another chat lands on its session row, not a buffer")
-    (is (= 1 (nav/enter-at ks nil 2)) "no position: the session row too")
-    (is (= 2 (nav/enter-at ks 1 2)) "inside a chat its buffer rows are steps")
-    (is (= 3 (nav/enter-at ks 2 3)))
-    (is (= 4 (nav/enter-at ks 3 4)) "session rows are left alone")))
+(deftest target-test
+  (let [ks   ["home" "s:a" "s:b" "b:b:d1" "b:b:sub1" "s:c" "b:c:d2"]
+        ctxs [:nav :recent :recent :bufs-b :bufs-b :recent :bufs-c]
+        at   (fn [i] {:idx i :exact? true})
+        walk (fn [pos dir] (nav/target ks ctxs pos dir false "b"))
+        sib  (fn [pos dir] (nav/target ks ctxs pos dir true "b"))]
+    (testing "the plain walk passes over buffer rows"
+      (is (= 5 (walk (at 2) :next)) "past the open chat's buffers")
+      (is (= 2 (walk (at 5) :prev)) "up onto a chat's session row")
+      (is (= 5 (walk (at 3) :next)) "from a buffer: as from its session row")
+      (is (= 1 (walk (at 4) :prev)))
+      (is (nil? (walk (at 6) :next)) "the last chat's buffer: nothing below")
+      (is (= 0 (walk nil :next)))
+      (is (= 5 (walk nil :prev)) "no position going up: the last non-buffer row")
+      (is (= 5 (walk {:idx 3 :exact? false} :next)) "a vanished row's successor")
+      (is (= 2 (walk {:idx 3 :exact? false} :prev))))
+    (testing "the sibling walk enters only the open chat's buffers"
+      (is (= 3 (sib (at 2) :next)) "down from the open chat's session row")
+      (is (= 4 (sib (at 3) :next)) "along its buffers")
+      (is (nil? (sib (at 4) :next)) "clamped at the last buffer")
+      (is (= 2 (sib (at 3) :prev)) "from the first buffer back up to the chat")
+      (is (= 2 (sib (at 5) :prev)) "another chat's row: its section siblings")
+      (is (nil? (sib (at 5) :next)) "another chat's buffers stay closed to it")
+      (is (= 1 (sib (at 2) :prev))))))
 
 (deftest step-test
   (is (= 3 (nav/step 5 {:idx 2 :exact? true} :next)))

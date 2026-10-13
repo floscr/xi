@@ -226,7 +226,7 @@
    :session/jump-attention  {:label "Jump to the chat that needs you" :surface #{:web}}
    :session/next            {:label "Next sidebar item" :surface #{:web}}
    :session/prev            {:label "Previous sidebar item" :surface #{:web}}
-   :session/next-sibling    {:label "Next sidebar item in the same group" :surface #{:web}}
+   :session/next-sibling    {:label "Next sidebar item in the same group, or into the open chat's buffers" :surface #{:web}}
    :session/prev-sibling    {:label "Previous sidebar item in the same group" :surface #{:web}}
    :sessions/prune          {:label "Prune: run every sidebar cleanup" :surface #{:web}}
    :files/find              {:label "Find a file" :surface #{:web}}
