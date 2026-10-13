@@ -3342,11 +3342,13 @@
                      {:keys [steps mirror? pointer]} (tour/variant tape variant-name)
                      post!     #(.postMessage js/parent % "*")
                      client    #(some-> @app-ref :state deref)
+                     tape-done! (atom nil)
+                     tape-done (js/Promise. #(reset! tape-done! %))
                      transport (tour/create!
                                 tape
                                 {:on-status on-connection-status
                                  :on-send   #(post! #js {:xiTour "sent" :type %})
-                                 :on-done   #(post! #js {:xiTour "done"})
+                                 :on-done   #(@tape-done!)
                                  :room-of   #(get-in (client) [:rooms %])})
                      ;; the visitor reading an earlier session holds the autopilot
                      visiting? #((:visit? transport) (get-in (client) [:web/route :session-id]))]
@@ -3361,7 +3363,10 @@
                    ;; the page replays the sends this frame missed while loading
                    (post! #js {:xiTour "ready"}))
                  (real-init! {:transport transport})
-                 (tour/autopilot! steps pointer visiting?))))))
+                 ;; done once the tape has played out and the autopilot's
+                 ;; last step (which may click after the stream ends) ran
+                 (-> (js/Promise.all #js [tape-done (tour/autopilot! steps pointer visiting?)])
+                     (.then #(post! #js {:xiTour "done"}))))))))
 
 (defn ^:export init! []
   (js/console.log "[xi-web] starting")

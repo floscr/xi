@@ -8,10 +8,13 @@
       "text": "Uploads on a flaky connection wait minutes between retries. Cap the backoff in src/upload.ts and add a test." },
     { "wait": 300 },
     { "enter": "textarea" },
-    { "waitText": "Now a test for both" },
+    { "waitText": "allow running" },
+    { "clickText": "Allow", "after": 2500 },
+    { "waitText": "covers the doubling and the cap" },
+    { "wait": 1200 },
     { "clickText": "edit src/upload.ts", "within": "summary", "contains": true },
-    { "clickText": "edit src/upload.ts", "within": "summary" },
-    { "clickText": "Allow", "after": 2500 }
+    { "wait": 2500 },
+    { "clickText": "edit src/upload.ts", "within": "summary" }
   ],
   "variants": {
     "phone": {
@@ -24,10 +27,13 @@
           "text": "Uploads on a flaky connection wait minutes between retries. Cap the backoff in src/upload.ts and add a test." },
         { "wait": 300 },
         { "enter": "textarea" },
-        { "waitText": "Now a test for both" },
+        { "waitText": "allow running" },
+        { "clickText": "Allow", "after": 2500 },
+        { "waitText": "covers the doubling and the cap" },
+        { "wait": 1200 },
         { "clickText": "edit src/upload.ts", "within": "summary", "contains": true },
-        { "clickText": "edit src/upload.ts", "within": "summary" },
-        { "clickText": "Allow", "after": 2500 }
+        { "wait": 2500 },
+        { "clickText": "edit src/upload.ts", "within": "summary" }
       ]
     },
     "list": { "mirror": true, "steps": [] }

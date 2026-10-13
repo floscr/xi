@@ -38,7 +38,10 @@ the web client from the release `:tour` build (`bb tour:build` →
 web client's `style.css`, and `site/public/css/tour.css`, which shrinks the
 app's rem-based type one size. The iframe renders at 1280×800; `site.js`
 scales it to the frame with a CSS transform, loads it once the stage is 40%
-in view, and shows Replay when the tour posts `{xiTour: "done"}`. Until a
+in view, and shows Replay when the tour posts `{xiTour: "done"}`: once the
+tape has played out and the autopilot's last step ran, so steps may click
+through the result after the stream ends (expanding a tool block mid-stream
+is too busy to follow). Until a
 tour frame starts, `site.js` prefetches the tour's files once the page is
 idle, and `/tour/` starts fetching the tape in its `<head>` (`window.xiTape`)
 rather than after `main.js` runs. In an
