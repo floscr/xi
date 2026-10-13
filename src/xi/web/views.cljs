@@ -3848,10 +3848,15 @@
      (when buffers-open?
        (session-buffer-rows dispatch! state card-data)))))
 
+(defn- draft-chat-title
+  "A parked draft chat's first non-blank prompt line."
+  [state id]
+  (some->> (str/split-lines (get-in state [:web/drafts id] ""))
+           (some #(when-not (str/blank? %) (str/trim %)))))
+
 (defn- draft-chat-card
   [dispatch! state {:keys [id cwd]}]
-  (let [text (some->> (str/split-lines (get-in state [:web/drafts id] ""))
-                      (some #(when-not (str/blank? %) (str/trim %))))]
+  (let [text (draft-chat-title state id)]
     [:div {:class ["project-card"]
            :replicant/key (str "draft-" id)
            :data-flip (str "draft:" id)
@@ -5394,6 +5399,17 @@
      (cmd/command-dialog dialog-attrs
      (when (seq chat-items)
        (apply cmd/command-group {:heading "Chats"} chat-items))
+     ;; Parked draft chats (the sidebar's Drafts section), newest first.
+     (when-let [drafts (seq (:web/draft-chats state))]
+       (apply cmd/command-group {:heading "Drafts"}
+         (for [{:keys [id cwd]} (rseq (vec drafts))
+               :let [title (or (draft-chat-title state id) "Draft")
+                     path  (some-> cwd shorten-path)]]
+           (cmd/command-item {:icon        :edit
+                              :description path
+                              :value       (str "draft " title " " path)
+                              :on-click    (fn [_] (dispatch! {:type :draft-chat/open :id id}))}
+             title))))
      (for [{:keys [heading items]} (buffer-palette-groups state dispatch!)]
        (apply cmd/command-group {:heading heading} items))
      (when (seq all-sessions)
