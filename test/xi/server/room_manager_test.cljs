@@ -45,7 +45,11 @@
     (is (= [[:chat/start {:text "do it" :cwd "/y" :user {:id "u"}}]]
            (:effects (handle st {:type :chat/start :client-id "c1" :cwd "/y" :text "do it"
                                  :user {:id "u"} :background? true})))
-        "a background chat keeps the sender where it is")))
+        "a background chat keeps the sender where it is")
+    (let [img {:data "AAAA" :media-type "image/jpeg"}]
+      (is (= [[:chat/start {:text "" :cwd "/y" :images [img]}]]
+             (:effects (handle st {:type :chat/start :cwd "/y" :text "" :images [img]})))
+          "images alone seed a chat"))))
 
 (deftest server-started-continues-cut-off-chats
   (is (= [[:sessions/resume-interrupted {}]]

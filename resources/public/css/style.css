@@ -2297,6 +2297,12 @@ body {
   border-top: var(--border-0);
 }
 
+/* Under the palette's background-chat row: flush with the row's box. */
+.compose-images--palette {
+  padding: var(--size-1) 0 0;
+  border-top: none;
+}
+
 .compose-image-thumb {
   position: relative;
   flex-shrink: 0;

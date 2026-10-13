@@ -430,13 +430,15 @@
 
 
 (defn- chat-start
-  "Open a new chat seeded with `text` as its first user message; cwd defaults
-   to the dispatching room's, :client-id is sent to the new chat unless
-   :background? (the web palette's fire-and-forget chat)."
-  [st {:keys [room-id client-id cwd text user background?]}]
-  (when (and (string? text) (seq text))
-    {:effects [[:chat/start (cond-> {:text text
+  "Open a new chat seeded with `text` (and `images`, xi.agent prompt shape) as
+   its first user message; cwd defaults to the dispatching room's, :client-id
+   is sent to the new chat unless :background? (the web palette's
+   fire-and-forget chat)."
+  [st {:keys [room-id client-id cwd text images user background?]}]
+  (when (or (and (string? text) (seq text)) (seq images))
+    {:effects [[:chat/start (cond-> {:text (or text "")
                                      :cwd  (or cwd (get-in st [:rooms room-id :cwd]))}
+                              (seq images) (assoc :images (vec images))
                               (and client-id (not background?)) (assoc :client-id client-id)
                               user (assoc :user user))]]}))
 

@@ -1294,13 +1294,16 @@
                                :images (vec valid)}))))
         (.catch (fn [err] (js/console.error "[xi-web] attachment read failed:" err))))))
 
+(defn- pasted-image-files [^js e]
+  (let [items (.. e -clipboardData -items)]
+    (->> (range (.-length items))
+         (keep (fn [i]
+                 (let [^js item (aget items i)]
+                   (when (str/starts-with? (.-type item) "image/")
+                     (.getAsFile item))))))))
+
 (defn- handle-compose-paste! [dispatch! draft-key ^js e]
-  (let [items (.. e -clipboardData -items)
-        files (->> (range (.-length items))
-                   (keep (fn [i]
-                           (let [^js item (aget items i)]
-                             (when (str/starts-with? (.-type item) "image/")
-                               (.getAsFile item))))))]
+  (let [files (pasted-image-files e)]
     (if (seq files)
       (do (.preventDefault e)
           (add-files! dispatch! draft-key files))
@@ -4802,16 +4805,46 @@
    without leaving the current view. The row's :value tracks the input so
    ui-runtime's filter never hides it."
   [state dispatch! {:keys [cwd label]}]
-  (let [prompt (or (:web/palette-prompt state) "")]
-    (cmd/command-group {:heading (str "New chat · " label)}
-      (cmd/command-item
-       {:icon :arrow-up
-        :value prompt
-        :description (if (str/blank? prompt) "Type a prompt" (shorten-path cwd))
-        :shortcut (keycaps "Enter")
-        :on-click (fn [_] (dispatch! {:type :palette/new-chat-start
-                                      :cwd cwd :text prompt}))}
-       "Start in the background"))))
+  (let [prompt (or (:web/palette-prompt state) "")
+        images (:web/palette-images state)]
+    [:div {:replicant/key :new-chat-page}
+     (cmd/command-group {:heading (str "New chat · " label)}
+       (cmd/command-item
+        {:icon :arrow-up
+         :value prompt
+         :description (if (and (str/blank? prompt) (empty? images))
+                        "Type a prompt · Ctrl+V pastes images"
+                        (shorten-path cwd))
+         :shortcut (keycaps "Enter")
+         :on-click (fn [_] (dispatch! {:type :palette/new-chat-start
+                                       :cwd cwd :text prompt}))}
+        "Start in the background"))
+     (when (seq images)
+       [:div {:class ["compose-images" "compose-images--palette"]}
+        (map-indexed
+         (fn [idx {:keys [data media-type]}]
+           [:div {:replicant/key idx :class ["compose-image-thumb"]}
+            [:img {:src (str "data:" media-type ";base64," data) :alt "attachment"}]
+            ;; Mousedown is swallowed so the palette input keeps focus.
+            [:button {:class ["compose-image-remove"] :type "button" :tabindex "-1"
+                      :aria-label "Remove image"
+                      :on {:mousedown (fn [^js e] (.preventDefault e))
+                           :click (fn [_] (dispatch! {:type :palette/remove-image :idx idx}))}}
+             (icon/icon {:icon-name :x :size :sm})]])
+         images)])]))
+
+(defn- handle-palette-paste!
+  "Ctrl+V of images into the background-chat prompt: resized like the
+   composer's (resize-image-file), staged in :web/palette-images."
+  [dispatch! ^js e]
+  (let [files (pasted-image-files e)]
+    (when (seq files)
+      (.preventDefault e)
+      (-> (js/Promise.all (to-array (map resize-image-file files)))
+          (.then (fn [results]
+                   (when-let [valid (seq (remove nil? (array-seq results)))]
+                     (dispatch! {:type :palette/add-images :images (vec valid)}))))
+          (.catch (fn [err] (js/console.error "[xi-web] palette image read failed:" err)))))))
 
 (defn- palette-search-page
   "Full-text session search as a palette sub-page. The palette input is the
@@ -5357,6 +5390,9 @@
                                                 (dispatch! {:type :file-finder/input :query v})
                                                 new-chat-page?
                                                 (dispatch! {:type :palette/prompt-input :query v}))))
+                                   :paste (fn [^js e]
+                                            (when new-chat-page?
+                                              (handle-palette-paste! dispatch! e)))
                                    ;; A drill's close can land after the reopen;
                                    ;; a stale close must not blank the palette.
                                    :close (fn [^js e]
@@ -5661,12 +5697,7 @@
 
 (defn- handle-skill-form-paste!
   [dispatch! ^js e]
-  (let [items (.. e -clipboardData -items)
-        files (->> (range (.-length items))
-                   (keep (fn [i]
-                           (let [^js item (aget items i)]
-                             (when (str/starts-with? (.-type item) "image/")
-                               (.getAsFile item))))))]
+  (let [files (pasted-image-files e)]
     (when (seq files)
       (.preventDefault e)
       (skill-form-stage-images! dispatch! files))))

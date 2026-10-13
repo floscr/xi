@@ -989,16 +989,20 @@
 
 (defn- palette-new-chat-start
   "Enter on the palette's background-chat prompt: start the chat in `cwd` on
-   the server and close the palette. A blank prompt keeps the page open (the
-   runtime already closed the dialog, so it reopens)."
+   the server with the pasted :web/palette-images and close the palette. A
+   blank prompt without images keeps the page open (the runtime already
+   closed the dialog, so it reopens)."
   [st {:keys [cwd text]}]
-  (let [text (str/trim (or text ""))]
-    (if (str/blank? text)
+  (let [text   (str/trim (or text ""))
+        images (:web/palette-images st)]
+    (if (and (str/blank? text) (empty? images))
       {:state   (assoc st :web/palette-open? true :web/palette-drilling? true)
        :effects [[:palette/reopen nil]]}
-      {:state   (dissoc st :web/palette-page :web/palette-open? :web/palette-prompt)
+      {:state   (dissoc st :web/palette-page :web/palette-open? :web/palette-prompt
+                        :web/palette-images)
        :effects [[:palette/close nil]
-                 [:ws/send {:type :chat/start :cwd cwd :text text :background? true}]]})))
+                 [:ws/send (cond-> {:type :chat/start :cwd cwd :text text :background? true}
+                             (seq images) (assoc :images images))]]})))
 
 (defn- web-handlers [routes]
   (merge (router/handlers routes)
@@ -1604,8 +1608,20 @@
                                    {:state (assoc st
                                                   :web/palette-page {:kind :new-chat :cwd cwd :label label
                                                                      :back (:web/palette-page st)}
-                                                  :web/palette-prompt "")
+                                                  :web/palette-prompt ""
+                                                  :web/palette-images [])
                                     :effects [[:palette/reset-filter nil]]})
+          ;; Images pasted into the background-chat prompt (xi.web.views
+          ;; handle-palette-paste!), sent with :chat/start.
+          :palette/add-images    (fn [st {:keys [images]}]
+                                   (when (= :new-chat (get-in st [:web/palette-page :kind]))
+                                     {:state (update st :web/palette-images (fnil into []) images)}))
+          :palette/remove-image  (fn [st {:keys [idx]}]
+                                   {:state (update st :web/palette-images
+                                                   (fn [imgs]
+                                                     (into [] (keep-indexed
+                                                               (fn [i img] (when (not= i idx) img)))
+                                                           imgs)))})
           :palette/prompt-input  (fn [st {:keys [query]}]
                                    (when (= :new-chat (get-in st [:web/palette-page :kind]))
                                      {:state (assoc st :web/palette-prompt query)}))
