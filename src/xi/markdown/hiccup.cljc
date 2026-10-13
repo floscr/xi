@@ -93,17 +93,27 @@
   []
   (let [set-mode (fn [text?]
                    (fn [e]
-                     (.. e -currentTarget -parentNode -parentNode -classList
+                     (.. e -currentTarget (closest ".md-table-wrap") -classList
                          (toggle "as-text" text?))))]
     (bg/button-group {:variant :boxed :class "md-table-toggle"}
                      (bg/button-group-item {:icon :grid :class "md-table-mode-grid"
-                                            :attrs {:type "button" :title "Show as table"}
-                                            :on-click (set-mode false)}
-                                           "Table")
+                                            :attrs {:type "button" :title "Show as table"
+                                                    :aria-label "Show as table"}
+                                            :on-click (set-mode false)})
                      (bg/button-group-item {:icon :list :class "md-table-mode-list"
-                                            :attrs {:type "button" :title "Show as list"}
-                                            :on-click (set-mode true)}
-                                           "List"))))
+                                            :attrs {:type "button" :title "Show as list"
+                                                    :aria-label "Show as list"}
+                                            :on-click (set-mode true)}))))
+
+(defn- table-caption-bar
+  "Strip joined to the table's top edge: its size on the left, the mode toggle
+   on the right. Stays in list mode, so the toggle never moves."
+  [n-rows n-cols]
+  [:div {:class "md-table-bar"}
+   [:span {:class "md-table-meta"}
+    (str n-rows (if (= 1 n-rows) " row" " rows")
+         " · " n-cols (if (= 1 n-cols) " column" " columns"))]
+   (table-mode-toggle)])
 
 ;; ---------------------------------------------------------------------------
 ;; Block rendering
@@ -173,7 +183,7 @@
                              {}))
               labels (mapv inline-text header)]
           [:div {:class "md-table-wrap"}
-           (table-mode-toggle)
+           (table-caption-bar (count rows) (count header))
            [:table {:class "md-table"}
             [:thead
              (into [:tr]

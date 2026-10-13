@@ -1170,20 +1170,49 @@ body {
 }
 
 /* ---- Table plain-text toggle ---------------------------------------------
-   Each rendered markdown table (xi.markdown.hiccup) is wrapped in
-   .md-table-wrap with a Table/List segmented control (ui.button-group).
-   Clicking a segment sets the .as-text class on the wrapper (pure DOM, not
-   app state — not persisted); that class alone decides which segment looks
-   active. List mode renders one entry per row: first column as a heading,
-   middle columns as a "Label value" meta line (labels from td[data-label]),
-   last column as body-size prose. Copies cleanly as plain text. */
-.md-table-wrap { position: relative; margin: var(--size-2) 0; }
+   Each rendered markdown table (xi.markdown.hiccup) is wrapped in a framed
+   .md-table-wrap whose top edge is a caption strip (.md-table-bar): row and
+   column count left, an icon Table/List segmented control (ui.button-group)
+   right. Clicking a segment sets the .as-text class on the wrapper (pure DOM,
+   not app state — not persisted); that class alone decides which segment
+   looks active. List mode renders one entry per row: first column as a
+   heading, middle columns as a "Label value" meta line (labels from
+   td[data-label]), last column as body-size prose. Copies cleanly as plain
+   text. */
+/* The wrap is the scroll container for wide tables (the table itself fills
+   it, so a narrow table still spans the frame); min-width leaves room for
+   the toggle on a one-column table. */
+.md-table-wrap {
+  width: fit-content; max-width: 100%; min-width: 6rem;
+  margin: var(--size-2) 0; overflow-x: auto;
+  border: var(--border-0); border-radius: var(--radius-2);
+}
+/* the frame is the table's outer border: cells only draw inner lines */
+.markdown .md-table-wrap .md-table {
+  display: table; width: 100%; max-width: none; overflow: visible; margin: 0;
+}
+.md-table-wrap .md-table th,
+.md-table-wrap .md-table td { border-width: 0 1px 1px 0; }
+.md-table-wrap .md-table tr > :last-child { border-right: 0; }
+.md-table-wrap .md-table tbody tr:last-child td { border-bottom: 0; }
 
-/* compact boxed button-group: sized for inline use above a table */
-.md-table-toggle { padding: 2px; gap: 2px; margin-bottom: var(--size-2); user-select: none; }
+/* contain: inline-size keeps the strip from widening the frame past the
+   table; the meta text gives way first */
+.md-table-bar {
+  contain: inline-size; position: sticky; left: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--size-4); padding: 3px 3px 3px var(--size-2);
+  background: var(--bg-1); border-bottom: var(--border-0);
+}
+.md-table-meta {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.75rem; color: var(--fg-2); user-select: none;
+}
+
+/* compact boxed button-group, icon-only */
+.md-table-toggle { flex: none; padding: 2px; gap: 2px; user-select: none; }
 .md-table-toggle .button-group-item {
-  height: 1.5rem; padding: 0 var(--size-2); gap: var(--size-1);
-  font-size: 0.75rem; color: var(--fg-2);
+  height: 1.375rem; width: 1.75rem; padding: 0; color: var(--fg-2);
 }
 .md-table-toggle .button-group-item .icon { width: 0.8rem; height: 0.8rem; }
 .md-table-wrap:not(.as-text) .md-table-mode-grid,
@@ -1192,9 +1221,10 @@ body {
 }
 
 /* list mode */
+.md-table-wrap.as-text { width: auto; max-width: 72ch; }
 .md-table-wrap.as-text .md-table {
-  display: block; border: 0; overflow: visible;
-  max-width: 72ch; white-space: normal; font-size: 1em;
+  display: block; width: auto; border: 0; overflow: visible;
+  padding: 0 var(--size-3); white-space: normal; font-size: 1em;
 }
 .md-table-wrap.as-text .md-table thead { display: none; }
 .md-table-wrap.as-text .md-table tbody,
@@ -1204,7 +1234,7 @@ body {
   padding: var(--size-3) 2px; margin: 0;
   border: 0; border-top: var(--border-0);
 }
-.md-table-wrap.as-text .md-table tr:last-child { border-bottom: var(--border-0); }
+.md-table-wrap.as-text .md-table tr:first-child { border-top: 0; }
 .md-table-wrap.as-text .md-table td {
   border: 0; padding: 0; white-space: normal; text-align: left !important;
 }
