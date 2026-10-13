@@ -79,6 +79,11 @@
           ;; AGENTS.md isn't loaded) and the scripted fake LLM of one tour, so a
           ;; recorded turn is deterministic and needs no credentials. See
           ;; site/tours/README.md.
+          ;; Docs site dev server (port 4322, live reload) — site/bb.edn's `dev`.
+          (def site-config {:session "xi-site"
+                            :windows [["server" "bb dev"]]
+                            :dir (str (System/getProperty "user.dir") "/site")
+                            :print ["Site: http://localhost:4322"]})
           (def tour-home "/tmp/xi-tour-home")
           (defn tour-config [tour]
             {:session "xi-tour"
@@ -260,8 +265,20 @@
    :task (shell {:dir "packages/mcp-bb-example"} "bb" "test")}
 
   site:dev
-  {:doc "Serve the home page + docs site (site/, rendered from docs/guide) on :4322 with live reload; replaces a site dev server already running there"
-   :task (shell {:dir "site"} "bb" "dev")}
+  {:doc "(Re)start the home page + docs site dev server (site/, rendered from docs/guide) on :4322 with live reload in tmux session xi-site; replaces a site dev server already running there"
+   :task (td/restart site-config)}
+
+  site:stop
+  {:doc "Stop the site dev server tmux session"
+   :task (td/stop site-config)}
+
+  site:attach
+  {:doc "Attach to the site dev server tmux session"
+   :task (td/attach site-config)}
+
+  site:logs
+  {:doc "Show recent output from the site dev server window"
+   :task (td/logs site-config {:lines 40})}
 
   tour:build
   {:doc "Release-build the site's tour client (shadow :tour) into target/tour/main.js; the site serves it at /tour/. The dev watch is left alone."
@@ -532,9 +549,9 @@
   check
   {:doc "Inspect all Xi processes (ports, server + shadow procs, tmux pane logs) AND print agent guidance: what runs where + which bb task to use. Run before starting/stopping anything."
    :task (do
-           (println "── Listening ports (7474 main · 7475 personal · 7476 demo · 8100 dev-http · 9630 shadow) ──")
+           (println "── Listening ports (7474 main · 7475 personal · 7476 demo · 4322 site · 8100 dev-http · 9630 shadow) ──")
            (shell {:continue true} "bash" "-c"
-                  "ss -tlnp 2>/dev/null | grep -E ':(7474|7475|7476|8100|9630)\\b' || echo '  none listening'")
+                  "ss -tlnp 2>/dev/null | grep -E ':(7474|7475|7476|4322|8100|9630)\\b' || echo '  none listening'")
            (println)
            (println "── Headless server processes (bun) ──")
            (shell {:continue true} "bash" "-c"
@@ -556,6 +573,9 @@
            (println "=== xi-demo session (bb demo — isolated seed data, port 7476) ===")
            (td/status demo-config)
            (td/logs demo-config {:lines 20})
+           (println "=== xi-site session (bb site:dev — docs site, port 4322) ===")
+           (td/status site-config)
+           (td/logs site-config {:lines 20})
            (println)
            (println "── How to act on this (agents: read before starting/stopping anything) ──")
            (println "  Never start services by hand (no raw `bun target/main.js ...`,")
@@ -566,6 +586,7 @@
            (println "  port 7475  personal agent   session xi-pa     bb serve:personal[:restart|:stop]")
            (println "  port 7476  demo (seed data)  session xi-demo   bb demo / demo:restart / demo:stop")
            (println "  port 7479  site tours       session xi-tour   bb tour [name] / tour:stop")
+           (println "  port 4322  docs site        session xi-site   bb site:dev / site:stop / site:logs")
            (println "  shadow watch (main+web)     session xi-serve  auto-compiles on save; no manual build")
            (println "  standalone watch (no srv)   session xi        bb dev / dev:restart / dev:stop")
            (println "  (xi and xi-serve both run the shadow watch — starting/restarting one stops the other)")

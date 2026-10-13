@@ -6,9 +6,9 @@ Personal coding harness in ClojureScript + Bun.
 
 > **Before starting, stopping, restarting, or debugging ANY process** (compile,
 > shadow-cljs watch, server), run `bb check`. It reports what's running where
-> (ports 7474 main · 7476 demo · 8100 dev-http · 9630 shadow,
-> bun servers, shadow watches, and the `xi` / `xi-serve` / `xi-demo`
-> tmux sessions) and prints which `bb` task manages each. **Never start
+> (ports 7474 main · 7476 demo · 4322 docs site · 8100 dev-http · 9630 shadow,
+> bun servers, shadow watches, and the `xi` / `xi-serve` / `xi-demo` /
+> `xi-site` tmux sessions) and prints which `bb` task manages each. **Never start
 > services by hand** (`bun target/main.js …`, `npx shadow-cljs …`) **and never
 > `kill` them by PID** — that orphans processes outside tmux and has left stuck
 > servers holding :7474 before. Only the `bb` tasks start/stop/restart.
