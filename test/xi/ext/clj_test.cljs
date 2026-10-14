@@ -436,7 +436,7 @@
 (deftest sh-git-dir-must-be-this-repository
   (let [other (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-foreign-repo-"))
         _     (fs/mkdirSync (node-path/join other ".git"))
-        code  (str "(sh {:dir \"" other "\"} \"git\" \"log\")")]
+        code  (str "(sh {:dir \"" other "\"} \"git\" \"blame\" \"a.txt\")")]
     (let [res (eval! code {:allowed ["git"]})]
       (is (:is-error res))
       (is (str/includes? (result-text res) "another repository")))
@@ -484,6 +484,45 @@
                        {:allowed ["git"]})]
         (is (:is-error res))
         (is (str/includes? (result-text res) "another repository"))))
+    (testing "log/show/ls-tree run hardened too: no textconv driver, no gpg program"
+      (let [conv (node-path/join repo "conv.sh")
+            info (node-path/join repo ".git" "info")]
+        (fs/writeFileSync conv (str "#!/bin/sh\ntouch " pwn "\ncat \"$1\"\n"))
+        (fs/chmodSync conv 0755)
+        (fs/mkdirSync info #js {:recursive true})
+        (fs/writeFileSync (node-path/join info "attributes") "*.txt diff=evil\n")
+        (git! repo "config" "diff.evil.textconv" conv)
+        (git! repo "config" "log.showSignature" "true")
+        (git! repo "config" "gpg.program" conv)
+        ;; a commit carrying a signature header, so log/show verify it
+        (let [tree   (str/trim (git! repo "rev-parse" "HEAD^{tree}"))
+              parent (str/trim (git! repo "rev-parse" "HEAD"))
+              body   (str "tree " tree "\nparent " parent
+                          "\nauthor x <x@x> 0 +0000\ncommitter x <x@x> 0 +0000"
+                          "\ngpgsig -----BEGIN PGP SIGNATURE-----\n x\n -----END PGP SIGNATURE-----"
+                          "\n\nsigned\n")
+              sha    (str/trim (.-stdout (cp/spawnSync "git" #js ["hash-object" "-t" "commit" "-w" "--stdin"]
+                                                       #js {:cwd repo :encoding "utf8" :input body})))]
+          (git! repo "update-ref" "HEAD" sha))
+        (testing "control: plain git runs them"
+          (git! repo "--no-pager" "log" "-1")
+          (is (fs/existsSync pwn) "gpg.program")
+          (fs/unlinkSync pwn)
+          (git! repo "--no-pager" "log" "-p" "-2")
+          (is (fs/existsSync pwn) "textconv")
+          (fs/unlinkSync pwn))
+        (doseq [code [(str "(sh {:dir \"" repo "\"} \"git\" \"log\" \"-p\" \"-2\")")
+                      (str "(sh {:dir \"" repo "\"} \"git\" \"show\" \"HEAD~1\")")
+                      (str "(sh {:dir \"" repo "\"} \"git\" \"ls-tree\" \"--name-only\" \"HEAD\")")]]
+          (let [res (eval! code {:allowed ["git"]})]
+            (is (not (:is-error res)) (result-text res))
+            (is (str/includes? (result-text res) "a.txt") code)
+            (is (not (fs/existsSync pwn)) (str code " ran a program the repository names"))))))
+    (testing "log asks when the repository's own config sets a merge driver"
+      (git! repo "config" "merge.evil.driver" "true")
+      (let [res (eval! (str "(sh {:dir \"" repo "\"} \"git\" \"log\" \"-1\")") {:allowed ["git"]})]
+        (is (:is-error res))
+        (is (str/includes? (result-text res) "merge.evil.driver"))))
     (testing "a filter driver in the repository's own config is refused"
       (git! repo "config" "filter.evil.clean" "cat")
       (let [res (eval! (str "(sh {:dir \"" repo "\"} \"git\" \"status\")") {:allowed ["git"]})]
@@ -1055,7 +1094,7 @@
 (deftest gate-escalates-git-config-and-foreign-dir
   ;; `git -c …` / a config write / `-C` are refused by the parser; git run
   ;; with a :dir in another repository too (its hooks would run), unless it
-  ;; is a status/diff the worker runs hardened. Headless, that is a block; a
+  ;; is a read-only call the worker runs hardened. Headless, that is a block; a
   ;; background command line is judged the same way.
   (async done
     (let [other (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-gate-foreign-"))
@@ -1064,7 +1103,7 @@
           calls ["(sh \"git\" \"-c\" \"core.hooksPath=/tmp/h\" \"commit\" \"-m\" \"x\")"
                  "(sh \"git\" \"config\" \"core.hooksPath\" \"/tmp/h\")"
                  "(sh \"git\" \"-C\" \"/tmp\" \"status\")"
-                 (str "(sh {:dir \"" other "\"} \"git\" \"log\")")
+                 (str "(sh {:dir \"" other "\"} \"git\" \"blame\" \"a.txt\")")
                  (str "(sh {:dir \"" other "\"} \"git\" \"status\" \"--ignore-submodules=none\")")
                  "(process/start \"git -c core.hooksPath=/tmp/h commit -m x\")"]
           hardened [(str "(sh {:dir \"" other "\"} \"git\" \"status\" \"--short\")")

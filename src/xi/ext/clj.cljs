@@ -315,13 +315,13 @@
         (rules-store/git-root (paths/real-resolve cwd (str dir)))))
 
 (defn- foreign-git-unsafe-keys
-  "`dir`'s own git config keys a hardened status/diff still acts on
+  "`dir`'s own git config keys the hardened `argv` still acts on
    (xi.rules.foreign-git/unsafe-keys). Listing config runs nothing."
-  [dir]
+  [argv dir]
   (let [r (cp/spawnSync "git" #js ["--no-pager" "config" "--list" "--show-scope" "--name-only"]
                         #js {:cwd (str dir) :encoding "utf8" :timeout 10000})]
     (if (zero? (.-status r))
-      (foreign-git/unsafe-keys (.-stdout r))
+      (foreign-git/unsafe-keys argv (.-stdout r))
       ["(unreadable config)"])))
 
 (defn- foreign-git-refusal
@@ -330,7 +330,7 @@
   [argv dir]
   (if-not (and argv (foreign-git/hardenable? argv))
     "runs git in another repository, whose hooks and config would run"
-    (when-let [ks (seq (foreign-git-unsafe-keys dir))]
+    (when-let [ks (seq (foreign-git-unsafe-keys argv dir))]
       (str "runs git in another repository whose own config sets "
            (str/join ", " ks) " (a program git runs, or another work tree)"))))
 
@@ -341,7 +341,7 @@
    allowed CLI-wide or the exact argv granted; a read-only program the gate
    auto-ran is re-parsed on the real argv (xi.rules.readonly), and git in
    another repository is refused, unless the user approved the program or this
-   argv — or it is a status/diff that runs hardened (xi.rules.foreign-git)."
+   argv — or it is a read-only call that runs hardened (xi.rules.foreign-git)."
   [opts]
   (fn [& argv]
     (let [[m argv] (if (map? (first argv))
@@ -386,7 +386,8 @@
                             (foreign-git-dir? (opts-cwd opts) dir))
               _        (when-let [why (and foreign? (not exact?) (foreign-git-refusal argv dir))]
                          (throw (ex-info (str "clj: git is auto-run in another repository only "
-                                              "for status/diff — :dir " (:dir m) ": " why
+                                              "for " (str/join "/" (foreign-git/hardened-subcommands))
+                                              " — :dir " (:dir m) ": " why
                                               ". A literal (sh {:dir …} \"git\" …) call there "
                                               "asks the user for approval.")
                                          {})))
@@ -2060,7 +2061,7 @@
             ;;              (sh "<cli>" …) calls — dynamic args, `apply sh` —
             ;;              in the same eval.
             ;; git run with a :dir in another repository is granted only as a
-            ;; status/diff the worker runs hardened, and only when that
+            ;; read-only call the worker runs hardened, and only when that
             ;; repository's own config sets nothing the hardening leaves on
             ;; (xi.rules.foreign-git): otherwise its hooks and config would run.
             grants   (mapv (fn [c]

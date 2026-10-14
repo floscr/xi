@@ -67,11 +67,14 @@ default `rm` of git-tracked content allows that exact command.
 `sh` takes one program and its arguments. There are no shell strings, and
 `(sh "bash" "-c" …)` is refused, also by path or through `env`, `timeout`,
 `xargs` and the like. `:dir` must exist and is treated as a read; for `git`
-it must be inside the chat's repository, or the call asks. `status` and
-`diff` run in another repository without asking, with that repository's
-hooks, `core.fsmonitor`, external diff, textconv, submodules and lazy fetches
-switched off; they still ask when its own config sets a `filter.*` driver or
-`core.worktree`, or a flag turns textconv or submodules back on. `:env` may not
+it must be inside the chat's repository, or the call asks. `status`, `diff`,
+`log`, `show`, `ls-tree`, `ls-files`, `cat-file`, `rev-parse`, `rev-list`,
+`merge-base`, `show-ref` and `for-each-ref` run in another repository
+without asking, with that repository's hooks, `core.fsmonitor`, external
+diff, textconv, gpg programs, submodules and lazy fetches switched off. They
+still ask when its own config sets a `filter.*` driver or `core.worktree`
+(for `log` and `show` also a `merge.*.driver`), or a flag turns textconv,
+filters or submodules back on. `:env` may not
 change what an approved program loads or runs (`PATH`, `HOME`, `LD_*`,
 `NODE_OPTIONS`, `GIT_*`, `EDITOR`, `VISUAL`, `PAGER`, `XDG_CONFIG_HOME`,
 `RIPGREP_CONFIG_PATH`, …).
