@@ -1,0 +1,26 @@
+;; Xi's own permission rules for this repository — above ~/.config/xi/rules.edn
+;; and the built-in defaults, below the hardened tier.
+;; Syntax: docs/guide/rules.md, docs/guide/rules-reference.md
+{:type    :xi/rules
+ :version 1
+ :rules
+ [;; bb.edn is always trusted. The trust store is content-addressed, so every
+  ;; edit to bb.edn re-asked before the next `bb` task. Only an untrusted
+  ;; bb.edn is matched, and only a task bb.edn defines (`:task`; no `bb -e`,
+  ;; no script file). The lookahead leaves serve:restart/stop and the
+  ;; destructive patterns anywhere on the line to the default bb-trust ask;
+  ;; with a trusted bb.edn they reach the server-control and bash-guards asks
+  ;; as usual.
+  {:match  {:tool       :bb
+            :bb-trusted false
+            :task       {"bb" "*"}
+            :command    #"^(?!.*(?:serve:(?:restart|stop)|rm -r|chmod -R|chown -R|git push|kill|mkfs|dd if=|sudo ))"}
+   :action {:type :allow}}
+
+  ;; tmux, read-only subcommands only: inspecting the xi / xi-serve / xi-demo /
+  ;; xi-site sessions. A `#(` (a format's shell command) or a `;` argument
+  ;; (a chained tmux command) is left to the default ask.
+  {:match  {:tool    :sh
+            :cli     "tmux"
+            :command #"^(?!.*(?:#\(|;))tmux (?:-[LS] \S+ )?(?:list-sessions|ls|list-windows|lsw|list-panes|lsp|list-clients|lsc|has-session|has|capture-pane|capturep|display-message|display)(?: |$)"}
+   :action {:type :allow}}]}

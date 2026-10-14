@@ -715,7 +715,8 @@
     (let [state (atom {:rooms {"r" {:cwd "/tmp"}}})
           asks  (atom 0)
           code  "(sh \"tmux\" \"capture-pane\" \"-p\" \"-t\" \"xi-serve:watch\" \"-S\" \"-4\")"
-          ctx   {:get-state #(deref state) :room-id "r" :cwd (.cwd js/process)
+          ;; not the repo: its .xi/rules.edn allows capture-pane outright
+          ctx   {:get-state #(deref state) :room-id "r" :cwd "/tmp"
                  :dispatch! (fn [ev]
                               (when (= :ext.rules/add (:type ev))
                                 (swap! state (fn [st] (:state (rules-ext/add-rule st ev))))))
