@@ -3990,20 +3990,22 @@
                 :title "More actions"
                 :on {:click open-card-menu!}}
        (more-vertical-icon)])]]]
-    (list
-     (if session-id
-       ;; The trigger wraps the card so the card keeps its own click handler.
-       ;; data-session-id is how :sidebar/animate-leave finds the row.
-       (context-menu/context-menu-trigger
-        {:items (session-menu-items dispatch! (:web/session-menu-items state) card-data)
-         :class "project-card-trigger"
-         :attrs {:replicant/key session-id
-                 :data-session-id session-id
-                 :data-flip (str "s:" session-id)}}
-        card)
-       card)
-     (when buffers-open?
-       (session-buffer-rows dispatch! state card-data)))))
+    ;; No nil slot for closed buffers: Replicant (2025.12.1) misplaces keyed
+    ;; siblings that move past a nil, and later renders then patch the wrong
+    ;; card (see `sidebar-section`).
+    (cond-> (list
+             (if session-id
+               ;; The trigger wraps the card so the card keeps its own click handler.
+               ;; data-session-id is how :sidebar/animate-leave finds the row.
+               (context-menu/context-menu-trigger
+                {:items (session-menu-items dispatch! (:web/session-menu-items state) card-data)
+                 :class "project-card-trigger"
+                 :attrs {:replicant/key session-id
+                         :data-session-id session-id
+                         :data-flip (str "s:" session-id)}}
+                card)
+               card))
+      buffers-open? (concat [(session-buffer-rows dispatch! state card-data)]))))
 
 (defn- draft-chat-title
   "A parked draft chat's first non-blank prompt line."
@@ -4629,7 +4631,9 @@
 
 (defn- sidebar-section
   "Collapsible drawer group. Collapsed ids live in :web/sidebar-collapsed; a
-   collapsed group doesn't build its cards at all."
+   collapsed group doesn't build its cards at all. Its cards reorder, so
+   `children` must not leave nil slots between them: Replicant (2025.12.1)
+   then moves the wrong DOM node and its vdom no longer matches the DOM."
   [dispatch! collapsed {:keys [id label]} & children]
   (let [open? (not (contains? collapsed id))]
     (sidebar/sidebar-group
@@ -4645,7 +4649,7 @@
               [:span {:class ["sidebar-section-label"]} label]
               [:span {:class ["sidebar-section-chevron"]} (icon/icon {:icon-name :chevron-down :size :sm})]]}
      (when open?
-       [:div {:class ["sidebar-section-items"]} children]))))
+       [:div {:class ["sidebar-section-items"]} (remove nil? children)]))))
 
 (def ^:private mac?
   (boolean (re-find #"Mac|iPhone|iPad" (or (some-> js/navigator .-platform) ""))))
