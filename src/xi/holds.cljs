@@ -51,11 +51,14 @@
   (or (some-> room-id name) "default"))
 
 (defn owner
-  "Lease owner for a room: {:pid :room :label}."
+  "Lease owner for a room: {:pid :room :session :label}. The session id lets
+   a resumed session re-enter its lease after a server restart."
   [get-state room-id]
-  {:pid   js/process.pid
-   :room  (room-key room-id)
-   :label (when get-state (some-> (state/get-room (get-state) room-id) lease/room-label))})
+  (let [room (when get-state (state/get-room (get-state) room-id))]
+    {:pid     js/process.pid
+     :room    (room-key room-id)
+     :session (get-in room [:session :id])
+     :label   (some-> room lease/room-label)}))
 
 ;; Leases this process acquired, per room key: #{[hold-id key]} — so turn end
 ;; settles every resource the room took, not just its cwd's.

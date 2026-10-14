@@ -1,15 +1,17 @@
 (ns xi.holds.lease
   "Cross-process lease files — the storage behind xi.holds.
 
-   A lease is a JSON file `{pid room label acquired-at touched-at}` created
-   atomically (`open 'wx'`), so every Xi process on the machine (:7474, :7475,
-   standalone TUIs) sees the same holder. The owner is {:pid :room} — a room
-   key alone isn't unique across processes.
+   A lease is a JSON file `{pid room session boot label acquired-at
+   touched-at}` created atomically (`open 'wx'`), so every Xi process on the
+   machine (:7474, :7475, standalone TUIs) sees the same holder. The owner is
+   its session — stable across server restarts — falling back to {:pid :room}
+   for callers without one (a room key alone isn't unique across processes).
 
-   A lease is stale (stealable) when its process is dead, when its room's turn
-   is over (`:idle-at`, set by `mark-idle!`), or when the hold's own `stale?`
-   says so. Everything here is synchronous (the clj worker thread
-   settles leases itself) except `wait-acquire!` (main thread)."
+   A lease is stale (stealable) when its process is dead (or from an earlier
+   boot: pids get reused after a reboot), when its room's turn is over
+   (`:idle-at`, set by `mark-idle!`), or when the hold's own `stale?` says so.
+   Everything here is synchronous (the clj worker thread settles leases
+   itself) except `wait-acquire!` (main thread)."
   (:require ["node:fs" :as fs]
             ["node:path" :as node-path]))
 
@@ -46,10 +48,23 @@
   (try (js/process.kill pid 0) true
        (catch :default e (= "EPERM" (.-code e)))))
 
+(def boot-id
+  "This boot's id (Linux), nil elsewhere — tells a lease from before a reboot."
+  (try (.trim (fs/readFileSync "/proc/sys/kernel/random/boot_id" "utf8"))
+       (catch :default _ nil)))
+
+(defn holder-alive?
+  "The lease's process still runs: same boot, live pid."
+  [lease]
+  (and (or (nil? (:boot lease)) (nil? boot-id) (= (:boot lease) boot-id))
+       (pid-alive? (:pid lease))))
+
 (defn same-owner? [lease owner]
   (and (some? lease)
-       (= (:pid lease) (:pid owner))
-       (= (str (:room lease)) (str (:room owner)))))
+       (or (and (some? (:session owner))
+                (= (str (:session lease)) (str (:session owner))))
+           (and (= (:pid lease) (:pid owner))
+                (= (str (:room lease)) (str (:room owner)))))))
 
 (defn describe-holder
   "Human label for a lease holder."
@@ -68,18 +83,23 @@
   (let [now   (js/Date.now)
         lease (read-lease path)]
     (cond
+      ;; Re-entry adopts the caller's pid/room: after a restart the session's
+      ;; new room must be able to settle it.
       (same-owner? lease owner)
-      (do (write-lease! path (-> lease (dissoc :idle-at) (assoc :touched-at now)))
+      (do (write-lease! path (-> lease
+                                 (merge (select-keys owner [:pid :room :session :label]))
+                                 (assoc :boot boot-id :touched-at now)
+                                 (dissoc :idle-at)))
           {:status :acquired :fresh? false})
 
-      (and lease (pid-alive? (:pid lease)) (not (:idle-at lease)) (not (stale? lease)))
+      (and lease (holder-alive? lease) (not (:idle-at lease)) (not (stale? lease)))
       {:status :busy :holder lease}
 
       :else
       (do (when (fs/existsSync path)
             ;; stale or corrupt — re-read so we only clear what we judged
             (when (= lease (read-lease path)) (rm-lease! path)))
-          (if (create-lease! path (assoc owner :acquired-at now :touched-at now))
+          (if (create-lease! path (assoc owner :boot boot-id :acquired-at now :touched-at now))
             {:status :acquired :fresh? true}
             {:status :busy :holder (read-lease path)})))))
 

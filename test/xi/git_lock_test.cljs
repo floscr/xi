@@ -125,6 +125,35 @@
     (git! dir "add" "a.txt")
     (is (= :acquired (:status (lease/try-acquire! path A (stale? dir)))))))
 
+(deftest previous-boot-holder-is-stealable-test
+  (testing "a live pid from before a reboot is someone else's"
+    (let [dir  (tmp-repo)
+          path (lock/lease-path dir)]
+      (lease/try-acquire! path A (stale? dir))
+      (git! dir "add" "a.txt")
+      (fs/writeFileSync path (js/JSON.stringify
+                              (clj->js (assoc (lease/read-lease path) :boot "earlier-boot"))))
+      (when lease/boot-id
+        (is (= :acquired (:status (lease/try-acquire! path B (stale? dir)))))))))
+
+(deftest session-re-enters-after-restart-test
+  (let [dir  (tmp-repo)
+        path (lock/lease-path dir)
+        old  {:pid js/process.pid :room "old-room" :session "s1" :label "S"}
+        new  (assoc old :room "new-room")]
+    (lease/try-acquire! path old (stale? dir))
+    (git! dir "add" "a.txt")
+    (testing "same session, new room (a restart): re-entry, not a wait"
+      (is (= {:status :acquired :fresh? false}
+             (select-keys (lease/try-acquire! path new (stale? dir)) [:status :fresh?]))))
+    (testing "re-entry adopts the new room, so its turn end can settle it"
+      (is (= "new-room" (:room (lease/read-lease path))))
+      (holds/settle-room! :new-room dir)
+      (is (:idle-at (lease/read-lease path))))
+    (testing "another session still waits"
+      (lease/try-acquire! path new (stale? dir))
+      (is (= :busy (:status (lease/try-acquire! path (assoc B :session "s2") (stale? dir))))))))
+
 (deftest idle-holder-is-stealable-test
   (let [dir  (tmp-repo)
         path (lock/lease-path dir)]

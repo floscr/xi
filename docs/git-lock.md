@@ -75,15 +75,18 @@ Your own terminal git is not covered.
 
 ## The lease
 
-A JSON file at `<git-dir>/xi-staging.lock`: `{pid room label acquired-at
-touched-at idle-at}` (`xi.holds.lease`). Because it's a file, every Xi process on the
+A JSON file at `<git-dir>/xi-staging.lock`: `{pid room session boot label
+acquired-at touched-at idle-at}` (`xi.holds.lease`). Because it's a file, every Xi process on the
 machine (main server, personal agent, standalone TUIs) sees it. It is
 per-worktree because each worktree has its own git dir and index. The owner
-is `{pid, room}`.
+is the session, so a session resumed after a server restart re-enters its
+own lease (and adopts it for its new pid and room). Callers without a
+session match on `{pid, room}`.
 
 It becomes stale and can be taken over when:
 
-- the owning process is dead,
+- the owning process is dead, or the lease is from an earlier boot (`boot`,
+  Linux's boot id: pids get reused after a reboot),
 - the owning room's turn ended with the hold unsettled (`idle-at`, set at
   turn end and cleared when that room runs its next index-mutating op), or
 - nothing has been staged for 60 s (`STALE_CLEAN_MS`). This covers holders that
