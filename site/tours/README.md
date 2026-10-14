@@ -119,6 +119,25 @@ A tour with no model turn (the palette, navigate mode, buffers) keeps
 `fake-llm.edn` as `{}`; its `record.mjs` only connects and sends what the
 client would.
 
+- Send what the web client sends: a slash command in an open chat is
+  `:command/run`, but in a new chat it waits for the room and goes out as
+  `:input/submit`.
+- The autopilot pauses while the visitor is on an earlier session, and so
+  does every step that waits for an element (`waitText`, `click`). A slide
+  that opens earlier sessions on purpose (link hints) uses `wait` and `key`
+  steps after it.
+- The tour HOME binds `f` to link hints and gives zsh a plain prompt
+  (`scripts/tour-seed.mjs`).
+- A sub-agent the client spawns (the diff view's Ask) is matched by its
+  `:sub-id`, filled in like the join token.
+- Terminal tours: the player hands `:terminal/output` to xterm.js and gates
+  on the client's `terminal/attach`, so the recorder attaches at the size
+  the replay's terminal has (126×45 in the 1280×800 frame) and types a key
+  at a time. In replay a new chat's own route change overrides the server's
+  switch to the terminal, so the steps open it from the view menu
+  (`.buffer-menu-trigger`). The site serves xterm.js at `/vendor/xterm/`
+  (`xisite.build/tour-files`).
+
 ## Release videos
 
 Under a release's heading on `/changelog/`, a slideshow plays a few short

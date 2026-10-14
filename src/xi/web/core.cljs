@@ -3351,7 +3351,8 @@
                                 {:on-status on-connection-status
                                  :on-send   #(post! #js {:xiTour "sent" :type %})
                                  :on-done   #(@tape-done!)
-                                 :room-of   #(get-in (client) [:rooms %])})
+                                 :room-of   #(get-in (client) [:rooms %])
+                                 :intercept terminal/intercept})
                      ;; the visitor reading an earlier session holds the autopilot
                      visiting? #((:visit? transport) (get-in (client) [:web/route :session-id]))]
                  (when mirror?

@@ -49,7 +49,8 @@
 (defn fill-echoes
   "Put the replaying client's own values into the @@key@@ slots the bake left
    where the server echoed a value the recording client made up (:join-token,
-   which the client matches before it submits)."
+   which the client matches before it submits; :sub-id, a sub-agent it
+   spawned and looks up by that id)."
   [data echoes]
   (reduce-kv (fn [d k v] (str/replace d (str "@@" (name k) "@@") v)) data echoes))
 
@@ -72,7 +73,9 @@
   "A transport that replays `tape` (parsed JSON, keywordized). opts:
    :on-status (fn [connected?]), :on-done (fn []), :on-send (fn [type],
    for each gate-type send the client makes), :room-of (fn [room-id] → the
-   client's mirror of that room). Besides the ws-transport keys it returns
+   client's mirror of that room), :intercept (as ws-transport's: terminal
+   output goes to xterm.js, not the app). Besides the ws-transport keys
+   (:send! too, a terminal's raw sends: its attach can be a gate) it returns
    :mirror! (fn [type]): pass a gate another client of the same tape sent,
    so a client that only watches (the session list beside the chat) keeps
    pace with it; and :visit? (fn [session-id]): an earlier session the tape
@@ -81,7 +84,7 @@
    A join of a session (the visitor opening it from the sidebar) is no gate:
    an earlier one plays the tape's recorded answer (:visits); the tour's own
    room is re-sent from the client's mirror, which kept following the tape."
-  [tape {:keys [on-status on-done on-send room-of]}]
+  [tape {:keys [on-status on-done on-send room-of intercept]}]
   (let [frames  (:frames tape)
         gates   (set (:gates tape))
         visits  (into {} (map (juxt :id :frames)) (:visits tape))
@@ -101,7 +104,8 @@
               (when-let [ev (decode data)]
                 (when (= :room/joined (:type ev))
                   (swap! player assoc-in [:own (get-in ev [:room :session :id])] (:room-id ev)))
-                (dispatch! ev)))
+                (when-not (and intercept (intercept ev))
+                  (dispatch! ev))))
             (visit! [session-id]
               (js/setTimeout
                (fn []
@@ -133,8 +137,11 @@
                   (contains? gates sent-type)
                   (swap! player update-in [:sent sent-type] (fnil inc 0)))))
             (send! [event]
-              (when-let [token (:join-token event)]
-                (swap! player assoc-in [:echoes :join-token] token))
+              ;; ids the client makes up and the server echoes: the room's
+              ;; join token, a sub-agent it spawns (the diff view's Ask)
+              (doseq [k [:join-token :sub-id]]
+                (when-let [v (get event k)]
+                  (swap! player assoc-in [:echoes k] v)))
               (let [sent-type (event-type event)]
                 (if (and (= :room/join (:type event)) (:session-id event))
                   (visit! (:session-id event))
@@ -142,6 +149,7 @@
                         (on-send sent-type))
                       (gate! sent-type)))))]
       {:effects       {:ws/send (fn [_ event] (send! event))}
+       :send!         send!
        :mirror!       gate!
        :visit?        #(contains? visits %)
        :set-dispatch! (fn [dispatch!]

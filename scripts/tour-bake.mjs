@@ -9,10 +9,12 @@
  * by scripts/tour-record.mjs (see site/tours/README.md). Writes
  * site/public/tours/<tour>.json:
  *   - the tour HOME (/tmp/xi-tour-home) becomes /home/dev, so no local path
- *     ships; a frame still naming this repo or the real HOME aborts the bake
+ *     ships; a frame still naming this repo, the real HOME or your user name
+ *     aborts the bake
  *   - sends keep only their type (the client key never ships)
- *   - values the client makes up and the server echoes (:join-token) become
- *     @@join-token@@; the player fills in the replaying client's own
+ *   - values the client makes up and the server echoes (:join-token, a
+ *     spawned sub-agent's :sub-id) become @@join-token@@ / @@sub-id@@; the
+ *     player fills in the replaying client's own
  *   - times start at 0
  *   - :visits (what joining each earlier session answers) get the same path
  *     rewrite and leak check
@@ -43,7 +45,7 @@ const t0 = raw.frames.length ? raw.frames[0][0] : 0;
 
 const echoes = raw.frames
   .filter(([, dir]) => dir === "out")
-  .flatMap(([, , data]) => [...data.matchAll(/"~:(join-token)","([^"]+)"/g)])
+  .flatMap(([, , data]) => [...data.matchAll(/"~:(join-token|sub-id)","([^"]+)"/g)])
   .map(([, key, value]) => [value, `@@${key}@@`]);
 const fillEchoes = (data) => echoes.reduce((d, [value, slot]) => d.split(value).join(slot), data);
 
@@ -55,7 +57,8 @@ const frames = raw.frames.map(([t, dir, data]) =>
 const visits = (raw.visits || []).map(({ id, frames: answer }) =>
   ({ id, frames: answer.map((data) => data.split(TOUR_HOME).join("/home/dev")) }));
 
-const leaks = [REPO, os.homedir()];
+// your user name too: a terminal tour's shell output could show it
+const leaks = [REPO, os.homedir(), os.userInfo().username];
 const leaked = [...frames.map(([, , d]) => d), ...visits.flatMap((v) => v.frames)]
   .filter((d) => leaks.some((p) => d.includes(p)));
 if (leaked.length) {

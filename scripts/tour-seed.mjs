@@ -155,9 +155,18 @@ for (const s of seeds) {
 write(path.join(TOUR_HOME, ".config", "xi", "client-key"), TOUR_CLIENT_KEY + "\n");
 write(
   path.join(TOUR_HOME, ".config", "xi", "config.edn"),
-  '{:type :xi/config\n :version 1\n :projects {:browse ["~"]}}\n',
+  // link hints have no default key; the release tours show them on `f`
+  '{:type :xi/config\n :version 1\n :projects {:browse ["~"]}\n :keys {:web {:mode/navigate {"f" :hints/show}}}}\n',
 );
 write(path.join(TOUR_HOME, ".config", "xi", "rules.edn"), "{:type :xi/rules\n :version 1\n :rules []}\n");
+// The terminal tours' shell: a prompt without user or host name, no
+// end-of-line marks, no new-user wizard. zsh reads $ZDOTDIR/.zshrc, which
+// a system profile may point at $XDG_CONFIG_HOME/zsh (NixOS dotfiles do), else
+// $HOME/.zshrc.
+const zshrc = "PROMPT='%F{blue}%~%f $ '\nunsetopt PROMPT_SP\n";
+write(path.join(TOUR_HOME, ".zshrc"), zshrc);
+write(path.join(TOUR_HOME, ".config", "zsh", ".zshrc"), zshrc);
+write(path.join(TOUR_HOME, ".bashrc"), "PS1='\\w $ '\n");
 
 console.log(`Seeded tour HOME at ${TOUR_HOME}`);
 console.log(`  projects: ${Object.keys(projects).join(", ")}; ${seeds.length} earlier sessions`);

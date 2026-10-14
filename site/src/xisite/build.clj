@@ -34,12 +34,19 @@
 
 ;; The stage iframe's web client: the release :tour build (`bb tour:build` at
 ;; the repo root) and the web client's own stylesheet, framework theme and
-;; runtime, served at /tour/ (the default theme, not the site's /css/ui.css).
+;; runtime, served at /tour/ (the default theme, not the site's /css/ui.css),
+;; plus xterm.js for the terminal tours, at the absolute path the client
+;; loads it from (xi.web.terminal).
 (def tour-files
   {"/tour/main.js"       "../target/tour/main.js"
    "/tour/style.css"     "../resources/public/css/style.css"
    "/tour/theme.css"     "../resources/public/theme.css"
-   "/tour/ui-runtime.js" "../resources/public/ui-runtime.js"})
+   "/tour/ui-runtime.js" "../resources/public/ui-runtime.js"
+   "/vendor/xterm/xterm.js"          "../resources/public/vendor/xterm/xterm.js"
+   "/vendor/xterm/xterm.css"         "../resources/public/vendor/xterm/xterm.css"
+   "/vendor/xterm/addon-fit.js"      "../resources/public/vendor/xterm/addon-fit.js"
+   "/vendor/xterm/LICENSE"           "../resources/public/vendor/xterm/LICENSE"
+   "/vendor/xterm/LICENSE-addon-fit" "../resources/public/vendor/xterm/LICENSE-addon-fit"})
 
 (defn- write-page! [staging path html]
   (let [dir (if (= path "/") staging (str staging path))]
@@ -59,7 +66,9 @@
     (spit (str staging "/js/ui-runtime.js") (theme/js))
     (doseq [[uri src] tour-files]
       (if (fs/exists? src)
-        (fs/copy src (str staging uri) {:replace-existing true})
+        (let [dest (str staging uri)]
+          (fs/create-dirs (fs/parent dest))
+          (fs/copy src dest {:replace-existing true}))
         (println (str "warning: " src " is missing (run `bb tour:build`); the home page tour won't load"))))
     (when (fs/exists? (str docs/guide-dir "/img"))
       (fs/copy-tree (str docs/guide-dir "/img") (str staging "/docs/img") {:replace-existing true}))
