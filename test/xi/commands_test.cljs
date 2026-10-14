@@ -95,6 +95,24 @@
     (is (empty? (get-in state [:rooms "r" :ui :pending-images]))
         "pending images consumed")))
 
+(deftest a-command-line-carries-its-images
+  ;; /subagent with a photo: the attachments belong to the command, not to
+  ;; a main-chat prompt
+  (let [st (apply-events (with-room)
+                         {:type :ui/attach-image :room-id "r" :image {:data "p"}})
+        {:keys [state effects]} (handle st {:type :input/submit :room-id "r"
+                                            :text "/subagent look" :images [{:data "w"}]})
+        seen (atom nil)
+        run  (:command/run (commands/command-handlers
+                            [{:name "subagent" :handler (fn [_ ctx] (reset! seen ctx) nil)}]))]
+    (is (= [[:app/dispatch {:type :command/run :room-id "r" :name "subagent" :args "look"
+                            :images [{:data "p"} {:data "w"}]}]]
+           effects))
+    (is (= [{:data "p"}] (get-in state [:rooms "r" :ui :pending-images]))
+        "pending images stay until the command uses them")
+    (run st (second (first effects)))
+    (is (= [{:data "p"} {:data "w"}] (:images @seen)))))
+
 (deftest input-submit-images-only-sends-nil-text
   (let [st (apply-events (with-room)
                          {:type :ui/attach-image :room-id "r" :image {:data "x"}})

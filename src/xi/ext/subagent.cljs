@@ -318,14 +318,24 @@
   {:state (assoc-in st [:rooms room-id :ui :active-buffer] :subagents)})
 
 (defn- cmd-subagent
-  "/subagent <task>: spawn a sub-agent on the task. User-initiated, so no
-   spawn confirmation; runs while the agent is busy too."
-  [_st {:keys [room-id args]}]
-  (let [task (str/trim (or args ""))]
-    {:effects [[:app/dispatch
-                (if (str/blank? task)
-                  {:type :ui/status :room-id room-id :text "Usage: /subagent <task>"}
-                  {:type :subagent/spawn :room-id room-id :task task :prompt task})]]}))
+  "/subagent <task>: spawn a sub-agent on the task, with the images attached
+   to the command line (processed like a prompt's, then handed to the spawn).
+   User-initiated, so no spawn confirmation; runs while the agent is busy too."
+  [st {:keys [room-id args images]}]
+  (let [task  (str/trim (or args ""))
+        spawn (cond-> {:type :subagent/spawn :room-id room-id :task task :prompt task}
+                (str/blank? task) (assoc :label "Attachment"))]
+    (cond
+      (and (str/blank? task) (empty? images))
+      {:effects [[:app/dispatch {:type :ui/status :room-id room-id
+                                 :text "Usage: /subagent <task>"}]]}
+
+      (seq images)
+      {:state   (assoc-in st [:rooms room-id :ui :pending-images] [])
+       :effects [[:image/process {:room-id room-id :images images :event spawn}]]}
+
+      :else
+      {:effects [[:app/dispatch spawn]]})))
 
 ;; ── System prompt ─────────────────────────────────────────────────────────────
 

@@ -306,7 +306,7 @@
                    :buffer {:title "Events" :text text}})))
 
    :image/process
-   (fn [{:keys [dispatch!]} {:keys [room-id text images user]}]
+   (fn [{:keys [dispatch!]} {:keys [room-id text images user event]}]
      ;; Persist each attachment to disk so the agent's file tools and any
      ;; spawned subagents can reach it by path (they only see the inline base64
      ;; blocks otherwise). The path rides on each attachment map (:path) and is
@@ -325,10 +325,14 @@
                           (if-let [p (image/persist-file! att)]
                             (assoc att :path p)
                             att)))))]
-       (dispatch! (cond-> {:type :prompt/submit :room-id room-id :text text
-                           :images processed}
-                    ;; the sender survives the detour through the image fx
-                    user (assoc :user user)))))
+       ;; :event (e.g. /subagent's :subagent/spawn) receives the processed
+       ;; attachments instead of a :prompt/submit
+       (dispatch! (if event
+                    (assoc event :images processed)
+                    (cond-> {:type :prompt/submit :room-id room-id :text text
+                             :images processed}
+                      ;; the sender survives the detour through the image fx
+                      user (assoc :user user))))))
 
    :models/fetch
    (fn [{:keys [dispatch!]} {:keys [room-id]}]

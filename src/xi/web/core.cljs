@@ -2162,9 +2162,11 @@
       (and (= :input/submit (:type event))
            (not (:remote? event))
            (not (get-in state [:rooms (:room-id event) :agent :busy?]))
+           ;; a command's attachments are the command's (/subagent)
            (let [parsed (commands/parse-input (:text event))]
-             (or (= :prompt (:type parsed))
-                 (seq (:images event)))))
+             (and (not= :command (:type parsed))
+                  (or (= :prompt (:type parsed))
+                      (seq (:images event))))))
       (do
         (reset! auto-scroll? true)
         (reset! smooth-scroll-armed? true)

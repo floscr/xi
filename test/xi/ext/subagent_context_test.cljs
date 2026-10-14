@@ -67,7 +67,19 @@
            (:effects (run (base-state) {:room-id "r1" :args "  check the docs "}))))
     (is (= :ui/status
            (-> (run (base-state) {:room-id "r1" :args nil}) :effects first second :type))
-        "no task: usage")))
+        "no task: usage")
+    (testing "attached images are processed, then handed to the spawn"
+      (let [st  (assoc-in (base-state) [:rooms "r1" :ui :pending-images] [{:data "x"}])
+            res (run st {:room-id "r1" :args "what is this" :images [{:data "x"}]})]
+        (is (= [[:image/process {:room-id "r1" :images [{:data "x"}]
+                                 :event {:type :subagent/spawn :room-id "r1"
+                                         :task "what is this" :prompt "what is this"}}]]
+               (:effects res)))
+        (is (empty? (get-in (:state res) [:rooms "r1" :ui :pending-images])))
+        (is (= "Attachment"
+               (-> (run st {:room-id "r1" :images [{:data "x"}]})
+                   :effects first second :event :label))
+            "images alone are a task")))))
 
 (deftest run-queued-moves-the-prompt-into-a-sub-agent
   (let [run (get-in sa-ext/extension [:handlers :subagent/run-queued])

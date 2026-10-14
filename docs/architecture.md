@@ -220,7 +220,9 @@ plus every extension's `:commands`, merged by `xi.cli` (built-ins win on a
 name clash). `parse-input` routes editor text: `/name args` becomes
 `:command/run {:name :args}`, anything else `:prompt/submit`.
 `make-command-run` closes over the merged vector and calls the command's
-handler with `{:room-id :args :commands}`; `all-commands` feeds TUI
+handler with `{:room-id :args :commands :images}` (`:images`: attachments
+sent with the command line, unprocessed; `/subagent` runs them through
+`:image/process` with an `:event` to hand them on); `all-commands` feeds TUI
 completion and `/help`. A command handler is an ordinary pure handler; I/O
 goes through effects. In client mode commands are forwarded like any event,
 except `/quit` and `/reload`, which `ws-transport` handles locally. The user

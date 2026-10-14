@@ -448,8 +448,9 @@
         (= :command (:type parsed))
         (cond-> {:effects [[:app/dispatch (cond-> {:type :command/run :room-id room-id
                                                    :name (:name parsed) :args (:args parsed)}
-                                            client-id (assoc :client-id client-id)
-                                            user      (assoc :user user))]]}
+                                            client-id    (assoc :client-id client-id)
+                                            user         (assoc :user user)
+                                            (seq images) (assoc :images images))]]}
           model-change? (assoc :state st))
 
         ;; Prompt — possibly images-only (nil text → provider omits the
@@ -475,13 +476,17 @@
   (let [by-name (into {} (mapcat (fn [cmd]
                                    (map #(vector % cmd) (cons (:name cmd) (:aliases cmd)))))
                       commands)]
-    (fn command-run [st {:keys [room-id name args remote? client-id] :as ev}]
+    (fn command-run [st {:keys [room-id name args remote? client-id images] :as ev}]
       (when (state/get-room st room-id)
         (if-let [cmd (get by-name name)]
           ((:handler cmd) st {:room-id   room-id
                               :args      (when (seq args) args)
                               :commands  commands
                               :client-id client-id
+                              ;; attachments submitted with the command line
+                              ;; (unprocessed, incl. the room's pending ones);
+                              ;; a handler that uses them clears the pending
+                              :images    (not-empty images)
                               ;; who ran it: the sender the server stamped,
                               ;; else the sole user in the room, else this
                               ;; process' own user (state/event-user)
