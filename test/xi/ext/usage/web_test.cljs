@@ -19,9 +19,9 @@
   (testing "a short window counts down and shows the elapsed part"
     (is (= "Resets in 2h 48m · 2h 12m of 5h"
            (web/resets-note five-hour (usage/window-stats five-hour [] now)))))
-  (testing "a long window names the day it is on"
+  (testing "a long window counts down and names the day it is on"
     (let [n (web/resets-note seven-day (usage/window-stats seven-day [] now))]
-      (is (re-find #"^Resets .* · day 1 of 7$" n))))
+      (is (re-find #"^Resets in 6d 1h · .* · day 1 of 7$" n))))
   (testing "no stats: just the time"
     (is (re-find #"^Resets " (web/resets-note five-hour nil))))
   (testing "no reset time: nothing"

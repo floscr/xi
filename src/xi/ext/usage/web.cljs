@@ -83,7 +83,7 @@
           :else (str (usage/format-duration d) " ago"))))
 
 (defn resets-note
-  "\"Resets in 2h 48m · 2h 11m of 5h\" / \"Resets Oct 15 · day 1 of 7\" for a
+  "\"Resets in 2h 48m · 2h 11m of 5h\" / \"Resets in 6d 1h · Oct 15 · day 1 of 7\" for a
    window with a span; \"Resets 14:30\" without a period; nil without a time."
   [{:keys [resets-at period-ms]} stats]
   (let [end (iso->ms resets-at)]
@@ -91,7 +91,8 @@
       (nil? end) nil
       (nil? stats) (str "Resets " (fmt-date-time end))
       (= :day (:unit stats))
-      (str "Resets " (fmt-date end) " · day " (:day stats) " of " (:days stats))
+      (str "Resets in " (usage/format-duration (:remaining-ms stats))
+           " · " (fmt-date end) " · day " (:day stats) " of " (:days stats))
       :else
       (str "Resets in " (usage/format-duration (:remaining-ms stats))
            " · " (usage/format-duration (:elapsed-ms stats))
