@@ -1,0 +1,23 @@
+{
+  "gates": ["auth/hello", "cwd/agents-files", "room/join", "input/submit", "command/run", "subagent/spawn"],
+  "steps": [
+    { "wait": 900 },
+    { "click": "[data-nav=\"dir:/home/dev/acme-web\"] button[title=\"New chat\"]" },
+    { "wait": 300 },
+    { "type": "textarea[placeholder=\"Message…\"]", "text": "Cap the upload retry backoff at 30 s" },
+    { "wait": 200 },
+    { "enter": "textarea" },
+    { "waitText": "Capped at 30 s." },
+    { "wait": 700 },
+    { "type": "textarea[placeholder=\"Message…\"]", "text": "/diff" },
+    { "wait": 200 },
+    { "enter": "textarea" },
+    { "wait": 1600 },
+    { "clickText": "Math.min", "within": ".diff-tab .diff-line", "contains": true },
+    { "clickText": "Ask", "within": ".diff-sel-pill button", "contains": true, "after": 500 },
+    { "clickText": "Why was this added?", "within": ".diff-thread-chips button", "after": 700 },
+    { "waitText": "retries at least twice a minute." },
+    { "wait": 2500 }
+  ],
+  "variants": {}
+}

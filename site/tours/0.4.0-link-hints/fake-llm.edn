@@ -1,0 +1,4 @@
+;; Release 0.4.0 video, slide 2: link hints. No model turn: the slide opens the
+;; seeded earlier sessions from the keyboard (`f` is bound in the tour HOME's
+;; config.edn, scripts/tour-seed.mjs).
+{}

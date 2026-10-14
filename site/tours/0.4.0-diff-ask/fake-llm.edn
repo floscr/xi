@@ -1,0 +1,28 @@
+;; Release 0.4.0 video, slide 1: ask a sub-agent about diff lines. The agent
+;; caps the upload backoff (a real edit against the seeded acme-web), the diff
+;; opens, and the Ask on the new line runs a sub-agent turn: the rule keyed on
+;; the Ask prompt (xi.ext.subagent.handlers/ask-prompt). Format: xi.providers.fake.
+{:rules
+ [{:when {:prompt "asks about the selected lines"}
+   :reply [{:sleep 500}
+           {:text "Without it the delay "}
+           {:text "doubles on every retry "}
+           {:text "with no ceiling: "}
+           {:text "attempt 7 already waits 64 s.\n\n"}
+           {:sleep 300}
+           {:text "`Math.min` clamps it "}
+           {:text "to `maxMs` (30 s), "}
+           {:text "so a flaky connection "}
+           {:text "retries at least twice a minute."}]}]
+ :default
+ [{:text "I'll cap the delay in `backoffDelay`."}
+  {:tool "edit" :args {:path "src/upload.ts"
+                       :edits [{:oldText "  baseMs: number;\n}"
+                                :newText "  baseMs: number;\n  maxMs: number;\n}"}
+                               {:oldText "{ attempts: 8, baseMs: 500 }"
+                                :newText "{ attempts: 8, baseMs: 500, maxMs: 30_000 }"}
+                               {:oldText "export function backoffDelay(attempt: number, { baseMs }: RetryOptions): number {\n  return baseMs * 2 ** attempt;\n}"
+                                :newText "export function backoffDelay(attempt: number, { baseMs, maxMs }: RetryOptions): number {\n  return Math.min(maxMs, baseMs * 2 ** attempt);\n}"}]}}
+  {:sleep 300}
+  {:text "Capped at 30 s."}]
+ :side [{:text "Cap upload retry backoff"}]}

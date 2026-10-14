@@ -1,0 +1,16 @@
+{
+  "gates": ["auth/hello"],
+  "steps": [
+    { "wait": 1500 },
+    { "key": "f" },
+    { "wait": 600 },
+    { "key": "s l" },
+    { "wait": 2200 },
+    { "key": "Esc" },
+    { "key": "f" },
+    { "wait": 600 },
+    { "key": "g" },
+    { "wait": 3000 }
+  ],
+  "variants": {}
+}

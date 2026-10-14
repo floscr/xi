@@ -6,4 +6,6 @@
 ;;
 ;; {"0.4.0" [{:tour "0.4.0-palette" :title "Switch themes from the palette"}
 ;;           {:tour "0.4.0-navigate" :title "Navigate mode: j/k, gg, SPC"}]}
-{}
+{"0.4.0" [{:tour "0.4.0-diff-ask" :title "Ask about diff lines, answered inline"}
+          {:tour "0.4.0-link-hints" :title "Link hints: click anything from the keyboard"}
+          {:tour "0.4.0-terminal" :title "Terminals inside the web client"}]}

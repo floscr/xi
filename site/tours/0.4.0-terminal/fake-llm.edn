@@ -1,0 +1,4 @@
+;; Release 0.4.0 video, slide 3: a terminal in the web client. No model turn:
+;; `/term` opens the shell in a new acme-web chat (the tour HOME's .zshrc sets
+;; a plain prompt, scripts/tour-seed.mjs) and the recorder types into it.
+{}

@@ -1,0 +1,14 @@
+{
+  "gates": ["auth/hello", "cwd/agents-files", "room/join", "input/submit", "terminal/attach"],
+  "steps": [
+    { "wait": 900 },
+    { "click": "[data-nav=\"dir:/home/dev/acme-web\"] button[title=\"New chat\"]" },
+    { "wait": 300 },
+    { "type": "textarea[placeholder=\"Message…\"]", "text": "/term" },
+    { "wait": 300 },
+    { "enter": "textarea" },
+    { "clickText": "Chat", "within": ".buffer-menu-trigger", "after": 900 },
+    { "clickText": "zsh", "within": ".buffer-menu-item", "after": 400 }
+  ],
+  "variants": {}
+}
