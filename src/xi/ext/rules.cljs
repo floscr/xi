@@ -64,6 +64,8 @@
             ;; a network grant covers the host, not one exact URL
             :net (cond-> {:tool (:tool req)}
                    (:host req) (assoc :host (:host req)))
+            ;; a device grant covers what was asked (clock / location) only
+            :device {:tool :device :device (:device req)}
             (cond-> {:tool (:tool req)}
               ;; :other lumps every extension tool together — pin the exact
               ;; tool so [a]lways on spawn_subagent can't allow all of them.
@@ -196,6 +198,11 @@
     (cond
       (= :net tool)
       (str "Network request — approve?\n\nHost: " host "\n\n" command)
+
+      (= :device tool)
+      (if (= "location" (:device req))
+        "Read this device's location from your browser — approve?"
+        "Read this device's clock and time zone from your browser — approve?")
 
       (= :mcp tool)
       (str "MCP tool call — approve?\n\n"

@@ -17,6 +17,7 @@
   (:require [clojure.string :as str]
             [sci.core :as sci]
             [xi.api.core :as api-core]
+            [xi.api.device]
             [xi.api.dialog]
             [xi.api.fs]
             [xi.api.http]
@@ -60,7 +61,8 @@
 (def ^:private exposed-namespaces
   "The host namespaces a user extension may require. Pure xi helpers + the
    rules-gated capabilities. Nothing here performs an un-gated side effect."
-  {'xi.api.dialog  (sci/copy-ns xi.api.dialog  (sci/create-ns 'xi.api.dialog))
+  {'xi.api.device  (sci/copy-ns xi.api.device  (sci/create-ns 'xi.api.device))
+   'xi.api.dialog  (sci/copy-ns xi.api.dialog  (sci/create-ns 'xi.api.dialog))
    'xi.api.fs      (sci/copy-ns xi.api.fs      (sci/create-ns 'xi.api.fs))
    'xi.api.sessions (sci/copy-ns xi.api.sessions (sci/create-ns 'xi.api.sessions))
    'xi.api.sh      (sci/copy-ns xi.api.sh      (sci/create-ns 'xi.api.sh))

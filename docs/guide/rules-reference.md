@@ -41,7 +41,7 @@ Every field present must hold. An absent field is no constraint.
 
 | Field | Matches | Value |
 | --- | --- | --- |
-| `:tool` | The kind of call | `:write` `:edit` `:read` `:grep` `:find` `:ls` `:bash` `:clj` `:sh` `:bb` `:net` `:mcp` `:terminal` `:other`, or a set. `:sh` is one program run from the clj tool; `:bb` is the bb tool; `:net` is an extension's request; `:terminal` is opening a [terminal](web-client.md#terminals), with `:cli` and `:command` set. |
+| `:tool` | The kind of call | `:write` `:edit` `:read` `:grep` `:find` `:ls` `:bash` `:clj` `:sh` `:bb` `:net` `:device` `:mcp` `:terminal` `:other`, or a set. `:sh` is one program run from the clj tool; `:bb` is the bb tool; `:net` is an extension's request; `:device` is an extension reading the user's browser ([`xi.api.device`](extensions-reference.md#xiapidevice)); `:terminal` is opening a [terminal](web-client.md#terminals), with `:cli` and `:command` set. |
 | `:tool-name` | One tool by name | String (exact or glob), regex, or set. For extension tools, which are otherwise only `:other`. |
 | `:path` | The file a call targets, or every file a clj `(sh …)` call names | Regex (partial match) or glob string (full match: `*` one segment, `**` any, `**/` zero or more directories, `?` one char). Tested against the argument as given, the resolved absolute path, and that path with `$HOME` as `~`. Symlinks are resolved. For a `(sh …)` call every literal operand (a non-flag argument) must match in one of those forms; a call with no operand, a `--long` flag, a glued value (`-t/etc`) or a computed argument never matches. Like `:command`, its allow covers only the exact command. |
 | `:command` | The command line, or the clj code | Regex (partial) or substring. |
@@ -52,6 +52,7 @@ Every field present must hold. An absent field is no constraint.
 | `:extension` | A call made by an extension | `true` for any, or its id as string, glob, regex or set. Agent calls never match. |
 | `:extension-data` | `:own` | The target is inside the calling extension's data directory. |
 | `:host` | The host of an extension's request, or of a clj `(sh "curl" …)` call | String, glob, regex or set. For curl, every URL's host must match, and only a read-only request matches: each argument is an http(s) URL (no userinfo, no curl globs) or a safe flag (`-sSfLvikIg`, `-m N`, `-X <METHOD>`, `-o /dev/null`). A background command with shell syntax (`$`, quotes, `;`, `&`, `>` …) never matches. Like `:command`, its allow covers only the exact command. |
+| `:device` | What a `:device` request reads from the browser | `"clock"` (time, time zone, locale) or `"location"`; string, glob, regex or set. |
 | `:mcp-server` | An MCP server id | String or glob. |
 | `:mcp-tool` | An MCP tool name | String or glob; `"*"` for any. |
 | `:mcp-trusted` | `true` / `false` | Whether the server is trusted right now. |
@@ -159,6 +160,7 @@ list; inline rule maps may be mixed in.
 | `subagent-confirm` | Ask on every `spawn_subagent`. |
 | `extension-sh` | Ask on every program an extension runs. |
 | `net-confirm` | Ask on every host an extension requests. |
+| `device-confirm` | Ask on every read of the user's browser clock or location. |
 | `script-exec` | Ask before an interpreter runs inline code or a script (`bb -e`, `bb -f`, `node -e`, `python x.py`, `bun x.ts`, `clojure -M`, …); no `a`, refused when nobody can answer. `bb <task>`, `bun test`, `--version` and the like are free. |
 | `clj-sh` | For clj `(sh …)`: allow read-only `sed -n …p`, in-repo `mv` `cp` `mkdir` `touch` `rmdir`, and `rm` of git-tracked content (`repository-scripts`); allow `curl` to loopback with safe flags (`localhost-curl`, a `:host` rule); allow read-only programs with read-only arguments (a `:read-only` rule) and `rm` (`sh-read-only`); ask for everything else (`sh-confirm`). |
 

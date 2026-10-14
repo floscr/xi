@@ -690,6 +690,14 @@
    [{:match  {:tool :net}
      :action {:type :ask :options [:yes :no :always]}}]
 
+   ;; Reading the user's device from their browser (xi.api.device): the clock
+   ;; and time zone, or a location fix. Every read asks; [a]lways persists a
+   ;; session allow-rule pinned to extension + what was read, so a clock grant
+   ;; never covers the location.
+   ::device-confirm
+   [{:match  {:tool :device}
+     :action {:type :ask :options [:yes :no :always]}}]
+
    ;; Interpreters running inline code or a script file (`bb -f x.clj`,
    ;; `node -e …`, `python x.py`, `bun run x.ts`, …) — the interpreter reads the
    ;; script itself, so neither the read/write gates nor the path guards ever see
@@ -788,6 +796,7 @@
    ::subagent-confirm
    ::extension-sh
    ::net-confirm
+   ::device-confirm
    ::script-exec
    ::clj-sh])
 

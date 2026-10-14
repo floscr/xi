@@ -165,7 +165,7 @@ at once, so they survive a restart and handlers see them straight away.
 ## `xi.api.*`
 
 Every function takes `ctx` first and returns a promise, except where noted.
-Each call through `fs`, `sh`, `http` and `mcp` is a rules request tagged with
+Each call through `fs`, `sh`, `http`, `device` and `mcp` is a rules request tagged with
 the extension's id; with nobody to answer an ask, it is refused.
 
 ### `xi.api.fs`
@@ -194,6 +194,26 @@ when the extension unloads are stopped.
 `{:status :ok? :url :headers :body}`. Only `http(s)`; redirects are followed
 and `:url` is the final one. Request: `{:tool :net :host …}`.
 `url-encode` and `url-decode` are plain functions.
+
+### `xi.api.device`
+
+Reads the device of the user in the chat, from the browser they have it
+open in: the user who sent the latest prompt, a visible tab first.
+
+| Function | Resolves to |
+| --- | --- |
+| `(clock ctx opts)` | `{:epoch-ms :local :weekday :time-zone :utc-offset-minutes :locale}`; `:local` is like `"2026-10-13T14:03:12+02:00"`. |
+| `(location ctx opts)` | `{:latitude :longitude :accuracy-m :altitude-m :altitude-accuracy-m :heading-deg :speed-mps :timestamp}`, without the keys the device doesn't know. |
+
+`opts` is optional: `:room-id` (default the tool call's chat; an `:fx` passes
+it from its payload) and `:timeout-ms` (default 60 s). `location` also takes
+`:high-accuracy?` and `:max-age-ms` (accept a fix that old). Request:
+`{:tool :device :device "clock"}` or `"location"`, asked by default.
+
+The browser asks for its own location permission too, and gives a location
+only on an `https` page or `localhost`. The promise rejects with the reason
+when the user says no, no browser has the chat open, or the browser doesn't
+answer in time.
 
 ### `xi.api.mcp`
 

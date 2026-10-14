@@ -22,6 +22,7 @@
         [xi.ext.clj :as clj-tool]
         [xi.ext.clj-surgeon :as clj-surgeon]
         [xi.ext.commit :as commit]
+        [xi.ext.device :as device]
         [xi.ext.diff.core :as diff]
         [xi.ext.events :as events]
         [xi.ext.extensions :as extensions]
@@ -49,6 +50,7 @@
         [xi.providers.zen :as zen]]
        :browser
        [[xi.ext.canvas-review.web :as canvas-review-web]
+        [xi.ext.device.web :as device-web]
         [xi.ext.diff.web :as diff-web]
         [xi.ext.file-view.web :as file-view-web]
         [xi.ext.home.web :as home-web]
@@ -160,6 +162,9 @@
       ;; to browsers; the user extensions themselves load after the built-ins
       ;; (xi.ext.user/install!, called in xi.cli next to mcp/install!)
       user-ext/server-extension
+      ;; asks a chat's browser for its clock / location (xi.device), for
+      ;; xi.api.device
+      device/extension
       mcp/create
       ;; registry-only: tracks processes spawned by clj's `process` namespace
       ;; (/ps, /kill, room keep-alive); spawning is gated in clj-tool
@@ -201,4 +206,6 @@
       home-web/extension
       ;; the /usage page (readings polled by xi.server.usage), plus its
       ;; dashboard card
-      usage-web/extension]))
+      usage-web/extension
+      ;; answers the server's clock / location queries (xi.device)
+      device-web/extension]))

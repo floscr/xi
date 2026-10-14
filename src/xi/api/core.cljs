@@ -126,8 +126,8 @@
   [{:keys [cwd] :as ctx}]
   (or cwd (paths/extension-data-dir (caller ctx))))
 
-(defn- describe [{:keys [tool path command host mcp-server mcp-tool]}]
-  (str (name tool) " " (or host command path
+(defn- describe [{:keys [tool path command host mcp-server mcp-tool device]}]
+  (str (name tool) " " (or host command path device
                              (when mcp-server (str mcp-server "/" mcp-tool)))))
 
 (defn gate!
