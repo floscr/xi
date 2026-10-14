@@ -9,8 +9,13 @@
                :extension-data :own      ; path inside that extension's data dir (opt-in)
                :host \"api.example.com\"   ; :net request host, or every host a read-only
                                          ; :sh curl requests (glob/exact, regex, set)
+               :device \"location\"        ; what a :device request reads from the browser:
+                                         ; \"clock\" or \"location\" (glob/exact, regex, set)
                :read-only true           ; a :sh call whose argv parses as read-only for
                                          ; its program (xi.rules.readonly; false = doesn't)
+               :task {\"bb\" [\"*\" \"!deploy\"]} ; runner → task patterns (glob, regex,
+                                         ; `!` negates); a task its project file defines
+                                         ; (xi.rules.tasks)
                :path #\"\\.sh$\"          ; regex OR glob string on the target path, or on
                                          ; every literal operand of a :sh command
                :command #\"\\brm\\b\"       ; regex OR substring on the bash command
@@ -154,6 +159,13 @@
     :else        (boolean (some->> (curl/request-hosts req)
                                    (every? #(match-tool-name spec %))))))
 
+(defn- match-device
+  "`:device` spec (string glob/exact, regex, set) against what an extension's
+   `:device` request reads (xi.api.device); other requests read nothing."
+  [spec device]
+  (or (nil? spec)
+      (and (some? device) (match-tool-name spec device))))
+
 (defn- match-read-only
   "`:read-only true|false`: whether a `:sh` call's argv parses as read-only for
    its program (xi.rules.readonly). An unknown program, shell syntax or no argv
@@ -161,6 +173,31 @@
   [spec req]
   (or (nil? spec)
       (= (boolean spec) (readonly/request-read-only? req))))
+
+(defn- match-task-patterns
+  "Task patterns (one string or regex, or a collection of them) against a task
+   name: some pattern matches and no `!`-negated one does. Only negations
+   means any other task: `[\"!deploy\"]`."
+  [spec task]
+  (let [ps       (if (or (string? spec) (regexp? spec)) [spec] spec)
+        negated? #(and (string? %) (str/starts-with? % "!"))
+        hit?     #(match-name % task)]
+    (boolean (and (coll? ps)
+                  (let [pos (remove negated? ps)]
+                    (or (empty? pos) (some hit? pos)))
+                  (not-any? #(hit? (subs % 1)) (filter negated? ps))))))
+
+(defn- match-task
+  "`:task {runner patterns}` against `:runner-task` (store-computed by
+   xi.rules.tasks, only when a `:task` rule is in play): the call runs a task
+   its project file defines, through a listed runner, and the patterns match."
+  [spec req]
+  (or (nil? spec)
+      (let [{:keys [runner task]} (:runner-task req)]
+        (and (map? spec)
+             (some? task)
+             (contains? spec runner)
+             (match-task-patterns (get spec runner) task)))))
 
 (defn- match-extension
   "Extension spec for xi.api.* requests: `true` → any extension, else like
@@ -376,8 +413,10 @@
          (match-extension  (:extension m)  (:extension req))
          (match-extension-data (:extension-data m) req)
          (match-host       (:host m)       req)
+         (match-device     (:device m)     (:device req))
          (match-cli        (:cli m)        (:cli req))
          (match-read-only  (:read-only m)  req)
+         (match-task       (:task m)       req)
          (match-path*      (:path m)       req)
          (match-command    (:command m)    (:command req))
          (match-substring  (:repo m)       (:repo req))
@@ -484,11 +523,17 @@
 
 (defn arg-scoped?
   "True when `rule` constrains a `:sh` command's arguments (`:command`,
-   `:path`, `:within`, `:tracked`, `:host` or `:read-only`), so its allow
-   covers only the exact command."
+   `:path`, `:within`, `:tracked`, `:host`, `:read-only` or `:task`), so its
+   allow covers only the exact command."
   [rule]
   (boolean (some #(some? (get-in rule [:match %]))
-                 [:command :path :within :tracked :host :read-only])))
+                 [:command :path :within :tracked :host :read-only :task])))
+
+(defn needs-task?
+  "True when any rule carries a `:task` matcher, so the store should resolve
+   the task a call runs and populate `:runner-task`."
+  [rules]
+  (boolean (some #(some-> (canonical %) :match :task) rules)))
 
 (defn needs-extension-data?
   "True when any rule carries an `:extension-data` matcher."

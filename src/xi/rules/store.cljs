@@ -28,6 +28,7 @@
             [xi.rules :as rules]
             [xi.rules.defaults :as defaults]
             [xi.rules.nodes :as nodes]
+            [xi.rules.tasks :as tasks]
             [xi.paths :as paths]
             [xi.user-config :as user-config]
             [xi.util :as util]
@@ -566,7 +567,7 @@
    (`:node`), :operands-within-repo? (`:within`), :operands-tracked?
    (`:tracked`, a delay), :xi-rules-file?, :xi-config-file?, :own-data?
    (`:extension-data`), :chained?, :bb-trusted?, :mcp-trusted?, :installed?,
-   :user-record (map `:user` rules)."
+   :runner-task (`:task`), :user-record (map `:user` rules)."
   [req ruleset]
   (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
                    (paths/real-resolve (:effective-cwd req) (str (:path req))))]
@@ -597,6 +598,8 @@
       (assoc :user-record (user-record (:user req)))
       (and (= :sh (:tool req)) (:cli req) (rules/needs-installed? ruleset))
       (assoc :installed? (program-installed? (:effective-cwd req) (:cli req)))
+      (rules/needs-task? ruleset)
+      (assoc :runner-task (tasks/request-task req))
       (and (= :bb (:tool req)) (rules/needs-bb-trusted? ruleset))
       (assoc :bb-trusted? (bb-trust/trusted? (:effective-cwd req)))
       (and (= :mcp (:tool req)) (:mcp-server req) (rules/needs-mcp-trusted? ruleset))

@@ -431,16 +431,22 @@
    variant: `?` and `[` could glob-expand into a flag."
   #"[A-Za-z0-9._~:/@+,=%\- ]+")
 
+(defn request-argv
+  "The argv a decision request runs: its literal `:argv` (a clj `(sh …)`
+   call), or its `:command` split on spaces when it has no shell syntax; nil
+   otherwise. Also used by xi.rules.tasks."
+  [{:keys [argv command]}]
+  (or argv
+      (when (and command (re-matches plain-command-re (str command)))
+        (str/split (str/trim command) #" +"))))
+
 (defn request-read-only?
-  "For a `:sh` decision request: true / false when its argv — the literal
-   `:argv` of a clj `(sh …)` call, or a background `:command` split on
-   spaces when it has no shell syntax — is / isn't a read-only call of a
-   program in `clis`; nil when there is nothing to judge (another tool, an
-   unknown program, shell syntax, or no argv)."
-  [{:keys [tool argv command]}]
+  "For a `:sh` decision request: true / false when its argv (`request-argv`)
+   is / isn't a read-only call of a program in `clis`; nil when there is
+   nothing to judge (another tool, an unknown program, shell syntax, or no
+   argv)."
+  [{:keys [tool] :as req}]
   (when (= :sh tool)
-    (when-let [argv (or argv
-                        (when (and command (re-matches plain-command-re (str command)))
-                          (str/split (str/trim command) #" +")))]
+    (when-let [argv (request-argv req)]
       (when (contains? clis (first argv))
         (nil? (violation argv))))))
