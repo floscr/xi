@@ -5,9 +5,6 @@
      --bg-0..2, --fg-0..2, --accent, --border-0..2, --radius-*, --shadow-*.
      Only what the framework has no token for lives here. */
   --accent-soft: color-mix(in srgb, var(--accent) 10%, transparent);
-  --code-bg: #0f1218;
-  --code-fg: #d6dae3;
-  --code-border: #1f2430;
 
   --sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -176,12 +173,27 @@ a.btn:hover { text-decoration: none; }
 
 /* ---------- code blocks ---------- */
 
+/* Always dark (data-theme="dark", xisite.markdown): a custom theme's dark
+   page colour, its dark --border-* / --fg-* (resolved above) and its
+   --theme-hl-<token>-dark (xi.web.theme syntax-colors); the fallbacks are
+   the stock dark palette. */
 .code-block {
-  background: var(--code-bg);
-  border: 1px solid var(--code-border);
+  --code-border: var(--border-0);
+  --hl-comment:  var(--theme-hl-comment-dark, #6c7486);
+  --hl-string:   var(--theme-hl-string-dark, #a8d8a1);
+  --hl-symbol:   var(--theme-hl-symbol-dark, #8ec5ff);
+  --hl-number:   var(--theme-hl-number-dark, #f4b8d1);
+  --hl-keyword:  var(--theme-hl-keyword-dark, #c9b8ff);
+  --hl-builtin:  var(--theme-hl-builtin-dark, #7fd3f5);
+  --hl-fn:       var(--theme-hl-fn-dark, #ffd37a);
+  --hl-var:      var(--theme-hl-var-dark, #e6e9f0);
+  --hl-operator: var(--theme-hl-operator-dark, #c3cad6);
+  --hl-punct:    var(--theme-hl-punct-dark, #8a93a5);
+  background: var(--theme-bg-0-dark, #0f1218);
+  border: var(--code-border);
   border-radius: var(--radius-md);
   overflow: hidden;
-  color: var(--code-fg);
+  color: var(--fg-1);
 }
 
 .code-block pre {
@@ -192,25 +204,25 @@ a.btn:hover { text-decoration: none; }
 }
 .code-block .code-title {
   padding: 9px 18px;
-  border-bottom: 1px solid var(--code-border);
+  border-bottom: var(--code-border);
   font-family: var(--mono);
   font-size: 12.5px;
-  color: var(--code-fg);
+  color: var(--fg-1);
   opacity: 0.8;
 }
 .code-block code { font-size: inherit; background: none; padding: 0; }
-.code-block pre.code-output { border-top: 1px solid var(--code-border); }
+.code-block pre.code-output { border-top: var(--code-border); }
 
-.hl-comment { color: #6c7486; font-style: italic; }
-.hl-string { color: #a8d8a1; }
-.hl-symbol { color: #8ec5ff; }
-.hl-number { color: #f4b8d1; }
-.hl-keyword { color: #c9b8ff; }
-.hl-builtin { color: #7fd3f5; }
-.hl-fn { color: #ffd37a; }
-.hl-var { color: #e6e9f0; }
-.hl-operator { color: #c3cad6; }
-.hl-punct { color: #8a93a5; }
+.hl-comment { color: var(--hl-comment); font-style: italic; }
+.hl-string { color: var(--hl-string); }
+.hl-symbol { color: var(--hl-symbol); }
+.hl-number { color: var(--hl-number); }
+.hl-keyword { color: var(--hl-keyword); }
+.hl-builtin { color: var(--hl-builtin); }
+.hl-fn { color: var(--hl-fn); }
+.hl-var { color: var(--hl-var); }
+.hl-operator { color: var(--hl-operator); }
+.hl-punct { color: var(--hl-punct); }
 
 /* ---------- home ---------- */
 
