@@ -500,6 +500,18 @@
   (when (seq (str cli-sid))
     (find-claude-transcript cwd cli-sid)))
 
+(defn rename-session!
+  "Set a saved session's name on disk. Only :xi sessions carry metadata to
+   hold one; true when written."
+  [summary name]
+  (when (and (= :xi (:source summary)) (:filepath summary))
+    (let [fp   (:filepath summary)
+          data (js/JSON.parse (fs/readFileSync fp "utf8"))]
+      (aset data "name" name)
+      (fs/writeFileSync fp (js/JSON.stringify data nil 2) "utf8")
+      (invalidate-listing-cache!)
+      true)))
+
 (defn delete-session!
   "Delete a session by its summary. For :xi sessions the referenced Claude
    transcript is removed too (else it resurfaces as a standalone Claude card),

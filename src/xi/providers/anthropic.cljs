@@ -408,7 +408,9 @@
      the login warm-up) load nothing; they carry their whole instruction in
      the prompt. They are never resumed, so their transcript isn't written
      either: the warm-up runs on the live config dir and would otherwise
-     leave a `Reply with: ok` session in ~/.claude/projects."
+     leave a `Reply with: ok` session in ~/.claude/projects.
+   :no-thinking? turns extended thinking off (Haiku titles: thinking cost
+   ~4k output tokens and half a minute for three names)."
   [opts append-sys]
   (cond-> {:cwd (or (:cwd opts) (.cwd js/process))
            :settingSources (if (:no-tools? opts) [] ["user"])
@@ -424,6 +426,7 @@
     append-sys (assoc :systemPrompt {:type "preset" :preset "claude_code"
                                      :append append-sys})
     (:effort opts) (assoc :effort (:effort opts))
+    (:no-thinking? opts) (assoc :thinking {:type "disabled"})
     (:resume-session-id opts) (assoc :resume (:resume-session-id opts))))
 
 (defn- runner-prompt

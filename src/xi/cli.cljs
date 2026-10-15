@@ -813,6 +813,17 @@ See docs/guide/command-line.md for the full reference.")
   (.on js/process "uncaughtException"
        (fn [err] (log-crash! "uncaughtException" err))))
 
+(defn- saved-conversation
+  "A saved session's cwd and messages, for xi.naming's :session/suggest-name;
+   a project dir that is gone falls back to the server's (the CLI won't spawn
+   in it)."
+  [session-id]
+  (when-let [s (or (session/find-session-by-id session-id)
+                   (session/find-personal-agent-session-by-id session-id))]
+    {:cwd      (let [cwd (:cwd s)]
+                 (if (and cwd (fs/existsSync cwd)) cwd (.cwd js/process)))
+     :messages (session/conversation s)}))
+
 (defn- start-server!
   "Host rooms over WS. Unless --headless, a local TUI joins through the same WS
    path as any remote client."
@@ -889,7 +900,8 @@ See docs/guide/command-line.md for the full reference.")
                                                     (compaction/create-fx providers)
                                                     (naming/create-fx providers
                                                      {:make-config-dir!   session/make-throwaway-config-dir!
-                                                      :remove-config-dir! session/remove-config-dir!})
+                                                      :remove-config-dir! session/remove-config-dir!
+                                                      :session-conversation saved-conversation})
                                                     (quick-replies/create-fx providers
                                                      {:make-config-dir!   session/make-throwaway-config-dir!
                                                       :remove-config-dir! session/remove-config-dir!})

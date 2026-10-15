@@ -98,6 +98,9 @@ projects** in the sidebar opens the project list (`/projects`).
   all from Recent" / Prune skip it. "Unpin session" in the same menu undoes
   it. A chat is never pinned and hidden at once: pinning a hidden chat shows
   it again, hiding a pinned chat unpins it.
+- **Rename a chat.** "Rename…" in the same menu. While you type, Claude
+  Haiku suggests three names from the conversation; click one, or press Tab
+  to cycle them into the field. **More** asks for three new ones.
 - **Prune.** "Prune all" in the sidebar (`:sessions/prune`) runs every
   cleanup at once: mark all as read, hide all from Recent (pinned chats are
   skipped), close idle rooms.

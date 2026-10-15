@@ -1,5 +1,6 @@
 (ns xi.naming-test
   (:require [cljs.test :refer [deftest is testing async]]
+            [clojure.string :as str]
             [xi.agent :as agent]
             [xi.commands :as commands]
             [xi.core.events :as events]
@@ -126,3 +127,76 @@
   (let [st (:state (handle (with-room {:id "s1" :name "Resumed Session"})
                            {:type :session/title-generated :room-id "r" :title "Generated"}))]
     (is (= "Resumed Session" (get-in st [:rooms "r" :session :name])))))
+
+
+;; ── Rename + suggestions ─────────────────────────────────────────────────────
+
+(deftest name-set-is-a-real-name
+  (let [st (:state (handle (with-room) {:type :prompt/submit :room-id "r" :text "fix it"}))
+        st (:state (handle st {:type :session/name-set :room-id "r" :name "My Name"}))
+        st (:state (handle st {:type :session/title-generated :room-id "r" :title "Model Title"}))]
+    (testing "a title turn landing after the rename never overwrites it"
+      (is (= "My Name" (get-in st [:rooms "r" :session :name]))))))
+
+(deftest suggestion-input-is-bounded
+  (is (nil? (naming/suggestion-input [])))
+  (testing "a short session goes in whole"
+    (is (= "user: fix the parser\n\nassistant: done"
+           (naming/suggestion-input [{:role "user" :text "fix the parser"}
+                                     {:role "assistant" :text "done"}]))))
+  (testing "a long one keeps the opening and the latest messages"
+    (let [msgs  (into [{:role "user" :text "the opening request"}]
+                      (for [i (range 200)]
+                        {:role (if (even? i) "assistant" "user")
+                         :text (str "message " i " " (apply str (repeat 1000 "x")))}))
+          input (naming/suggestion-input msgs)]
+      (is (str/starts-with? input "user: the opening request\n\n…"))
+      (is (str/includes? input "message 199"))
+      (is (< (count input) 5000)))))
+
+(deftest parse-suggestions-strips-numbering-and-labels
+  (is (= [{:name "Parser Fix" :style :short}
+          {:name "Fixing the Flaky Parser Tests" :style :descriptive}
+          {:name "Parser: Flaky Tests" :style :topic}]
+         (naming/parse-suggestions
+          "1. \"Parser Fix.\"\n\n2) descriptive: Fixing the Flaky Parser Tests\n- Parser: Flaky Tests\n4. Extra"))))
+
+(deftest suggest-prompt-excludes-shown-names
+  (is (str/includes? (naming/suggest-prompt "x" ["A" "B"]) "Don't repeat any of these: A; B."))
+  (is (not (str/includes? (naming/suggest-prompt "x" []) "Don't repeat"))))
+
+(deftest suggest-name-replies-to-the-client
+  (async done
+    (let [prompts (atom [])
+          fx (naming/create-fx
+              {:anthropic {:start-turn!
+                           (fn [opts]
+                             (swap! prompts conj opts)
+                             {:promise (js/Promise.resolve
+                                        {:result-text "Parser Fix\nFixing the Parser Bug\nParser: Bugfix"
+                                         :usage {:input_tokens 900 :cache_read_input_tokens 300
+                                                 :output_tokens 20}
+                                         :cost 0.0012})})}}
+              {:session-conversation
+               (fn [sid]
+                 (is (= "s1" sid))
+                 {:cwd "/tmp" :messages [{:role "user" :text "fix the parser"}]})})]
+      ((:session/suggest-name fx)
+       {:dispatch! (fn [{:keys [names stats] :as ev}]
+                     (is (= {:type :session/name-suggested :client-id "c1" :session-id "s1"}
+                            (select-keys ev [:type :client-id :session-id])))
+                     (is (= ["Parser Fix" "Fixing the Parser Bug" "Parser: Bugfix"] (map :name names)))
+                     (is (= {:input-tokens 1200 :output-tokens 20 :cost 0.0012}
+                            (select-keys stats [:input-tokens :output-tokens :cost])))
+                     (is (true? (:no-tools? (first @prompts))))
+                     (is (str/includes? (:prompt (first @prompts)) "Don't repeat any of these: Old"))
+                     (done))}
+       {:client-id "c1" :session-id "s1" :exclude ["Old"]}))))
+
+(deftest suggest-name-without-conversation-replies-empty
+  (let [evs (atom [])
+        fx  (naming/create-fx {:anthropic {:start-turn! (fn [_] (throw (js/Error. "no turn")))}}
+                              {:session-conversation (fn [_] nil)})]
+    ((:session/suggest-name fx) {:dispatch! #(swap! evs conj %)}
+                                {:client-id "c1" :session-id "s1"})
+    (is (= [[]] (map :names @evs)))))

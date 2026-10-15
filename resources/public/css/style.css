@@ -897,6 +897,89 @@ body {
   padding: var(--size-3);
 }
 
+/* ---- Rename dialog (views/rename-dialog) ---- */
+.rename-dialog { max-width: 30rem; }
+.rename-body { display: flex; flex-direction: column; gap: var(--size-2); }
+
+/* A light sweeps the field's outline while suggestions load. */
+.rename-field { position: relative; }
+.rename-field::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  padding: 1px;
+  background: linear-gradient(90deg, transparent 0%, var(--accent) 35%,
+              color-mix(in srgb, var(--accent) 40%, #7dd3fc) 50%, transparent 70%) 0 0 / 250% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+.rename-field--thinking::after { opacity: 1; animation: rename-sweep 1.4s linear infinite; }
+@keyframes rename-sweep { to { background-position: -250% 0; } }
+
+.rename-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--size-2);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.rename-more { gap: var(--size-1); text-transform: none; letter-spacing: 0; color: var(--accent); }
+
+.rename-suggestions { display: flex; flex-direction: column; gap: 6px; }
+.rename-suggestion {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0 var(--size-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+  color: inherit;
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+  animation: rename-in 0.3s ease both;
+  transition: border-color 0.15s, background 0.15s;
+}
+.rename-suggestion:nth-child(2) { animation-delay: 60ms; }
+.rename-suggestion:nth-child(3) { animation-delay: 120ms; }
+.rename-suggestion:hover { border-color: color-mix(in srgb, var(--fg-2) 40%, var(--border-0)); }
+.rename-suggestion--on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-1));
+}
+.rename-suggestion-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rename-suggestion-style { font-size: var(--font-xs); color: var(--fg-2); }
+.rename-suggestion .keycap { font-size: 10px; }
+@keyframes rename-in { from { opacity: 0; transform: translateY(3px); filter: blur(2px); } }
+
+.rename-skeleton {
+  height: 2.6rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--bg-1), color-mix(in srgb, var(--fg-2) 18%, var(--bg-1)), var(--bg-1)) 0 0 / 300% 100%;
+  animation: rename-shimmer 1.3s linear infinite;
+}
+.rename-skeleton:nth-child(2) { width: 86%; }
+.rename-skeleton:nth-child(3) { width: 70%; }
+@keyframes rename-shimmer { to { background-position: -300% 0; } }
+
+.rename-status { min-height: 1.2em; font-size: var(--font-xs); color: var(--fg-2); padding-left: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rename-field--thinking::after, .rename-skeleton, .rename-suggestion { animation: none; }
+}
+
 /* ---- Keyboard shortcuts dialog ----
    Laid out like the calendar's agenda list (theme.css .cal-agenda-*): one
    group per keymap layer under an uppercase header, hairline between groups,

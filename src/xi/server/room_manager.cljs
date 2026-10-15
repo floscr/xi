@@ -20,7 +20,8 @@
    policy subsumes it): a room is closed when its last client leaves or
    disconnects while the agent is idle, or when a turn ends with no
    clients attached."
-  (:require [xi.buffers :as buffers]
+  (:require [clojure.string :as str]
+            [xi.buffers :as buffers]
             [xi.core.state :as state]
             [xi.ext.subagent.handlers :as sa]
             [xi.user-state :as user-state]
@@ -394,6 +395,32 @@
                   (into (map (fn [rid] [:session/new {:room-id rid :save-current? false}]))
                         swap))}))
 
+(defn- session-rename
+  "Roomless: rename a session — on disk in the reply effect, and in its live
+   room (whose clients see :session/name-set), so a later sync keeps it."
+  [st {:keys [session-id name]}]
+  (when-let [name (some-> name str/trim not-empty util/session-title)]
+    (let [rid (room-for-session st session-id)]
+      {:effects (cond-> [[:session/rename-reply {:session-id session-id :name name}]]
+                  rid (conj [:app/dispatch {:type :session/name-set :room-id rid :name name}]))})))
+
+(defn- session-suggest-name
+  "Roomless: model-suggested names for a session (xi.naming), sent back to
+   the asking client only by session-name-suggested. `exclude`: names the
+   client already shows."
+  [_st {:keys [client-id session-id exclude]}]
+  (when (string? session-id)
+    {:effects [[:session/suggest-name
+                {:client-id client-id :session-id session-id
+                 :exclude (vec (take 12 (filter string? exclude)))}]]}))
+
+(defn- session-name-suggested
+  [_st {:keys [client-id session-id names stats]}]
+  {:effects [[:ws/send-to {:client-id client-id
+                           :event {:type :session/name-suggestion
+                                   :session-id session-id
+                                   :names names :stats stats}}]]})
+
 (defn- session-mark-read
   "Roomless: record a session as seen by the sender; the authoritative count is
    recomputed in the reply effect."
@@ -507,6 +534,9 @@
    :dismissed/toggle       dismissed-toggle
    :pinned/toggle          pinned-toggle
    :session/delete         session-delete
+   :session/rename         session-rename
+   :session/suggest-name   session-suggest-name
+   :session/name-suggested session-name-suggested
    :session/mark-read      session-mark-read
    :session/buffer-close   session-buffer-close
    :rooms/prune            rooms-prune

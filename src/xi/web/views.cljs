@@ -32,6 +32,7 @@
             [xi.web.dashboard :as dashboard]
             [xi.web.theme :as ctheme]
             [xi.web.keymap :as keymap]
+            [xi.web.rename :as rename]
             [xi.web.palette-items :as palette-items]
             [xi.web.terminal :as terminal]
             [xi.web.tool-views :as tool-views]
@@ -3862,15 +3863,18 @@
 
 (defn- session-menu-items
   "ui.context-menu entries for a session card: the extensions' items,
-   pin/unpin, hide/show in Recent (where the caller opts in via :dismissable?),
-   copy session ID, and Delete. Hiding is gated on idle; Delete is always
-   offered (the server keeps a busy room alive, see
+   rename, pin/unpin, hide/show in Recent (where the caller opts in via
+   :dismissable?), copy session ID, and Delete. Hiding is gated on idle;
+   Delete is always offered (the server keeps a busy room alive, see
    room_manager/session-delete)."
-  [dispatch! ext-items {:keys [session-id dismissed? pinned? dismissable? busy? has-dialog?] :as card}]
+  [dispatch! ext-items {:keys [session-id name dismissed? pinned? dismissable? busy? has-dialog?] :as card}]
   (let [idle? (not (or busy? has-dialog?))]
     (cond-> (mapv #(ext-session-menu-item dispatch! card %) ext-items)
       true
-      (conj {:label    (if pinned? "Unpin session" "Pin session")
+      (conj {:label    "Rename…"
+             :icon     :edit
+             :on-click #(dispatch! {:type :rename/open :session-id session-id :name name})}
+            {:label    (if pinned? "Unpin session" "Pin session")
              :icon     :bookmark
              :on-click #(dispatch! {:type :pinned/toggle :session-id session-id})})
       (and dismissable? idle?)
@@ -6420,6 +6424,102 @@
               (appearance-theme-pane state dispatch!)))]
          (appearance-footer state dispatch! tab))))))
 
+(def ^:private suggestion-style-label
+  {:short "short" :descriptive "descriptive" :topic "topic"})
+
+(defn- rename-suggestions
+  "The suggestion rows (skeletons while loading); the row Tab fills next
+   carries the key hint."
+  [dispatch! {:keys [names status selected]}]
+  (let [loading? (= :loading status)
+        tab-idx  (rename/next-index selected (count names) 1)]
+    (into [:div {:class ["rename-suggestions"]}]
+          (if loading?
+            (for [i (range 3)]
+              [:div {:class ["rename-skeleton"] :replicant/key (str "sk" i)}])
+            (map-indexed
+             (fn [i {:keys [name style]}]
+               [:button {:class ["rename-suggestion"
+                                 (when (= i selected) "rename-suggestion--on")]
+                         :replicant/key (str "s-" name)
+                         :type "button"
+                         :on {:mousedown (fn [^js e] (.preventDefault e))
+                              :click (fn [_] (dispatch! {:type :rename/pick :idx i}))}}
+                [:span {:class ["rename-suggestion-name"]} name]
+                (if (= i tab-idx)
+                  (keycaps "Tab")
+                  [:span {:class ["rename-suggestion-style"]}
+                   (suggestion-style-label style)])])
+             names)))))
+
+(defn- rename-status [{:keys [status stats]}]
+  [:div {:class ["rename-status"]}
+   (case status
+     :loading "Reading the conversation… keep typing, nothing waits on it"
+     :failed  "No suggestions this time. ↻ More tries again"
+     (when stats (rename/stats-line stats)))])
+
+(defn- rename-dialog
+  "Rename a session (:web/rename, xi.web.rename). Suggestions start with the
+   dialog and fill in under the field; Tab cycles them into it."
+  [state dispatch!]
+  (when-let [{:keys [name status names] :as r} (:web/rename state)]
+    (let [close!   (fn [] (dispatch! {:type :rename/close}))
+          blank?   (str/blank? name)
+          loading? (= :loading status)]
+      (dialog/dialog-overlay
+       {:on-close close!
+        :class "rename-overlay"
+        :attrs {:replicant/key "rename-dialog"}}
+       (dialog/dialog-panel {:class "rename-dialog"}
+         (dialog/dialog-header {}
+           [:h3 "Rename session"]
+           [:button {:class ["icon-btn" "icon-btn--sm"]
+                     :title "Close"
+                     :on {:click (fn [_] (close!))}}
+            (icon/icon {:icon-name :x :size :md})])
+         (dialog/dialog-body {:class "rename-body"}
+           [:div {:class ["rename-field" (when loading? "rename-field--thinking")]}
+            (form/form-input
+             {:value name
+              :placeholder "Session name"
+              :attrs {:value name
+                      :maxlength util/session-title-max
+                      :aria-label "Session name"
+                      :replicant/on-mount (fn [{:replicant/keys [^js node]}]
+                                            (.focus node)
+                                            (.select node))
+                      :on {:input   (fn [^js e]
+                                      (dispatch! {:type :rename/set :name (.. e -target -value)}))
+                           :keydown (fn [^js e]
+                                      (case (.-key e)
+                                        "Enter" (when-not blank?
+                                                  (.preventDefault e)
+                                                  (dispatch! {:type :rename/save}))
+                                        "Tab"   (when (seq names)
+                                                  (.preventDefault e)
+                                                  (dispatch! {:type :rename/tab
+                                                              :dir (if (.-shiftKey e) -1 1)}))
+                                        nil))}}})]
+           [:div {:class ["rename-label"]}
+            [:span "Suggestions"]
+            (button/button {:variant :ghost :size :sm
+                            :class "rename-more"
+                            :disabled loading?
+                            :on-click (fn [_] (dispatch! {:type :rename/more}))}
+              (icon/icon {:icon-name :refresh :size :sm})
+              "More")]
+           (rename-suggestions dispatch! r)
+           (rename-status r))
+         (dialog/dialog-footer {}
+           [:span {:class ["flex-1"]}]
+           (button/button {:variant :ghost :size :sm :on-click (fn [_] (close!))}
+             "Cancel")
+           (button/button {:variant :primary :size :sm
+                           :disabled blank?
+                           :on-click (fn [_] (dispatch! {:type :rename/save}))}
+             "Save")))))))
+
 (def ^:private fixed-shortcuts
   [["Ctrl+K / Cmd+K" "Command palette"]
    ["Alt" "Palette: hold for key badges, Alt + badge key picks the row"]
@@ -6519,5 +6619,6 @@
      (command-palette state dispatch!)
      (appearance-dialog state dispatch!)
      (keys-dialog state dispatch!)
+     (rename-dialog state dispatch!)
      (auth-request-banner state dispatch!)
      (auth-overlay state))))

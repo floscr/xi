@@ -291,7 +291,7 @@
   (let [s (when (string? s) (str/lower-case (str/trim s)))]
     (if (and s (re-matches user-id-re s)) s root-user)))
 
-(def ^:private session-title-max 60)
+(def session-title-max 60)
 
 (defn session-title
   "Derive a session-list title from a session's first user message text.

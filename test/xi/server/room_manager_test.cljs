@@ -656,3 +656,33 @@
            (let [back (apply-events state {:type :client/update :client-id "c2" :buffer nil})]
              (:effects (rm/client-update-presence back {:type :client/update :client-id "c2" :buffer nil}))))
         "nil means back on the chat")))
+
+
+;; ── :session/rename ──────────────────────────────────────────────────────────
+
+(deftest session-rename-persists-and-updates-the-live-room
+  (let [st (apply-events (server-state-with-room)
+                         {:type :room/create :room-id "r2"
+                          :room {:created 200 :cwd "/x" :session {:id "s2"}}})
+        {:keys [effects]} (handle st {:type :session/rename :session-id "s2"
+                                      :name "  Parser Fix  "})]
+    (is (= [[:session/rename-reply {:session-id "s2" :name "Parser Fix"}]
+            [:app/dispatch {:type :session/name-set :room-id "r2" :name "Parser Fix"}]]
+           effects))))
+
+(deftest session-rename-without-live-room-only-persists
+  (is (= [[:session/rename-reply {:session-id "gone" :name "X"}]]
+         (:effects (handle (server-state-with-room)
+                           {:type :session/rename :session-id "gone" :name "X"})))))
+
+(deftest session-rename-ignores-blank-names
+  (is (empty? (:effects (handle (server-state-with-room)
+                                {:type :session/rename :session-id "s" :name "   "})))))
+
+(deftest name-suggestion-goes-to-the-asking-client
+  (is (= [[:ws/send-to {:client-id "c1"
+                        :event {:type :session/name-suggestion :session-id "s"
+                                :names [{:name "T" :style :short}] :stats {:ms 1}}}]]
+         (:effects (handle (server-state-with-room)
+                           {:type :session/name-suggested :client-id "c1" :session-id "s"
+                            :names [{:name "T" :style :short}] :stats {:ms 1}})))))

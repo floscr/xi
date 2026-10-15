@@ -102,7 +102,7 @@
   #{:room/create :room/close :room/attach :room/leave
     :dismissed/changed :pinned/changed
     :user/ext-set
-    :session/deleted
+    :session/deleted :session/renamed
     :read-state/changed
     :prompt/submit :agent/session-init :agent/turn-end :client/disconnect
     :ui/dialog-open :ui/dialog-response
@@ -119,7 +119,8 @@
    the socket (they would let it install a user's record, rewrite presence, or
    register as another identity)."
   #{:user/loaded :user/ui-set :user/ext-set :room/presence
-    :client/connect :client/disconnect :server/started})
+    :client/connect :client/disconnect :server/started
+    :session/name-suggested})
 
 (def ^:private pre-join-types
   "Event types a client may send before joining a room."
@@ -133,6 +134,7 @@
     :cwd/agents-files :session/content-search :session/web-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
     :dismissed/toggle :pinned/toggle :session/delete :session/mark-read
+    :session/rename :session/suggest-name
     :session/buffer-close
     :rooms/prune :chat/start})
 
@@ -632,6 +634,13 @@
                                (session/find-personal-agent-session-by-id session-id))]
           (session/delete-session! summary))
         (dispatch! {:type :session/deleted}))
+
+      :session/rename-reply
+      (fn [{:keys [dispatch!]} {:keys [session-id name]}]
+        (when-let [summary (or (session/find-session-by-id session-id)
+                               (session/find-personal-agent-session-by-id session-id))]
+          (session/rename-session! summary name))
+        (dispatch! {:type :session/renamed}))
 
       :session/mark-read-reply
       (fn [{:keys [dispatch!]} {:keys [session-id user]}]

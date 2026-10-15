@@ -29,6 +29,7 @@
             [xi.web.block-menu :as block-menu]
             [xi.web.buffer-views :as buffer-views]
             [xi.web.terminal :as terminal]
+            [xi.web.rename :as rename]
             [xi.web.theme :as theme]
             [xi.web.user-state :as user-state]
             [xi.web.cache :as cache]
@@ -1105,6 +1106,7 @@
          keymap/handlers
          themes-handlers
          dashboard/handlers
+         rename/handlers
          {:room/new              room-new
           :home/start            home-start
           :home/set-cwd          (fn [st {:keys [cwd]}] {:state (assoc st :web/home-cwd cwd)})

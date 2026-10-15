@@ -19,7 +19,10 @@
        ─► one-shot turn in a temp config dir; on end, remove the temp dir +
           dispatch :session/title-generated
      :session/title-generated
-       ─► replaces the nil/provisional [:session :name] with the model title."
+       ─► replaces the nil/provisional [:session :name] with the model title.
+
+   A rename (:session/name-set) sets a real name; :session/suggest-name
+   titles an existing session from an excerpt of its conversation."
   (:require [clojure.string :as str]
             [xi.core.state :as state]
             [xi.util :as util]))
@@ -32,6 +35,33 @@
        "coding-session list. Reply with the title only — no preamble.\n\n"))
 
 (def ^:private MAX_INPUT 2000)
+
+(def suggestion-styles
+  "The kinds of name :session/suggest-name asks for, one per line, in order."
+  [:short :descriptive :topic])
+
+(def ^:private SUGGEST_PROMPT
+  (str "Suggest three titles for the coding session excerpted below, for a "
+       "session list. Title Case, no surrounding quotes, no trailing "
+       "punctuation. Exactly three lines, in this order:\n"
+       "1. short: 2-4 words\n"
+       "2. descriptive: 5-8 words\n"
+       "3. topic: the project area, a colon, then the specifics, 3-6 words "
+       "(e.g. Auth: Flaky Test Fix)\n"
+       "Reply with the three titles only, one per line, without the numbers "
+       "or labels."))
+
+(defn suggest-prompt
+  "The :session/suggest-name prompt for an excerpt; `exclude` lists names
+   already shown, so \"More\" brings new ones."
+  [input exclude]
+  (str SUGGEST_PROMPT
+       (when (seq exclude)
+         (str "\nDon't repeat any of these: " (str/join "; " exclude) "."))
+       "\n\n" input))
+
+(def ^:private SUGGEST_HEAD 1500)
+(def ^:private SUGGEST_TAIL 2500)
 
 (defn clean-title
   "Tidy a model-produced title: first non-blank line, strip wrapping quotes
@@ -47,6 +77,41 @@
             (str/replace #"[.!?,;:]+$" "")
             str/trim
             (as-> t (when (seq t) (subs t 0 (min 60 (count t))))))))))
+
+(defn parse-suggestions
+  "The titles in a :session/suggest-name reply, numbering and style labels
+   stripped, as [{:name :style}] (styles from `suggestion-styles` by line)."
+  [s]
+  (->> (str/split-lines (or s ""))
+       (map #(-> %
+                 (str/replace #"^\s*(?:[-*•]|\d+[.)])\s*" "")
+                 (str/replace #"(?i)^(?:short|descriptive|topic)\s*[:—-]\s*" "")
+                 clean-title))
+       (remove nil?)
+       distinct
+       (take (count suggestion-styles))
+       (map (fn [style n] {:name n :style style}) suggestion-styles)
+       vec))
+
+(defn suggestion-input
+  "A bounded excerpt of a session's messages (xi.session/conversation shape)
+   for :session/suggest-name: the opening message plus as much of the latest
+   exchange as fits, so a long session costs no more than a short one. nil
+   without messages."
+  [messages]
+  (when (seq messages)
+    (let [clip (fn [s n]
+                 (let [s (str/trim (str s))]
+                   (if (> (count s) n) (str (subs s 0 n) "…") s)))
+          line (fn [{:keys [role text]} n] (str role ": " (clip text n)))
+          tail (loop [ms (reverse (rest messages)) acc () n 0]
+                 (let [l (some-> (first ms) (line 600))]
+                   (if (and l (<= (+ n (count l)) SUGGEST_TAIL))
+                     (recur (rest ms) (cons l acc) (+ n (count l)))
+                     acc)))]
+      (str/join "\n\n" (concat [(line (first messages) SUGGEST_HEAD)]
+                               (when (< (count tail) (dec (count messages))) ["…"])
+                               tail)))))
 
 ;; ── Handlers (pure) ──────────────────────────────────────────────────────────
 
@@ -123,58 +188,98 @@
     (get-in room [:session :name])
     (assoc-in [:agent :title-provisional?] true)))
 
+(defn- name-set
+  "A name the user chose (rename, xi.server.room-manager/session-rename): a
+   real name, so a title turn still in flight never overwrites it."
+  [st {:keys [room-id name]}]
+  (when (and (state/get-room st room-id) (string? name))
+    {:state (-> st
+                (assoc-in [:rooms room-id :session :name] name)
+                (update-in [:rooms room-id :agent] dissoc :title-provisional?))}))
+
 (def handlers
-  {:session/title-generated title-generated})
+  {:session/title-generated title-generated
+   :session/name-set        name-set})
 
 ;; ── Effects (contained impure edge) ──────────────────────────────────────────
 
+(defn turn-stats
+  "What a finished side turn cost, for the rename dialog's status line:
+   {:model :input-tokens :output-tokens :cost :ms}. Input counts cached
+   prompt tokens too."
+  [result ms]
+  (let [{:keys [input_tokens output_tokens cache_read_input_tokens
+                cache_creation_input_tokens]} (:usage result)]
+    {:model         TITLE_MODEL
+     :input-tokens  (+ (or input_tokens 0) (or cache_read_input_tokens 0)
+                       (or cache_creation_input_tokens 0))
+     :output-tokens (or output_tokens 0)
+     :cost          (:cost result)
+     :ms            ms}))
+
+(defn- side-turn!
+  "One throwaway turn on `provider` (TITLE_MODEL, no tools, no thinking, in a
+   temp CLAUDE_CONFIG_DIR). Resolves to {:text :stats}, or nil when the turn
+   failed, errored or was aborted — an errored turn's result text is the
+   failure notice (auth expired, billing, …), never a title."
+  [provider {:keys [make-config-dir! remove-config-dir!]} cwd prompt]
+  (let [chunks     (atom [])
+        started    (js/Date.now)
+        config-dir (when make-config-dir! (make-config-dir!))
+        cleanup!   (fn []
+                     (when (and remove-config-dir! config-dir)
+                       (remove-config-dir! config-dir)))
+        {:keys [promise]}
+        ((:start-turn! provider)
+         (cond-> {:model   TITLE_MODEL
+                  :prompt  prompt
+                  :cwd     cwd
+                  ;; Title generation is a throwaway text-only turn: skip
+                  ;; the MCP tool bridge so this concurrent CLI subprocess
+                  ;; doesn't race the first user turn's tool handshake
+                  ;; (which surfaced as "No such tool available").
+                  :no-tools? true
+                  :no-thinking? true
+                  :on-text (fn [t] (swap! chunks conj t))}
+           config-dir (assoc :env {"CLAUDE_CONFIG_DIR" config-dir})))]
+    (-> promise
+        (.then (fn [result]
+                 (cleanup!)
+                 (when-not (or (:aborted result) (:is-error result) (:fatal-error result))
+                   {:text  (or (not-empty (:result-text result))
+                               (not-empty (str/join @chunks)))
+                    :stats (turn-stats result (- (js/Date.now) started))})))
+        (.catch (fn [_err] (cleanup!) nil)))))
+
 (defn create-fx
-  "Title-generation effect. Runs a throwaway one-shot turn against a cheap
-   model through the claude provider, pointed at a temp CLAUDE_CONFIG_DIR so the
-   CLI session it leaves behind lands in a temp dir (never ~/.claude/projects).
-   The temp dir is created via `make-config-dir!` and torn down via
-   `remove-config-dir!` once the turn ends."
-  [providers {:keys [make-config-dir! remove-config-dir!]}]
+  "Title effects, each a throwaway one-shot turn against a cheap model through
+   the claude provider (`side-turn!`). The temp CLAUDE_CONFIG_DIR is created
+   via `make-config-dir!` and torn down via `remove-config-dir!`.
+   :session/suggest-name reads a saved session through `session-conversation`
+   (session-id → {:cwd :messages}, xi.session/conversation shape); without it
+   there are never suggestions."
+  [providers {:keys [session-conversation] :as opts}]
   {:session/generate-title
    (fn [{:keys [dispatch! state]} {:keys [room-id text]}]
      (when-let [provider (get providers :anthropic)]
-       (let [cwd        (get-in state [:rooms room-id :cwd])
-             chunks     (atom [])
-             input      (subs text 0 (min MAX_INPUT (count text)))
-             config-dir (when make-config-dir! (make-config-dir!))
-             cleanup!   (fn []
-                          (when (and remove-config-dir! config-dir)
-                            (remove-config-dir! config-dir)))
-             {:keys [promise]}
-             ((:start-turn! provider)
-              (cond-> {:model   TITLE_MODEL
-                       :prompt  (str TITLE_PROMPT_PREFIX input)
-                       :cwd     cwd
-                       ;; Title generation is a throwaway text-only turn: skip
-                       ;; the MCP tool bridge so this concurrent CLI subprocess
-                       ;; doesn't race the first user turn's tool handshake
-                       ;; (which surfaced as "No such tool available").
-                       :no-tools? true
-                       :on-text (fn [t] (swap! chunks conj t))}
-                config-dir (assoc :env {"CLAUDE_CONFIG_DIR" config-dir})))]
-         (-> promise
-             (.then
-              (fn [result]
-                (cleanup!)
-                (when-not (:aborted result)
-                  ;; An errored turn's result text is the failure notice
-                  ;; (auth expired, billing, …), not a title — never let it
-                  ;; name the session. Dispatching a nil title clears the
-                  ;; pending guard so a retry can regenerate.
-                  (let [raw   (when-not (or (:is-error result)
-                                            (:fatal-error result))
-                                (or (not-empty (:result-text result))
-                                    (not-empty (str/join @chunks))))
-                        title (clean-title raw)]
+       (-> (side-turn! provider opts (get-in state [:rooms room-id :cwd])
+                       (str TITLE_PROMPT_PREFIX (subs text 0 (min MAX_INPUT (count text)))))
+           ;; A nil title clears the pending guard so a retry can regenerate.
+           (.then (fn [res]
                     (dispatch! {:type :session/title-generated
-                                :room-id room-id :title title})))))
-             (.catch (fn [_err]
-                       (cleanup!)
-                       (dispatch! {:type :session/title-generated
-                                   :room-id room-id :title nil})
-                       nil))))))})
+                                :room-id room-id :title (clean-title (:text res))}))))))
+
+   :session/suggest-name
+   (fn [{:keys [dispatch!]} {:keys [client-id session-id exclude]}]
+     (let [reply!   (fn [res]
+                      (dispatch! {:type :session/name-suggested :client-id client-id
+                                  :session-id session-id
+                                  :names (parse-suggestions (:text res))
+                                  :stats (:stats res)}))
+           provider (get providers :anthropic)
+           {:keys [cwd messages]} (when session-conversation
+                                    (session-conversation session-id))
+           input    (suggestion-input messages)]
+       (if (and provider input)
+         (.then (side-turn! provider opts cwd (suggest-prompt input exclude)) reply!)
+         (reply! nil))))})
