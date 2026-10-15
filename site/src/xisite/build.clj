@@ -1,6 +1,7 @@
 (ns xisite.build
   "Static build: render every route into a staging directory."
   (:require [babashka.fs :as fs]
+            [clojure.string :as str]
             [xisite.docs :as docs]
             [xisite.pages :as pages]
             [xisite.theme :as theme]))
@@ -48,6 +49,27 @@
    "/vendor/xterm/LICENSE"           "../resources/public/vendor/xterm/LICENSE"
    "/vendor/xterm/LICENSE-addon-fit" "../resources/public/vendor/xterm/LICENSE-addon-fit"})
 
+(defn- content-hash [file]
+  (let [digest (.digest (java.security.MessageDigest/getInstance "SHA-256")
+                        (fs/read-all-bytes file))]
+    (subs (apply str (map #(format "%02x" %) digest)) 0 10)))
+
+(defn- stamp-assets!
+  "Cache keys: point each page's local .css/.js at `?v=<content hash>`, so a
+   changed file is a new URL. public/.htaccess caches those for good and makes
+   everything else (pages, tour tapes) revalidate."
+  [staging]
+  (doseq [page (fs/glob staging "**.html")]
+    (let [html    (slurp (str page))
+          stamped (str/replace html #"(src|href)=\"(/[^\"?#]+\.(?:css|js))\""
+                               (fn [[match attr uri]]
+                                 (let [file (str staging uri)]
+                                   (if (fs/exists? file)
+                                     (str attr "=\"" uri "?v=" (content-hash file) "\"")
+                                     match))))]
+      (when-not (= html stamped)
+        (spit (str page) stamped)))))
+
 (defn- write-page! [staging path html]
   (let [dir (if (= path "/") staging (str staging path))]
     (fs/create-dirs dir)
@@ -72,4 +94,5 @@
         (println (str "warning: " src " is missing (run `bb tour:build`); the home page tour won't load"))))
     (when (fs/exists? (str docs/guide-dir "/img"))
       (fs/copy-tree (str docs/guide-dir "/img") (str staging "/docs/img") {:replace-existing true}))
+    (stamp-assets! staging)
     (println (str "Built " (count pages) " pages into " staging "/"))))

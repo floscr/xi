@@ -1,0 +1,11 @@
+# Caching (Apache on Uberspace). Pages, tour tapes and anything else without a
+# cache key revalidate on every load: the ETag makes an unchanged file a cheap
+# 304, and a deploy shows up without a hard refresh. The build stamps local
+# .css/.js references with ?v=<content hash> (xisite.build/stamp-assets!), so a
+# changed file is a new URL and those keep for a year.
+<IfModule mod_headers.c>
+  Header set Cache-Control "no-cache"
+  <If "%{QUERY_STRING} =~ /(^|&)v=/">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </If>
+</IfModule>
