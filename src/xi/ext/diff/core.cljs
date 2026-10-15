@@ -116,7 +116,7 @@
                         :text "No files edited this session."})
             (open! "Session Edits"
                    (git/session-diff-text-by-repo
-                    paths #(git/session-base-commit % created)))))
+                    cwd paths #(git/session-base-commit % created)))))
 
         ;; Like session-edits, but diffed against HEAD (the last commit)
         ;; instead of the session base — so in a long session with in-between
@@ -128,7 +128,7 @@
             (dispatch! {:type :ui/status :room-id room-id
                         :text "No files edited this session."})
             (open! "Session Changes (since last commit)"
-                   (git/session-diff-text-by-repo paths (constantly "HEAD")))))
+                   (git/session-diff-text-by-repo cwd paths (constantly "HEAD")))))
 
         ;; commit:<sha> → the diff of that single commit (git show). Used by the
         ;; web "session commits" bar to open one commit's changes.

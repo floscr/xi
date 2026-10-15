@@ -58,7 +58,7 @@
         (let [paths (fx/session-edited-paths room cwd)]
           {:title "Session Changes (uncommitted)"
            :text  (when (seq paths)
-                    (git/session-diff-text-by-repo paths (constantly "HEAD")))})
+                    (git/session-diff-text-by-repo cwd paths (constantly "HEAD")))})
 
         "staged"   {:title "Staged Changes"   :text (:ok (git/git-diff-out cwd ["diff" "--staged"]))}
         "unstaged" {:title "Unstaged Changes" :text (:ok (git/git-diff-out cwd ["diff"]))}

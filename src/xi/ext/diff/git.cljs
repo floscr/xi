@@ -36,17 +36,26 @@
       (catch :default e {:err (str e)}))
     (git-out cwd args)))
 
+(defn- prefix-args
+  "git diff flags that put `prefix` (see path-prefix) in front of every path
+   in the headers, after the usual a/ and b/."
+  [prefix]
+  (when (seq prefix)
+    [(str "--src-prefix=a/" prefix) (str "--dst-prefix=b/" prefix)]))
+
 (defn- no-index-diff
   "Synthesize a diff for a single untracked file via diff --no-index. stdout
    is read regardless of exit code — --no-index exits 1 on diffs. Honors
    *diff-engine* so untracked files render with the chosen renderer too."
-  [cwd f]
-  (let [opts (cond-> #js {:cwd cwd}
-               (= difft/*diff-engine* :difft) (doto (aset "env" (difft/difft-env))))
-        p (js/Bun.spawnSync
-           #js ["git" "diff" "--no-index" "--" "/dev/null" f]
-           opts)]
-    (.toString (.-stdout p) "utf-8")))
+  ([cwd f] (no-index-diff cwd f nil))
+  ([cwd f prefix]
+   (let [opts (cond-> #js {:cwd cwd}
+                (= difft/*diff-engine* :difft) (doto (aset "env" (difft/difft-env))))
+         p (js/Bun.spawnSync
+            (into-array (concat ["git" "diff" "--no-index"] (prefix-args prefix)
+                                ["--" "/dev/null" f]))
+            opts)]
+     (.toString (.-stdout p) "utf-8"))))
 
 (defn- untracked-diff
   "Synthesize a unified diff for all untracked files in cwd."
@@ -78,19 +87,22 @@
 (defn session-diff-text
   "Unified diff of the session-edited files vs the session base commit.
    Tracked files diff against base; untracked (newly written) files are
-   synthesized via --no-index so freshly created files still show."
-  [cwd base files]
-  (let [{tracked false untracked true}
-        (group-by #(some? (:err (git-out cwd ["ls-files" "--error-unmatch" "--" %])))
-                  files)
-        tracked-diff   (when (seq tracked)
-                         (:ok (git-diff-out cwd (concat (if base ["diff" base] ["diff"])
-                                                        ["--"] tracked))))
-        untracked-diff (when (seq untracked)
-                         (str/join "\n" (map (partial no-index-diff cwd) untracked)))]
-    (->> [tracked-diff untracked-diff]
-         (remove str/blank?)
-         (str/join "\n"))))
+   synthesized via --no-index so freshly created files still show. `prefix`
+   (see path-prefix) is prepended to the paths in the headers."
+  ([cwd base files] (session-diff-text cwd base files nil))
+  ([cwd base files prefix]
+   (let [{tracked false untracked true}
+         (group-by #(some? (:err (git-out cwd ["ls-files" "--error-unmatch" "--" %])))
+                   files)
+         tracked-diff   (when (seq tracked)
+                          (:ok (git-diff-out cwd (concat (if base ["diff" base] ["diff"])
+                                                         (prefix-args prefix)
+                                                         ["--"] tracked))))
+         untracked-diff (when (seq untracked)
+                          (str/join "\n" (map #(no-index-diff cwd % prefix) untracked)))]
+     (->> [tracked-diff untracked-diff]
+          (remove str/blank?)
+          (str/join "\n")))))
 
 (defn- file-git-root
   "Absolute toplevel of the work tree containing `file` (an absolute path),
@@ -99,23 +111,47 @@
   (some-> (:ok (git-out (.dirname node-path file) ["rev-parse" "--show-toplevel"]))
           str/trim not-empty))
 
+(defn- realpath [p]
+  (try (fs/realpathSync p) (catch :default _ p)))
+
+(defn- path-prefix
+  "What to put before paths relative to `dir` so they resolve from `base`
+   (xi.ext.file-view.core/locate-file): \"\" for base itself, `sub/` for a
+   directory inside it, else the absolute `/dir/`."
+  [base dir]
+  (let [rel (.relative node-path base dir)]
+    (cond
+      (= "" rel)                   ""
+      (str/starts-with? rel "..")  (str dir "/")
+      :else                        (str rel "/"))))
+
 (defn session-diff-text-by-repo
   "Like session-diff-text, but for absolute `paths` that may span several
    repos (a parent repo, a sibling checkout): groups the files by the work
    tree containing each, diffs every group inside its own repo against
    (base-of root), and concatenates the results. Files outside any repo are
-   synthesized via --no-index. Paths are realpath'd first so symlinked
-   prefixes relativize correctly against git's physical toplevel."
-  [paths base-of]
-  (let [paths   (mapv (fn [p] (try (fs/realpathSync p) (catch :default _ p))) paths)
+   synthesized via --no-index. Paths outside the room's repo (`cwd`'s git
+   root, else `cwd`) carry a path-prefix so the viewer can open them. Paths
+   are realpath'd first so symlinked prefixes relativize correctly against
+   git's physical toplevel."
+  [cwd paths base-of]
+  (let [paths   (mapv realpath paths)
+        base    (or (some-> (:ok (git-out cwd ["rev-parse" "--show-toplevel"]))
+                            str/trim not-empty)
+                    (realpath cwd))
         root-of (into {} (map (juxt identity file-git-root)) (distinct paths))]
     (->> (distinct (map root-of paths))
          (map (fn [root]
                 (let [files (filterv #(= root (root-of %)) paths)]
                   (if root
                     (session-diff-text root (base-of root)
-                                       (mapv #(.relative node-path root %) files))
-                    (str/join "\n" (mapv #(no-index-diff (.dirname node-path %) %) files))))))
+                                       (mapv #(.relative node-path root %) files)
+                                       (path-prefix base root))
+                    (str/join "\n" (mapv (fn [f]
+                                           (let [dir (.dirname node-path f)]
+                                             (no-index-diff dir (.basename node-path f)
+                                                            (path-prefix base dir))))
+                                         files))))))
          (remove str/blank?)
          (str/join "\n"))))
 
