@@ -256,6 +256,11 @@
                (shell "npx shadow-cljs compile main"))
              (run-cljs-tests "e2e"))}
 
+  docs:gen
+  {:doc "Rewrite the generated blocks of docs/**/*.md (`<!-- gen:keys -->` …: the default-keys tables from xi.keys/defaults). `--check` writes nothing and exits 1 when one is stale"
+   :requires ([docs-gen])
+   :task (apply docs-gen/-main *command-line-args*)}
+
   test:watch
   {:doc "Watch-compile and rerun tests on changes"
    :task (shell "npx shadow-cljs watch test")}

@@ -69,7 +69,8 @@
     (let [current (:version (json/parse-string (slurp "package.json") true))]
       (when-not (pos? (compare (semver version) (semver current)))
         (fail! "CHANGELOG.md's " version " is not above package.json's " current)))
-    (shell "bb" "test"))
+    (shell "bb" "test")
+    (shell "bb" "docs:gen" "--check"))
   (println "✓ ready to release" version))
 
 (defn- date-today!

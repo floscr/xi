@@ -82,6 +82,13 @@
   "A fence (optionally with a `title=\"…\"` header), optionally followed directly by an ```output fence (the result of the code above it)."
   #"(?ms)^```([\w-]*)(?:[ \t]+title=\"([^\"\n]*)\")?[ \t]*\n(.*?)^```[ \t]*$(?:\n+^```output[ \t]*\n(.*?)^```[ \t]*$)?")
 
+(defn- strip-html-comments
+  "Drops `<!-- … -->` (the docs:gen markers, scripts/docs_gen.clj), which
+   markdown-clj would otherwise mangle into text. Runs after code fences are
+   swapped out, so a comment inside a fence stays."
+  [body]
+  (str/replace body #"(?s)<!--.*?-->" ""))
+
 (defn render-body
   "Markdown → html string."
   [body]
@@ -94,7 +101,7 @@
                                   html (str (h/html (code-block-hiccup lang source output title)))]
                               (swap! blocks conj html)
                               (str "\n§CODEBLOCK" (dec (count @blocks)) "§\n"))))
-        html (md/md-to-html-string body :heading-anchors false)
+        html (md/md-to-html-string (strip-html-comments body) :heading-anchors false)
         html (add-heading-ids html)
         html (rewrite-links html)]
     (str/replace html #"(?:<p>)?§CODEBLOCK(\d+)§(?:</p>)?"

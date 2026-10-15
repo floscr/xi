@@ -25,5 +25,8 @@ rules and the page list are in [README.md](README.md).
   the page: `test/xi/ext/user_test.cljs` (tool tutorial) and
   `test/xi/roles_tutorial_test.cljs` (users and roles). Run `bb test` after
   editing their code blocks.
+- A block between `<!-- gen:NAME -->` and `<!-- /gen:NAME -->` is
+  generated from the source (`scripts/docs_gen.clj`): don't edit it, run
+  `bb docs:gen`. The default-keys tables in `keyboard.md` are such blocks.
 - Preview with the docs site: `bb site:dev`, then
   `http://localhost:4322/docs/<page>/`.

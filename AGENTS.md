@@ -167,6 +167,9 @@ site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:bui
 - **Web UI: always use clj-ui-framework `ui.*` components** — never hand-roll
   `[:select]`/`[:input]`/`[:button]` when a component exists. See
   [docs/frontend.md](docs/frontend.md) and the section below.
+- **Generated docs.** `<!-- gen:NAME -->` blocks in `docs/` are rendered
+  from the source by `bb docs:gen` (`scripts/docs_gen.clj`; `--check` runs
+  in `bb release`). Changed `xi.keys/defaults` or `catalog`? Run it.
 - **Always document options.** User-facing ones (`config.edn` keys, files
   under `~/.config/xi`, env vars, flags, rule fields, clj helpers) go in the
   guide's reference pages ([docs/guide/configuration.md](docs/guide/configuration.md),
