@@ -64,7 +64,7 @@ projects** in the sidebar opens the project list (`/projects`).
   grants the request offers (Allow all, Always, Allow repo writes, Allow for
   this chat, Recommend a rule) with what each one does. **Explain** on a
   permission request starts a [sub-agent](builtin-tools.md#sub-agents) that
-  reads the call, the conversation and the session transcript and says what
+  reads the call and the conversation and says what
   the call does, why the agent wants it and the risk. The answer appears
   under the tool block and stays there after you decide.
 - **Queue messages.** A message sent while the agent works waits for the

@@ -35,14 +35,13 @@
   (map second (:effects res)))
 
 (deftest explain-call-spawns-an-explanation-sub-agent
-  (let [res   (h/explain-call (room-state) {:room-id "r1" :call-id "tc-9"
-                                            :transcript "/t/abc.jsonl"})
+  (let [res   (h/explain-call (room-state) {:room-id "r1" :call-id "tc-9"})
         spawn (first (effects-of res))]
     (is (= [:app/dispatch] (map first (:effects res))) "one dispatch: the spawn")
     (is (= :subagent/spawn (:type spawn)))
     (is (= "explain-tc-9" (:sub-id spawn)) "id derived from the call id")
     (is (= "Explain clj" (:label spawn)) "label names the tool without the MCP prefix")
-    (testing "the prompt carries the call, its ask, the conversation and the transcript"
+    (testing "the prompt carries the call, its ask and the conversation"
       (let [p (:prompt spawn)]
         (is (str/includes? p "- tool: clj"))
         (is (str/includes? p "code: (sh \"rm\" \"-rf\" \"build\")") "strings verbatim")
@@ -52,13 +51,12 @@
         (is (str/includes? p "[assistant]\nI'll remove it."))
         (is (str/includes? p "[tool call] ls {:path \"build\"}"))
         (is (not (str/includes? p "hmm")) "thinking is dropped")
-        (is (str/includes? p "/t/abc.jsonl"))
+        (is (str/includes? p "`parent_history` reads the whole parent conversation"))
         (is (str/includes? p "Recommendation"))))))
 
-(deftest explain-call-without-transcript-or-dialog
+(deftest explain-call-without-dialog
   (let [res   (h/explain-call (room-state :dialogs []) {:room-id "r1" :call-id "tc-9"})
         p     (:prompt (first (effects-of res)))]
-    (is (str/includes? p "no transcript on disk"))
     (is (not (str/includes? p "## The permission prompt")))))
 
 (deftest explain-call-includes-the-change-preview

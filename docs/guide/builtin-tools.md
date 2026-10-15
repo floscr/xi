@@ -100,8 +100,8 @@ instead of guessing. A found id can be resumed with `xi --session <id>`; see
 
 A sub-agent is a second agent that runs a task in its own context and reports
 back, so the research or review it does never fills the main chat. It gets
-the chat's last messages and the path to its transcript with the task, so
-the task can refer to the conversation.
+the chat's last messages with the task and can read the rest with
+`parent_history`, so the task can refer to the conversation.
 
 | Tool | Does | Asks |
 | --- | --- | --- |
@@ -109,6 +109,7 @@ the task can refer to the conversation.
 | `list_subagents` | The chat's sub-agents with status, running time and a line of recent output. | Never |
 | `subagent_result` | The final output of a sub-agent, or a notice that it is still running. | Never |
 | `stop_subagent` | Stop one by id. | Never |
+| `parent_history` | Only inside a sub-agent: the chat that started it, messages and tool calls numbered, newest page first. `before` pages back, `query` filters, `results: true` adds tool output. | Never |
 
 `/subagent <task>` starts one yourself; `/subagents` shows them in the chat; the web client has a panel for them
 below the conversation and lists them in the sidebar with the chat's

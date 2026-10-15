@@ -153,31 +153,15 @@
                         :summary summary
                         :messages (session/read-session-messages summary)})))))))
 
-(defn- room-transcript
-  "The transcript path of the room's session (a node-only lookup), or nil."
-  [st room-id]
-  (let [room (state/get-room st room-id)
-        sess (:session room)]
-    (session/transcript-path (or (:cwd sess) (:cwd room))
-                             (:provider-session-id sess))))
-
 (defn- spawn
-  "h/spawn with the parent transcript's path, so every sub-agent can read the
-   full parent conversation when the excerpt in its system prompt isn't
-   enough. A spawn without a :sub-id (/subagent, a queued prompt,
-   /canvas-review) is dispatched again with one: clients mirror the event, so
-   the id must travel in it rather than be minted by each process."
-  [st {:keys [room-id sub-id transcript parent-context?] :as ev}]
+  "h/spawn, minting a missing :sub-id first. A spawn without one (/subagent,
+   a queued prompt, /canvas-review) is dispatched again with one: clients
+   mirror the event, so the id must travel in it rather than be minted by
+   each process."
+  [st {:keys [sub-id] :as ev}]
   (if-not sub-id
     {:effects [[:app/dispatch (assoc ev :sub-id (gen-id "sa"))]]}
-    (h/spawn st (cond-> ev
-                  (and (nil? transcript) (not (false? parent-context?)))
-                  (assoc :transcript (room-transcript st room-id))))))
-
-(defn- explain-call
-  "h/explain-call with the parent transcript's path, for the same reason."
-  [st {:keys [room-id] :as ev}]
-  (h/explain-call st (assoc ev :transcript (room-transcript st room-id))))
+    (h/spawn st ev)))
 
 (defn- queued->subagent
   "Run the queued prompt at `index` in a sub-agent instead of after the
@@ -207,7 +191,7 @@
                       "user must approve every spawn.")
     :input_schema {:type "object"
                    :properties {:task  {:type "string"
-                                        :description "The task for the sub-agent. It is given an excerpt of this conversation and the path to its full transcript, so refer to what was discussed instead of restating it."}
+                                        :description "The task for the sub-agent. It is given an excerpt of this conversation and can read all of it, so refer to what was discussed instead of restating it."}
                                 :label {:type "string"
                                         :description "Short label for the sub-agent in the UI (optional)."}}
                    :required ["task"]}}
@@ -309,6 +293,31 @@
    "subagent_result" (with-room-ctx result-tool)
    "stop_subagent"   (with-room-ctx stop-tool)})
 
+;; ── Sub-agent-only tools (added to sub-agent turns by xi.cli/subagent-opts) ──
+
+(defn- parent-history-exec
+  "A sub-agent's tool ctx carries the PARENT room-id (xi.subagent), so this
+   reads the parent's live history."
+  [args {:keys [get-state room-id]}]
+  (text-result (h/history-page (:history (state/get-room (get-state) room-id))
+                               args)))
+
+(def child-tool-definitions
+  [{:name h/parent-history-tool
+    :description (str "Read the conversation of the agent that spawned you: "
+                      "user and assistant messages and tool calls, numbered "
+                      "by position, oldest first. Without arguments: the "
+                      "latest entries; page back with `before`.")
+    :input_schema {:type "object"
+                   :properties {:before  {:type "number" :description "Only entries before this number (the hint at the end of a page). Default: up to the latest."}
+                                :limit   {:type "number" :description "Max entries (default 40)."}
+                                :query   {:type "string" :description "Only entries containing this text, case-insensitive."}
+                                :results {:type "boolean" :description "Include tool call results, clipped."}}
+                   :required []}}])
+
+(def child-tool-registry
+  {h/parent-history-tool (with-room-ctx parent-history-exec)})
+
 ;; ── Command (TUI visibility) ─────────────────────────────────────────────────
 
 (defn- cmd-subagents
@@ -349,8 +358,8 @@
        "immediately with an id; it does NOT block you. The user must approve "
        "each spawn. Poll it with `list_subagents` and read its final output "
        "with `subagent_result` once it is done; `stop_subagent` cancels one. "
-       "The sub-agent is given an excerpt of this conversation and the path "
-       "to its full transcript, so the task need not restate the context."))
+       "The sub-agent is given an excerpt of this conversation and can read "
+       "all of it, so the task need not restate the context."))
 
 ;; ── Extension ─────────────────────────────────────────────────────────────────
 
@@ -371,7 +380,7 @@
                             :session/subagent-dismiss (session-sub-handler :subagent/dismiss)
                             :subagent/promote promote-sub
                             ;; The web Explain button (xi.web.views tool-post).
-                            :subagent/explain-call explain-call
+                            :subagent/explain-call h/explain-call
                             ;; Chained after the core resume handler by
                             ;; ext/merge-handlers — reseeds promoted stubs.
                             :session/resumed h/on-session-resumed)

@@ -58,14 +58,35 @@
 
 ;; ── Parent conversation ──────────────────────────────────────────────────────
 
-(def ^:private context-max-msg-chars 1500)
 (def ^:private context-recent-entries 12)
+(def ^:private context-clips {:msg-chars 1500 :arg-chars 200})
 
 (defn- clip [s n]
   (let [s (str s)]
     (if (> (count s) n)
       (str (subs s 0 n) "\n… (" (- (count s) n) " more characters)")
       s)))
+
+(defn- result-text [content]
+  (if (sequential? content)
+    (str/join "\n" (keep :text content))
+    (str content)))
+
+(defn- entry-text
+  "One history entry as transcript text, clipped per `clips`; a tool call's
+   result only with :result-chars. nil for entries a reader skips (thinking)."
+  [{:keys [kind text tool arguments is-error result error]}
+   {:keys [msg-chars arg-chars result-chars]}]
+  (case kind
+    :user      (str "[user]\n" (clip text msg-chars))
+    :text      (str "[assistant]\n" (clip text msg-chars))
+    :tool-call (str "[tool call] " (util/strip-mcp-prefix (str tool)) " "
+                    (clip (pr-str arguments) arg-chars)
+                    (when is-error " → error")
+                    (when (and result-chars (some? result))
+                      (str "\n[result]\n" (clip (result-text result) result-chars))))
+    :error     (str "[error] " (or (:message error) (pr-str error)))
+    nil))
 
 (defn- recent-context
   "A transcript excerpt of history `entries`: the last prompts and replies
@@ -74,41 +95,81 @@
   (->> entries
        (remove #(= :thinking (:kind %)))
        (take-last context-recent-entries)
-       (keep (fn [{:keys [kind text tool arguments is-error]}]
-               (case kind
-                 :user      (str "[user]\n" (clip text context-max-msg-chars))
-                 :text      (str "[assistant]\n" (clip text context-max-msg-chars))
-                 :tool-call (str "[tool call] " (util/strip-mcp-prefix (str tool)) " "
-                                 (clip (pr-str arguments) 200)
-                                 (when is-error " → error"))
-                 nil)))
+       (keep #(entry-text % context-clips))
        (str/join "\n\n")))
+
+;; The parent_history tool (registered for sub-agent turns only, xi.cli
+;; subagent-opts; exec in xi.ext.subagent) reads the parent room's live
+;; history, so it works for every provider and is current to the last event.
+(def parent-history-tool "parent_history")
+
+(def ^:private history-default-limit 40)
+(def ^:private history-max-chars 30000)
+(def ^:private history-clips {:msg-chars 6000 :arg-chars 600})
+
+(defn- older-first-within-budget
+  "The last entries of `lines` ([index text] pairs) that fit `limit` and the
+   page's char budget — at least one — oldest first."
+  [lines limit]
+  (loop [acc '(), xs (rseq lines), size 0]
+    (let [[_ t :as line] (first xs)]
+      (if (or (nil? line)
+              (>= (count acc) limit)
+              (and (seq acc) (> (+ size (count t)) history-max-chars)))
+        acc
+        (recur (conj acc line) (next xs) (+ size (count t)))))))
+
+(defn history-page
+  "One parent_history page of room `history`: the `limit` entries before
+   index `before` (default: the end) whose text holds `query`, numbered by
+   their history index, oldest first, then how to page back."
+  [history {:keys [before limit query results]}]
+  (let [clips  (cond-> history-clips results (assoc :result-chars 1500))
+        q      (some-> query str/trim str/lower-case not-empty)
+        end    (if (number? before) before (count history))
+        lines  (into []
+                     (keep-indexed
+                      (fn [i e]
+                        (when (< i end)
+                          (when-let [t (entry-text e clips)]
+                            (when (or (nil? q) (str/includes? (str/lower-case t) q))
+                              [i t])))))
+                     history)
+        limit  (max 1 (int (or limit history-default-limit)))
+        shown  (if (seq lines) (older-first-within-budget lines limit) ())
+        first-i (ffirst shown)]
+    (if (empty? shown)
+      (str "No entries" (when q (str " matching " (pr-str query)))
+           (when (number? before) (str " before #" before)) ".")
+      (str "Parent conversation, entries #" first-i "–#" (first (last shown))
+           " of " (count history) (when q (str " matching " (pr-str query)))
+           ", oldest first:\n\n"
+           (str/join "\n\n" (map (fn [[i t]] (str "#" i " " t)) shown))
+           (when (< (count shown) (count lines))
+             (str "\n\n… earlier: " parent-history-tool " with before " first-i))))))
 
 (defn parent-context
   "The parent conversation for a sub-agent's system prompt: an excerpt of the
-   room's history and the transcript path to widen it, so whoever spawns one
-   (the LLM, a button, an extension) never has to restate the context. nil
-   when there is neither."
-  [room transcript]
+   room's history, pointing at parent_history for the rest, so whoever spawns
+   one (the LLM, a button, an extension) never has to restate the context.
+   nil without history."
+  [room]
   (let [recent (recent-context (:history room))]
-    (when (or (seq recent) transcript)
+    (when (seq recent)
       (str "## The parent conversation\n"
-           "The conversation you were spawned from, most recent last.\n\n"
-           (when (seq recent) (str recent "\n\n"))
-           (if transcript
-             (str "The full parent transcript is the JSONL file " transcript
-                  " — read or grep it when the excerpt doesn't cover what the "
-                  "task refers to.")
-             "There is no transcript on disk; work from the excerpt above.")))))
+           "The end of the conversation you were spawned from, most recent last. "
+           "`" parent-history-tool "` reads all of it, tool calls included — use "
+           "it when this excerpt doesn't cover what the task refers to.\n\n"
+           recent))))
 
 (defn child-system
   "System prompt for a sub-agent turn: the room's base system (AGENTS.md etc.)
    + the sub-agent preamble + the parent conversation (unless
    `parent-context?` is false) + any task-specific system text."
-  [room {:keys [system transcript parent-context?]}]
+  [room {:keys [system parent-context?]}]
   (->> [(get-in room [:agent :system])
         SUBAGENT_PREAMBLE
-        (when-not (false? parent-context?) (parent-context room transcript))
+        (when-not (false? parent-context?) (parent-context room))
         system]
        (remove str/blank?)
        (str/join "\n\n")))
@@ -119,7 +180,7 @@
   "Append a sub-agent entry and kick off its turn. The provider settings come
    from the room's agent; the child runs a FRESH context (no resume) that
    knows the parent conversation through its system prompt (child-system;
-   `:transcript` is added by the node ext, `:parent-context? false` opts out).
+   `:parent-context? false` opts out) and the parent_history tool.
 
    Emits the :subagent/start effect — the node build runs the turn; the web
    build registers a no-op for it (the turn only ever runs server-side).
@@ -144,8 +205,11 @@
                            :provider        (get-in room [:agent :provider])
                            :effort          (get-in room [:agent :effort])
                            :cwd             (:cwd room)
-                           ;; An agent profile's tool allowlist binds sub-agents too.
-                           :only-tools      (get-in room [:agent :only-tools])}
+                           ;; An agent profile's tool allowlist binds sub-agents
+                           ;; too, but they always read their parent.
+                           :only-tools      (some-> (get-in room [:agent :only-tools])
+                                                    set
+                                                    (conj parent-history-tool))}
                     (seq images) (assoc :images images))]]})))
 
 (defn- text-delta [st {:keys [room-id sub-id text]}]
@@ -311,9 +375,9 @@
               "\n\n"))
        "## Question\n" question "\n\n"
        "Answer the question directly, in concise markdown. Read files in the "
-       "working directory or the parent transcript when the snippet doesn't "
-       "say enough. Use read-only tools only: don't edit files or run anything "
-       "with side effects."))
+       "working directory or the parent conversation (`" parent-history-tool
+       "`) when the snippet doesn't say enough. Use read-only tools only: "
+       "don't edit files or run anything with side effects."))
 
 (defn ask-suggestions
   "One-tap questions for a diff selection whose lines have `types`
@@ -349,9 +413,9 @@
 
 (defn explain-prompt
   "The explanation sub-agent's prompt: the gated call, its ask, the parent
-   conversation leading up to it, and where the full transcript lives so the
-   sub-agent can widen its context when the excerpt isn't enough."
-  [{:keys [entry dialog recent cwd transcript]}]
+   conversation leading up to it; parent_history widens it when the excerpt
+   isn't enough."
+  [{:keys [entry dialog recent cwd]}]
   (let [diff (or (:diff entry) (:diff dialog))]
     (str
      "You are explaining a tool call to the user of a coding agent. The agent "
@@ -369,11 +433,9 @@
      "\n## The conversation so far (most recent last)\n"
      (if (seq recent) recent "(no earlier messages)")
      "\n\n## Wider context\n"
-     (if transcript
-       (str "The full parent transcript is the JSONL file " transcript
-            " — read or grep it when the excerpt above doesn't say why the "
-            "agent is doing this.\n")
-       "There is no transcript on disk; work from the excerpt above.\n")
+     "`" parent-history-tool "` reads the whole parent conversation, tool calls "
+     "included (`results: true` adds their output) — use it when the excerpt "
+     "above doesn't say why the agent is doing this.\n"
      "You may read files in the working directory to see what the call "
      "touches. Use read-only tools only (read, grep, find, ls); never run the "
      "call yourself or anything with side effects — nobody is there to "
@@ -409,9 +471,8 @@
    stopped earlier attempt) go out as :app/dispatch effects so they are
    broadcast and mirrored like any sub-agent event, and the web half can
    forward this event without applying it. nil when the call isn't in the
-   history or its explanation is running or done. `:transcript` is the parent
-   transcript path, added by the node ext (xi.ext.subagent)."
-  [st {:keys [room-id call-id transcript]}]
+   history or its explanation is running or done."
+  [st {:keys [room-id call-id]}]
   (when-let [room (state/get-room st room-id)]
     (let [history  (vec (:history room))
           idx      (call-index history call-id)
@@ -436,13 +497,12 @@
                                                  {:entry      entry
                                                   :dialog     dialog
                                                   :recent     (recent-context (subvec history 0 idx))
-                                                  :cwd        (:cwd room)
-                                                  :transcript transcript})}]))})))))
+                                                  :cwd        (:cwd room)})}]))})))))
 
 (def handlers
   "The pure state-updating handlers, shared by the node + web builds.
    :subagent/explain-call is registered by each half on its own: the web
-   forwards it, the node adds the transcript path (see explain-call)."
+   forwards it, the node applies it."
   {:subagent/spawn           spawn
    :subagent/text-delta      text-delta
    :subagent/thinking-delta  thinking-delta

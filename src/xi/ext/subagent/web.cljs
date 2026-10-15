@@ -77,9 +77,9 @@
                     :subagent/promote promote
                     :subagent/promoted promoted
                     ;; Explain button on a permission-gated tool block: the
-                    ;; spawn needs the parent transcript path and runs
-                    ;; server-side, so forward the click; the :subagent/spawn
-                    ;; it causes comes back as a mirrored broadcast.
+                    ;; spawn runs server-side, so forward the click; the
+                    ;; :subagent/spawn it causes comes back as a mirrored
+                    ;; broadcast.
                     :subagent/explain-call forward
                     ;; The queue popover's "Run in a sub-agent": the queue
                     ;; and the spawn are server state, both come back as

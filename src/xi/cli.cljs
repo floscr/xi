@@ -71,6 +71,7 @@
             [xi.ext.manager :as manager]
             [xi.ext.persist :as ext-persist]
             [xi.ext.mcp :as mcp]
+            [xi.ext.subagent :as subagent-ext]
             [xi.ext.user :as user-ext]
             [xi.fx :as fx]
             [xi.naming :as naming]
@@ -147,12 +148,19 @@
    :fx                     holds/fx})
 
 (defn- subagent-opts
-  "tooling-opts plus the throwaway CLAUDE_CONFIG_DIR fns, so a sub-agent's
-   Claude CLI session doesn't land in ~/.claude/projects as a top-level chat."
+  "tooling-opts plus the sub-agent-only tools (parent_history, xi.ext.subagent)
+   and the throwaway CLAUDE_CONFIG_DIR fns, so a sub-agent's Claude CLI
+   session doesn't land in ~/.claude/projects as a top-level chat."
   [manager ask!]
-  (merge (tooling-opts manager ask!)
-         {:make-config-dir!   session/make-throwaway-config-dir!
-          :remove-config-dir! session/remove-config-dir!}))
+  (let [{:keys [extra-tool-definitions extra-tool-registry] :as opts}
+        (tooling-opts manager ask!)]
+    (merge opts
+           {:extra-tool-definitions (fn [] (into (vec (extra-tool-definitions))
+                                                 subagent-ext/child-tool-definitions))
+            :extra-tool-registry    (fn [] (merge (extra-tool-registry)
+                                                  subagent-ext/child-tool-registry))
+            :make-config-dir!       session/make-throwaway-config-dir!
+            :remove-config-dir!     session/remove-config-dir!})))
 
 (def ^:private DEFAULT_MODEL "claude-opus-4-8")
 

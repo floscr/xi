@@ -20,14 +20,13 @@
 (deftest every-sub-agent-gets-the-parent-conversation
   (let [system (:system (start-payload
                          (h/spawn (base-state)
-                                  {:room-id "r1" :sub-id "sa-1" :task "t"
-                                   :transcript "/t.jsonl"})))]
+                                  {:room-id "r1" :sub-id "sa-1" :task "t"})))]
     (is (str/starts-with? system "BASE"))
     (is (str/includes? system "## The parent conversation"))
     (is (str/includes? system "[user]\nmake config a defrecord"))
     (is (str/includes? system "[assistant]\nWriting the schemas namespace."))
     (is (not (str/includes? system "hmm")) "thinking is dropped")
-    (is (str/includes? system "/t.jsonl"))))
+    (is (str/includes? system "`parent_history` reads all of it"))))
 
 (deftest parent-context-opt-out
   (let [system (:system (start-payload
@@ -37,8 +36,60 @@
     (is (not (str/includes? system "parent conversation")))
     (is (str/ends-with? system "EXTRA"))))
 
-(deftest no-history-and-no-transcript-adds-nothing
-  (is (nil? (h/parent-context {:history []} nil))))
+(deftest no-history-adds-nothing
+  (is (nil? (h/parent-context {:history []}))))
+
+(deftest a-profile-allowlist-keeps-parent-history
+  (let [st (assoc-in (base-state) [:rooms "r1" :agent :only-tools] #{"read"})]
+    (is (= #{"read" "parent_history"}
+           (:only-tools (start-payload (h/spawn st {:room-id "r1" :sub-id "sa-1" :task "t"})))))
+    (is (nil? (:only-tools (start-payload (h/spawn (base-state) {:room-id "r1" :sub-id "sa-1" :task "t"}))))
+        "no allowlist: every tool")))
+
+(def ^:private history
+  [{:kind :user :text "open firefox"}
+   {:kind :thinking :text "hmm"}
+   {:kind :tool-call :tool "mcp__xi-tools__clj" :arguments {:code "(sh \"firefox\")"}
+    :result [{:type "text" :text "started pid 42"}]}
+   {:kind :text :text "Firefox is up."}
+   {:kind :error :error {:message "overloaded"}}])
+
+(deftest history-page-reads-the-parent-conversation
+  (testing "everything but thinking, numbered by history index, oldest first"
+    (let [p (h/history-page history {})]
+      (is (str/starts-with? p "Parent conversation, entries #0–#4 of 5, oldest first:"))
+      (is (str/includes? p "#0 [user]\nopen firefox"))
+      (is (str/includes? p "#2 [tool call] clj {:code \"(sh \\\"firefox\\\")\"}"))
+      (is (str/includes? p "#4 [error] overloaded"))
+      (is (not (str/includes? p "hmm")))
+      (is (not (str/includes? p "started pid")) "results only on request")
+      (is (not (str/includes? p "earlier:")))))
+  (testing "results: true adds tool output"
+    (is (str/includes? (h/history-page history {:results true}) "[result]\nstarted pid 42")))
+  (testing "limit takes the latest entries and says how to page back"
+    (let [p (h/history-page history {:limit 2})]
+      (is (str/includes? p "entries #3–#4"))
+      (is (str/ends-with? p "… earlier: parent_history with before 3"))
+      (is (str/includes? (h/history-page history {:limit 2 :before 3}) "entries #0–#2")
+          "thinking at #1 is skipped, not counted")))
+  (testing "query filters case-insensitively"
+    (let [p (h/history-page history {:query "FIREFOX"})]
+      (is (str/includes? p "matching \"FIREFOX\""))
+      (is (str/includes? p "#0 "))
+      (is (str/includes? p "#3 "))
+      (is (not (str/includes? p "#4 ")))))
+  (testing "nothing to show"
+    (is (= "No entries." (h/history-page [] {})))
+    (is (= "No entries matching \"zzz\"." (h/history-page history {:query "zzz"})))))
+
+(deftest parent-history-tool-is-for-sub-agents-only
+  (is (not-any? #(= "parent_history" (:name %)) (:tool-definitions sa-ext/extension)))
+  (is (= ["parent_history"] (map :name sa-ext/child-tool-definitions)))
+  (let [run (get sa-ext/child-tool-registry "parent_history")
+        st  (base-state)
+        res (run {} {:dispatch! identity :get-state (constantly st) :room-id "r1"})]
+    (is (false? (:is-error res)))
+    (is (str/includes? (-> res :content first :text) "#2 [assistant]\nWriting the schemas namespace."))))
 
 (deftest images-reach-the-turn
   (is (= [{:path "/a.png"}]
