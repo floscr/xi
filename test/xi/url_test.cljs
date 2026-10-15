@@ -30,3 +30,23 @@
   (testing "returns nil when no scheme is present"
     (is (nil? (url/url-at "just text" 0)))
     (is (nil? (url/url-at "https://" 0)))))
+
+(deftest relative-file-link-test
+  (testing "resolves against the linking file's directory"
+    (is (= "/repo/docs/guide.md" (url/relative-file-link "/repo/docs/README.md" "guide.md")))
+    (is (= "/repo/docs/guide.md" (url/relative-file-link "/repo/docs/README.md" "./guide.md")))
+    (is (= "/repo/src/a.clj" (url/relative-file-link "/repo/docs/README.md" "../src/a.clj")))
+    (is (= "docs/b.md" (url/relative-file-link "docs/a.md" "b.md")))
+    (is (= "../b.md" (url/relative-file-link "a.md" "../b.md"))))
+  (testing "drops fragment and query, decodes escapes"
+    (is (= "/r/x y.md" (url/relative-file-link "/r/a.md" "x%20y.md#section")))
+    (is (= "/r/x.md" (url/relative-file-link "/r/a.md" "x.md?plain=1"))))
+  (testing "absolute paths stay absolute"
+    (is (= "/etc/x.md" (url/relative-file-link "/r/a.md" "/etc/../etc/x.md"))))
+  (testing "non-file links"
+    (is (nil? (url/relative-file-link "/r/a.md" "https://example.com/x.md")))
+    (is (nil? (url/relative-file-link "/r/a.md" "mailto:a@b.c")))
+    (is (nil? (url/relative-file-link "/r/a.md" "//cdn.example.com/x.md")))
+    (is (nil? (url/relative-file-link "/r/a.md" "#heading")))
+    (is (nil? (url/relative-file-link "/r/a.md" "")))
+    (is (nil? (url/relative-file-link "/r/a.md" nil)))))

@@ -23,6 +23,7 @@
                                                active-first orphan-rooms
                                                sidebar-session-groups sidebar-session-order]]
             [xi.tui.snippets :as snippets]
+            [xi.url :as url]
             [xi.util :as util]
             [xi.web.appearance :as appearance]
             [xi.web.block-menu :as block-menu]
@@ -2714,6 +2715,20 @@
                           :md-code (or md-code #{})
                           :after-line (diff-inline-cards dispatch! state room-id rows range)})))]))
 
+(defn- viewable-file? [path]
+  (let [ext (file-ext path)]
+    (or (contains? md-diff/markdown-exts ext) (some? (grammars/get-grammar ext)))))
+
+(defn- open-linked-file!
+  "Click handler for a rendered markdown file: a relative link to a text file
+   opens that file in the viewer instead of a dead browser tab."
+  [dispatch! base-path e]
+  (when-let [a (some-> (.-target e) (.closest "a[href]"))]
+    (when-let [target (url/relative-file-link base-path (.getAttribute a "href"))]
+      (when (viewable-file? target)
+        (.preventDefault e)
+        (dispatch! {:type :file/open :path target})))))
+
 (defn- file-tab-view
   [dispatch! state {:keys [path text]}]
   (let [ext     (file-ext path)
@@ -2723,7 +2738,8 @@
      (file-header dispatch! state path {:class "file-tab-header" :view? false}
                   [:span {:class ["file-tab-path"]} path])
      (if (contains? md-diff/markdown-exts ext)
-       [:div {:class ["file-tab-md"]}
+       [:div {:class ["file-tab-md"]
+              :on {:click #(open-linked-file! dispatch! path %)}}
         [:div {:class ["post-content"]} (md/render text)]]
        [:pre {:class ["file-tab-code"]}
         (if grammar (highlight-code grammar text) text)])]))
