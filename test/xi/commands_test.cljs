@@ -633,3 +633,13 @@
          (commands/messages->history
           [{:type :text :role "user" :text "/commit"}
            {:type :api-error :message "Fable 5.1 requires usage credits."}]))))
+
+(deftest ui-status-action-until-expired
+  (let [action {:id "a1" :label "Release" :command "release"}
+        st     (apply-events (with-room)
+                             {:type :ui/status :room-id "r" :text "waiting" :action action}
+                             {:type :ui/status :room-id "r" :text "other"})]
+    (is (= action (:action (first (take-last 2 (history st))))))
+    (let [st (apply-events st {:type :ui/status-action-expire :room-id "r" :action-id "a1"})]
+      (is (not-any? :action (history st)))
+      (is (= ["waiting" "other"] (map :text (take-last 2 (history st))))))))

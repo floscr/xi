@@ -19,7 +19,9 @@
    output and status lines, rendered dim by the TUI. The web client shows
    them as a banner; an entry may add :title, :detail, :tone (a ui.alert
    variant), :icon and :rows [{:label :text :tone}] for a richer one there, :text
-   staying the full plain rendering."
+   staying the full plain rendering. An :action {:id :label :command :args}
+   (from :ui/status, until :ui/status-action-expire drops it) is a web button
+   that runs that slash command."
   (:require [clojure.string :as str]
             [xi.buffers :as buffers]
             [xi.core.state :as state]
@@ -499,9 +501,21 @@
           (when-not remote?
             (status st room-id (str "Unknown command: /" name))))))))
 
-(defn- ui-status [st {:keys [room-id text]}]
+(defn- ui-status [st {:keys [room-id text action]}]
   (when (state/get-room st room-id)
-    (status st room-id text)))
+    {:state (append-history st room-id (cond-> (status-entry text)
+                                         action (assoc :action action)))}))
+
+(defn- ui-status-action-expire
+  "Drop the :action whose :id is `action-id` from the room's status lines —
+   the button is gone once what it would fix is over."
+  [st {:keys [room-id action-id]}]
+  (when (state/get-room st room-id)
+    {:state (update-in st [:rooms room-id :history]
+                       (fn [history]
+                         (mapv #(cond-> %
+                                  (= action-id (get-in % [:action :id])) (dissoc :action))
+                               history)))}))
 
 (defn- editor-insert
   "Insert text at the editor cursor (e.g. from a completion menu selection)."
@@ -744,6 +758,7 @@
    {:input/submit    input-submit
     :command/run     (make-command-run (all-commands extra-commands))
     :ui/status       ui-status
+    :ui/status-action-expire ui-status-action-expire
     :ui/menu-open    menu-open
     :ui/menu-push    menu-push
     :ui/menu-pop     menu-pop

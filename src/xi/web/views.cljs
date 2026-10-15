@@ -1067,20 +1067,28 @@
 (defn- status-post
   "A :status history entry as a ui.alert. Plain entries are a slim neutral
    banner of :text; entries with a :title (shape in the xi.commands ns doc) show
-   :tone, :icon, :detail and :rows, :text being the TUI's rendering."
-  [{:keys [text title detail rows tone icon]}]
-  (let [rows (when (seq rows)
-               (into [:span {:class ["status-alert-rows"]}]
-                     (mapcat (fn [{:keys [label text tone]}]
-                               (let [cls #(cond-> [%] tone (conj (str "status-alert-row--" (name tone))))]
-                                 [[:span {:class (cls "status-alert-row-label")} label]
-                                  [:span {:class (cls "status-alert-row-text")} text]])))
-                     rows))]
+   :tone, :icon, :detail and :rows, :text being the TUI's rendering. An
+   :action adds a button running its slash command."
+  [dispatch! {:keys [text title detail rows tone icon action room-id]}]
+  (let [rows   (when (seq rows)
+                 (into [:span {:class ["status-alert-rows"]}]
+                       (mapcat (fn [{:keys [label text tone]}]
+                                 (let [cls #(cond-> [%] tone (conj (str "status-alert-row--" (name tone))))]
+                                   [[:span {:class (cls "status-alert-row-label")} label]
+                                    [:span {:class (cls "status-alert-row-text")} text]])))
+                       rows))
+        button (when (and action room-id)
+                 (button/button
+                  {:variant :secondary :size :sm :class "status-alert-action"
+                   :on-click (fn [_] (dispatch! (cond-> {:type :web/command :room-id room-id
+                                                         :name (:command action)}
+                                                  (:args action) (assoc :args (:args action)))))}
+                  (:label action)))]
     [:div {:class (cond-> ["post" "post--assistant" "post--status"]
                     (not title) (conj "post--status-slim"))}
      (apply alert/alert {:variant tone :title title :icon-name (or icon :info)
                          :class "status-alert" :attrs {:role "status"}}
-            (if title (remove nil? [detail rows]) [text]))]))
+            (remove nil? (if title [detail rows button] [text button])))]))
 
 (defn- entry->post [dispatch! entry]
   (case (:kind entry)
@@ -1192,7 +1200,7 @@
     (tool-post dispatch! entry)
 
     :status
-    (status-post entry)
+    (status-post dispatch! entry)
 
     :error
     (let [msg (or (:message (:error entry)) (pr-str (:error entry)))]

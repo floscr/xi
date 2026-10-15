@@ -64,9 +64,12 @@
 ;; settles every resource the room took, not just its cwd's.
 (defonce ^:private held (atom {}))
 
-(defn- status! [dispatch! room-id text]
-  (when (and dispatch! (seq text))
-    (dispatch! {:type :ui/status :room-id room-id :text text})))
+(defn- status!
+  ([dispatch! room-id text] (status! dispatch! room-id text nil))
+  ([dispatch! room-id text action]
+   (when (and dispatch! (seq text))
+     (dispatch! (cond-> {:type :ui/status :room-id room-id :text text}
+                  action (assoc :action action))))))
 
 (defn- secs [ms] (js/Math.round (/ ms 1000)))
 
@@ -96,8 +99,10 @@
   "Wait for `key`'s lease. → Promise<nil (acquired / nothing to hold) | error text>."
   [hold key {:keys [room-id get-state dispatch!]} own]
   (if-let [path ((:lease-path hold) key)]
-    (let [label  (:label hold)
-          detail #(or ((:detail hold) key) "")]
+    (let [label     (:label hold)
+          detail    #(or ((:detail hold) key) "")
+          action-id (str (random-uuid))
+          waiting?  (volatile! false)]
       (-> (lease/wait-acquire!
            {:path       path
             :owner      own
@@ -105,12 +110,19 @@
             :timeout-ms ((:wait-ms hold))
             :cancelled? (when get-state #(turn-over? get-state room-id))
             :on-wait    (fn [holder]
+                          (vreset! waiting? true)
                           (status! dispatch! room-id
                                    (str "⏳ " label " is held by "
                                         (lease/describe-holder holder) (detail)
-                                        " — waiting… To unlock: " (:hint hold) ".")))})
+                                        " — waiting… To unlock: " (:hint hold) ".")
+                                   ;; /release force-releases every hold on the cwd
+                                   {:id action-id :label "Release" :command "release"}))})
           (.then
            (fn [{:keys [status waited-ms holder fresh?]}]
+             ;; Once the wait is over the button would release this room's own lease.
+             (when (and dispatch! @waiting?)
+               (dispatch! {:type :ui/status-action-expire :room-id room-id
+                           :action-id action-id}))
              (case status
                :acquired
                (do (swap! held update (:room own) (fnil conj #{}) [(:id hold) key])
