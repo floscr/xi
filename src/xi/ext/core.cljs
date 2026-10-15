@@ -18,11 +18,13 @@
                      {:room    <state>   — template merged into each room's
                                            [:ext <id>] (mirrors to clients)
                       :process <state>}  — installed at top-level [:ext <id>]
-     :persist-room true | [key …] — the part of the extension's room state
-                   (`true` = all of [:rooms rid :ext <id>], else just those
-                   keys) that is saved with the chat and put back when the chat
-                   is resumed, so it survives `bb serve:restart` and a reaped
-                   room. Plain data only; empty values are not saved. Saving
+     :persist-room true | [key …] | fn — the part of the extension's room
+                   state (`true` = all of [:rooms rid :ext <id>], a vector =
+                   just those keys, a fn = (fn [slice]) → the map to keep,
+                   applied to saved slices again on load, so it must be
+                   idempotent) that is saved with the chat and put back when
+                   the chat is resumed, so it survives `bb serve:restart` and
+                   a reaped room. Plain data only; empty values are not saved. Saving
                    and loading is xi.ext.persist (server / standalone); the
                    pure side (`persisted-room-state`, the hydrate handler) is
                    here.
@@ -148,30 +150,40 @@
 
 (defn persisted-room-state
   "The part of `room`'s extension state that `persist-specs` ({ext-id
-   true|[key …]}, see :persist-room) says to keep: {ext-id {key value}}, with
-   blank values and extensions left with nothing dropped."
+   true|[key …]|fn}, see :persist-room) says to keep: {ext-id {key value}},
+   with blank values and extensions left with nothing dropped."
   [persist-specs room]
   (into {}
         (keep (fn [[id spec]]
                 (let [slice (get-in room [:ext id])
                       kept  (into {}
                                   (remove (comp blank? val))
-                                  (if (true? spec) slice (select-keys slice spec)))]
+                                  (cond (true? spec) slice
+                                        (fn? spec)   (when (some? slice) (spec slice))
+                                        :else        (select-keys slice spec)))]
                   (when (seq kept) [id kept]))))
         persist-specs))
+
+(defn- same-item
+  "An item's identity when joining saved and current sequences: its :id for
+   maps that have one (a saved copy of an entry differs from the live one),
+   else the value."
+  [x]
+  (if (and (map? x) (contains? x :id)) [::id (:id x)] x))
 
 (defn- merge-persisted
   "Put a saved slice back into the room's current one. A key the room holds
    nothing for takes the saved value; two sequences are joined with the
-   current entries first (so a fresher one still wins) and no duplicates; any
-   other current value is kept."
+   current entries first (so a fresher one still wins) and no duplicates
+   (`same-item`); any other current value is kept."
   [current saved]
   (reduce (fn [acc [k v]]
             (let [cur (get acc k)]
               (cond
                 (blank? cur) (assoc acc k v)
                 (and (sequential? cur) (sequential? v))
-                (assoc acc k (into (vec cur) (remove (set cur)) v))
+                (let [seen (into #{} (map same-item) cur)]
+                  (assoc acc k (into (vec cur) (remove (comp seen same-item)) v)))
                 :else acc)))
           (or current {})
           saved))

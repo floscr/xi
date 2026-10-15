@@ -512,22 +512,18 @@
       (invalidate-listing-cache!)
       true)))
 
-(defn delete-session!
-  "Delete a session by its summary. For :xi sessions the referenced Claude
-   transcript is removed too (else it resurfaces as a standalone Claude card),
-   and the canvas sidecar with it. True when the primary file was deleted."
+(defn upgrade-subagent-session!
+  "Make a sub-agent's hidden session a regular one: without its
+   :subagent-origin it is listed with the other chats and no longer goes
+   with its parent when that is deleted. True when written."
   [summary]
-  (let [filepath   (:filepath summary)
-        transcript (when (= :xi (:source summary))
-                     (find-claude-transcript (:cwd summary) (:cli-session-id summary)))
-        canvas     (when (and filepath (str/ends-with? filepath ".json"))
-                     (str (subs filepath 0 (- (count filepath) 5)) ".canvas.edn"))
-        rm!        (fn [f] (when (and f (fs/existsSync f)) (fs/unlinkSync f)))
-        deleted?   (boolean (rm! filepath))]
-    (rm! transcript)
-    (rm! canvas)
-    (when deleted? (invalidate-listing-cache!))
-    deleted?))
+  (when (and (= :xi (:source summary)) (:filepath summary))
+    (let [fp   (:filepath summary)
+          data (js/JSON.parse (fs/readFileSync fp "utf8"))]
+      (js-delete data "subagent-origin")
+      (fs/writeFileSync fp (js/JSON.stringify data nil 2) "utf8")
+      (invalidate-listing-cache!)
+      true)))
 
 ;; Reversible: the session stays on disk and resumable; the sidebar moves
 ;; its card to "Hidden". Per user (xi.user-state.store), so the server
@@ -685,6 +681,39 @@
    too."
   [session-id]
   (first (filter (partial summary-matches-id? session-id) (all-sessions-raw))))
+
+(defn subagent-sessions
+  "Summaries of the hidden sessions saved from session `session-id`'s
+   sub-agents (their :subagent-origin names it)."
+  [session-id]
+  (when session-id
+    (filterv #(= session-id (get-in % [:subagent-origin :session-id]))
+             (all-sessions-raw))))
+
+
+(defn delete-session!
+  "Delete a session by its summary. For :xi sessions the referenced Claude
+   transcript is removed too (else it resurfaces as a standalone Claude card),
+   the canvas and extension-state sidecars with it, and the hidden sessions
+   its sub-agents were saved as (`subagent-sessions`). True when the primary
+   file was deleted."
+  [summary]
+  (let [filepath   (:filepath summary)
+        transcript (when (= :xi (:source summary))
+                     (find-claude-transcript (:cwd summary) (:cli-session-id summary)))
+        sidecar    (fn [ext]
+                     (when (and filepath (str/ends-with? filepath ".json"))
+                       (str (subs filepath 0 (- (count filepath) 5)) ext)))
+        rm!        (fn [f] (when (and f (fs/existsSync f)) (fs/unlinkSync f)))
+        children   (when (= :xi (:source summary))
+                     (subagent-sessions (:session-id summary)))
+        deleted?   (boolean (rm! filepath))]
+    (rm! transcript)
+    (rm! (sidecar ".canvas.edn"))
+    (rm! (sidecar ".ext.edn"))
+    (when deleted? (invalidate-listing-cache!))
+    (doseq [child children] (delete-session! child))
+    deleted?))
 
 (defn find-personal-agent-session-by-id
   "Find a session summary by its ID in the personal-agent sessions dir.

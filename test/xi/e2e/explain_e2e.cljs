@@ -86,9 +86,8 @@
                                                 (is (str/includes? p "+ # changed") "the edit's diff")
                                                 (is (str/includes? p "[user]\nhello\n\n[assistant]\nhi\n\n[user]\nretitle the readme")
                                                     "the conversation so far, in order")
-                                                (let [transcript (second (re-find #"JSONL file (\S+\.jsonl)" p))]
-                                                  (is (some? transcript) "the parent transcript path is named")
-                                                  (is (some? (h/slurp transcript)) (str transcript " exists"))))
+                                                (is (str/includes? p "`parent_history` reads the whole parent conversation")
+                                                    "the rest of the conversation through parent_history"))
                                               (h/await-event client #(and ((of-type :subagent/turn-end room-id) %)
                                                                           (= sub-id (:sub-id %)))
                                                              {:from from})))

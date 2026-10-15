@@ -30,6 +30,7 @@
             [xi.web.buffer-views :as buffer-views]
             [xi.web.terminal :as terminal]
             [xi.web.rename :as rename]
+            [xi.web.threads :as threads]
             [xi.web.theme :as theme]
             [xi.web.user-state :as user-state]
             [xi.web.cache :as cache]
@@ -1107,6 +1108,7 @@
          themes-handlers
          dashboard/handlers
          rename/handlers
+         threads/handlers
          {:room/new              room-new
           :home/start            home-start
           :home/set-cwd          (fn [st {:keys [cwd]}] {:state (assoc st :web/home-cwd cwd)})
@@ -1183,10 +1185,13 @@
                                                                         :x x :y y})})
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
           ;; Floating Copy button for a tapped code block (attach-code-copy-listener!).
-          :code/menu-open        (fn [st {:keys [text path line lang diff-path diff-text x y]}]
+          :code/menu-open        (fn [st {:keys [text path line lang diff-path diff-text x y
+                                                 ask-index ask-sub]}]
                                    {:state (assoc st :web/code-menu {:text text :path path :line line :lang lang
                                                                      :diff-path diff-path
                                                                      :diff-text diff-text
+                                                                     :ask-index ask-index
+                                                                     :ask-sub ask-sub
                                                                      :x x :y y})})
           :code/menu-close       (fn [st _] {:state (dissoc st :web/code-menu)})
           :bubble/edit-start     (fn [st {:keys [index text images]}]
@@ -2511,6 +2516,9 @@
                                                    (.getAttribute a)))
                               path (attr "data-file-path")
                               line (some-> (attr "data-file-line") parse-long)
+                              ;; the chat block around it (views/with-ask-ref)
+                              ask-index (some-> (attr "data-ask-index") parse-long)
+                              ask-sub   (attr "data-ask-sub")
                               diff-path (attr "data-diff-path")
                               diff-text (attr "data-diff-text")
                               lang (some->> (some-> node (.closest "pre") .-className)
@@ -2528,7 +2536,9 @@
                                  (and path line) (assoc :line line)
                                  lang (assoc :lang lang)
                                  diff-text (assoc :diff-path diff-path
-                                                  :diff-text diff-text)))
+                                                  :diff-text diff-text)
+                                 ask-index (assoc :ask-index ask-index)
+                                 ask-sub   (assoc :ask-sub ask-sub)))
                             true))))]
       (.addEventListener
        js/document "click"
@@ -3351,6 +3361,7 @@
     (views/install-pointer-type-tracker!)
     (attach-code-copy-listener!)
     (attach-file-link-listener!)
+    (threads/attach-listeners! dispatch-ref)
     ;; :web/wide? mirrors the >=1024px breakpoint at which style.css docks the sidebar.
     (let [mql (.matchMedia js/window "(min-width: 1024px)")]
       (dispatch! {:type :web/set-wide :wide? (.-matches mql)})

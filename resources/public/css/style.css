@@ -1202,6 +1202,7 @@ body {
 }
 
 .timeline-content {
+  position: relative; /* the floating .ask-hover button */
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -6561,10 +6562,14 @@ code a:hover,
   }
 }
 
-/* ── Sub-agents panel ─────────────────────────────────────────── */
+/* ── Sub-agents in the timeline ───────────────────────────────── */
+/* A spawn's children post where it happened (.post--subagents, one card per
+   child) and each finished child's answer where the chat was by then
+   (.post--subagent-result); both scroll away with the conversation. */
+.post--subagents .post-body,
+.post--subagent-result .post-body { width: 100%; }
+
 .subagents-panel {
-  width: 100%;
-  margin: var(--size-3) auto 0;
   border: 1px solid var(--border-0);
   border-radius: var(--radius-md);
   background: var(--bg-1);
@@ -6576,19 +6581,9 @@ code a:hover,
   align-items: center;
   gap: var(--size-2);
   padding: var(--size-2) var(--size-3);
-  cursor: pointer;
-  user-select: none;
   font-size: var(--font-sm);
-}
-
-.subagents-head:hover { background: var(--bg-2); }
-
-.subagents-chevron {
-  display: inline-flex;
-  transition: transform 0.12s ease;
   color: var(--fg-2);
 }
-.subagents-chevron.is-open { transform: rotate(90deg); }
 
 .subagents-title { font-weight: 600; color: var(--fg-0); }
 
@@ -6618,44 +6613,84 @@ code a:hover,
   padding: var(--size-2) var(--size-3) var(--size-3);
 }
 
-.subagent-card {
-  border: 1px solid var(--border-0);
-  border-radius: var(--radius-md);
-  background: var(--bg-0);
-  overflow: hidden;
-}
-
-.subagent-card-head {
+/* A child is a viewer super-group (.viewer-tool-group--super) dressed as a
+   report sheet, so it never passes for the agent's own post: an
+   accent-tinted header strip (.subagent-strip, shared with the result's
+   head) with the label in small caps mono, then the rows / the answer on an
+   inset darker "paper". */
+.subagent-strip {
   display: flex;
   align-items: center;
   gap: var(--size-2);
-  padding: var(--size-2);
-  cursor: pointer;
-  user-select: none;
+  padding: var(--size-2) var(--size-3);
+  background: linear-gradient(90deg,
+              color-mix(in srgb, var(--accent) 22%, var(--bg-1)),
+              color-mix(in srgb, var(--accent) 7%, var(--bg-1)));
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-1);
 }
-.subagent-card-head:hover { background: var(--bg-1); }
-
-.subagent-card-chevron {
-  display: inline-flex;
-  transition: transform 0.12s ease;
+.subagent-strip .subagent-card-label {
+  flex: 0 1 auto;
+  font-size: inherit;
+  color: color-mix(in srgb, var(--accent) 55%, var(--fg-0));
+}
+.subagent-strip .viewer-group-latest,
+.subagent-strip .subagent-card-dur {
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--fg-3);
 }
-.subagent-card-chevron.is-open { transform: rotate(90deg); }
+.subagent-strip .viewer-group-latest { flex: 1; }
+.subagent-strip .viewer-group-count { color: var(--fg-2); font-weight: 400; }
+.subagent-strip .subagent-card-dur { margin-left: auto; }
+.subagent-strip .tool-call-toggle-icon,
+.subagent-strip .tool-call-running { color: var(--fg-2); }
+/* The tool header's spinner sits at the right; here it leads the label. */
+.subagent-strip .tool-call-running { margin-left: 0; }
 
+.subagent-card {
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+.subagent-card > .subagent-strip { padding: var(--size-1) var(--size-3); }
+/* The paper: the page surface (--bg-0), set off from the --bg-1 group box. */
+.subagent-rows { background: var(--bg-0); }
+/* Open, the rows sit flush in the group box like a folded run's: tool and
+   thinking headers divided by hairlines, the child's text between them. */
+.subagent-rows > .post--assistant,
+.subagent-rows > .subagent-task,
+.subagent-rows > .subagent-empty {
+  padding: var(--size-2) var(--size-3);
+  font-size: var(--font-sm);
+}
+.subagent-rows > .post--assistant + .post--tool > .tool-call-block--viewer,
+.subagent-rows > .subagent-task + .post--tool > .tool-call-block--viewer,
+.subagent-rows > .post--tool + .post--assistant {
+  border-top: var(--border-0);
+}
+
+/* Status chip: a tinted pill at the strip's right edge. */
 .subagent-status {
   display: inline-flex;
   align-items: center;
   gap: var(--size-1);
-  padding: 0 var(--size-1);
-  border-radius: var(--radius-sm);
-  font-size: var(--font-xs);
+  padding: 1px var(--size-2);
+  border-radius: var(--radius-full);
+  font-size: 0.65rem;
+  font-family: var(--font-mono, monospace);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
 }
-.subagent-status--running { color: var(--accent); }
-.subagent-status--done    { color: #16a34a; }
-.subagent-status--error   { color: var(--danger, #dc2626); }
-.subagent-status--stopped { color: var(--fg-3); }
+.subagent-strip .subagent-status { order: 9; }
+.subagent-status--running { color: var(--accent);   background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.subagent-status--done    { color: #16a34a;         background: rgba(22, 163, 74, 0.16); }
+.subagent-status--error   { color: var(--danger, #dc2626); background: rgba(220, 38, 38, 0.14); }
+.subagent-status--stopped { color: var(--fg-2);     background: var(--bg-2); }
 
 .subagent-card-label {
   flex: 1;
@@ -6681,6 +6716,7 @@ code a:hover,
 .subagents-clear,
 .subagent-dismiss,
 .subagent-stop,
+.subagent-upgrade,
 .subagent-open {
   display: inline-flex;
   align-items: center;
@@ -6693,21 +6729,51 @@ code a:hover,
 .subagents-clear:hover,
 .subagent-dismiss:hover { color: var(--fg-0); }
 .subagent-stop:hover { color: var(--danger, #dc2626); }
-.subagent-open:hover { color: var(--accent, var(--fg-0)); }
-
-.subagent-card-body {
-  padding: var(--size-2) var(--size-3);
-  border-top: 1px solid var(--border-0);
-}
+.subagent-open:hover,
+.subagent-upgrade:hover { color: var(--accent, var(--fg-0)); }
 
 .subagent-task {
   color: var(--fg-2);
   font-size: var(--font-sm);
-  margin-bottom: var(--size-2);
   white-space: pre-wrap;
 }
 
-.subagent-entry .post { padding: var(--size-1) 0; }
+/* The answer: strip, inset paper, footer with the text actions. */
+.subagent-result {
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.subagent-result-body {
+  padding: var(--size-3) var(--size-3);
+  font-size: var(--font-sm);
+  line-height: 1.55;
+  color: var(--fg-1);
+  background: var(--bg-0);
+}
+.subagent-result-body > :first-child { margin-top: 0; }
+.subagent-result-body > :last-child { margin-bottom: 0; }
+
+.subagent-result-foot {
+  display: flex;
+  gap: var(--size-3);
+  padding: var(--size-2) var(--size-3);
+  border-top: var(--border-0);
+}
+.subagent-result-foot button {
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--font-xs);
+  color: var(--fg-3);
+}
+.subagent-result-foot .subagent-open { color: var(--accent); }
+.subagent-result-foot .subagent-upgrade:hover { color: var(--fg-0); }
+.subagent-result-foot .subagent-dismiss:hover { color: var(--fg-0); }
 
 .subagent-empty {
   color: var(--fg-3);
@@ -6805,3 +6871,79 @@ code a:hover,
   outline: 2px solid var(--accent); outline-offset: 2px;
   color: var(--fg-0);
 }
+
+
+/* ── Threads on chat blocks ──────────────────────────────────── */
+/* A question about a block (xi.ext.subagent.threads) follows that block:
+   the diff thread card, unpinned and full width in the timeline. */
+.post--thread { padding-top: 0; }
+.post--thread .diff-thread,
+.subagents-list .diff-thread,
+.subagents-single .diff-thread {
+  position: static;
+  width: 100%;
+  margin: var(--size-1) 0 var(--size-2);
+}
+.post--thread .diff-thread-mini,
+.subagents-list .diff-thread-mini,
+.subagents-single .diff-thread-mini { margin: var(--size-1) 0 var(--size-2); }
+
+.thread-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-2);
+}
+
+.thread-compose { box-shadow: 0 10px 28px -12px rgb(0 0 0 / 0.5); }
+.thread-compose .diff-thread-foot { align-items: flex-end; }
+.thread-compose .diff-thread-chips { flex-wrap: wrap; }
+
+/* One Ask button per timeline, moved to the hovered block by
+   xi.web.threads; touch screens use the block menu instead. */
+.ask-hover {
+  position: absolute;
+  top: 0;
+  right: var(--size-1);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-top: 2px;
+  padding: 0;
+  border: var(--border-0);
+  border-radius: 999px;
+  background: var(--bg-1);
+  color: var(--fg-2);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+.ask-hover.is-visible { opacity: 1; pointer-events: auto; }
+.ask-hover:hover { color: var(--accent); border-color: var(--accent); }
+@media (min-width: 1100px) {
+  /* in the content's side padding, clear of the posts and the scrollbar */
+  .ask-hover { right: calc(4px - var(--size-4)); }
+}
+@media (hover: none) {
+  .ask-hover { display: none; }
+}
+
+/* Atop a sub-agent's own session: back to its parent, or keep it. */
+.subagent-origin {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  margin: var(--size-2) 0;
+  padding: var(--size-1) var(--size-2) var(--size-1) var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+  font-size: var(--font-sm);
+  color: var(--fg-2);
+}
+.subagent-origin-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

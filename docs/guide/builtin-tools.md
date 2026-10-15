@@ -107,13 +107,22 @@ the chat's last messages with the task and can read the rest with
 | --- | --- | --- |
 | `spawn_subagent` | Start a sub-agent with a task description and an optional label. Returns an id at once; the work runs in the background. | Every time; `a` stops asking for this chat |
 | `list_subagents` | The chat's sub-agents with status, running time and a line of recent output. | Never |
-| `subagent_result` | The final output of a sub-agent, or a notice that it is still running. | Never |
+| `subagent_result` | The final output of a sub-agent, or a notice that it is still running. `history: true` reads its messages and tool calls instead, numbered `<id>#<n>`; `before` pages back. | Never |
 | `stop_subagent` | Stop one by id. | Never |
-| `parent_history` | Only inside a sub-agent: the chat that started it, messages and tool calls numbered, newest page first. `before` pages back, `query` filters, `results: true` adds tool output. | Never |
+| `parent_history` | Only inside a sub-agent: the chat that started it, messages and tool calls numbered, newest page first. `before` pages back, `query` filters, `results: true` adds tool output, `agent` reads one of the chat's sub-agents instead. | Never |
 
-`/subagent <task>` starts one yourself; `/subagents` shows them in the chat; the web client has a panel for them
-below the conversation and lists them in the sidebar with the chat's
+`/subagent <task>` starts one yourself; `/subagents` shows them in the chat; the web client shows them
+in the conversation where they started and lists them in the sidebar with the chat's
 [buffers](web-client.md#buffers).
+
+A finished sub-agent is saved as a session of its own, hidden from your chats
+and deleted with the chat that started it; `subagent_result` with `history`
+still reads it after a restart. Questions you
+[ask about a block](web-client.md) in the web client run as sub-agents too.
+`list_subagents` shows each with the block it is about: `#12` is entry 12 of
+the chat, as `parent_history` numbers it, and `sa-x#4` is entry 4 of
+sub-agent `sa-x`.
+
 The `subagent-confirm` default rule is what asks; see
 [Rules reference](rules-reference.md#default-bundles). When no client is
 attached to answer, the spawn is refused.

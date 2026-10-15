@@ -37,6 +37,20 @@
              {:room-id "r1" :sub-id "sa-1" :aborted? false})]
     (is (= :done (child-status (:state te) "sa-1")))))
 
+(deftest spawn-and-turn-end-anchor-to-the-history-length
+  ;; The web timeline posts a child's card after the entry that spawned it
+  ;; and its result where the chat was when it ended.
+  (let [st0 (assoc-in (base-state) [:rooms "r1" :history]
+                      [{:kind :user :text "go"} {:kind :tool-call :id "t1"}])
+        st1 (:state ((:subagent/spawn h/handlers) st0
+                     {:room-id "r1" :sub-id "sa-1" :task "do it" :prompt "do it"}))
+        st2 (update-in st1 [:rooms "r1" :history] conj {:kind :text :text "meanwhile"})
+        st3 (:state ((:subagent/turn-end h/handlers) st2
+                     {:room-id "r1" :sub-id "sa-1" :aborted? false}))
+        child (first (room-agents st3))]
+    (is (= 2 (:anchor child)))
+    (is (= 3 (:ended-anchor child)))))
+
 (deftest dismissing-the-sub-agent-in-view-returns-to-the-chat
   (let [dismiss (get-in sa-web/extension [:handlers :subagent/dismiss])
         st      (-> (base-state)
@@ -67,7 +81,8 @@
     (is (= [[:app/dispatch {:type :subagent/dismiss :room-id "r1" :sub-id "sa-1"}]]
            (:effects (drop st {:session-id "s1" :sub-id "sa-1"}))))
     (is (nil? (stop st {:session-id "nope" :sub-id "sa-1"})) "no live room: nothing to act on")
-    (is (= #{:session/subagent-stop :session/subagent-dismiss} (:roomless-events sa-ext/extension)))))
+    (is (= #{:session/subagent-stop :session/subagent-dismiss :session/subagent-upgrade}
+           (:roomless-events sa-ext/extension)))))
 
 ;; ── Client mirror path ───────────────────────────────────────────────────────
 

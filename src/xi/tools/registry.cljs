@@ -86,12 +86,16 @@
 
    `call` ({:name :arguments} as the model issued it) scopes the ctx's
    :confirm! to this call, so asks a tool raises itself (the clj gate) land on
-   its own block even while parallel calls run (xi.dialog)."
+   its own block even while parallel calls run (xi.dialog), and rides in the
+   ctx as :call so a tool can find its own history entry
+   (dialog/permission-tool-index)."
   [exec-fn args ctx & [call]]
   ;; Invoke exec-fn inside .then so a synchronous throw becomes a rejected
   ;; promise too (not just an async rejection) — both land in .catch.
   (-> (js/Promise.resolve)
-      (.then (fn [_] (exec-fn args (cond-> ctx call (dialog/scope-confirm-to-call call)))))
+      (.then (fn [_] (exec-fn args (cond-> ctx
+                                      call (-> (dialog/scope-confirm-to-call call)
+                                               (assoc :call call))))))
       (.then (fn [result]
                {:content (-> (:content result)
                              (util/cap-tool-result-content)

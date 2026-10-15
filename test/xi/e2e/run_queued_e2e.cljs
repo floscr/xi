@@ -2,7 +2,7 @@
   "The queue popover's Run-in-a-sub-agent button, end to end: while a turn is
    held on a permission ask, a queued prompt sent through
    :subagent/run-queued leaves the queue and runs as a sub-agent whose system
-   prompt carries the parent conversation and its transcript path."
+   prompt carries the parent conversation and points at parent_history."
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.e2e.harness :as h :refer [of-type]]
@@ -70,8 +70,8 @@
                                                 (is (str/includes? sys "## The parent conversation"))
                                                 (is (str/includes? sys "[user]\nhello\n\n[assistant]\nhi\n\n[user]\nretitle the readme")
                                                     "the parent conversation, in order")
-                                                (let [transcript (second (re-find #"JSONL file (\S+\.jsonl)" sys))]
-                                                  (is (some? (h/slurp transcript)) (str transcript " exists"))))
+                                                (is (str/includes? sys "`parent_history` reads all of it")
+                                                    "the rest of the conversation through parent_history"))
                                               (h/connect! server)))
                                      (.then (fn [c2]
                                               ((:send! c2) {:type :room/join :target room-id})

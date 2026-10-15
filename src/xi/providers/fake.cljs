@@ -38,8 +38,10 @@
    {{tool-result}} (the last tool result), {{prompt}}, {{cwd}} and {{user}}.
 
    Sessions behave like the Claude provider's: main turns are written as a
-   Claude-format transcript under the Claude projects dir, keyed by a session
-   id reported via :on-session, so `--session` resumes see the earlier turns.
+   Claude-format transcript under the Claude projects dir (a turn's
+   CLAUDE_CONFIG_DIR env, a sub-agent's throwaway dir, wins), keyed by a
+   session id reported via :on-session, so `--session` resumes see the
+   earlier turns.
 
    With XI_FAKE_LLM_LOG set, every turn appends one JSON line describing what
    the model saw and did: provider, model, prompt, system, advertised tools,
@@ -113,8 +115,15 @@
 
 ;; ── Transcript (Claude CLI format) ───────────────────────────────────────────
 
-(defn- transcript-file [cwd sid]
-  (node-path/join (session/claude-projects-dir) (sync/encode-cwd-claude cwd)
+(defn- transcript-file
+  "Where a session's transcript goes: under the Claude projects dir, or with
+   `config-dir` (a turn's CLAUDE_CONFIG_DIR, as sub-agents run with) under
+   that dir's projects/, like the CLI."
+  [config-dir cwd sid]
+  (node-path/join (if config-dir
+                    (node-path/join config-dir "projects")
+                    (session/claude-projects-dir))
+                  (sync/encode-cwd-claude cwd)
                   (str sid ".jsonl")))
 
 (defn transcript-messages
@@ -176,11 +185,13 @@
               on-session]
        :as opts}]
   (let [cwd        (or cwd (.cwd js/process))
+        config-dir (get-in opts [:env "CLAUDE_CONFIG_DIR"])
         side?      (boolean no-tools?)
         {:keys [defs registry]} (if side? {:defs [] :registry {}} (tools/resolve-tooling opts))
         tool-names (mapv :name defs)
         user       (:user tool-ctx)
-        prior-file (when (and resume-session-id (not side?)) (transcript-file cwd resume-session-id))
+        prior-file (when (and resume-session-id (not side?))
+                     (transcript-file config-dir cwd resume-session-id))
         transcript (when prior-file (read-transcript prior-file))
         sid        (if side? nil (or resume-session-id (str (random-uuid))))
         flags      #js {:aborted false :wake nil}
@@ -247,7 +258,7 @@
                      (let [aborted? (.-aborted flags)]
                        (flush! (when (= "stop" stop-reason) {:stop_reason "end_turn"}))
                        (when sid
-                         (append-transcript! (transcript-file cwd sid) sid cwd
+                         (append-transcript! (transcript-file config-dir cwd sid) sid cwd
                                              (:messages @!turn)))
                        (log! (assoc base-entry
                                     :rule (:rule @!turn)
@@ -303,7 +314,7 @@
                      ;; killed turn leaves a cut-off transcript for
                      ;; session/turn-completed?.
                      (when sid
-                       (append-transcript! (transcript-file cwd sid) sid cwd
+                       (append-transcript! (transcript-file config-dir cwd sid) sid cwd
                                            [{:role "user" :content prompt}]))
                      (swap! !turn assoc :rule rule)
                      (step steps 0))))))))]

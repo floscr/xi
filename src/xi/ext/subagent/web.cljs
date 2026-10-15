@@ -8,7 +8,8 @@
 
    The turn itself only ever runs server-side, so the :subagent/start effect
    the spawn handler emits is a no-op here."
-  (:require [xi.ext.subagent.handlers :as h]))
+  (:require [xi.ext.subagent.handlers :as h]
+            [xi.ext.subagent.threads :as threads]))
 
 (def ^:private ext-id h/ext-id)
 
@@ -53,9 +54,20 @@
         gone?              (assoc-in [:state :rooms room-id :ui :active-buffer] :chat)
         (not (:remote? ev)) (assoc :effects [[:ws/send ev]])))))
 
+(defn- thread-close
+  "Close a thread here at once and on the server, which stops its running
+   turns; its echo applies the same state."
+  [st ev]
+  (when-let [res (threads/close st ev)]
+    (cond-> (select-keys res [:state])
+      (not (:remote? ev)) (assoc :effects [[:ws/send ev]]))))
+
 (def extension
   {:id       ext-id
-   :init     {:room {:agents [] :collapsed? false}}
+   :init     {:room {:agents []}}
+   ;; The hydrate handler is composed per half, so the mirror filters a
+   ;; resumed chat's saved sub-agents the same way.
+   :persist-room h/persisted
    :handlers (assoc h/handlers
                     ;; Stop button: the abort must run server-side (the turn
                     ;; handle lives in the server's registry), so forward the
@@ -81,9 +93,16 @@
                     ;; :subagent/spawn it causes comes back as a mirrored
                     ;; broadcast.
                     :subagent/explain-call forward
+                    ;; A question about a block (xi.ext.subagent.threads):
+                    ;; the spawn comes back as a mirrored broadcast.
+                    :subagent/ask forward
+                    :subagent/thread-close thread-close
+                    ;; Make a saved child a listed session: disk work, so
+                    ;; the server's; :subagent/upgraded comes back.
+                    :subagent/upgrade forward
+                    :session/subagent-upgrade forward
                     ;; The queue popover's "Run in a sub-agent": the queue
                     ;; and the spawn are server state, both come back as
                     ;; mirrored broadcasts.
                     :subagent/run-queued forward)
-   :fx       {:subagent/start    (fn [_ _] nil)
-              :subagent/promote! (fn [_ _] nil)}})
+   :fx       {:subagent/start (fn [_ _] nil)}})

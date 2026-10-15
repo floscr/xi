@@ -10,9 +10,20 @@
    every client:
      [:rooms rid :ext :subagents]
        {:agents [{:id :label :task :status :history [] :result
-                  :started :ended :errored? :expanded?}]
-        :collapsed? bool}
-   status: :running | :done | :error | :stopped"
+                  :started :ended :errored? :expanded?
+                  :anchor :ended-anchor :call-id
+                  :cli-session-id :session-id :upgraded?
+                  :node :thread :question :closed?}]}
+   status: :running | :done | :error | :stopped
+   anchor / ended-anchor: the room history's length at spawn / at the end,
+   where the web timeline places the child's card and its result; :call-id
+   is the spawn_subagent call that started it (a stable anchor once the
+   history is rebuilt from the transcript, xi.ext.subagent.threads).
+   session-id: the hidden session the child was saved as when it finished
+   (xi.ext.subagent save-fx); the entry is the parent's link to it and is
+   saved with the parent chat (`persisted`).
+   node / thread / question: a question thread about a block
+   (xi.ext.subagent.threads)."
   (:require [clojure.string :as str]
             [xi.agent :as agent]
             [xi.core.state :as state]
@@ -61,7 +72,7 @@
 (def ^:private context-recent-entries 12)
 (def ^:private context-clips {:msg-chars 1500 :arg-chars 200})
 
-(defn- clip [s n]
+(defn clip [s n]
   (let [s (str s)]
     (if (> (count s) n)
       (str (subs s 0 n) "\n… (" (- (count s) n) " more characters)")
@@ -72,7 +83,7 @@
     (str/join "\n" (keep :text content))
     (str content)))
 
-(defn- entry-text
+(defn entry-text
   "One history entry as transcript text, clipped per `clips`; a tool call's
    result only with :result-chars. nil for entries a reader skips (thinking)."
   [{:keys [kind text tool arguments is-error result error]}
@@ -120,10 +131,11 @@
         (recur (conj acc line) (next xs) (+ size (count t)))))))
 
 (defn history-page
-  "One parent_history page of room `history`: the `limit` entries before
-   index `before` (default: the end) whose text holds `query`, numbered by
-   their history index, oldest first, then how to page back."
-  [history {:keys [before limit query results]}]
+  "One parent_history page of room `history` (with `agent`, of that
+   sub-agent's): the `limit` entries before index `before` (default: the
+   end) whose text holds `query`, numbered by their history index, oldest
+   first, then how to page back."
+  [history {:keys [before limit query results agent]}]
   (let [clips  (cond-> history-clips results (assoc :result-chars 1500))
         q      (some-> query str/trim str/lower-case not-empty)
         end    (if (number? before) before (count history))
@@ -137,16 +149,20 @@
                      history)
         limit  (max 1 (int (or limit history-default-limit)))
         shown  (if (seq lines) (older-first-within-budget lines limit) ())
-        first-i (ffirst shown)]
+        first-i (ffirst shown)
+        prefix (if agent (str agent "#") "#")]
     (if (empty? shown)
       (str "No entries" (when q (str " matching " (pr-str query)))
-           (when (number? before) (str " before #" before)) ".")
-      (str "Parent conversation, entries #" first-i "–#" (first (last shown))
+           (when (number? before) (str " before " prefix before)) ".")
+      (str (if agent (str "Sub-agent " agent) "Parent conversation")
+           ", entries " prefix first-i "–" prefix (first (last shown))
            " of " (count history) (when q (str " matching " (pr-str query)))
            ", oldest first:\n\n"
-           (str/join "\n\n" (map (fn [[i t]] (str "#" i " " t)) shown))
+           (str/join "\n\n" (map (fn [[i t]] (str prefix i " " t)) shown))
            (when (< (count shown) (count lines))
-             (str "\n\n… earlier: " parent-history-tool " with before " first-i))))))
+             (str "\n\n… earlier: " parent-history-tool " with "
+                  (when agent (str "agent " (pr-str agent) ", "))
+                  "before " first-i))))))
 
 (defn parent-context
   "The parent conversation for a sub-agent's system prompt: an excerpt of the
@@ -182,18 +198,28 @@
    knows the parent conversation through its system prompt (child-system;
    `:parent-context? false` opts out) and the parent_history tool.
 
+   `:anchor` is the room history's length at spawn time: the web timeline
+   renders the child's card there (after the spawn_subagent call that
+   started it), like answered dialogs. Clients apply the same mirrored event
+   to the same history, so the anchor agrees everywhere.
+
+   The event's :call-id / :node / :thread / :question go onto the child as
+   they are (see the ns doc).
+
    Emits the :subagent/start effect — the node build runs the turn; the web
    build registers a no-op for it (the turn only ever runs server-side).
    Needs the event's :sub-id: every client mirrors it (the node ext supplies
    a missing one)."
   [st {:keys [room-id sub-id task label prompt images] :as ev}]
   (when-let [room (and sub-id (state/get-room st room-id))]
-    (let [child  {:id      sub-id
-                  :label   (or label (default-label task))
-                  :task    task
-                  :status  :running
-                  :history []
-                  :started (.now js/Date)}]
+    (let [child  (merge {:id      sub-id
+                         :label   (or label (default-label task))
+                         :task    task
+                         :status  :running
+                         :history []
+                         :started (.now js/Date)
+                         :anchor  (count (:history room))}
+                        (select-keys ev [:call-id :node :thread :question]))]
       {:state   (update-in st [:rooms room-id :ext ext-id :agents]
                            (fnil conj []) child)
        :effects [[:subagent/start
@@ -250,18 +276,23 @@
                           #(-> % (assoc :errored? true)
                                (update :history conj {:kind :error :error error})))}))
 
-(defn- turn-end [st {:keys [room-id sub-id aborted?]}]
+(defn- turn-end
+  "`:ended-anchor` is the room history's length when the child finished: the
+   web timeline shows its result there, where the conversation was by then."
+  [st {:keys [room-id sub-id aborted?]}]
   (when (find-child st room-id sub-id)
-    {:state (update-child st room-id sub-id
-                          (fn [a]
-                            (let [history (agent/finalize-history (:history a))]
-                              (assoc a
-                                     :history history
-                                     :ended  (.now js/Date)
-                                     :result (final-text history)
-                                     :status (cond aborted?        :stopped
-                                                   (:errored? a)   :error
-                                                   :else           :done)))))}))
+    (let [ended-anchor (count (get-in st [:rooms room-id :history]))]
+      {:state (update-child st room-id sub-id
+                            (fn [a]
+                              (let [history (agent/finalize-history (:history a))]
+                                (assoc a
+                                       :history history
+                                       :ended  (.now js/Date)
+                                       :ended-anchor ended-anchor
+                                       :result (final-text history)
+                                       :status (cond aborted?        :stopped
+                                                     (:errored? a)   :error
+                                                     :else           :done)))))})))
 
 (defn- session-init
   "The provider reported the child's CLI session id — remember it so the
@@ -271,22 +302,56 @@
     {:state (update-child st room-id sub-id #(assoc % :cli-session-id cli-session-id))}))
 
 (defn promoted
-  "A sub-agent got promoted to a full session: record the session id on the
-   child and link it into the parent session's :promoted-subagents."
-  [st {:keys [room-id sub-id session-id label]}]
+  "A sub-agent was saved as a (hidden) session: record its id on the child,
+   whose entry is the parent's saved link to it (`persisted`)."
+  [st {:keys [room-id sub-id session-id]}]
   (when (find-child st room-id sub-id)
-    {:state (-> st
-                (update-child room-id sub-id #(assoc % :session-id session-id))
-                (update-in [:rooms room-id :session :promoted-subagents]
-                           (fn [ps]
-                             (if (some #(= sub-id (:sub-id %)) ps)
-                               ps
-                               (conj (vec ps) {:sub-id sub-id :label label
-                                               :session-id session-id})))))}))
+    {:state (update-child st room-id sub-id #(assoc % :session-id session-id))}))
+
+(defn upgraded
+  "The child's session was made a regular one, listed with the other chats."
+  [st {:keys [room-id sub-id]}]
+  (when (find-child st room-id sub-id)
+    {:state (update-child st room-id sub-id #(assoc % :upgraded? true))}))
+
+;; ── Saved with the parent chat (:persist-room) ───────────────────────────────
+
+(def ^:private saved-keys
+  [:id :label :task :status :result :started :ended :errored?
+   :anchor :ended-anchor :call-id :session-id :upgraded?
+   :node :thread :question :closed?])
+
+(defn saved-child
+  "A child as the parent chat saves it: the link block without its history,
+   which lives in the child's own session. A child still running when saved
+   can't be running once the chat is loaded again, so it is :stopped."
+  [child]
+  (cond-> (select-keys child saved-keys)
+    (= :running (:status child)) (assoc :status :stopped)))
+
+(defn persisted
+  "The :persist-room fn of both halves: the agents list as saved children.
+   Idempotent, as hydration filters the saved slice through it again."
+  [slice]
+  {:agents (mapv saved-child (:agents slice))})
+
+(defn reset-for-session
+  "Chained after :session/resumed and :session/created: the room now holds
+   another conversation (or the same one reloaded), and the sub-agents of the
+   one before were saved with it. A resume puts the loaded chat's back right
+   after (:ext.persist/hydrate). Running ones stay so their turn can finish;
+   /truncate (:keep-history?) keeps them all. Node-only: the web opens each
+   session in its own room."
+  [st {:keys [room-id keep-history?]}]
+  (let [as (agents st room-id)]
+    (when (and (seq as) (not keep-history?))
+      {:state (assoc-in st [:rooms room-id :ext ext-id :agents]
+                        (filterv #(= :running (:status %)) as))})))
 
 (defn on-session-resumed
   "Rehydrate promoted sub-agent stubs from the resumed session's
-   :promoted-subagents so the panel links survive restarts.
+   :promoted-subagents, the links of sessions saved before the agents list
+   was saved with the chat (`persisted`). Hydration dedupes them by :id.
 
    NOT in the shared `handlers` map: on the web, extension handlers install
    as :local-handlers, which plain-merge OVER the wrapped base map — a
@@ -305,10 +370,6 @@
       (when (seq stubs)
         {:state (update-in st [:rooms room-id :ext ext-id :agents] (fnil into []) stubs)}))))
 
-(defn- toggle-collapse [st {:keys [room-id]}]
-  (when (state/get-room st room-id)
-    {:state (update-in st [:rooms room-id :ext ext-id :collapsed?] not)}))
-
 (defn- toggle-child
   "Expand/collapse one child's history in the web panel. Children default
    collapsed (:expanded? absent) so N running agents render only their heads;
@@ -317,19 +378,6 @@
   (when (find-child st room-id sub-id)
     {:state (update-child st room-id sub-id #(update % :expanded? not))}))
 
-(defn dismiss
-  "Remove finished sub-agents from the panel: the one named by :sub-id, or
-   every non-running one when absent. Running children are never dropped (they
-   would keep streaming events into a missing entry); the panel hides itself
-   once the list is empty."
-  [st {:keys [room-id sub-id]}]
-  (when (seq (agents st room-id))
-    {:state (update-in st [:rooms room-id :ext ext-id :agents]
-                       (fn [as]
-                         (filterv (fn [a]
-                                    (or (= :running (:status a))
-                                        (and sub-id (not= sub-id (:id a)))))
-                                  as)))}))
 
 ;; ── Explain a permission-gated tool call ─────────────────────────────────────
 ;; The web client's tool block grows an Explain button next to Allow/Deny.
@@ -359,6 +407,24 @@
   (and (string? sub-id)
        (or (str/starts-with? sub-id explain-prefix)
            (str/starts-with? sub-id ask-prefix))))
+
+
+(defn dismiss
+  "Remove finished sub-agents: the one named by :sub-id, or every
+   non-running one when absent, except the inline ones (`inline-sub?`:
+   threads and explanations, closed on their own). Running children are
+   never dropped (they would keep streaming events into a missing entry). A
+   dismissed child's link leaves the parent chat."
+  [st {:keys [room-id sub-id]}]
+  (when (seq (agents st room-id))
+    {:state (update-in st [:rooms room-id :ext ext-id :agents]
+                       (fn [as]
+                         (filterv (fn [a]
+                                    (or (= :running (:status a))
+                                        (if sub-id
+                                          (not= sub-id (:id a))
+                                          (inline-sub? (:id a)))))
+                                  as)))}))
 
 (defn ask-prompt
   "The diff Ask sub-agent's prompt. `earlier` ([{:question :answer}]) is the
@@ -513,6 +579,6 @@
    :subagent/turn-end        turn-end
    :subagent/session-init    session-init
    :subagent/promoted        promoted
-   :subagent/toggle-collapse toggle-collapse
+   :subagent/upgraded        upgraded
    :subagent/toggle-child    toggle-child
    :subagent/dismiss         dismiss})

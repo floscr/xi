@@ -67,6 +67,27 @@ projects** in the sidebar opens the project list (`/projects`).
   reads the call and the conversation and says what
   the call does, why the agent wants it and the risk. The answer appears
   under the tool block and stays there after you decide.
+- **Sub-agents in the chat.** When the agent (or `/subagent`) starts
+  [sub-agents](builtin-tools.md#sub-agents), they appear as a post right
+  where that happened, one folded row each like a collapsed run of tool
+  calls: its status, label, step count with the latest tool, and running
+  time. Open a row for its output, or stop it. The post scrolls away with
+  the conversation. When a sub-agent finishes, its answer appears as a post
+  where the conversation was by then, with buttons to open it as a chat of
+  its own, keep it as a session or dismiss it. A finished sub-agent is saved
+  as a session of its own, hidden from your chats and deleted with the chat.
+  The chat keeps the link, so its posts and Open as chat work after a
+  restart. **Keep as session** lists it with your other chats; so does the
+  same button on top of the sub-agent's chat.
+- **Ask about any block.** Hover a message, tool call or thinking block and
+  click the ⚡ button at its right edge. On a phone, tap the block (or
+  long-press a tool header); for a code block or your own message, it is in
+  the block's menu. A field opens under the block with suggested questions.
+  The question goes to a [sub-agent](builtin-tools.md#sub-agents) that gets
+  the block and the conversation; its answer streams in under the block,
+  where you can reply, collapse the thread, or close it. Blocks inside an
+  open sub-agent row work the same, and their threads show under that
+  sub-agent. The agent sees your questions in `list_subagents`.
 - **Queue messages.** A message sent while the agent works waits for the
   turn to end; the number in the action row opens the queue. Its ▶ runs a
   message in a [sub-agent](builtin-tools.md#sub-agents) right away instead,
@@ -141,10 +162,11 @@ refreshes it in place.
   buffers ("2 buffers · 1 sub-agent"), a spinner on the ones still running.
   A row shows the sub-agent in place of the chat, like a buffer: its task
   and output, read-only, with buttons to stop it, open it as a chat of its
-  own or dismiss it. The topbar pill lists the chat's sub-agents too.
+  own or dismiss it. The topbar pill lists the chat's sub-agents too, and
+  the chat shows them where they were started (above).
   The trailing button stops a running one or dismisses a finished one.
-  Sub-agents live with the chat's room: once the room closes they are gone
-  from the list.
+  The list shows the sub-agents of open chats; the chat saves the finished
+  ones and shows them again when you open it.
 - **In the command palette** (Ctrl/Cmd+K), the Buffers group lists the
   current chat's buffers first, then every other session's.
 - **Who is where.** On a server with several users, a buffer row shows the

@@ -12,20 +12,28 @@
    spawn_subagent call (denied when no client is attached).
 
    State is room-scoped, so it rides in :room/joined snapshots and mirrors to
-   every client (the web Sub-agents panel builds up live):
-     [:rooms rid :ext :subagents]
-       {:agents [{:id :label :task :status :history [] :result
-                  :started :ended :errored? :expanded?}]
-        :collapsed? bool}
-   status: :running | :done | :error | :stopped
+   every client; its shape is in xi.ext.subagent.handlers.
+
+   A finished sub-agent is saved as a hidden session (`save-fx`, tagged
+   :subagent-origin so listings skip it) and its entry, without the history,
+   is saved with the parent chat (:persist-room): the parent's link block to
+   the child session. Open as chat resumes it; upgrade makes it a regular,
+   listed session. Question threads on blocks are sub-agents too
+   (xi.ext.subagent.threads), so a chat and its sub-agents form a graph the
+   agents walk by node address (parent_history `agent`, subagent_result
+   `history`).
 
    The turn itself is run by the :subagent/start effect (xi.subagent, wired in
    xi.cli next to agent/create-fx). This namespace is the node data surface:
    tools, the turn-running effect wiring, system prompt. The pure state
    handlers live in xi.ext.subagent.handlers so the web half can reuse them."
   (:require [clojure.string :as str]
+            [xi.commands :as commands]
+            [xi.core.events :as events]
             [xi.core.state :as state]
+            [xi.dialog :as dialog]
             [xi.ext.subagent.handlers :as h]
+            [xi.ext.subagent.threads :as threads]
             [xi.session :as session]
             [xi.subagent :as subagent]))
 
@@ -89,9 +97,9 @@
       {:effects [[:app/dispatch {:type event-type :room-id rid :sub-id sub-id}]]})))
 
 (defn- promote-sub
-  "Open a sub-agent as a full chat. First open promotes it — the
-   :subagent/promote! effect moves its transcript into a real session —
-   after which the child carries :session-id and opening is just a resume."
+  "Open a sub-agent as a full chat: a resume of the session it was saved as
+   when it finished (`save-fx`). One that has none yet (finished before
+   sub-agents were saved at the end) is saved now."
   [st {:keys [room-id sub-id open?]}]
   (when-let [child (find-child st room-id sub-id)]
     (cond
@@ -105,53 +113,79 @@
                                  :text "Sub-agent is still running — wait for it to finish before opening it as a chat."}]]}
 
       :else
-      {:effects [[:subagent/promote! {:room-id room-id :sub-id sub-id
-                                      :open? open?}]]})))
+      {:effects [[:subagent/save! {:room-id room-id :sub-id sub-id
+                                   :open? open?}]]})))
 
-(defn- promote-fx
-  "Promote a finished sub-agent to a real session: move its transcript out of
-   the throwaway config dir, persist the parent → child link, broadcast
-   :subagent/promoted, and (optionally) resume it into this room."
+(defn- turn-end
+  "The shared turn-end, then save the child as a hidden session (`save-fx`)."
+  [st {:keys [room-id sub-id] :as ev}]
+  (when-let [res ((:subagent/turn-end h/handlers) st ev)]
+    (update res :effects (fnil conj [])
+            [:subagent/save! {:room-id room-id :sub-id sub-id}])))
+
+(defn- upgrade
+  "Make a saved child a regular session, listed with the other chats."
+  [st {:keys [room-id sub-id]}]
+  (when-let [sid (:session-id (find-child st room-id sub-id))]
+    {:effects [[:subagent/upgrade! {:session-id sid}]]}))
+
+(defn- upgrade-session
+  "Roomless: the same from the child session itself (its header), by id."
+  [_st {:keys [session-id]}]
+  (when (string? session-id)
+    {:effects [[:subagent/upgrade! {:session-id session-id}]]}))
+
+(defn- save-fx
+  "Save a finished sub-agent as a hidden session: move its transcript out of
+   the throwaway config dir into a session tagged :subagent-origin (listings
+   skip it), broadcast :subagent/promoted so the child's entry, the parent
+   chat's saved link, carries its id, and with `open?` resume it into this
+   room. Without a transcript (a provider that leaves none) the child keeps
+   only its result; only an open reports that."
   [{:keys [dispatch! get-state]} {:keys [room-id sub-id open?]}]
   (let [st     (get-state)
         room   (get-in st [:rooms room-id])
         child  (find-child st room-id sub-id)
-        parent (:session room)
         cfg    (subagent/config-dir sub-id)
-        saved  (when (and child cfg (:cli-session-id child))
+        saved  (when (and child cfg (:cli-session-id child) (not (:session-id child)))
                  (session/promote-subagent-session!
                   {:config-dir     cfg
                    :cwd            (:cwd room)
                    :cli-session-id (:cli-session-id child)
                    :label          (:label child)
-                   :origin         {:session-id (:id parent)
+                   :origin         {:session-id (get-in room [:session :id])
                                     :sub-id     sub-id}}))]
-    (if-not saved
-      (dispatch! {:type :ui/status :room-id room-id
-                  :text "Couldn't open this sub-agent as a chat — no transcript found (non-Claude sub-agents can't be promoted)."})
-      (do
-        (subagent/cleanup-dir! sub-id)
-        ;; Persist the link on the parent so it survives restarts.
-        (when parent
-          (session/update-session!
-           parent
-           {:promoted-subagents
-            (let [ps (vec (:promoted-subagents parent))]
-              (if (some #(= sub-id (:sub-id %)) ps)
-                ps
-                (conj ps {:sub-id sub-id :label (:label child)
-                          :session-id (:id saved)})))}))
-        (dispatch! {:type :subagent/promoted :room-id room-id :sub-id sub-id
-                    :session-id (:id saved) :label (:label child)})
-        (when open?
-          ;; Resolve the freshly saved session into a listing summary
-          ;; (find-session-by-id sees hidden sessions) and resume it here.
-          (when-let [summary (session/find-session-by-id (:id saved))]
-            (dispatch! {:type :session/resumed
-                        :room-id room-id
-                        :session (session/load-session summary)
-                        :summary summary
-                        :messages (session/read-session-messages summary)})))))))
+    (when saved
+      (subagent/cleanup-dir! sub-id)
+      (dispatch! {:type :subagent/promoted :room-id room-id :sub-id sub-id
+                  :session-id (:id saved)}))
+    (when open?
+      ;; find-session-by-id sees hidden sessions
+      (if-let [summary (some-> (or (:id saved) (:session-id child))
+                               session/find-session-by-id)]
+        (dispatch! {:type :session/resumed
+                    :room-id room-id
+                    :session (session/load-session summary)
+                    :summary summary
+                    :messages (session/read-session-messages summary)})
+        (dispatch! {:type :ui/status :room-id room-id
+                    :text "Couldn't open this sub-agent as a chat — no transcript found (non-Claude sub-agents can't be opened)."})))))
+
+(defn- upgrade-fx
+  "Clear a child session's :subagent-origin on disk, then tell the parent's
+   live room (its link block), the child's live room (whose session map is
+   saved back, so it must lose the marker too) and the lobby."
+  [{:keys [dispatch! get-state]} {:keys [session-id]}]
+  (when-let [summary (session/find-session-by-id session-id)]
+    (let [origin (:subagent-origin summary)]
+      (when (and origin (session/upgrade-subagent-session! summary))
+        (let [st (get-state)]
+          (when-let [rid (room-for-session st (:session-id origin))]
+            (dispatch! {:type :subagent/upgraded :room-id rid :sub-id (:sub-id origin)}))
+          (when-let [rid (room-for-session st session-id)]
+            (dispatch! {:type :session/updated :room-id rid
+                        :session {:subagent-origin nil}}))
+          (dispatch! {:type :subagent/session-upgraded :session-id session-id}))))))
 
 (defn- spawn
   "h/spawn, minting a missing :sub-id first. A spawn without one (/subagent,
@@ -201,9 +235,13 @@
    {:name "subagent_result"
     :description (str "Fetch a sub-agent's result by its id. Returns the final "
                       "output once it is done, or a 'still running' notice with "
-                      "recent output otherwise (call again later to poll).")
+                      "recent output otherwise (call again later to poll). "
+                      "With `history`, its work instead: messages and tool "
+                      "calls numbered <id>#<n>, the newest first page.")
     :input_schema {:type "object"
-                   :properties {:id {:type "string" :description "The sub-agent id from spawn_subagent / list_subagents."}}
+                   :properties {:id      {:type "string" :description "The sub-agent id from spawn_subagent / list_subagents."}
+                                :history {:type "boolean" :description "Read the sub-agent's history instead of its result."}
+                                :before  {:type "number" :description "With history: only entries before this number."}}
                    :required ["id"]}}
    {:name "stop_subagent"
     :description "Stop a running sub-agent by its id."
@@ -223,13 +261,19 @@
       (str "Sub-agents:\n"
            (str/join
             "\n"
-            (map (fn [{:keys [id label status started ended] :as child}]
+            (map (fn [{:keys [id label status started ended node thread question session-id]
+                       :as child}]
                    (let [dur (when started
                                (format-duration (- (or ended now) started)))
                          snip (recent-snippet child)]
                      (str "  • [" (name status) "] " id
-                          (when label (str " — " label))
+                          (if node
+                            (str " — the user asked about " (threads/address node)
+                                 (when (not= thread id) (str " (thread " thread ")"))
+                                 ": " (pr-str question))
+                            (when label (str " — " label)))
                           (when dur (str " (" dur ")"))
+                          (when session-id (str " [session " session-id "]"))
                           (when (and (= status :running) snip)
                             (str "\n      … " snip)))))
                  as))))))
@@ -242,21 +286,62 @@
         "with `subagent_result` (id \"" sub-id "\") once it reports done. Stop "
         "it early with `stop_subagent`.")))
 
+(defn- own-call-id
+  "The id of the history entry of `call` ({:name :arguments}, the tool ctx's
+   :call), the tool call running now, or nil."
+  [st room-id call]
+  (when call
+    (let [history (vec (:history (state/get-room st room-id)))]
+      (some->> (dialog/permission-tool-index {:call call} history 0)
+               (nth history)
+               :id))))
+
 (defn- spawn-tool
   "Spawn the sub-agent and return its id. Approval is policy — the
-   `::subagent-confirm` default rule asks before this ever runs."
-  [{:keys [task label]} {:keys [dispatch! room-id]}]
-  (let [sub-id (gen-id "sa")
-        label  (or (not-empty label) (default-label task))]
-    (dispatch! {:type :subagent/spawn :room-id room-id
-                :sub-id sub-id :task task :label label :prompt task})
+   `::subagent-confirm` default rule asks before this ever runs. The spawn
+   names the call that made it (:call-id), the card's anchor in a history
+   rebuilt from the transcript."
+  [{:keys [task label]} {:keys [dispatch! get-state room-id call]}]
+  (let [sub-id  (gen-id "sa")
+        label   (or (not-empty label) (default-label task))
+        call-id (own-call-id (get-state) room-id call)]
+    (dispatch! (cond-> {:type :subagent/spawn :room-id room-id
+                        :sub-id sub-id :task task :label label :prompt task}
+                 call-id (assoc :call-id call-id)))
     (spawn-result sub-id label)))
 
-(defn- result-tool [{:keys [id]} {:keys [get-state room-id]}]
-  (let [child (find-child (get-state) room-id id)]
+(defn- agent-history
+  "Sub-agent `sub-id`'s history: in memory while the room holds it, else
+   rebuilt from the session it was saved as (thinking blocks are not in the
+   transcript, so the numbers can differ from the live ones). nil when there
+   is neither."
+  [st room-id sub-id]
+  (let [child (find-child st room-id sub-id)]
+    (cond
+      (seq (:history child)) (:history child)
+      (:session-id child)
+      (some-> (session/find-session-by-id (:session-id child))
+              session/read-session-messages
+              commands/messages->history
+              not-empty))))
+
+(defn- agent-history-page
+  "A history page of sub-agent `sub-id` (h/history-page `opts`), or why
+   there is none."
+  [st room-id sub-id opts]
+  (if-let [history (agent-history st room-id sub-id)]
+    (h/history-page history (assoc opts :agent sub-id))
+    (str "No history for sub-agent " sub-id ".")))
+
+(defn- result-tool [{:keys [id history before]} {:keys [get-state room-id]}]
+  (let [st    (get-state)
+        child (find-child st room-id id)]
     (cond
       (nil? child)
       (text-result (str "No sub-agent with id " id "."))
+
+      history
+      (text-result (agent-history-page st room-id id {:before before}))
 
       (= :running (:status child))
       (text-result
@@ -297,19 +382,24 @@
 
 (defn- parent-history-exec
   "A sub-agent's tool ctx carries the PARENT room-id (xi.subagent), so this
-   reads the parent's live history."
-  [args {:keys [get-state room-id]}]
-  (text-result (h/history-page (:history (state/get-room (get-state) room-id))
-                               args)))
+   reads the parent's live history, or with `agent` a sibling's."
+  [{:keys [agent] :as args} {:keys [get-state room-id]}]
+  (let [st (get-state)]
+    (text-result
+     (if (seq agent)
+       (agent-history-page st room-id agent (dissoc args :agent))
+       (h/history-page (:history (state/get-room st room-id)) args)))))
 
 (def child-tool-definitions
   [{:name h/parent-history-tool
     :description (str "Read the conversation of the agent that spawned you: "
                       "user and assistant messages and tool calls, numbered "
-                      "by position, oldest first. Without arguments: the "
-                      "latest entries; page back with `before`.")
+                      "by position (#12), oldest first. Without arguments: the "
+                      "latest entries; page back with `before`. With `agent`, "
+                      "the work of one of its sub-agents instead (sa-x#4).")
     :input_schema {:type "object"
-                   :properties {:before  {:type "number" :description "Only entries before this number (the hint at the end of a page). Default: up to the latest."}
+                   :properties {:agent   {:type "string" :description "A sub-agent id (list_subagents, or sa-x in an address like sa-x#4): read its history instead."}
+                                :before  {:type "number" :description "Only entries before this number (the hint at the end of a page). Default: up to the latest."}
                                 :limit   {:type "number" :description "Max entries (default 40)."}
                                 :query   {:type "string" :description "Only entries containing this text, case-insensitive."}
                                 :results {:type "boolean" :description "Include tool call results, clipped."}}
@@ -365,12 +455,14 @@
 
 (def extension
   {:id               ext-id
-   :init             {:room {:agents [] :collapsed? false}}
+   :init             {:room {:agents []}}
+   :persist-room     h/persisted
    :system-prompt    system-prompt
    :tool-definitions tool-defs
    :tool-registry    tool-registry
    :handlers         (assoc h/handlers
                             :subagent/spawn spawn
+                            :subagent/turn-end turn-end
                             :room/close on-room-close
                             ;; The web queue popover's "Run in a sub-agent".
                             :subagent/run-queued queued->subagent
@@ -379,18 +471,29 @@
                             :session/subagent-stop    (session-sub-handler :subagent/abort)
                             :session/subagent-dismiss (session-sub-handler :subagent/dismiss)
                             :subagent/promote promote-sub
+                            :subagent/upgrade upgrade
+                            :session/subagent-upgrade upgrade-session
                             ;; The web Explain button (xi.web.views tool-post).
                             :subagent/explain-call h/explain-call
-                            ;; Chained after the core resume handler by
-                            ;; ext/merge-handlers — reseeds promoted stubs.
-                            :session/resumed h/on-session-resumed)
-   :fx               {:subagent/promote! promote-fx}
+                            ;; A question about a block, and closing its thread.
+                            :subagent/ask threads/ask
+                            :subagent/thread-close threads/close
+                            ;; Chained after the core handlers by
+                            ;; ext/merge-handlers: the room's sub-agents belong
+                            ;; to the chat before; a resume reseeds legacy links.
+                            :session/resumed (events/chain h/reset-for-session
+                                                           h/on-session-resumed)
+                            :session/created h/reset-for-session)
+   :fx               {:subagent/save!    save-fx
+                      :subagent/upgrade! upgrade-fx}
    ;; The sidebar lists a room's sub-agents with its buffers
    ;; (xi.server.room-manager/session-buffers on :lobby/state): refresh the
-   ;; lobby when one appears, finishes or goes.
+   ;; lobby when one appears, finishes or goes, and when an upgraded session
+   ;; joins the listings.
    :lobby-relevant   #{:subagent/spawn :subagent/turn-end :subagent/dismiss
-                       :subagent/promoted}
-   :roomless-events  #{:session/subagent-stop :session/subagent-dismiss}
+                       :subagent/promoted :subagent/session-upgraded}
+   :roomless-events  #{:session/subagent-stop :session/subagent-dismiss
+                       :session/subagent-upgrade}
    :commands         [{:name "subagents"
                        :description "View this room's background sub-agents"
                        :handler cmd-subagents}
