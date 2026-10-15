@@ -51,6 +51,7 @@
             [xi.fx :as fx]
             [xi.server.files :as files]
             [xi.server.room-manager :as rm]
+            [xi.server.shadow-relay :as shadow-relay]
             [xi.server.usage :as usage]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
@@ -909,8 +910,29 @@
                                          (catch :default _ ""))
                            upgrade? (some-> (.get headers "upgrade")
                                             (.toLowerCase)
-                                            (= "websocket"))]
+                                            (= "websocket"))
+                           ;; Same-host Origin only (port ignored: shadow's dev-http
+                           ;; serves the page on 8100). Key auth gates the rest.
+                           upgrade!
+                           (fn [data]
+                             (let [origin-host (some-> (.get headers "origin")
+                                                       (as-> o (try (.-hostname (js/URL. o))
+                                                                    (catch :default _ "<invalid>"))))
+                                   req-host    (try (.-hostname (js/URL. (str "http://" (.get headers "host"))))
+                                                    (catch :default _ nil))]
+                               (cond
+                                 (and origin-host (not= origin-host req-host))
+                                 (js/Response. "Forbidden origin" #js {:status 403})
+
+                                 (.upgrade srv req #js {:data data})
+                                 js/undefined
+
+                                 :else
+                                 (js/Response. "Upgrade failed" #js {:status 400}))))]
                        (cond
+                         (and upgrade? (shadow-relay/relay-path? pathname))
+                         (upgrade! #js {:relay (shadow-relay/upstream-url req)})
+
                          (.startsWith pathname "/api/")
                          (handle-api! req pathname)
 
@@ -918,24 +940,9 @@
                          (serve-static public-dir req icon-variant)
 
                          :else
-                         ;; Same-host Origin only (port ignored: shadow's dev-http
-                         ;; serves the page on 8100). Key auth gates the rest.
-                         (let [origin-host (some-> (.get headers "origin")
-                                                   (as-> o (try (.-hostname (js/URL. o))
-                                                                (catch :default _ "<invalid>"))))
-                               req-host    (try (.-hostname (js/URL. (str "http://" (.get headers "host"))))
-                                                (catch :default _ nil))]
-                           (cond
-                             (and origin-host (not= origin-host req-host))
-                             (js/Response. "Forbidden origin" #js {:status 403})
-
-                             (.upgrade srv req #js {:data #js {:cid (gen-client-id)
-                                                               :authed false
-                                                               :pendingCode nil}})
-                             js/undefined
-
-                             :else
-                             (js/Response. "Upgrade failed" #js {:status 400}))))))
+                         (upgrade! #js {:cid (gen-client-id)
+                                        :authed false
+                                        :pendingCode nil}))))
                    :websocket
                    #js {;; several base64 images per prompt
                         :maxPayloadLength (* 100 1024 1024)
@@ -1021,6 +1028,7 @@
                             (when (authed? ws)
                               (dispatch! {:type :client/disconnect :client-id cid}))
                             (.delete sockets cid)))}}
+             _ (set! (.-websocket opts) (shadow-relay/wrap-websocket (.-websocket opts)))
              ;; TLS is served on a second port sharing the handlers (Bun binds
              ;; one protocol per port); 7474 stays plain ws://.
              tls-port (or (some-> (aget js/process.env "XI_TLS_PORT") js/parseInt)

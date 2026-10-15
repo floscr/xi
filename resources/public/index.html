@@ -29,6 +29,10 @@
     <div style="padding: 20px; text-align: center; color: var(--fg-2);">Loading...</div>
   </div>
   <script src="/ui-runtime.js"></script>
+  <!-- Dev builds only (release builds ignore it): over https the shadow-cljs
+       live-reload socket can't reach ws://<host>:9630 (mixed content), so it
+       goes through this origin, which relays it to shadow (xi.server.shadow-relay). -->
+  <script>if(location.protocol==='https:')window.CLOSURE_UNCOMPILED_DEFINES={'shadow.cljs.devtools.client.env.devtools_url':location.origin}</script>
   <script src="/js/main.js"></script>
 </body>
 </html>

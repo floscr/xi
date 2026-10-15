@@ -31,7 +31,10 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   the same reducers, seeded by the `:room/joined` snapshot.
 - Served by the same Bun server that hosts the WS endpoint, from
   `resources/public` (SPA fallback to `index.html`). `bb web:build` compiles
-  the `:web` build; the dev watch hot-reloads it.
+  the `:web` build; the dev watch hot-reloads it. Over https (e.g. behind a
+  TLS proxy) the shadow-cljs devtools socket can't reach `ws://<host>:9630`,
+  so `index.html` points it at the page's origin and the server relays
+  `/api/remote-relay` to the local shadow server (`xi.server.shadow-relay`).
 
 ## Views
 
