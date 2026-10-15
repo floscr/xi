@@ -103,7 +103,9 @@ projects** in the sidebar opens the project list (`/projects`).
 
 A chat can hold views next to its conversation: the diffs you opened
 (`/diff`, the Git status entry, a commit from `/commits` or `/log`), the files you
-opened from a code block or the file finder, the system prompt (`/prompt`),
+opened from a code block, the file finder or a link to a file in a message or
+viewed markdown file (relative to the chat's directory or that file; a
+`:line` suffix is ignored), the system prompt (`/prompt`),
 terminals (`/term`) and the review canvas (`/canvas-review`).
 These are its **buffers**. Each file and each diff source is its own buffer,
 so opening a second file keeps the first; opening the same one again

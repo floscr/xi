@@ -49,15 +49,20 @@
 (defn relative-file-link
   "The file path an `href` found in the file at `base-path` points to, or nil
    when it isn't a link to another file: schemes (http:, mailto:, …),
-   protocol-relative and pure #fragment links. Drops ?query and #fragment;
-   absolute paths are returned as-is."
+   protocol-relative and pure #fragment links. Drops ?query, #fragment and a
+   `:line[:col]` suffix; absolute paths are returned as-is, a nil `base-path`
+   leaves relative ones relative."
   [base-path href]
   (when (and (string? href)
              (not (str/blank? href))
              (not (str/starts-with? href "#"))
              (not (str/starts-with? href "//"))
-             (not (re-find #"^[a-zA-Z][a-zA-Z0-9+.-]*:" href)))
-    (let [path (decode (first (str/split href #"[?#]" 2)))]
+             (or (not (re-find #"^[a-zA-Z][a-zA-Z0-9+.-]*:" href))
+                 ;; README.md:12 — a file and line, not a scheme
+                 (re-find #"^[^:/]*\.[^:/]*:\d+(:\d+)?([?#]|$)" href)))
+    (let [path (-> (first (str/split href #"[?#]" 2))
+                   (str/replace #":\d+(:\d+)?$" "")
+                   decode)]
       (when-not (str/blank? path)
         (if (str/starts-with? path "/")
           (normalize-path path)

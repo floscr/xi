@@ -2494,6 +2494,17 @@
            (when (open! e node)
              (.preventDefault e))))))))
 
+(defonce ^:private file-link-attached? (atom false))
+
+(defn- attach-file-link-listener!
+  "Links to files in chat messages and viewed files open a file buffer
+   (views/open-linked-file!)."
+  []
+  (when-not @file-link-attached?
+    (reset! file-link-attached? true)
+    (.addEventListener js/document "click"
+                       (fn [e] (some-> @dispatch-ref (views/open-linked-file! e))))))
+
 ;; ── Render ───────────────────────────────────────────────────────────────────
 
 (defn- el [id] (.getElementById js/document id))
@@ -3290,6 +3301,7 @@
     (install-viewport-tracking! state)
     (views/install-pointer-type-tracker!)
     (attach-code-copy-listener!)
+    (attach-file-link-listener!)
     ;; :web/wide? mirrors the >=1024px breakpoint at which style.css docks the sidebar.
     (let [mql (.matchMedia js/window "(min-width: 1024px)")]
       (dispatch! {:type :web/set-wide :wide? (.-matches mql)})

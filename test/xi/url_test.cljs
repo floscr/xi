@@ -41,11 +41,18 @@
   (testing "drops fragment and query, decodes escapes"
     (is (= "/r/x y.md" (url/relative-file-link "/r/a.md" "x%20y.md#section")))
     (is (= "/r/x.md" (url/relative-file-link "/r/a.md" "x.md?plain=1"))))
+  (testing "without a base, relative to wherever the caller resolves (the chat's cwd)"
+    (is (= "src/a.clj" (url/relative-file-link nil "./src/a.clj"))))
+  (testing "drops a :line[:col] suffix, which is not a scheme"
+    (is (= "README.md" (url/relative-file-link nil "README.md:12")))
+    (is (= "/r/src/a.clj" (url/relative-file-link "/r/x.md" "src/a.clj:3:7")))
+    (is (= "/r/a.md" (url/relative-file-link "/r/x.md" "a.md:4#top"))))
   (testing "absolute paths stay absolute"
     (is (= "/etc/x.md" (url/relative-file-link "/r/a.md" "/etc/../etc/x.md"))))
   (testing "non-file links"
     (is (nil? (url/relative-file-link "/r/a.md" "https://example.com/x.md")))
     (is (nil? (url/relative-file-link "/r/a.md" "mailto:a@b.c")))
+    (is (nil? (url/relative-file-link "/r/a.md" "tel:123")))
     (is (nil? (url/relative-file-link "/r/a.md" "//cdn.example.com/x.md")))
     (is (nil? (url/relative-file-link "/r/a.md" "#heading")))
     (is (nil? (url/relative-file-link "/r/a.md" "")))

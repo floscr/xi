@@ -2719,15 +2719,20 @@
   (let [ext (file-ext path)]
     (or (contains? md-diff/markdown-exts ext) (some? (grammars/get-grammar ext)))))
 
-(defn- open-linked-file!
-  "Click handler for a rendered markdown file: a relative link to a text file
-   opens that file in the viewer instead of a dead browser tab."
-  [dispatch! base-path e]
-  (when-let [a (some-> (.-target e) (.closest "a[href]"))]
-    (when-let [target (url/relative-file-link base-path (.getAttribute a "href"))]
-      (when (viewable-file? target)
-        (.preventDefault e)
-        (dispatch! {:type :file/open :path target})))))
+(defn open-linked-file!
+  "Document click handler (xi.web.core): a relative link to a text file opens
+   that file in a buffer instead of a dead browser tab. It resolves against
+   the file the link sits in (the nearest data-file-path: file buffer, Write
+   tool block), else stays relative for the server to resolve against the
+   room's cwd."
+  [dispatch! ^js e]
+  ;; target=_blank: a link of rendered markdown (xi.markdown.hiccup)
+  (when-let [a (some-> (.-target e) (.closest "a[href][target=_blank]"))]
+    (let [base (some-> (.closest a "[data-file-path]") (.getAttribute "data-file-path"))]
+      (when-let [target (url/relative-file-link base (.getAttribute a "href"))]
+        (when (viewable-file? target)
+          (.preventDefault e)
+          (dispatch! {:type :file/open :path target}))))))
 
 (defn- file-tab-view
   [dispatch! state {:keys [path text]}]
@@ -2738,8 +2743,7 @@
      (file-header dispatch! state path {:class "file-tab-header" :view? false}
                   [:span {:class ["file-tab-path"]} path])
      (if (contains? md-diff/markdown-exts ext)
-       [:div {:class ["file-tab-md"]
-              :on {:click #(open-linked-file! dispatch! path %)}}
+       [:div {:class ["file-tab-md"]}
         [:div {:class ["post-content"]} (md/render text)]]
        [:pre {:class ["file-tab-code"]}
         (if grammar (highlight-code grammar text) text)])]))
