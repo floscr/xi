@@ -89,13 +89,28 @@
   (shell "git" "commit" "-m" (str "chore(release): " tag))
   (shell "git" "tag" "-a" tag "-m" (str "Xi " version)))
 
+(defn- await-npm!
+  "A fresh version takes minutes to show up in `npm view`; the push and the
+   site wait for it, so the changelog never names a version you can't install."
+  [version]
+  (let [deadline (+ (System/currentTimeMillis) (* 20 60 1000))]
+    (print "  waiting for npm to list it") (flush)
+    (loop []
+      (cond
+        (published? version) (println " ✓")
+        (> (System/currentTimeMillis) deadline)
+        (fail! "\nnpm still doesn't list " version " after 20 min; run `bb release` again once it does")
+        :else (do (Thread/sleep 15000) (print ".") (flush) (recur))))))
+
 (defn- publish! [version]
   (step (str "Publish xi-agent@" version " to npm"))
   (if (published? version)
     (println "  already on npm")
-    (do (shell "bb" "package:publish")
-        (when-not (published? version)
-          (fail! "npm doesn't list " version " yet; run `bb release` again once it does")))))
+    (let [{:keys [exit]} (shell {:continue true} "bb" "package:publish")]
+      (when-not (zero? exit)
+        (fail! "npm publish failed. If it says " version " already exists, it is still"
+               " propagating: run `bb release` again in a few minutes"))
+      (await-npm! version))))
 
 (defn- push! []
   (step "Push")
