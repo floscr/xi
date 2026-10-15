@@ -1547,12 +1547,20 @@
                                                   {:path path :parent parent
                                                    :entries (or entries []) :error error})})
           :files/open            (fn [st {:keys [path cwd]}]
-                                   (let [cwd (or cwd (view-cwd st))]
+                                   (let [room-cwd (view-cwd st)
+                                         cwd      (or cwd room-cwd)]
                                      {:state (dissoc st :web/palette-page :web/palette-open?)
                                       :effects [[:palette/close nil]
-                                                [:ws/send {:type :file/web-read :cwd cwd :path path}]]}))
-          ;; The file buffer is client-local, one per path (xi.buffers/file-id);
-          ;; in a virtual new chat it lives on the :web/pending-room.
+                                                (if (and (not (new-chat-view? st)) (state/active-room st))
+                                                  ;; a room buffer (xi.ext.file-view), resolved against the room's cwd
+                                                  [:app/dispatch {:type :file/open
+                                                                  :path (if (or (= cwd room-cwd) (str/starts-with? path "/"))
+                                                                          path
+                                                                          (str cwd "/" path))}]
+                                                  ;; no room yet: a client-local buffer on the pending room
+                                                  [:ws/send {:type :file/web-read :cwd cwd :path path}])]}))
+          ;; A client-local file buffer, one per path (xi.buffers/file-id): the
+          ;; virtual new chat's (:web/pending-room) until it has a room.
           :file/web-read-result  (fn [st {:keys [path text error] :as ev}]
                                    (let [id     (buffers/file-id path)
                                          buf    {:kind :file :title path :path path
