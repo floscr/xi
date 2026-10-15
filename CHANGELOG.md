@@ -2,6 +2,80 @@
 
 What changed in each Xi release, newest first.
 
+## 0.4.0 - 2026-10-15
+
+### Added
+
+- Terminal
+  - Terminal buffers in the web client
+  - Key mode: the program gets every key, Ctrl+` or Alt+\ leaves
+  - Programs can prompt their chat and start sub-agents
+  - Programs can run Xi view actions, copy to the clipboard and show tooltips
+- Yolo
+  - `/yolo` answers every permission ask in a chat
+  - Sane and relentless levels; sane still asks before secrets and hard-to-undo actions
+  - Turning it on allows the asks already open
+- Sub-agents
+  - Ask a sub-agent about selected diff lines, answered inline
+  - `/subagent` command, also for running queued prompts
+  - Open a sub-agent in place of the chat, like a buffer
+  - Sub-agents can read the parent chat (`parent_history`)
+- Keyboard
+  - Link hints (`:hints/show`) click buttons and links
+  - Vim-style jumplist with Ctrl+O / Ctrl+I, buffers included
+  - Jump between the agent's answers with `:answer/prev` / `:answer/next`
+- Files
+  - File links in chat messages open as buffers
+  - Relative links in a viewed markdown file open in the viewer
+- Palette
+  - Start a chat in the background, images included
+  - Close the buffers of every session
+- Permissions
+  - `:task` rules match a project's bb, npm, yarn, pnpm and deno tasks
+  - "Allow for this chat" answer on permission asks
+  - The agent can write a repo's `.xi/rules.edn` after you confirm
+  - Read-only git in another repository runs without asking
+- Appearance
+  - Show every tool argument in the block header
+  - Color themes set the code size and diff line colors
+- Extensions
+  - Read the chat user's clock and location from their browser (`xi.api.device`)
+  - Block menus and file-header entries like "Open in vim"
+  - Clickable tool views
+- Sessions
+  - `session_view` tool to read a past session
+  - `session_search` with an empty query lists the newest sessions
+  - Agent profiles search only their own sessions and get a compute-only `clj`
+- Release button when a chat waits on another chat's git lock
+- Opened blocks are remembered per session
+- The review canvas opens as a chat buffer
+
+### Changed
+
+- Keyboard
+  - Alt+U goes to pending permission asks first
+  - Alt+J/K skip buffer rows in the sidebar
+- Appearance dialog split into Theme and Chat panes
+- The buffer palette lists the most recently viewed first
+- A lone tool or thinking block is no longer collapsed
+- The 7-day usage reset counts down in days and hours
+
+### Fixed
+
+- Palette
+  - Snippets, commands and search pages could open empty
+  - Skills didn't show after they loaded
+  - Parked draft chats were missing
+- Sidebar
+  - Cards could open the wrong session after a reorder
+  - Context menus closed while a chat was streaming
+- Files opened from the file finder were missing from the chat's buffers and gone on reload
+- After a server restart a chat could be blocked by its own git lock
+- Login refreshes left "Reply with: ok" sessions behind
+- A usage limit showed as three error cards
+- The composer lost focus when a render rebuilt it
+- `clj` refused reads of `~/.config/xi/sessions` when the path was built at runtime
+
 ## 0.3.0 - 2026-10-09
 
 ### Added
