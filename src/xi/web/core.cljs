@@ -1755,14 +1755,26 @@
 
 
 ;; ── Timeline auto-scroll state ───────────────────────────────────────────────
-;; Auto-scroll follows the bottom until the user scrolls up. Only a user
-;; gesture may turn it off: layout alone lowers scrollTop (the render window
-;; drops its top node, scroll anchoring compensates), so a scrollTop decrease
-;; counts as "scrolled up" only while a gesture is in flight. See
-;; attach-scroll-listener!.
+;; Auto-scroll follows the bottom until the user scrolls up. Layout alone
+;; lowers scrollTop too (the render window drops its top node, scroll
+;; anchoring compensates), so a scrollTop decrease counts as "scrolled up"
+;; only while a gesture is in flight or when nothing but the position moved
+;; (pure-scroll?). See attach-scroll-listener!.
 (defonce ^:private auto-scroll? (atom true))
 (defonce ^:private tracked-timeline (atom nil))
+;; The timeline's metrics at the last scroll event: scrollTop, and the
+;; scrollHeight / clientHeight that could have moved it.
 (defonce ^:private prev-scroll-top (atom 0))
+(defonce ^:private prev-scroll-extent (atom nil))
+(defn- remember-scroll-metrics! [^js el]
+  (reset! prev-scroll-top (.-scrollTop el))
+  (reset! prev-scroll-extent [(.-scrollHeight el) (.-clientHeight el)]))
+(defn- pure-scroll?
+  "Did only the scroll position move since the last scroll event? Then no
+   render, image load or viewport change shifted the content: the user did,
+   or iOS momentum, which fires no touch event once the finger is gone."
+  [^js el]
+  (= @prev-scroll-extent [(.-scrollHeight el) (.-clientHeight el)]))
 ;; Timestamp (ms) until which scrollTop changes count as a user gesture;
 ;; refreshed on touchmove, upward wheel, and scroll-up keys.
 (defonce ^:private user-scroll-intent-until (atom 0))
@@ -2370,13 +2382,22 @@
   600)
 
 (defonce ^:private load-earlier-pending? (atom false))
+;; The load waits for the scroll to settle: Safari has no scroll anchoring
+;; and iOS ignores scrollTop writes during momentum scrolling, so an insert
+;; mid-flight could not be compensated and, still "near the top" of the grown
+;; content, re-armed the next one all the way to the start of the session.
+(defonce ^:private load-earlier-timer (atom nil))
+(def ^:private load-earlier-settle-ms
+  120)
 
-(defn- maybe-load-earlier!
-  "Near the top of the timeline: press \"Show earlier messages\" for the user.
-   Safari has no scroll anchoring, so the added height is compensated by hand
-   when scrollTop did not move."
+(declare maybe-load-earlier!)
+
+(defn- load-earlier-now!
+  "Press \"Show earlier messages\" for the user and compensate the added
+   height by hand when scrollTop did not move (no scroll anchoring)."
   [^js timeline]
   (when (and (not @load-earlier-pending?)
+             (.-isConnected timeline)
              (< (.-scrollTop timeline) load-earlier-threshold-px))
     (when-let [btn (.querySelector timeline ".load-earlier button")]
       (let [top-before    (.-scrollTop timeline)
@@ -2392,9 +2413,23 @@
                 (when (and (pos? delta)
                            (<= (js/Math.abs (- (.-scrollTop timeline) top-before)) 2))
                   (set! (.-scrollTop timeline) (+ top-before delta))
-                  (reset! prev-scroll-top (.-scrollTop timeline))))
+                  (remember-scroll-metrics! timeline)))
               (reset! load-earlier-pending? false)
               (maybe-load-earlier! timeline)))))))))
+
+(defn- maybe-load-earlier!
+  "Near the top of the timeline: load earlier entries once no scroll event
+   has come for load-earlier-settle-ms (each call re-arms the wait)."
+  [^js timeline]
+  (when (and (not @load-earlier-pending?)
+             (< (.-scrollTop timeline) load-earlier-threshold-px)
+             (.querySelector timeline ".load-earlier button"))
+    (when-let [t @load-earlier-timer] (js/clearTimeout t))
+    (reset! load-earlier-timer
+            (js/setTimeout (fn []
+                             (reset! load-earlier-timer nil)
+                             (load-earlier-now! timeline))
+                           load-earlier-settle-ms))))
 
 (defn- attach-scroll-listener! []
   (when-let [timeline (.querySelector js/document ".timeline")]
@@ -2402,7 +2437,7 @@
       (reset! tracked-timeline timeline)
       (reset! auto-scroll? true)
       (reset! smooth-scroll-armed? false)
-      (reset! prev-scroll-top (.-scrollTop timeline))
+      (remember-scroll-metrics! timeline)
       ;; Only real input events mark user intent; wheel counts upward only.
       (.addEventListener timeline "touchmove"
                          (fn [] (mark-user-scroll-intent!)) #js {:passive true})
@@ -2421,20 +2456,24 @@
       (attach-global-scroll-intent!)
       (.addEventListener timeline "scroll"
                          (fn []
-                           (let [top     (.-scrollTop timeline)
-                                 prev    @prev-scroll-top
-                                 bottom? (at-bottom? timeline)]
-                             (reset! prev-scroll-top top)
+                           (let [top      (.-scrollTop timeline)
+                                 prev     @prev-scroll-top
+                                 bottom?  (at-bottom? timeline)
+                                 ;; Touch events stop at finger-lift while iOS
+                                 ;; momentum scrolls on, so a decrease that no
+                                 ;; layout change explains is the user's too.
+                                 gesture? (or (user-scrolling?) (pure-scroll? timeline))]
+                             (remember-scroll-metrics! timeline)
                              ;; Layout lowers scrollTop too (a switch swaps in
                              ;; a short first paint, xi.web.router/
                              ;; first-paint-window): that must not load more.
                              (when (and (< top prev)
-                                        (or (user-scrolling?) (not @auto-scroll?)))
+                                        (or gesture? (not @auto-scroll?)))
                                (maybe-load-earlier! timeline))
                              (cond
                                bottom?
                                (reset! auto-scroll? true)
-                               (and (< top (- prev 2)) (user-scrolling?))
+                               (and (< top (- prev 2)) gesture?)
                                (reset! auto-scroll? false))
                              (when-let [d @dispatch-ref]
                                (d {:type :web/set-scrolled-up
