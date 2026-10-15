@@ -606,8 +606,7 @@
    [{:match  {:tool #{:write :edit} :outside :cwd}
      :action {:type :ask
               :message "Write outside the project repo?"
-              :options [:yes :no :repo]
-              :guard   :sane}}]
+              :options [:yes :no :repo]}}]
 
    ::write-gates
    [::sensitive-writes ::protected-writes ::outside-writes]

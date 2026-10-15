@@ -61,7 +61,7 @@ runs instead. It has two levels:
 
 | Command | Level | Still asks |
 | --- | --- | --- |
-| `/yolo` | Sane | Writes outside the project and into `.env`, `.git/` or key directories; secret leaks (environment dumps, credential files, secret CLIs); `git push`, `mkfs`, `dd`; deleting a directory outside the project; server restarts. Removing a system directory (`/`, the home directory, `/usr`, `/etc`, `/nix`, …) is denied. |
+| `/yolo` | Sane | Writes into `.env`, `.git/` or key directories; secret leaks (environment dumps, credential files, secret CLIs); `git push`, `mkfs`, `dd`; deleting a directory outside the project; server restarts. Removing a system directory (`/`, the home directory, `/usr`, `/etc`, `/nix`, …) is denied. |
 | `/yolo relentless` | Relentless | Server restarts (`bb serve:restart`, `serve:stop`). |
 
 `/yolo` again, or `/yolo off`, turns it off; `/yolo sane` switches back

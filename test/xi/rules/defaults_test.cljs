@@ -572,7 +572,6 @@
     (testing "sane yolo still asks"
       (is (= :sane (guard {:tool :write :path "/home/x/.ssh/config"})))
       (is (= :sane (guard {:tool :write :path ".env"})))
-      (is (= :sane (guard {:tool :write :path "/etc/x" :outside-cwd? true})))
       (is (= :sane (guard {:tool :bash :command "printenv"})))
       (is (= :sane (guard {:tool :read :path "/home/x/.env"})))
       (is (= :sane (guard {:tool :bash :command "git push origin master"}))))
@@ -580,6 +579,7 @@
       (is (= :always (guard {:tool :bb :command "bb serve:restart"})))
       (is (= :always (guard {:tool :sh :cli "bb" :command "bb serve:stop"}))))
     (testing "everything else is answered by both levels"
+      (is (nil? (guard {:tool :write :path "/etc/x" :outside-cwd? true})))
       (is (nil? (guard {:tool :bash :command "rm -rf build"})))
       (is (nil? (guard {:tool :sh :cli "cargo" :command "cargo build"})))
       (is (nil? (guard {:tool-name "spawn_subagent"}))))))
