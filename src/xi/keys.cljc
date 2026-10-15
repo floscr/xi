@@ -212,13 +212,13 @@
    #{:tui}) marks the ones only one client implements; absent = both."
   {:chat/new                {:label "New chat"}
    :agent/abort             {:label "Stop the running turn"}
-   :permission/allow        {:label "Allow the pending permission request"}
+   :permission/allow        {:label "Allow the pending permission request" :surface #{:web}}
    :permission/always       {:label "Always allow requests like the pending one" :surface #{:web}}
    :permission/allow-repo   {:label "Allow repo writes for the pending permission request" :surface #{:web}}
    :permission/allow-block  {:label "Allow every request of the pending permission's block" :surface #{:web}}
-   :permission/deny         {:label "Deny the pending permission request"}
+   :permission/deny         {:label "Deny the pending permission request" :surface #{:web}}
    :keys/show               {:label "Keyboard shortcuts"}
-   :buffer/close            {:label "Close this view, back to the chat"}
+   :buffer/close            {:label "Close this view, back to the chat" :surface #{:web}}
    :diff/next-file          {:label "Next file"}
    :diff/prev-file          {:label "Previous file"}
    ;; web
@@ -249,8 +249,8 @@
    :chat/delete             {:label "Delete this chat" :surface #{:web}}
    :prompt/prev             {:label "Previous message of yours" :surface #{:web}}
    :prompt/next             {:label "Next message of yours" :surface #{:web}}
-   :answer/next             {:label "Next answer of the agent" :surface #{:web}}
    :answer/prev             {:label "Previous answer of the agent" :surface #{:web}}
+   :answer/next             {:label "Next answer of the agent" :surface #{:web}}
    :diff/next-hunk          {:label "Next hunk" :surface #{:web}}
    :diff/prev-hunk          {:label "Previous hunk" :surface #{:web}}
    :buffers/switch          {:label "Switch buffer" :surface #{:web}}
@@ -330,20 +330,22 @@
 
 (def defaults
   "Built-in keys. Shared layers apply to both clients; the :web / :tui
-   sections hold one client's own. Every action id here is in `catalog`."
+   sections hold one client's own. Every action id here is in `catalog`.
+   Keys are modifier chords, arrows and named keys; vim-style single letters
+   belong in user config. docs/guide/keyboard.md's tables are generated
+   from this and `catalog` (`bb docs:gen`)."
   {:global     {"alt+n" :chat/new
                 "alt+/" :keys/show}
    :agent-busy {"alt+x" :agent/abort}
-   :web {:global             {"alt+\\"      :sidebar/toggle
-                              "alt+u"       :session/jump-attention
-                              "alt+shift+p" :sessions/prune
-                              "mod+p"       :files/find
-                              "alt+b"       :buffers/switch
-                              "alt+j"       :session/next
-                              "alt+k"       :session/prev
-                              "alt+shift+j" :session/next-sibling
-                              "alt+shift+k" :session/prev-sibling
-                              "escape"      :dialog/close}
+   :web {:global             {"alt+\\"         :sidebar/toggle
+                              "alt+u"          :session/jump-attention
+                              "alt+shift+p"    :sessions/prune
+                              "mod+p"          :files/find
+                              "alt+down"       :session/next
+                              "alt+up"         :session/prev
+                              "alt+shift+down" :session/next-sibling
+                              "alt+shift+up"   :session/prev-sibling
+                              "escape"         :dialog/close}
          :permission-pending {"alt+a"       :permission/allow
                               "alt+s"       :permission/always
                               "alt+shift+a" :permission/allow-repo
@@ -351,23 +353,17 @@
                               "alt+d"       :permission/deny}
          :mode/navigate      {"?" :keys/show}
          :mode/compose       {"escape" :compose/blur}
-         :buffer/diff        {"q"      :buffer/close
-                              "escape" :buffer/close
-                              "] f"    :diff/next-file
-                              "[ f"    :diff/prev-file
+         :buffer/diff        {"escape" :buffer/close
                               "enter"  :diff/ask-selection
                               "m"      :diff/modify-selection
                               "e"      :diff/explain-selection}
-         :buffer/file        {"q"      :buffer/close
-                              "escape" :buffer/close}
+         :buffer/file        {"escape" :buffer/close}
          ;; keys of :mode/terminal skip the program (xi.web.terminal):
          ;; Ctrl+` (VS Code's) sends only NUL to a terminal, Alt+\ only
          ;; ESC \, which programs don't bind
          :mode/terminal      {"ctrl+`" :terminal/leave
                               "alt+\\" :terminal/leave}
-         :buffer/terminal    {"q"      :buffer/close
-                              "escape" :buffer/close
-                              "i"      :terminal/focus
+         :buffer/terminal    {"escape" :buffer/close
                               "enter"  :terminal/focus}}
    :tui {:buffer/prompt {"ctrl+o" :prompt/toggle}
          :buffer/pager  {"j"        :pager/down

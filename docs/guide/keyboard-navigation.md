@@ -53,19 +53,19 @@ press the key again.
 
 ## Moving between chats
 
-These keys are bound by default:
+The `:session/…` actions have [default keys](keyboard.md#default-keys);
+the palette is `Ctrl`/`Cmd+k`.
 
-| Key | Does |
-| --- | --- |
-| `Alt+j` / `Alt+k` | Next / previous sidebar row |
-| `Alt+Shift+J` / `Alt+Shift+K` | Next / previous row in the same sidebar group; on the open chat's card, into its buffers |
-| `Alt+u` | The chat that needs you most. While permission requests are pending it cycles through them, oldest first; then unread output, then running turns, and stops after the last |
-| `Alt+\` | Show / hide the sidebar |
-| `Ctrl/Cmd+k` | Command palette; its first group lists your chats |
-| `Alt+b` | Switch between the chat's open diffs and files |
-
-`:nav/back` and `:nav/forward` (`Ctrl+o` / `Ctrl+i` above) walk through the
-pages, chats and buffers you opened, like the browser's back and forward.
+- `:session/next` / `:session/prev` walk the sidebar rows. The
+  `-sibling` variants stay in the same group; on the open chat's card,
+  `:session/next-sibling` steps into its buffers.
+- `:session/jump-attention` goes to the chat that needs you most. While
+  permission requests are pending it cycles through them, oldest first; then
+  unread output, then running turns, and stops after the last.
+- The command palette's first group lists your chats.
+- `:nav/back` and `:nav/forward` (`Ctrl+o` / `Ctrl+i` above) walk through
+  the pages, chats and buffers you opened, like the browser's back and
+  forward.
 
 ## Inside a chat
 
@@ -80,10 +80,8 @@ pages, chats and buffers you opened, like the browser's back and forward.
   on its left. From the bottom of the chat,
   `:answer/prev` goes to the start of the newest answer; past the oldest
   shown message it shows earlier ones.
-- `Alt+a` / `Alt+d` allow or deny a permission request, `Alt+x` stops the
-  turn.
 
-Hold `Alt` for a moment to see these keys on their buttons: the permission
+Hold `Alt` for a moment to see the keys on their buttons: the permission
 buttons, Stop, New chat and the sidebar toggle show the key that runs them.
 Allow's menu opens too, with the keys for Always and the other grants.
 

@@ -27,8 +27,8 @@ follows your `:keys` overrides.
   `` Ctrl+` `` or `Alt+\` leaves the terminal, then the other keys work again.
 
 In the web client, `Esc` leaves the text field. There is no built-in key back
-into it; bind `:compose/focus` in `:mode/navigate` (`i` in the example under
-[Vim-style keys](#vim-style-keys)), or click the box. In the terminal the editor is always in compose mode; opening a diff or
+into it; bind `:compose/focus` in `:mode/navigate` (`i` in the setup under
+[Keyboard navigation](keyboard-navigation.md)), or click the box. In the terminal the editor is always in compose mode; opening a diff or
 file (`/diff`, a file name in the chat) switches to a navigating viewer, and
 `q` or `Esc` brings the editor back.
 
@@ -49,65 +49,117 @@ first layer that mentions it wins.
 
 ## Default keys
 
-Both clients:
+**Client** is the client that binds the key: both, web or terminal. The
+permission keys other than `Alt+a` / `Alt+d` work only when the request
+offers that choice.
 
-| Key | Does | Action | Layer |
+<!-- gen:keys -->
+
+**Everywhere** · `:global`
+
+| Key | Does | Action | Client |
 | --- | --- | --- | --- |
-| `Alt+n` | New chat in the same directory | `:chat/new` | `:global` |
-| `Alt+/` | Show the keyboard shortcuts | `:keys/show` | `:global` |
-| `Alt+x` | Stop the running turn | `:agent/abort` | `:agent-busy` |
+| `Alt+N` | New chat | `:chat/new` | both |
+| `Alt+/` | Keyboard shortcuts | `:keys/show` | both |
+| <code>Alt+&#92;</code> | Toggle the sidebar | `:sidebar/toggle` | web |
+| `Alt+U` | Jump to the chat that needs you | `:session/jump-attention` | web |
+| `Alt+↓` | Next sidebar item | `:session/next` | web |
+| `Alt+↑` | Previous sidebar item | `:session/prev` | web |
+| `Alt+Shift+↓` | Next sidebar item in the same group, or into the open chat's buffers | `:session/next-sibling` | web |
+| `Alt+Shift+↑` | Previous sidebar item in the same group | `:session/prev-sibling` | web |
+| `Alt+Shift+P` | Prune: run every sidebar cleanup | `:sessions/prune` | web |
+| `Ctrl+P` / `Cmd+P` | Find a file | `:files/find` | web |
+| `Esc` | Close the open dialog | `:dialog/close` | web |
 
-Web client:
+**Navigating (no text field focused)** · `:mode/navigate`
 
-| Key | Does | Action | Layer |
+| Key | Does | Action | Client |
 | --- | --- | --- | --- |
-| `Alt+\` | Show / hide the sidebar | `:sidebar/toggle` | `:global` |
-| `Alt+u` | Jump to the chat that needs you most. While chats wait on a permission request, presses cycle through only those, oldest first. Otherwise they walk finished chats with unread output, then running ones (newest first), and stop after the last | `:session/jump-attention` | `:global` |
-| `Alt+j` / `Alt+k` | Next / previous sidebar row: projects, chats, extension pages. Skips collapsed groups and buffer rows | `:session/next` / `:session/prev` | `:global` |
-| `Alt+Shift+J` / `Alt+Shift+K` | Next / previous row in the same group. On the open chat's card, `Alt+Shift+J` steps into its buffers; from the first, `Alt+Shift+K` steps back out | `:session/next-sibling` / `:session/prev-sibling` | `:global` |
-| `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would | `:sessions/prune` | `:global` |
-| `Ctrl+p` / `Cmd+p` | Find a file | `:files/find` | `:global` |
-| `Alt+b` | Switch buffer: the chat's open diffs and files as a filterable list, Enter opens one | `:buffers/switch` | `:global` |
-| `Esc` | Close the open dialog (Appearance, shortcuts) | `:dialog/close` | `:global` |
-| `Alt+a` / `Alt+d` | Allow / deny the pending permission request | `:permission/allow` / `:permission/deny` | `:permission-pending` |
-| `Alt+s` | Always allow requests like the pending one (only when it offers that choice) | `:permission/always` | `:permission-pending` |
-| `Alt+Shift+A` | Allow repo writes for the pending request (only when it offers that choice) | `:permission/allow-repo` | `:permission-pending` |
-| `Alt+Shift+B` | Allow the pending request and the rest of its tool call's requests (only when it offers that choice) | `:permission/allow-block` | `:permission-pending` |
-| `?` | Show the keyboard shortcuts | `:keys/show` | `:mode/navigate` |
-| `Esc` | Leave the text field | `:compose/blur` | `:mode/compose` |
-| `q`, `Esc` | Leave the diff or file view, back to the chat (the buffer stays open) | `:buffer/close` | `:buffer/diff`, `:buffer/file` |
-| `] f` / `[ f` | Next / previous file in the diff | `:diff/next-file` / `:diff/prev-file` | `:buffer/diff` |
-| `Enter` / `m` / `e` | With diff lines selected: ask a sub-agent about them, modify them, explain them in the chat | `:diff/ask-selection` / `:diff/modify-selection` / `:diff/explain-selection` | `:buffer/diff` |
-| `` Ctrl+` `` | Leave the terminal: keys go back to Xi (the key left of `1` on any layout) | `:terminal/leave` | `:mode/terminal` |
-| `Alt+\` | Leave the terminal (the US `\` key; on ISO layouts also the key left of `Z`) | `:terminal/leave` | `:mode/terminal` |
-| `i`, `Enter` | Back into the terminal | `:terminal/focus` | `:buffer/terminal` |
-| `q`, `Esc` | Leave the terminal view, back to the chat (the program keeps running) | `:buffer/close` | `:buffer/terminal` |
+| `?` | Keyboard shortcuts | `:keys/show` | web |
 
-Terminal client, in any viewer (`:buffer/pager`):
+**In a text field** · `:mode/compose`
 
-| Key | Does | Action |
-| --- | --- | --- |
-| `j` / `k`, `↓` / `↑` | Move the cursor | `:pager/down` / `:pager/up` |
-| `g g` / `G` | Top / bottom | `:pager/top` / `:pager/bottom` |
-| `Ctrl+d` / `Ctrl+u` | Half a page down / up | `:pager/half-down` / `:pager/half-up` |
-| `PgDn` / `PgUp` | A page down / up | `:pager/page-down` / `:pager/page-up` |
-| `V` | Start or cancel a line selection | `:pager/select` |
-| `y` | Copy the line or selection | `:pager/yank` |
-| `e` | Ask the agent to explain the selection | `:pager/explain` |
-| `Enter` | Put the selection in the editor | `:pager/prompt` |
-| `] c` / `[ c` | Next / previous change | `:pager/next-change` / `:pager/prev-change` |
-| `] f` / `[ f` | Next / previous file | `:diff/next-file` / `:diff/prev-file` |
-| `:` | Command mode: focus the editor | `:pager/command` |
-| `q`, `Esc` | Close (Esc cancels a selection first) | `:pager/close` |
-| `?` | Show the keyboard shortcuts | `:keys/show` |
-
-Terminal client, more:
-
-| Key | Does | Action | Layer |
+| Key | Does | Action | Client |
 | --- | --- | --- | --- |
-| `v` | Open the file under the cursor in `$EDITOR` | `:diff/edit` | `:buffer/diff` |
-| `Tab` | Fold / unfold the file under the cursor | `:diff/fold` | `:buffer/diff` |
-| `Ctrl+o` | System prompt: full / overview | `:prompt/toggle` | `:buffer/prompt` |
+| `Esc` | Leave the text field | `:compose/blur` | web |
+
+**Typing in a terminal** · `:mode/terminal`
+
+| Key | Does | Action | Client |
+| --- | --- | --- | --- |
+| <code>Alt+&#92;</code> / <code>Ctrl+&#96;</code> | Leave the terminal, keys go back to Xi | `:terminal/leave` | web |
+
+**Any buffer viewer** · `:buffer/pager`
+
+| Key | Does | Action | Client |
+| --- | --- | --- | --- |
+| `?` | Keyboard shortcuts | `:keys/show` | terminal |
+| `] f` | Next file | `:diff/next-file` | terminal |
+| `[ f` | Previous file | `:diff/prev-file` | terminal |
+| `j` / `↓` | Cursor down | `:pager/down` | terminal |
+| `k` / `↑` | Cursor up | `:pager/up` | terminal |
+| `g g` | Top | `:pager/top` | terminal |
+| `G` | Bottom | `:pager/bottom` | terminal |
+| `Ctrl+D` | Half page down | `:pager/half-down` | terminal |
+| `Ctrl+U` | Half page up | `:pager/half-up` | terminal |
+| `PgDn` | Page down | `:pager/page-down` | terminal |
+| `PgUp` | Page up | `:pager/page-up` | terminal |
+| `V` | Start / cancel line selection | `:pager/select` | terminal |
+| `y` | Copy the line or selection | `:pager/yank` | terminal |
+| `e` | Ask the agent to explain the selection | `:pager/explain` | terminal |
+| `Enter` | Put the selection in the editor | `:pager/prompt` | terminal |
+| `q` / `Esc` | Close (Esc cancels a selection first) | `:pager/close` | terminal |
+| `:` | Command mode: focus the editor | `:pager/command` | terminal |
+| `] c` | Next change | `:pager/next-change` | terminal |
+| `[ c` | Previous change | `:pager/prev-change` | terminal |
+
+**Diff view** · `:buffer/diff`
+
+| Key | Does | Action | Client |
+| --- | --- | --- | --- |
+| `Esc` | Close this view, back to the chat | `:buffer/close` | web |
+| `Enter` | Ask a sub-agent about the selected lines | `:diff/ask-selection` | web |
+| `m` | Modify the selected lines | `:diff/modify-selection` | web |
+| `e` | Explain the selected lines in the chat | `:diff/explain-selection` | web |
+| `v` | Open the file under the cursor in $EDITOR | `:diff/edit` | terminal |
+| `Tab` | Fold / unfold the file under the cursor | `:diff/fold` | terminal |
+
+**File view** · `:buffer/file`
+
+| Key | Does | Action | Client |
+| --- | --- | --- | --- |
+| `Esc` | Close this view, back to the chat | `:buffer/close` | web |
+
+**Terminal view** · `:buffer/terminal`
+
+| Key | Does | Action | Client |
+| --- | --- | --- | --- |
+| `Esc` | Close this view, back to the chat | `:buffer/close` | web |
+| `Enter` | Type in the terminal | `:terminal/focus` | web |
+
+**System prompt view** · `:buffer/prompt`
+
+| Key | Does | Action | Client |
+| --- | --- | --- | --- |
+| `Ctrl+O` | System prompt: full / overview | `:prompt/toggle` | terminal |
+
+**While the agent is working** · `:agent-busy`
+
+| Key | Does | Action | Client |
+| --- | --- | --- | --- |
+| `Alt+X` | Stop the running turn | `:agent/abort` | both |
+
+**While a permission request is pending** · `:permission-pending`
+
+| Key | Does | Action | Client |
+| --- | --- | --- | --- |
+| `Alt+A` | Allow the pending permission request | `:permission/allow` | web |
+| `Alt+S` | Always allow requests like the pending one | `:permission/always` | web |
+| `Alt+Shift+A` | Allow repo writes for the pending permission request | `:permission/allow-repo` | web |
+| `Alt+Shift+B` | Allow every request of the pending permission's block | `:permission/allow-block` | web |
+| `Alt+D` | Deny the pending permission request | `:permission/deny` | web |
+
+<!-- /gen:keys -->
 
 Extensions add their own: an extension's `:keybindings` entry is an action
 too (its id is the event type unless the extension names one), with the key
@@ -116,10 +168,9 @@ it asks for as the default. The built-in file finder (`Ctrl+p`,
 such actions.
 
 Some keys are part of a control rather than the keymap and cannot be changed
-here: `Ctrl+k` / `Cmd+k` opens the command palette, `Tab` in the message box
-expands a snippet, the `/` command list moves with `↑`/`↓`, `Alt+k`/`Alt+j`
-or `Ctrl+p`/`Ctrl+n`, `Ctrl+Enter` on one of your messages edits it, and the
-terminal editor's own editing keys (`Ctrl+a`, `Ctrl+k`, `Ctrl+/`, …).
+here: the web client's are listed under [Keyboard](web-client.md#keyboard),
+the terminal editor has its own editing keys (`Ctrl+a`, `Ctrl+k`, `Ctrl+/`,
+…).
 
 ## Changing keys
 
@@ -159,46 +210,71 @@ web page.
   vector, `["g" "g"]`.
 - With a modifier held, name the unshifted key: `"alt+shift+/"`, not `"alt+?"`.
 
+### Actions without a default key
+
+Bind these yourself. [Keyboard navigation](keyboard-navigation.md) shows how
+the navigation ones fit together.
+
+<!-- gen:keys-unbound -->
+
+| Action | Does | Client |
+| --- | --- | --- |
+| `:diff/next-file` | Next file | web |
+| `:diff/prev-file` | Previous file | web |
+| `:files/find-edited` | Find a file edited in this chat | web |
+| `:git/status` | Git status | web |
+| `:git/log` | Git log | web |
+| `:palette/open` | Command palette | web |
+| `:hints/show` | Link hints: click a button or link by typing its label | web |
+| `:hints/sidebar` | Link hints on the sidebar (opens the drawer) | web |
+| `:projects/pick` | Pick a project | web |
+| `:skills/search` | Search skills | web |
+| `:themes/pick` | Change color theme | web |
+| `:projects/open` | All projects | web |
+| `:nav/back` | Back to the previous page | web |
+| `:nav/forward` | Forward to the next page | web |
+| `:chat/hide` | Hide this chat from Recent | web |
+| `:chat/delete` | Delete this chat | web |
+| `:prompt/prev` | Previous message of yours | web |
+| `:prompt/next` | Next message of yours | web |
+| `:answer/prev` | Previous answer of the agent | web |
+| `:answer/next` | Next answer of the agent | web |
+| `:diff/next-hunk` | Next hunk | web |
+| `:diff/prev-hunk` | Previous hunk | web |
+| `:buffers/switch` | Switch buffer | web |
+| `:compose/focus` | Focus the message box | web |
+| `:timeline/bottom` | Scroll to the bottom | web |
+| `:block/toggle` | Open / close the current block | web |
+| `:scroll/top` | Scroll to the top | web |
+| `:scroll/down` | Scroll down | web |
+| `:scroll/up` | Scroll up | web |
+| `:scroll/half-down` | Scroll half a page down | web |
+| `:scroll/half-up` | Scroll half a page up | web |
+
+<!-- /gen:keys-unbound -->
+
+`:chat/hide` and `:chat/delete` only run on a chat page.
+
 ### Vim-style keys
 
-The web client binds no single-letter navigation by default. These actions
-are available for `:mode/navigate`; [Keyboard navigation](keyboard-navigation.md)
-shows how they fit together:
-
-| Action | Does |
-| --- | --- |
-| `:compose/focus` | Focus the message box |
-| `:scroll/down` / `:scroll/up` | Scroll the visible view (timeline, diff, file, projects page, shortcut list) |
-| `:scroll/half-down` / `:scroll/half-up` | The same, half the view's height at a time |
-| `:timeline/bottom` | Scroll to the bottom |
-| `:scroll/top` | Scroll to the top; in a chat this shows every earlier message first |
-| `:prompt/prev` / `:prompt/next` | Jump between your messages in the chat. The first `:prompt/prev` lands on the newest; `:prompt/next` on the last goes back to the bottom |
-| `:answer/prev` / `:answer/next` | Jump between the agent's answers: the last text of each turn, not the text between tool calls. From the bottom of the chat, `:answer/prev` lands on the newest |
-| `:diff/next-hunk` / `:diff/prev-hunk` | Next / previous hunk in a diff |
-| `:nav/back` / `:nav/forward` | Back / forward through the pages, chats and buffers you opened (the browser history), like vim's `Ctrl+o` / `Ctrl+i`. Back stops at the first page Xi opened |
-| `:hints/show` | [Link hints](keyboard-navigation.md#link-hints): label every button, link and sidebar row on screen; type a label to click it |
-| `:hints/sidebar` | Link hints on the sidebar only, opening the drawer when it is closed |
+The default keys are modifier chords, arrows and named keys; single letters
+and vim motions are left to you. A vim-style setup for the web client's
+navigate mode is under [Keyboard navigation](keyboard-navigation.md). For the
+sidebar and the views:
 
 ```clojure title="~/.config/xi/config.edn"
-:keys {:web {:mode/navigate  {"i" :compose/focus
-                              "j" :scroll/down
-                              "k" :scroll/up
-                              "d" :scroll/half-down
-                              "u" :scroll/half-up
-                              "G" :timeline/bottom
-                              "g g" :scroll/top
-                              "[" :prompt/prev
-                              "]" :prompt/next
-                              "{" :answer/prev
-                              "}" :answer/next
-                              "ctrl+o" :nav/back
-                              "ctrl+i" :nav/forward}
-             :buffer/diff     {"[" :diff/prev-hunk
-                               "]" :diff/next-hunk
-                               "] f" nil          ; "]" alone would shadow these
-                               "[ f" nil}
+:keys {:web {:global          {"alt+j"       :session/next
+                               "alt+k"       :session/prev
+                               "alt+shift+j" :session/next-sibling
+                               "alt+shift+k" :session/prev-sibling}
+             :buffer/diff     {"q" :buffer/close
+                               "[" :diff/prev-hunk
+                               "]" :diff/next-hunk}
              :page/git-status {"[" :diff/prev-hunk
-                               "]" :diff/next-hunk}}}
+                               "]" :diff/next-hunk}
+             :buffer/file     {"q" :buffer/close}
+             :buffer/terminal {"q" :buffer/close
+                               "i" :terminal/focus}}}
 ```
 
 A diff tab in a chat is `:buffer/diff`, the git status page is
@@ -228,20 +304,6 @@ nothing outside a chat.
                              ["space" "c" "x"]  :chat/delete
                              ["space" "c" "h"]  :chat/hide}}}
 ```
-
-| Action | Does |
-| --- | --- |
-| `:palette/open` | The `Ctrl`/`Cmd+K` palette; its first group lists your chats |
-| `:projects/pick` | The palette's project list; Enter on one opens its actions (sessions, new chat, …), Tab finds a file in it |
-| `:skills/search` | The palette's skills page: filter on-demand skills, Enter loads one |
-| `:themes/pick` | The palette's color themes: Default and yours, Enter switches |
-| `:projects/open` | The projects page |
-| `:git/status` | The working-tree diff of the current chat |
-| `:git/log` | The palette's git log: the last 500 commits of the chat's repo, Enter opens one's diff |
-| `:chat/hide` | Hide the current chat from Recent, or show it again |
-| `:chat/delete` | Delete the current chat, no confirmation |
-
-`:chat/hide` and `:chat/delete` only run on a chat page.
 
 ### Opening blocks
 

@@ -98,6 +98,9 @@ projects** in the sidebar opens the project list (`/projects`).
   all from Recent" / Prune skip it. "Unpin session" in the same menu undoes
   it. A chat is never pinned and hidden at once: pinning a hidden chat shows
   it again, hiding a pinned chat unpins it.
+- **Prune.** "Prune all" in the sidebar (`:sessions/prune`) runs every
+  cleanup at once: mark all as read, hide all from Recent (pinned chats are
+  skipped), close idle rooms.
 
 ## Buffers
 
@@ -113,8 +116,8 @@ refreshes it in place.
 
 - **Switching.** Once a chat has a buffer, the pill in the top bar names the
   view you are looking at. Click it for the list: the chat, every buffer in
-  the order you opened them (the one in front is tinted). `Alt+b` opens the same list in the command
-  palette: type to filter, Enter to switch. `q` or `Esc` in a diff or file
+  the order you opened them (the one in front is tinted). `:buffers/switch` (unbound by default) opens
+  the same list in the command palette: type to filter, Enter to switch. `Esc` in a diff or file
   view goes back to the chat; the buffer stays open.
 - **In the URL.** The address names the buffer you are looking at
   (`/chat/<id>/diff%3Agit`), so a reload or a shared link opens it, and
@@ -126,9 +129,10 @@ refreshes it in place.
   are looking at is tinted. A row opens that chat on that buffer, so you can
   come back to the diff you were reading from anywhere. The chat's own card
   opens it on the view you left it on (the chat after `Esc`, else the
-  buffer); on the chat you are in, it goes back to the chat. `Alt+j` /
-  `Alt+k` pass over buffer rows; on the card of the chat you are in,
-  `Alt+Shift+J` steps into them and `Alt+Shift+K` from the first back out.
+  buffer); on the chat you are in, it goes back to the chat. `:session/next` /
+  `:session/prev` pass over buffer rows; on the card of the chat you are in,
+  `:session/next-sibling` steps into them and `:session/prev-sibling` from
+  the first back out ([keys](keyboard.md#default-keys)).
 - **Sub-agents.** A chat's running or finished
   [sub-agents](builtin-tools.md#sub-agents) list under its card with the
   buffers ("2 buffers · 1 sub-agent"), a spinner on the ones still running.
@@ -161,10 +165,10 @@ terminal** in the ⋮ menu and the command palette opens a shell.
 
 - **Typing.** While the terminal has focus, keys go to the program, plain
   Ctrl keys too (Firefox's Ctrl+D does not bookmark). `` Ctrl+` `` or `Alt+\`
-  leaves the terminal; then `Esc` goes back to the chat, `i` or `Enter` back into the
-  terminal ([keys](keyboard.md#default-keys)). A terminal you reach with
-  `Alt+J` / `Alt+K` (or `Alt+Shift+J` / `Alt+Shift+K`) does not take focus,
-  so the next press still switches sessions.
+  leaves the terminal; then `Esc` goes back to the chat, `Enter` back into the
+  terminal ([keys](keyboard.md#default-keys)). A terminal you reach by
+  walking the sidebar (`:session/next` and friends) does not take focus, so
+  the next press still switches sessions.
 - **Lifetime.** The program keeps running while you look at another buffer,
   leave the chat or reload the page, and every device in the chat sees the
   same screen. It takes the size of the window you use last: the one you
@@ -277,33 +281,22 @@ are kept and sent when the connection returns.
 ## Keyboard
 
 Press `?` (while not typing) for the list of shortcuts that apply where you
-are. The common ones:
+are. The keymap's keys, the layers they apply in and how to change them in
+`config.edn`: [Keyboard shortcuts](keyboard.md). Using the client without a
+mouse, with link hints: [Keyboard navigation](keyboard-navigation.md).
+
+These keys belong to a control and are not in the keymap:
 
 | Key | Does |
 | --- | --- |
-| `i` | Focus the message box |
-| `Esc` | Leave the message box |
-| `Tab` (in the message box) | Expand the snippet word before the cursor: `c` becomes `continue`, `rec` becomes `in a recent change`. Anywhere else Tab moves focus as usual. |
-| `↑`/`↓`, `Alt+k`/`Alt+j` or `Ctrl+p`/`Ctrl+n` (in the `/` command list) | Move through the matching commands; `Enter` or `Tab` runs the selected one |
-| `G` | Scroll to the bottom |
-| `Alt+j` / `Alt+k` | Next / previous sidebar row, skipping collapsed groups |
-| `Alt+Shift+J` / `Alt+Shift+K` | Next / previous row in the same sidebar group; on the open chat's card, into its buffers |
-| `Alt+n` | New chat |
-| `Alt+u` | Jump to the chat that needs you most. While chats wait on a permission request, presses cycle through only those, oldest first. Otherwise they walk finished chats with unread output, then running ones (newest first), and stop after the last |
-| `Alt+Shift+P` | Prune: run every cleanup the sidebar's "Prune all" would (mark all as read, hide all from Recent — pinned chats are skipped — close idle rooms) |
-| `Alt+a` / `Alt+d` | Allow / deny the pending permission request |
-| `Alt+x` | Stop the running turn |
 | `Ctrl/Cmd+k` | Command palette |
+| `Tab` (in the message box) | Expand the snippet word before the cursor: `c` becomes `continue`, `rec` becomes `in a recent change`. Anywhere else Tab moves focus as usual. |
+| `Ctrl+Enter` (on one of your messages) | Go back to before it and edit it |
+| `↑`/`↓`, `Alt+k`/`Alt+j` or `Ctrl+p`/`Ctrl+n` (in the `/` command list) | Move through the matching commands; `Enter` or `Tab` runs the selected one |
 | `Tab` or `Enter` (in the palette, on a project) | Open that project's actions: new chat, git status, search its sessions, open its sessions |
 | `Alt+Enter` (in a project's actions, on New chat) | Type a prompt instead (`Ctrl+V` attaches images, shown below it); `Enter` starts the chat in the background and you stay where you are. The chat shows up under Recent |
 | `Tab` (in a project picker, on a project) | Find a file in that project instead: the picker's own action applies to the file, so from the compose box's Projects button it inserts the file's path |
 | `Alt` (held, in the palette) | Show a key badge on each of the first rows; `Alt` + that key picks the row. Badges follow the filtered list, so type first, then hold Alt |
-| `Ctrl/Cmd+p` | Find a file |
-| `Alt+b` | Switch buffer |
-
-The full list, the layers a key applies in, and how to change any of them in
-`config.edn`: [Keyboard shortcuts](keyboard.md). Using the client without a
-mouse, with link hints: [Keyboard navigation](keyboard-navigation.md).
 
 ## Appearance
 

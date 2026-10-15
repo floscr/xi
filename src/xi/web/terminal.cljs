@@ -206,7 +206,7 @@
 
 ;; Set by a keyboard walk through the sessions (xi.web.core's :session/next
 ;; and friends): a terminal that walk lands on mounts without taking focus, as
-;; Alt+J would then reach the program instead of Xi. The next key or pointer
+;; the walk's next key would then reach the program instead of Xi. The next key or pointer
 ;; press clears it; window capture runs before the keymap's document listener.
 (defonce ^:private skip-mount-focus? (atom false))
 

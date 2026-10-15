@@ -12,7 +12,7 @@
    holding Alt never re-renders.
 
    The badges appear only after Alt has been held for `show-delay-ms`, so a
-   quick Alt+j doesn't flash them, and they relabel when a key is released
+   quick Alt+n doesn't flash them, and they relabel when a key is released
    with Alt still held (the action may have changed which buttons exist).
 
    A closed popover marked `data-key-hints-open` (the permission Allow menu,
