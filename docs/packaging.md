@@ -78,6 +78,26 @@ the one-time code. The task publishes the packed tarball, not the working
 tree, so what goes up is exactly what `bb package` staged. Bump `version` in the repo's
 `package.json` before each release; npm refuses to republish a version.
 
+## Releasing
+
+```bash
+bb release   # release the version at the top of CHANGELOG.md
+```
+
+Write the release's `## X.Y.Z - YYYY-MM-DD` section at the top of
+`CHANGELOG.md` first; that heading is the version. `scripts/release.clj` checks
+that you are on `master` with nothing uncommitted but the changelog, not behind
+`github` or `origin`, logged in to npm, and that `bb test` passes. It then
+dates the heading today, sets the version in `package.json` and
+`package-lock.json`, commits `chore(release): vX.Y.Z`, tags `vX.Y.Z`, runs
+`bb package:publish`, pushes both remotes, builds and deploys the docs site and
+checks that `/changelog/` shows the release. When the tag already exists it
+resumes after the commit, and it skips a version npm already has, so after a
+failure you run it again.
+
+The repo's `.xi/rules.edn` denies `bb release` to agents: an agent drafts the
+changelog, and you run the release.
+
 ## Testing a package
 
 ```bash

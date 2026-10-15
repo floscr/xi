@@ -510,6 +510,11 @@
              (throw (ex-info (str "no tarball at " tgz " — run bb package first") {})))
            (shell "npm" "publish" tgz "--access" "public"))}
 
+  release
+  {:doc "Release the version at the top of CHANGELOG.md: date it today, bump package.json, commit + tag, `bb package:publish`, push both remotes, build and deploy the docs site. Steps already done are skipped, so run it again after a failure. Maintainer only; denied to agents in .xi/rules.edn."
+   :requires ([release])
+   :task (release/run *command-line-args*)}
+
   package:serve
   {:doc "Try the npm package like a user gets it: pack it, install the tarball into dist/try and run the installed xi as a foreground headless server (Ctrl-C stops it; port 7477, isolated HOME in dist/try/home). `--port N` changes the port, `--no-build` reuses the existing tarball."
    :task (apply shell "bun" "scripts/try-package.mjs" *command-line-args*)}

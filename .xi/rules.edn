@@ -4,7 +4,12 @@
 {:type    :xi/rules
  :version 1
  :rules
- [;; bb.edn is always trusted. The trust store is content-addressed, so every
+ [;; `bb release` publishes to npm, pushes and deploys the site: the user runs
+  ;; it, never an agent.
+  {:match  {:tool #{:bb :sh} :task {"bb" "release"}}
+   :action {:type :deny :message "Releasing is the user's job: give them the `bb release` command instead."}}
+
+  ;; bb.edn is always trusted. The trust store is content-addressed, so every
   ;; edit to bb.edn re-asked before the next `bb` task. Only an untrusted
   ;; bb.edn is matched, and only a task bb.edn defines (`:task`; no `bb -e`,
   ;; no script file). The lookahead leaves serve:restart/stop and the
