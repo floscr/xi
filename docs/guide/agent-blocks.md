@@ -105,9 +105,10 @@ in `config.edn` and run `/deploys`.
 
 A tool can come with an interactive view of its own, an
 [MCP App](mcp-servers.md#apps), from an MCP server or an extension. The web
-client shows it as an agent block of kind `app` after the tool ran: the
-view's page in a sandboxed frame, inside the same frame and header as any
-block.
+client shows it as a block of kind `app` after the tool ran: the view's page
+in a sandboxed frame. Its frame is solid purple in every theme and its header
+says **External app**, so a page from outside Xi never passes for Xi's own
+UI or for the agent's blocks.
 
 The view runs isolated from Xi: it cannot read the chat, your login or other
 pages, and it reaches the network only where its server declared it may

@@ -457,7 +457,8 @@
               :on {:keydown block-nav/on-keydown}}
     [:header {:class ["agent-block-head"]}
      (icon/icon {:icon-name :layout-dashboard :size :sm})
-     [:span {:class ["agent-block-badge"]} "Agent block"]
+     ;; an app view is someone else's page: say so, whatever it draws
+     [:span {:class ["agent-block-badge"]} (if (= "app" kind) "External app" "Agent block")]
      [:span {:class ["agent-block-kind"]} kind]
      (when title [:span {:class ["agent-block-title"]} title])
      [:span {:class ["agent-block-spacer"]}]

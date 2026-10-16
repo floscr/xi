@@ -7175,6 +7175,17 @@ g.ab-series-5 { color: var(--hl-string); }
 
 /* app views (MCP Apps, xi.ext.blocks.frame): the view's own document in a
    sandboxed iframe; full screen is the host's frame, header included */
+/* External content is purple in every theme, so it never passes for Xi's
+   own UI or the agent's blocks (whose frame follows the accent color). */
+:root { --agent-block-external: #8b5cf6; }
+.agent-block[data-block-kind="app"] {
+  border: 2px solid var(--agent-block-external);
+  --agent-block-border: var(--agent-block-external);
+  --agent-block-head-bg: color-mix(in srgb, var(--agent-block-external) 18%, var(--bg-0));
+}
+.agent-block[data-block-kind="app"] .agent-block-head > .icon,
+.agent-block[data-block-kind="app"] .agent-block-badge { color: var(--agent-block-external); }
+.agent-block[data-block-kind="app"] .agent-block-head { border-bottom-style: solid; }
 .agent-block[data-block-kind="app"] .agent-block-body { padding: 0; max-height: none; }
 .ab-app-frame { display: block; width: 100%; height: 360px; border: 0; background: transparent; }
 .ab-app-loading, .ab-app-error { padding: var(--size-3); color: var(--fg-2); }
