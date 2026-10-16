@@ -1197,7 +1197,7 @@
         (icon/icon {:icon-name :chevron-right :size :sm})]
        [:span {:class ["tool-call-toggle-label"]}
         [:span {:class ["tool-call-action"]} "Thinking"]]]
-      (into [:pre {:class ["thinking-text"]}] (md/linkify (:text entry)))]]
+      (into [:pre {:class ["thinking-text"]}] (md/linkify (str/trimr (:text entry))))]]
 
     :tool-call
     (tool-post dispatch! entry)
