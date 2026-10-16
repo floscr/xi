@@ -90,7 +90,7 @@ the browser's frame host (`xi.ext.blocks.frame`): HTML on
 `sandbox="allow-scripts"` srcdoc iframe (an opaque origin) and the resource's
 CSP as the document's first `<meta>` (`xi.blocks.csp`). Not implemented:
 `tool-input-partial` / `tool-cancelled` (a view opens after its call
-finished), `host-context-changed` on a theme switch, `permissions`,
+finished), `permissions`,
 `domain`, `pip`. The Babashka example server's `uuids` tool is a reference
 view, exercised by `test/xi/e2e/blocks_e2e.cljs`.
 

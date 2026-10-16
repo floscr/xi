@@ -415,7 +415,15 @@
     "app"       (frame/view dispatch! room-id record ui)
     (ext-kind-view dispatch! room-id record)))
 
-(defn- block-menu [dispatch! {:keys [id] :as record} ui]
+(defn- open-buffer!
+  "Show block `record` as a buffer of the room (`block:<id>`), full size."
+  [dispatch! room-id {:keys [id kind title]}]
+  (let [buffer-id (str "block:" id)]
+    (dispatch! {:type :ui/buffer-set :room-id room-id :buffer-id buffer-id
+                :buffer {:kind :block :block-id id :title (str "Block · " (or title kind))}})
+    (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id})))
+
+(defn- block-menu [dispatch! room-id {:keys [id] :as record} ui]
   (let [menu-id (str "ab-menu-" id)
         item    (fn [k icon-name label f]
                   [:button {:class ["sidebar-more-item"] :replicant/key k
@@ -430,6 +438,8 @@
      (popover/popover-content
       {:id menu-id :side :bottom :align :end :class "sidebar-more-menu"
        :attrs {:replicant/key "menu"}}
+      (when room-id
+        (item "buffer" :external-link "Open in buffer" #(open-buffer! dispatch! room-id record)))
       (item "raw" :code (if (:raw? ui) "Hide data" "View data")
             #(dispatch! {:type :ext.blocks/raw :block-id id}))
       (item "md" :copy "Copy as text" #(views/copy! dispatch! (b/text record)))
@@ -458,7 +468,7 @@
                                    (frame/notify-mode! id "inline")
                                    (dispatch! {:type :ext.blocks/app-display :block-id id :fullscreen? false}))}
                       "Exit full screen"))
-     (block-menu dispatch! record ui)]
+     (block-menu dispatch! room-id record ui)]
     [:div {:class ["agent-block-body"]}
      (block-body dispatch! room-id record ui)]
     (when (:raw? ui)
@@ -496,6 +506,15 @@
            :key  (str "block-" id)
            :node (memo-post dispatch! (:id room) record (get-in state [:web/blocks id]))})))))
 
+(defn- buffer-view
+  "A `block:<id>` buffer: the block at full size, outside the timeline."
+  [state dispatch! room _id {:keys [block-id]}]
+  (let [record (get-in room [:ext b/ext-id :blocks block-id])]
+    [:div {:class ["ab-buffer"]}
+     (if record
+       (block-post dispatch! (:id room) record (get-in state [:web/blocks block-id]))
+       [:p {:class ["ab-note"]} "This block is no longer in the chat."])]))
+
 (def extension
   {:id             h/ext-id
    ;; so the web's :ext.persist/hydrate mirror installs restored blocks too
@@ -512,4 +531,5 @@
                            :ext.blocks/sort   on-sort
                            :ext.blocks/raw    on-raw
                            :ext.blocks/draft  on-draft})
-   :timeline-posts timeline-posts})
+   :timeline-posts timeline-posts
+   :buffer-views   {:block {:view buffer-view :icon :layout-dashboard}}})

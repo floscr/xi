@@ -20,8 +20,12 @@
             [xi.blocks :as b]
             [xi.blocks.csp :as csp]))
 
-;; contentWindow → {:block-id :room-id :iframe :record :modes}
-(defonce ^:private frames (atom {}))
+;; contentWindow → {:block-id :room-id :iframe :record :modes}. A js/Map: a
+;; ClojureScript hash map would hash the window, which sets a property on it,
+;; and an opaque-origin window refuses that.
+(defonce ^:private frames (js/Map.))
+
+(defn- frame-entries [] (vec (es6-iterator-seq (.entries frames))))
 ;; block-id → {:html s} | {:error s}
 (defonce ^:private htmls (atom {}))
 ;; rpc-id → {:win :id}
@@ -140,7 +144,7 @@
 (defn- handle! [^js win frame {:keys [id method params]}]
   (case method
     "ui/initialize"
-    (do (swap! frames assoc-in [win :modes] (vec (get-in params [:appCapabilities :availableDisplayModes])))
+    (do (.set frames win (assoc (.get frames win) :modes (vec (get-in params [:appCapabilities :availableDisplayModes]))))
         (respond! win id {:protocolVersion  protocol-version
                           :hostInfo         {:name "xi" :version "1"}
                           :hostCapabilities {:openLinks {} :serverTools {} :serverResources {} :logging {}
@@ -172,7 +176,7 @@
     (when (some? id) (fail! win id -32601 (str "Method not found: " method)))))
 
 (defn- on-message [^js e]
-  (when-let [frame (get @frames (.-source e))]
+  (when-let [frame (.get frames (.-source e))]
     (let [data (.-data e)]
       (when (and (some? data) (= "2.0" (.-jsonrpc data)))
         (handle! (.-source e) frame (js->clj data :keywordize-keys true))))))
@@ -180,10 +184,23 @@
 (defonce ^:private listening
   (do (.addEventListener js/window "message" on-message) true))
 
+(defn- theme-changed!
+  "Xi's theme switched: every open view gets the new theme and tokens."
+  []
+  (let [ctx {:theme (theme) :styles {:variables (host-styles)}}]
+    (doseq [[w _] (frame-entries)]
+      (post! w {:method "ui/notifications/host-context-changed" :params ctx}))))
+
+(defonce ^:private watching-theme
+  (do (.observe (js/MutationObserver. (fn [_] (js/setTimeout theme-changed! 0)))
+                js/document.documentElement #js {:attributes true :attributeFilter #js ["data-theme" "class" "style"]})
+      (.addEventListener (js/matchMedia "(prefers-color-scheme: dark)") "change" theme-changed!)
+      true))
+
 (defn notify-mode!
   "Tell block `block-id`'s view the host changed its display mode."
   [block-id mode]
-  (doseq [[w f] @frames :when (= block-id (:block-id f))]
+  (doseq [[w f] (frame-entries) :when (= block-id (:block-id f))]
     (post! w {:method "ui/notifications/host-context-changed" :params {:displayMode mode}})))
 
 (defn reply!
@@ -206,12 +223,12 @@
   (fn [{:replicant/keys [^js node life-cycle]}]
     (let [win (.-contentWindow node)]
       (if (= life-cycle :replicant.life-cycle/unmount)
-        (do (doseq [[w f] @frames :when (identical? node (:iframe f))]
+        (do (doseq [[w f] (frame-entries) :when (identical? node (:iframe f))]
               (try (post! w {:id "teardown" :method "ui/resource-teardown" :params {:reason "unmounted"}})
                    (catch :default _ nil))
-              (swap! frames dissoc w)))
+              (.delete frames w)))
         (do (reset! dispatch-ref dispatch!)
-            (swap! frames assoc win (merge (get @frames win)
+            (.set frames win (merge (.get frames win)
                                            {:block-id (:id record) :room-id room-id :iframe node
                                             :record record :fullscreen? (boolean (:fullscreen? ui))})))))))
 

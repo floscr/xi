@@ -7181,6 +7181,9 @@ g.ab-series-5 { color: var(--hl-string); }
 .agent-block--fullscreen .agent-block-head { min-height: 3.5rem; padding-left: 4.5rem; padding-right: 4.5rem; }
 .agent-block--fullscreen .agent-block-body { flex: 1; max-height: none; overflow: hidden; }
 .agent-block--fullscreen .ab-app-frame { height: 100% !important; }
+/* a block opened as a buffer (`block:<id>`): full size */
+.ab-buffer { padding: var(--size-4); overflow: auto; height: 100%; }
+.ab-buffer .agent-block-body { max-height: none; }
 .ab-em-muted { color: var(--fg-2); }
 .ab-align-start { align-items: flex-start; text-align: start; }
 .ab-align-center { align-items: center; justify-content: center; text-align: center; }

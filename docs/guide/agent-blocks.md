@@ -14,7 +14,8 @@ show the failing tests as a checklist, I'll tick the ones I've looked at
 Every block sits in a frame Xi draws, never the agent: a dashed border, a
 header with **Agent block**, the kind (`checklist`, `table`, …), its title,
 and where it came from (`ui_block` for the agent, an extension or MCP server
-by name). The `≡` menu in the header shows the block's data and copies it as
+by name). The `≡` menu in the header opens the block as a
+[buffer](web-client.md#buffers) of the chat, shows its data and copies it as
 text or JSON.
 
 A block can only change itself. Its buttons and fields record what you did on
