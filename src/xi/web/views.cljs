@@ -2942,21 +2942,37 @@
   (when (false? (:web/connected? state))
     [:span {:class ["offline-label"]} "Offline"]))
 
+(defn- flame-icon
+  "Tabler's flame, outline or `filled?`, which the clj-ui-framework icon set lacks."
+  [filled? classes]
+  [:svg (cond-> {:class (into ["icon" "icon-sm"] classes)
+                 :xmlns "http://www.w3.org/2000/svg"
+                 :viewBox "0 0 24 24"
+                 :aria-hidden "true"}
+          filled?       (assoc :fill "currentColor")
+          (not filled?) (assoc :fill "none" :stroke "currentColor" :stroke-width "2"
+                               :stroke-linecap "round" :stroke-linejoin "round"))
+   [:path {:d (if filled?
+                "M10 2c0 -.88 1.056 -1.331 1.692 -.722c1.958 1.876 3.096 5.995 1.75 9.12l-.08 .174l.012 .003c.625 .133 1.203 -.43 2.303 -2.173l.14 -.224a1 1 0 0 1 1.582 -.153c1.334 1.435 2.601 4.377 2.601 6.27c0 4.265 -3.591 7.705 -8 7.705s-8 -3.44 -8 -7.706c0 -2.252 1.022 -4.716 2.632 -6.301l.605 -.589c.241 -.236 .434 -.43 .618 -.624c1.43 -1.512 2.145 -2.924 2.145 -4.78"
+                "M12 10.941c2.333 -3.308 .167 -7.823 -1 -8.941c0 3.395 -2.235 5.299 -3.667 6.706c-1.43 1.408 -2.333 3.294 -2.333 5.588c0 3.704 3.134 6.706 7 6.706c3.866 0 7 -3.002 7 -6.706c0 -1.712 -1.232 -4.403 -2.333 -5.588c-2.084 3.353 -3.257 3.353 -4.667 2.235")}]])
+
 (defn- yolo-chip
   "Chat header chip while the room's yolo mode is on (xi.ext.yolo); a click
    runs /yolo off."
   [dispatch! room]
   (when-let [[flame label title]
              (case (get-in room [:ext :yolo :level])
-               :sane       ["🔥" "Yolo"
+               :sane       [(flame-icon false ["yolo-chip-flame"])
+                            "Yolo"
                             "Yolo mode: tool calls run without asking, except risky ones."]
-               :relentless ["🔥🔥" "Relentless"
+               :relentless [(flame-icon true ["yolo-chip-flame" "yolo-chip-flame--relentless"])
+                            "Relentless"
                             "Relentless yolo mode: every tool call runs without asking."]
                nil)]
     (chip/chip {:attrs    {:class ["yolo-chip"]
                            :title (str title " Click to turn it off.")}
                 :on-click (fn [_] (dispatch-command! dispatch! (:id room) "yolo off"))}
-      [:span {:class ["yolo-chip-flame"]} flame]
+      flame
       label)))
 
 (defn shorten-path

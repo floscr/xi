@@ -221,8 +221,11 @@ body {
 }
 
 .yolo-chip-flame {
-  font-size: var(--font-base);
-  line-height: 1;
+  color: var(--orange);
+}
+
+.yolo-chip-flame--relentless {
+  color: var(--danger);
 }
 
 /* The active tab segment stays a touch more opaque so it reads as selected. */
