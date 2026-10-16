@@ -251,6 +251,8 @@
    :prompt/next             {:label "Next message of yours" :surface #{:web}}
    :answer/prev             {:label "Previous answer of the agent" :surface #{:web}}
    :answer/next             {:label "Next answer of the agent" :surface #{:web}}
+   :block/prev              {:label "Previous agent block" :surface #{:web}}
+   :block/next              {:label "Next agent block" :surface #{:web}}
    :diff/next-hunk          {:label "Next hunk" :surface #{:web}}
    :diff/prev-hunk          {:label "Previous hunk" :surface #{:web}}
    :buffers/switch          {:label "Switch buffer" :surface #{:web}}

@@ -239,6 +239,8 @@ the navigation ones fit together.
 | `:prompt/next` | Next message of yours | web |
 | `:answer/prev` | Previous answer of the agent | web |
 | `:answer/next` | Next answer of the agent | web |
+| `:block/prev` | Previous agent block | web |
+| `:block/next` | Next agent block | web |
 | `:diff/next-hunk` | Next hunk | web |
 | `:diff/prev-hunk` | Previous hunk | web |
 | `:buffers/switch` | Switch buffer | web |

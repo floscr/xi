@@ -59,6 +59,10 @@ post a message to the chat for you, like typing it:
 </block-action>
 ```
 
+From the keyboard, `:block/next` / `:block/prev` jump between blocks and the
+arrow keys move inside one; see
+[Keyboard navigation](keyboard-navigation.md#agent-blocks).
+
 While the agent is busy the message waits in the queue, as a typed prompt
 would. Several people in the same chat see the same ticks and selections;
 each action is recorded with who did it.

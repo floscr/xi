@@ -29,6 +29,7 @@
             [xi.ext.blocks.handlers :as h]
             [xi.markdown.hiccup :as md]
             [xi.web.block-kinds :as block-kinds]
+            [xi.web.block-nav :as block-nav]
             [xi.web.views :as views]))
 
 
@@ -450,7 +451,10 @@
   [:div {:class ["post" "post--assistant" "post--agent-block"]}
    [:section {:class ["agent-block" (when (:fullscreen? ui) "agent-block--fullscreen")]
               :data-block-kind kind
-              :aria-label (str "Agent block: " (or title kind))}
+              :aria-label (str "Agent block: " (or title kind))
+              ;; :block/next can focus a block without controls; arrows rove
+              :tabindex "-1"
+              :on {:keydown block-nav/on-keydown}}
     [:header {:class ["agent-block-head"]}
      (icon/icon {:icon-name :layout-dashboard :size :sm})
      [:span {:class ["agent-block-badge"]} "Agent block"]

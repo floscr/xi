@@ -21,6 +21,8 @@ A complete setup, explained in the sections below:
                              "]"      :prompt/next
                              "{"      :answer/prev
                              "}"      :answer/next
+                             "b"      :block/next
+                             "B"      :block/prev
                              "ctrl+o" :nav/back
                              "ctrl+i" :nav/forward}}}
 ```
@@ -80,6 +82,21 @@ the palette is `Ctrl`/`Cmd+k`.
   on its left. From the bottom of the chat,
   `:answer/prev` goes to the start of the newest answer; past the oldest
   shown message it shows earlier ones.
+
+## Agent blocks
+
+`:block/next` / `:block/prev` (`b` / `B` above) jump to the next or previous
+[agent block](agent-blocks.md) and put the focus on its first button or
+field. Inside a block:
+
+| Key | Does |
+| --- | --- |
+| Arrow keys | Move between the block's buttons and fields |
+| `Home` / `End` | The first / last of them |
+| `Enter` / `Space` | Press the button, tick the box |
+| `Esc` | Leave the block, back to the navigate keys |
+
+In a text field or a select the arrow keys stay with it; `Tab` moves on.
 
 Hold `Alt` for a moment to see the keys on their buttons: the permission
 buttons, Stop, New chat and the sidebar toggle show the key that runs them.

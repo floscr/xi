@@ -29,6 +29,7 @@
             [xi.web.block-menu :as block-menu]
             [xi.web.buffer-views :as buffer-views]
             [xi.web.timeline-posts :as timeline-posts]
+            [xi.web.block-nav :as block-nav]
             [xi.web.terminal :as terminal]
             [xi.web.rename :as rename]
             [xi.web.threads :as threads]
@@ -2999,6 +3000,13 @@
                                      (when (answer-nav/jump! dir
                                                              (boolean (get-in (chat-room st) [:agent :busy?]))
                                                              animate-scroll-to-anchor!)
+                                       (reset! auto-scroll? false)))}))
+  ;; Agent blocks: jump between them, focus lands on the first control.
+  (doseq [[id dir] [[:block/next :next] [:block/prev :prev]]]
+    (keymap/register-action! {:id id
+                              :when chat-room
+                              :run (fn [_ _ _]
+                                     (when (block-nav/jump! dir animate-scroll-to-anchor!)
                                        (reset! auto-scroll? false)))}))
   (keymap/register-action! {:id :git/log
                             :when (fn [st] (some? (:id (state/active-room st))))

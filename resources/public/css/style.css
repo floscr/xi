@@ -6990,6 +6990,8 @@ code a:hover,
 }
 
 .post--agent-block { padding: 0; }
+/* keyboard focus inside a block (xi.web.block-nav) */
+.agent-block:focus-visible, .agent-block:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .agent-block {
   width: 100%;
