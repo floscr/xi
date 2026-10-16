@@ -3231,6 +3231,16 @@ code a:hover,
   font-size: var(--font-sm);
 }
 
+/* Inside a viewer group the group already frames it: no box of its own, just
+   the hairline divider the tool rows use. */
+.viewer-tool-group .tool-explain {
+  margin: 0;
+  border: none;
+  border-top: var(--border-0);
+  border-radius: 0;
+  background: transparent;
+}
+
 .tool-explain-head {
   display: flex;
   align-items: center;
