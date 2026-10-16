@@ -40,12 +40,30 @@
    0-arg fn returning one — the manager's live seam). Extension entries win, so
    an extension can override a builtin by name (treesitter's `read`). Every
    exec-fn is wrapped by xi.holds, so calls on a held resource (the git index)
-   wait for it on every provider."
+   wait for it on every provider.
+
+   With a live seam the names are snapshotted for the turn, but each call
+   resolves its exec-fn afresh: a reloaded extension (ext_reload) revokes the
+   old code's capability token, so the snapshotted fn would fail every
+   xi.api.* call for the rest of the turn. A tool the reload dropped falls
+   back to the builtin of that name, else answers that it is gone."
   [extra-registry]
-  (into {}
-        (map (fn [[n f]] [n (holds/wrap n f)]))
-        (merge (tool-registry)
-               (if (fn? extra-registry) (extra-registry) extra-registry))))
+  (let [builtins (tool-registry)
+        live     (fn [] (if (fn? extra-registry) (extra-registry) extra-registry))
+        gone     (fn [n]
+                   (fn [_args _ctx]
+                     {:content  [{:type "text"
+                                  :text (str "Tool " n " is no longer available"
+                                             " (its extension was reloaded or disabled).")}]
+                      :is-error true}))
+        current  (fn [n f]
+                   (if (fn? extra-registry)
+                     (fn [args ctx]
+                       ((or (get (live) n) (get builtins n) (gone n)) args ctx))
+                     f))]
+    (into {}
+          (map (fn [[n f]] [n (holds/wrap n (current n f))]))
+          (merge builtins (live)))))
 
 (defn resolve-tooling
   "Resolve the enabled tool defs + registry for a turn from a provider's

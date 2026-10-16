@@ -68,6 +68,23 @@
                      (is (= "ok" (util/extract-text-content content)))
                      (done))))))))
 
+(deftest registry-follows-a-live-extension-reload
+  ;; ext_reload revokes the old code's token mid-turn: a call made after it
+  ;; must reach the NEW exec-fn, not the one the turn snapshotted.
+  (async done
+    (let [ext      (atom {"web_search" (fn [_ _] {:content [{:type "text" :text "old"}]})
+                          "gone_tool"  (fn [_ _] {:content [{:type "text" :text "old"}]})})
+          registry (:registry (registry/resolve-tooling {:extra-tool-registry (fn [] @ext)}))
+          call     (fn [n] (registry/run-tool (get registry n) {} {}))]
+      (reset! ext {"web_search" (fn [_ _] {:content [{:type "text" :text "new"}]})})
+      (-> (js/Promise.all #js [(call "web_search") (call "gone_tool")])
+          (.then (fn [[reloaded dropped]]
+                   (is (= "new" (util/extract-text-content (:content reloaded))))
+                   (is (true? (:is-error dropped)))
+                   (is (re-find #"no longer available"
+                                (util/extract-text-content (:content dropped))))
+                   (done)))))))
+
 (deftest resolve-tooling-composes-the-advertised-tools
   (let [ext-def  {:name "web_search" :description "s"}
         names    #(mapv :name (:defs (registry/resolve-tooling %)))
