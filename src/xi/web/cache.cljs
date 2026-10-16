@@ -307,6 +307,14 @@
 (defn save-recent-commands! [commands]
   (store-set! recent-commands-key (vec commands)))
 
+;; Per-browser only (not user state): orders the slash-command suggestions.
+(def ^:private command-counts-key "xi/command-counts")
+
+(defn load-command-counts [] (or (store-get command-counts-key) {}))
+
+(defn save-command-counts! [counts]
+  (store-set! command-counts-key counts))
+
 ;; ── Recently-used skills (skills palette page) ───────────────────────────────
 
 (def ^:private recent-skills-key "xi/recent-skills")
@@ -440,6 +448,7 @@
                         ;; recency and is persisted to re-seed both on reload.
                         :web/recent-commands (load-recent-commands)
                         :web/command-usage (load-recent-commands)
+                        :web/command-counts (load-command-counts)
                         :web/recent-skills (load-recent-skills)
                         :web/preferred-model (load-preferred-model)
                         :web/model-list (:models models)

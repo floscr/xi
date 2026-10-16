@@ -111,7 +111,10 @@ projects** in the sidebar opens the project list (`/projects`).
 - **Switch projects.** The projects page (**All projects** in the sidebar)
   lists your [projects](projects.md); start a new chat in any of them.
 - **Run commands.** Everything from [Slash commands](commands.md) works here
-  too. The command palette (Ctrl/Cmd+K) lists them.
+  too. Typing `/` in the composer suggests them, plus the skills you have
+  run, the ones you use most in this browser first. A skill picked there
+  opens its input form; `/<skill> text` runs it at once, the text filling
+  its first input. The command palette (Ctrl/Cmd+K) lists them.
 - **Pin a chat.** The sidebar's Recent group shows the chats active in the
   last couple of days. Opening an older chat leaves it in Earlier until it
   gets a new turn. "Pin session" (right-click a card, long-press, or its

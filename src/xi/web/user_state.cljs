@@ -111,8 +111,10 @@
     ;; the unread overlay is the other user's too; the server's :read for this
     ;; user comes with the lobby
     (-> r
-        (update :state assoc :web/recent-commands [] :web/watched {})
-        (update :effects conj [:cache/clear-watched {}]))))
+        (update :state assoc :web/recent-commands [] :web/watched {}
+                :web/command-counts {})
+        (update :effects conj [:cache/clear-watched {}]
+                [:cache/command-counts {:counts {}}]))))
 
 (defn user-state
   "`:user-state/state {:user :state}` — the user's whole stored state, sent

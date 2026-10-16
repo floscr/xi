@@ -1467,6 +1467,17 @@
   [name]
   (contains? web-command-names name))
 
+(defn command-usage-name
+  "The name a run of `name` with `args` is recorded under in
+   :web/command-usage: \"yolo sane\" when the first arg is a subcommand,
+   else `name`."
+  [name args]
+  (let [sub     (first (str/split (str/trim (or args "")) #"\s+"))
+        subcmds (some #(when (= name (:name %)) (:subcommands %)) web-commands)]
+    (if (some #(= sub (:name %)) subcmds)
+      (str name " " sub)
+      name)))
+
 (def ^:private while-busy-command-names
   (into #{} (comp (filter :while-busy?) (mapcat #(cons (:name %) (:aliases %)))) web-commands))
 
@@ -1487,15 +1498,41 @@
     (or (not (str/starts-with? t "/"))
         (command-while-busy? t))))
 
-(defn- match-commands
-  "Commands (and subcommands) matching the prefix `query`; an exact name or
-   alias hit sorts first."
-  [query]
-  (let [q      (str/lower-case (or query ""))
-        exact? (fn [{:keys [name aliases]}] (boolean (or (= name q) (some #{q} aliases))))]
-    (->> (palette/expand-commands web-commands)
+(defn match-commands
+  "Commands (and subcommands) matching the prefix `query`, as families (a
+   command with its subcommands): the family whose name or alias is exactly
+   `query` first, the others by use. Within a family, entries go by their own
+   use. Use = `counts` (:web/command-counts, name → runs), ties broken by
+   `usage` (:web/command-usage, most recent first); names as in
+   command-usage-name. `skills` ({:name :description}) join as entries with
+   :skill, tracked as \"skill:<name>\" (xi.web.core/skill-select). Unused
+   entries keep declaration order, commands before skills."
+  [query {:keys [usage counts skills]}]
+  (let [q        (str/lower-case (or query ""))
+        family   (fn [name] (first (str/split name #" ")))
+        rank     (zipmap usage (range))
+        fam-rank (reduce-kv (fn [m n i] (update m (family n) (fnil min i) i)) {} rank)
+        fam-count (reduce-kv (fn [m n c] (update m (family n) (fnil + 0) c)) {} counts)
+        never    (count usage)
+        exact?   (fn [{:keys [name aliases]}] (boolean (or (= name q) (some #{q} aliases))))
+        stat-key (fn [{:keys [name skill]}] (if skill (str "skill:" skill) name))
+        all      (concat (palette/expand-commands web-commands)
+                         (map (fn [{:keys [name description]}]
+                                {:name name :skill name
+                                 :description (str "Skill" (when (seq description)
+                                                             (str " · " description)))})
+                              skills))
+        exact-family (some #(when (exact? %) (family (stat-key %))) all)]
+    (->> all
          (filter #(or (str/starts-with? (:name %) q) (exact? %)))
-         (sort-by (complement exact?))
+         (sort-by (fn [e]
+                    (let [k   (stat-key e)
+                          fam (family k)]
+                      [(if (= exact-family fam) 0 1)
+                       (- (get fam-count fam 0))
+                       (get fam-rank fam never)
+                       (- (get counts k 0))
+                       (get rank k never)])))
          vec)))
 
 (defn dispatch-command!
@@ -1521,17 +1558,51 @@
       (dispatch! (cond-> {:type :web/command :room-id room-id :name name}
                    args (assoc :args args))))))
 
+(defn slash-ctx
+  "match-commands' options from state: usage, counts and the recently used
+   skills (described once the skill list is loaded, gone ones dropped);
+   :skill-names are all skills a typed \"/<skill> args\" may run."
+  [state]
+  (let [listed  (:web/skill-list state)
+        by-name (into {} (map (juxt :name identity)) listed)
+        recents (:web/recent-skills state)]
+    {:usage       (:web/command-usage state)
+     :counts      (:web/command-counts state)
+     :skills      (if listed
+                    (vec (keep by-name recents))
+                    (mapv (fn [n] {:name n}) recents))
+     :skill-names (into (set recents) (map :name) listed)}))
+
+(defn- clear-compose! [dispatch! draft-key]
+  (when-let [^js el (compose-textarea-el)]
+    (set! (.-value el) ""))
+  (dispatch! {:type :compose/clear-draft :draft-key draft-key}))
+
 (defn- pick-command!
   "A command picked in the suggestion popup or the palette: one that
    `:takes-args?` is completed into the composer (\"/subagent \") for its
-   argument, any other runs at once (and the typed \"/…\" is cleared)."
-  [dispatch! room-id draft-key {:keys [name takes-args?]}]
-  (if takes-args?
+   argument, any other runs at once (and the typed \"/…\" is cleared). A
+   skill runs through :skill/select, which opens its form when it has inputs."
+  [dispatch! room-id draft-key {:keys [name takes-args? skill]}]
+  (cond
+    skill
+    (do (dispatch! {:type :skill/select :name skill})
+        (clear-compose! dispatch! draft-key))
+
+    takes-args?
     (dispatch! {:type :compose/prefill :draft-key draft-key :text (str "/" name " ")})
+
+    :else
     (do (dispatch-command! dispatch! room-id name)
-        (when-let [^js el (compose-textarea-el)]
-          (set! (.-value el) ""))
-        (dispatch! {:type :compose/clear-draft :draft-key draft-key}))))
+        (clear-compose! dispatch! draft-key))))
+
+(defn- skill-invocation
+  "[skill args] when `text` is \"/<skill> args\" for one of `skill-names` that
+   isn't also a command (submit-compose! runs it client-side)."
+  [text skill-names]
+  (let [{:keys [name args]} (when (str/starts-with? text "/") (commands/parse-input text))]
+    (when (and name (contains? skill-names name) (not (known-command? name)))
+      [name args])))
 
 (defn- command-suggestions
   [dispatch! room-id draft-key commands selected-index]
@@ -1553,17 +1624,22 @@
            [:span {:class ["slash-item-desc"]} description]]))
       commands)]))
 
-(defn- submit-compose! [dispatch! room-id session-id images draft-key draft]
-  (let [text (str/trim (or draft ""))]
+(defn- submit-compose! [dispatch! room-id session-id images draft-key draft skill-names]
+  (let [text (str/trim (or draft ""))
+        [skill args] (when (empty? images) (skill-invocation text skill-names))]
     (when (or (seq text) (seq images))
-      (when-let [^js el (compose-textarea-el)]
-        (set! (.-value el) ""))
-      (dispatch! {:type :compose/clear-draft :draft-key draft-key})
+      (clear-compose! dispatch! draft-key)
       (when (seq images)
         (dispatch! {:type :compose/clear-images :draft-key draft-key}))
-      (if room-id
+      (cond
+        skill
+        (dispatch! {:type :skill/select :name skill :args args})
+
+        room-id
         (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
                      (seq images) (assoc :images (vec images))))
+
+        :else
         (dispatch! (cond-> {:type :submit/pending :session-id session-id :text text}
                      (seq images) (assoc :images (vec images))))))))
 
@@ -1682,11 +1758,12 @@
 
 (declare skill-form-compose)
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? queue-open? prompt-nav nav-ctx scrolled-up? offline?]
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? queue-open? prompt-nav nav-ctx scrolled-up? offline? cmd-ctx]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
-        cmd-matches (when (some? cmd-query) (match-commands cmd-query))
+        cmd-matches (when (some? cmd-query) (match-commands cmd-query cmd-ctx))
+        skill-names (:skill-names cmd-ctx)
         cmd-open?   (seq cmd-matches)
         has-input?  (seq (str/trim (or draft "")))
         queued      (get-in room [:agent :queued])
@@ -1742,9 +1819,10 @@
                             (let [sel (min (or cmd-selected 0) (dec (count cmd-matches)))]
                               (pick-command! dispatch! room-id draft-key (nth cmd-matches sel)))
                             (let [v (.. e -target -value)]
-                              (when (or (not busy?) (submittable-while-busy? v))
+                              (when (or (not busy?) (submittable-while-busy? v)
+                                        (skill-invocation (str/trim v) skill-names))
                                 (submit-compose! dispatch! room-id session-id
-                                                 images draft-key v))))))
+                                                 images draft-key v skill-names))))))
                       :keydown
                       (fn [^js e]
                         (if cmd-open?
@@ -1800,9 +1878,10 @@
                             (= "Enter" (.-key e))
                             (do (.preventDefault e)
                                 (let [v (.. e -target -value)]
-                                  (when (or (not busy?) (submittable-while-busy? v))
+                                  (when (or (not busy?) (submittable-while-busy? v)
+                                            (skill-invocation (str/trim v) skill-names))
                                     (submit-compose! dispatch! room-id session-id
-                                                     images draft-key v)))))))}}})]
+                                                     images draft-key v skill-names)))))))}}})]
       (let [spinner-abort
             (when busy?
               [:button {:class ["icon-btn" "compose-spinner-abort"]
@@ -1817,7 +1896,7 @@
            (when (or has-input? (seq images))
              [:button {:class ["icon-btn"]
                        :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
-                                                            images draft-key draft))}}
+                                                            images draft-key draft skill-names))}}
               (icon/icon {:icon-name :arrow-up :size :md})])
            [:button {:class ["icon-btn"]
                      :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
@@ -1827,7 +1906,7 @@
            spinner-abort
            [:button {:class ["icon-btn"]
                      :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
-                                                          images draft-key draft))}}
+                                                          images draft-key draft skill-names))}}
             (icon/icon {:icon-name :arrow-up :size :md})]]))]]]))
 
 (defn- deny-reason-compose
@@ -4174,7 +4253,8 @@
                           (:web/prompt-nav state)
                           nav-ctx
                           (:web/scrolled-up? state)
-                          (false? (:web/connected? state)))))])))
+                          (false? (:web/connected? state))
+                          (slash-ctx state))))])))
      ;; outside the case: code blocks in file buffers open it too
      (when-let [menu (:web/code-menu state)]
        (code-copy-menu dispatch! state (:id room) menu))]))
@@ -5510,7 +5590,10 @@
   [state dispatch!]
   (let [room-id  (:id (state/active-room state))
         dkey     (draft-key state)
-        recents  (:web/recent-commands state)
+        recents  (->> (:web/recent-commands state)
+                      (map #(first (str/split % #" ")))
+                      distinct
+                      (take 6))
         by-name  (into {} (map (juxt :name identity)) web-commands)
         recent   (keep by-name recents)
         the-rest (remove (comp (set recents) :name) web-commands)]

@@ -283,11 +283,15 @@
   {:state (update st :web/compose-images dissoc draft-key)})
 
 (defn- compose-set-draft
+  "Also fetches the skill list on a fresh `/`: the slash suggestions offer
+   recent skills, and picking one needs its inputs (skill-select)."
   [st {:keys [draft-key text]}]
-  {:state (-> (if (seq text)
-                (assoc-in st [:web/drafts draft-key] text)
-                (update st :web/drafts dissoc draft-key))
-              (assoc :web/cmd-selected 0))})
+  (cond-> {:state (-> (if (seq text)
+                        (assoc-in st [:web/drafts draft-key] text)
+                        (update st :web/drafts dissoc draft-key))
+                      (assoc :web/cmd-selected 0))}
+    (and (= "/" text) (nil? (:web/skill-list st)))
+    (assoc :effects [[:ws/send {:type :skill/web-list}]])))
 
 (defn- compose-clear-draft [st {:keys [draft-key]}]
   {:state (update st :web/drafts dissoc draft-key)})
@@ -412,19 +416,27 @@
 (defn- cmd-select [st {:keys [index]}]
   {:state (assoc st :web/cmd-selected (or index 0))})
 
-(def ^:private max-recent-commands 6)
+;; xi.user-state caps :recent-commands at 20
+(def ^:private max-recent-commands 20)
 
-(defn- record-command
-  "Push a just-executed command name to the front of the usage list (deduped,
-   capped) and persist it. Feeds the next reload's quick-command bar; the
-   displayed order (:web/recent-commands) stays frozen for the session."
-  [st {:keys [name]}]
-  (let [usage (->> (cons name (remove #(= % name) (:web/command-usage st)))
-                   (take max-recent-commands)
-                   vec)]
-    {:state   (assoc st :web/command-usage usage)
+(defn- bump-usage
+  "Push `name` (a command, \"yolo sane\", or \"skill:<name>\") to the front of
+   the usage list (deduped, capped) and bump its count; persist both. They
+   order the slash-command suggestions live; the usage list also feeds the
+   next reload's palette Recent group, whose order (:web/recent-commands)
+   stays frozen for the session. Counts stay in this browser."
+  [st name]
+  (let [usage  (->> (cons name (remove #(= % name) (:web/command-usage st)))
+                    (take max-recent-commands)
+                    vec)
+        counts (update (:web/command-counts st) name (fnil inc 0))]
+    {:state   (assoc st :web/command-usage usage :web/command-counts counts)
      :effects [[:cache/recent-commands {:commands usage}]
+               [:cache/command-counts {:counts counts}]
                (user-state/set-effect :recent-commands usage)]}))
+
+(defn- record-command [st {:keys [name]}]
+  (bump-usage st name))
 
 ;; ── Custom color themes (xi.web.theme) ───────────────────────────────────────
 ;; :web/themes is the user's value; :web/theme-draft the editor's copy while
@@ -952,37 +964,97 @@
       [:app/dispatch (cond-> {:type :submit/pending :session-id sid :text text}
                        (seq images) (assoc :images (vec images)))])))
 
+(defn- fill-skill-inputs
+  "Substitute each <name /> placeholder in `body` with its value (image
+   placeholders are blanked; images ride along as attachments)."
+  [body inputs values]
+  (reduce (fn [t {:keys [name type]}]
+            (let [re (js/RegExp. (str "<" name "\\s*/>") "g")
+                  v  (if (= type :image)
+                       ""
+                       (str/trim (or (get values name) "")))]
+              (.replace t re v)))
+          body inputs))
+
 (defn- skill-select
-  "Pick a skill from the palette. Skills with <input /> placeholders open the
+  "Pick a skill (palette or slash suggestions). With `args` it runs at once,
+   the args filling its first text input (or appended when it has none:
+   skill-run-submit). Without, skills with <input /> placeholders open the
    skill form in the compose dock (navigating to a chat page first); plain
-   skills load directly. Recently used skills sort first next time."
-  [st {:keys [name]}]
-  (let [skill   (some #(when (= (:name %) name) %) (:web/skill-list st))
-        recents (->> (cons name (remove #(= % name) (:web/recent-skills st)))
-                     (take 8)
-                     vec)
-        st      (assoc st :web/recent-skills recents)
-        record  [:cache/recent-skills {:skills recents}]
-        sync    (user-state/set-effect :recent-skills recents)]
-    (if (seq (:inputs skill))
-      {:state (-> st
-                  (dissoc :web/palette-page :web/palette-open?)
-                  (assoc :web/skill-form
-                         {:name name
-                          :description (:description skill)
-                          :inputs (vec (:inputs skill))
-                          :values {}
-                          :images []}))
-       :effects (cond-> [[:palette/close nil]
-                         [:ws/send {:type :skill/web-get :name name}]
-                         record sync]
-                  (not= :chat (get-in st [:web/route :page]))
-                  (conj [:app/dispatch {:type :route/navigate
-                                        :page :chat :session-id nil}]))}
-      {:state (dissoc st :web/skill-list :web/palette-page :web/palette-open?)
-       :effects [[:palette/close nil]
-                 (submit-to-viewed-room st (str "/skill load " name) nil)
-                 record sync]})))
+   skills load directly. Waits for the skill list when it isn't loaded, since
+   the inputs come from it. Used skills sort first next time."
+  [st {:keys [name args] :as ev}]
+  (if (nil? (:web/skill-list st))
+    {:state   (assoc st :web/skill-select-pending ev)
+     :effects [[:ws/send {:type :skill/web-list}]]}
+    (let [skill   (some #(when (= (:name %) name) %) (:web/skill-list st))
+          recents (->> (cons name (remove #(= % name) (:web/recent-skills st)))
+                       (take 8)
+                       vec)
+          {st :state used :effects}
+          (bump-usage (assoc st :web/recent-skills recents) (str "skill:" name))
+          effects (into [[:palette/close nil]
+                         [:cache/recent-skills {:skills recents}]
+                         (user-state/set-effect :recent-skills recents)]
+                        used)
+          args    (some-> args str/trim not-empty)]
+      (cond
+        args
+        {:state   (-> st
+                      (dissoc :web/palette-page :web/palette-open?)
+                      (assoc :web/skill-run {:name name :inputs (vec (:inputs skill))
+                                             :args args}))
+         :effects (conj effects [:ws/send {:type :skill/web-get :name name}])}
+
+        (seq (:inputs skill))
+        {:state (-> st
+                    (dissoc :web/palette-page :web/palette-open?)
+                    (assoc :web/skill-form
+                           {:name name
+                            :description (:description skill)
+                            :inputs (vec (:inputs skill))
+                            :values {}
+                            :images []}))
+         :effects (cond-> (conj effects [:ws/send {:type :skill/web-get :name name}])
+                    (not= :chat (get-in st [:web/route :page]))
+                    (conj [:app/dispatch {:type :route/navigate
+                                          :page :chat :session-id nil}]))}
+
+        :else
+        {:state (dissoc st :web/palette-page :web/palette-open?)
+         :effects (conj effects
+                        (submit-to-viewed-room st (str "/skill load " name) nil))}))))
+
+(defn- skill-run-submit
+  "The body of a skill picked with args (skill-select) arrived: submit it."
+  [st body]
+  (let [{:keys [inputs args]} (:web/skill-run st)
+        field (some #(when (not= :image (:type %)) (:name %)) inputs)]
+    {:state   (dissoc st :web/skill-run)
+     :effects (when body
+                [(submit-to-viewed-room
+                  st
+                  (if field
+                    (fill-skill-inputs body inputs {field args})
+                    (str body "\n\n" args))
+                  nil)])}))
+
+(defn- skill-web-list-result
+  [st {:keys [skills]}]
+  (let [pending (:web/skill-select-pending st)]
+    (cond-> {:state (-> st
+                        (assoc :web/skill-list skills)
+                        (dissoc :web/skill-select-pending))}
+      pending (assoc :effects [[:app/dispatch pending]]))))
+
+(defn- skill-web-get-result
+  [st {:keys [name body]}]
+  (cond
+    (= name (get-in st [:web/skill-run :name]))
+    (skill-run-submit st body)
+
+    (= name (get-in st [:web/skill-form :name]))
+    {:state (assoc-in st [:web/skill-form :body] body)}))
 
 (defn- skill-form-escape
   "Esc twice cancels the skill form: the first press arms, the second
@@ -998,15 +1070,9 @@
   [st _]
   (let [{:keys [inputs values images body]} (:web/skill-form st)]
     (when body
-      (let [text (reduce (fn [t {:keys [name type]}]
-                           (let [re (js/RegExp. (str "<" name "\\s*/>") "g")
-                                 v  (if (= type :image)
-                                      ""
-                                      (str/trim (or (get values name) "")))]
-                             (.replace t re v)))
-                         body inputs)]
-        {:state   (dissoc st :web/skill-form)
-         :effects [(submit-to-viewed-room st text images)]}))))
+      {:state   (dissoc st :web/skill-form)
+       :effects [(submit-to-viewed-room st (fill-skill-inputs body inputs values)
+                                        images)]})))
 
 (defn- flip-session-lists
   [st session-id f]
@@ -1346,12 +1412,9 @@
           :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
           :models/web-list-result (fn [st ev] (models/list-result st ev (:event/ts ev)))
           :models/select         models-select
-          :skill/web-list-result (fn [st {:keys [skills]}]
-                                    {:state (assoc st :web/skill-list skills)})
+          :skill/web-list-result skill-web-list-result
           :skill/select          skill-select
-          :skill/web-get-result  (fn [st {:keys [name body]}]
-                                    (when (= name (get-in st [:web/skill-form :name]))
-                                      {:state (assoc-in st [:web/skill-form :body] body)}))
+          :skill/web-get-result  skill-web-get-result
           :skill-form/set-value  (fn [st {:keys [name value]}]
                                     {:state (-> st
                                                 (assoc-in [:web/skill-form :values name] value)
@@ -1977,6 +2040,7 @@
         (dispatch! then))))
   :cache/watch  (fn [_ {:keys [session-id count]}] (cache/watch! session-id count))
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
+   :cache/command-counts  (fn [_ {:keys [counts]}] (cache/save-command-counts! counts))
    :cache/recent-skills   (fn [_ {:keys [skills]}] (cache/save-recent-skills! skills))
    :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
    :cache/model-list (fn [_ {:keys [models at]}] (cache/save-model-list! models at))
@@ -2168,7 +2232,8 @@
   (fn [event _state]
     (when (and (= :web/command (:type event))
                (views/known-command? (:name event)))
-      (dispatch! {:type :web/record-command :name (:name event)}))))
+      (dispatch! {:type :web/record-command
+                  :name (views/command-usage-name (:name event) (:args event))}))))
 
 (defn- prompt-nav-close-tap
   [dispatch!]

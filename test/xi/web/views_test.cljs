@@ -160,3 +160,53 @@
       (testing "a file gone from disk only offers Copy path"
         (is (= ["Copy path"] (labels (items dispatch! {} "a.clj" {:gone? true})))))
       (finally (swap! registry dissoc :test/vim)))))
+
+;; ── slash-command suggestions ────────────────────────────────────────────────
+
+(deftest command-usage-name
+  (is (= "yolo sane" (views/command-usage-name "yolo" "sane")))
+  (is (= "yolo" (views/command-usage-name "yolo" nil)))
+  (is (= "yolo" (views/command-usage-name "yolo" "nonsense"))))
+
+(deftest match-commands-ordering
+  (let [names   (fn [q usage counts]
+                  (mapv :name (views/match-commands q {:usage usage :counts counts})))
+        base    (fn [n] (first (.split n " ")))
+        default (names "" [] {})
+        [a b]   [(base (last default)) (base (nth default (quot (count default) 2)))]]
+    (testing "without use, declaration order"
+      (is (= default (names "" nil nil))))
+    (testing "families by their latest use"
+      (let [ranked (names "" [a b] {})]
+        (is (= [a b] (distinct (map base (take-while #(#{a b} (base %)) ranked)))))
+        (is (= (set default) (set ranked)))))
+    (testing "run counts beat recency"
+      (is (= b (base (first (names "" [a b] {a 1 b 3}))))))
+    (testing "within the exactly typed family, the most run entry first"
+      (is (= ["yolo sane" "yolo"]
+             (take 2 (names "yolo" ["yolo" "yolo sane"] {"yolo" 2 "yolo sane" 9})))))
+    (testing "the exactly typed family beats a more used one"
+      (is (= b (first (names b [a] {a 50})))))))
+
+(deftest match-commands-skills
+  (let [skills [{:name "design-directions" :description "Generate directions"}]
+        match  (fn [q opts] (views/match-commands q (assoc opts :skills skills)))]
+    (testing "recent skills are offered, marked, after unused commands"
+      (let [[e] (match "design" {})]
+        (is (= {:name "design-directions" :skill "design-directions"
+                :description "Skill · Generate directions"}
+               e)))
+      (is (= "design-directions" (:name (last (match "" {}))))))
+    (testing "ranked by their skill:<name> use like commands"
+      (is (= "design-directions"
+             (:name (first (match "" {:counts {"skill:design-directions" 3}}))))))))
+
+(deftest slash-ctx-skills
+  (let [state {:web/recent-skills ["a" "gone"]}]
+    (testing "before the skill list arrives: recent names only"
+      (is (= [{:name "a"} {:name "gone"}] (:skills (views/slash-ctx state)))))
+    (testing "with it: described, deleted ones dropped, every skill runnable"
+      (let [ctx (views/slash-ctx (assoc state :web/skill-list
+                                        [{:name "a" :description "A"} {:name "b"}]))]
+        (is (= [{:name "a" :description "A"}] (:skills ctx)))
+        (is (= #{"a" "b" "gone"} (:skill-names ctx)))))))
