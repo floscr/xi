@@ -819,6 +819,15 @@
            (str "\npicked: " (:target last-action) " → " (value-text (:value last-action)))))
        "\n</block-action>"))
 
+(defn parse-action-message
+  "The parts of a message `action-message` wrote: {:id :kind :action :body},
+   or nil for any other text. The web draws such a message as a card."
+  [text]
+  (when (string? text)
+    (when-let [[_ id kind action body]
+               (re-matches #"(?s)\s*<block-action id=\"([^\"]*)\" kind=\"([^\"]*)\" action=\"([^\"]*)\">\n?(.*?)\n?</block-action>\s*" text)]
+      {:id id :kind kind :action action :body body})))
+
 (defn catalog
   "The kind catalog as tool-description lines; `extra` adds kinds from
    extensions ({name describe})."

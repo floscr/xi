@@ -190,3 +190,12 @@
                                              :tool-result {:structured-content {:blob (apply str (repeat 40000 "x"))}}})]
       (is (:truncated (:tool-result spec)))
       (is (nil? (get-in spec [:tool-result :structured-content]))))))
+
+(deftest action-messages-parse-back
+  (let [r (:record (b/act (record "choice" {:options ["Red" "Blue"]}) {:action "select" :value ["2"]} "u" 1))
+        m (b/action-message r "submit")]
+    (is (= {:id "b-1" :kind "choice" :action "submit" :body "( ) Red\n(x) Blue"}
+           (b/parse-action-message m))))
+  (is (nil? (b/parse-action-message "just a message")))
+  (is (nil? (b/parse-action-message "see <block-action id=\"x\" kind=\"y\" action=\"z\">a</block-action> above"))
+      "only a whole message is one"))
