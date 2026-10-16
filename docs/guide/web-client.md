@@ -120,6 +120,12 @@ projects** in the sidebar opens the project list (`/projects`).
   run, the ones you use most in this browser first. A skill picked there
   opens its input form; `/<skill> text` runs it at once, the text filling
   its first input. The command palette (Ctrl/Cmd+K) lists them.
+- **Find a link or file of the chat.** "Find link or file in this chat…" in
+  the command palette lists the URLs and files the chat mentions, newest
+  first: URLs from the messages and tool arguments, files the tools read or
+  edited and file paths in the messages. A URL opens in a new tab, a file in
+  a buffer. `:links/find`, `:links/urls` and `:links/files` open the list,
+  only the URLs or only the files ([keys](keyboard.md#actions-without-a-default-key)).
 - **Pin a chat.** The sidebar's Recent group shows the chats active in the
   last couple of days. Opening an older chat leaves it in Earlier until it
   gets a new turn. "Pin session" (right-click a card, long-press, or its
@@ -221,7 +227,8 @@ terminal** in the ⋮ menu and the command palette opens a shell.
   the command palette:
   `nnoremap <C-k> <Cmd>call nvim_ui_send("\e]7474;palette/open\x07")<CR>`.
   Only actions that open or switch a view run: `palette/open`,
-  `buffers/switch`, `files/find`, `files/find-edited`, `git/status`,
+  `buffers/switch`, `files/find`, `files/find-edited`, `links/find`,
+  `links/urls`, `links/files`, `git/status`,
   `git/log`, `projects/pick`, `skills/search`, `themes/pick`, `keys/show`,
   `sidebar/toggle`, `buffer/close`, `terminal/leave`.
 - **Tooltips from a program.** `ESC ] 7475 ; <base64 JSON> BEL` shows a

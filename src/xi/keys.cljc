@@ -234,6 +234,9 @@
    :sessions/prune          {:label "Prune: run every sidebar cleanup" :surface #{:web}}
    :files/find              {:label "Find a file" :surface #{:web}}
    :files/find-edited       {:label "Find a file edited in this chat" :surface #{:web}}
+   :links/find              {:label "Find a link or file mentioned in this chat" :surface #{:web}}
+   :links/urls              {:label "Find a URL mentioned in this chat" :surface #{:web}}
+   :links/files             {:label "Find a file mentioned in this chat" :surface #{:web}}
    :git/status              {:label "Git status" :surface #{:web}}
    :git/log                 {:label "Git log" :surface #{:web}}
    :palette/open            {:label "Command palette" :surface #{:web}}

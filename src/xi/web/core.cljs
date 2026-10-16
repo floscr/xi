@@ -1671,6 +1671,15 @@
                                                      :web/palette-drilling? true)
                                     :effects [[:palette/reset-filter nil]
                                               [:palette/reopen nil]]})
+          ;; URLs and files the chat mentions (xi.session-links); :scope is
+          ;; :all (default), :urls or :files.
+          :palette/open-links    (fn [st {:keys [scope]}]
+                                   {:state (assoc st :web/palette-page {:kind :links
+                                                                       :scope (or scope :all)}
+                                                     :web/palette-open? true
+                                                     :web/palette-drilling? true)
+                                    :effects [[:palette/reset-filter nil]
+                                              [:palette/reopen nil]]})
           :buffer/pending-clear  (fn [st _] {:state (dissoc st :web/pending-buffer)})
           :buffer/viewed         (fn [st {:keys [session-id buffer-id] :as ev}]
                                    {:state (assoc-in st [:web/buffer-access session-id buffer-id]
@@ -2951,6 +2960,10 @@
                             :when (fn [st] (some? (:id (state/active-room st))))
                             :event {:type :palette/open-file-finder :scope :edited}})
   (keymap/register-action! {:id :buffers/switch :event {:type :palette/open-buffers}})
+  (doseq [[id scope] [[:links/find :all] [:links/urls :urls] [:links/files :files]]]
+    (keymap/register-action! {:id id
+                              :when (fn [st] (some? (:id (state/active-room st))))
+                              :event {:type :palette/open-links :scope scope}}))
   (keymap/register-action! {:id :palette/open :event {:type :palette/open}})
   (keymap/register-action! {:id :hints/show :run (fn [_ _ _] (link-hints/show!))})
   (keymap/register-action! {:id :hints/sidebar

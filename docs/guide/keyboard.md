@@ -222,6 +222,9 @@ the navigation ones fit together.
 | `:diff/next-file` | Next file | web |
 | `:diff/prev-file` | Previous file | web |
 | `:files/find-edited` | Find a file edited in this chat | web |
+| `:links/find` | Find a link or file mentioned in this chat | web |
+| `:links/urls` | Find a URL mentioned in this chat | web |
+| `:links/files` | Find a file mentioned in this chat | web |
 | `:git/status` | Git status | web |
 | `:git/log` | Git log | web |
 | `:palette/open` | Command palette | web |
@@ -296,6 +299,7 @@ nothing outside a chat.
 ```clojure title="~/.config/xi/config.edn"
 :keys {:web {:mode/navigate {["space" "space"]  :palette/open
                              ["space" "f" "f"]  :files/find
+                             ["space" "s" "l"]  :links/find
                              ["space" "p" "p"]  :projects/pick
                              ["space" "b" "b"]  :buffers/switch
                              ["space" "g" "g"]  :git/status

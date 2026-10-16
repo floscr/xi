@@ -238,6 +238,7 @@
    a file), so only ones that open or move a view, nothing that deletes,
    answers a permission or sends a message."
   #{:palette/open :buffers/switch :files/find :files/find-edited
+    :links/find :links/urls :links/files
     :git/status :git/log :projects/pick :skills/search :themes/pick
     :keys/show :sidebar/toggle :buffer/close :terminal/leave})
 

@@ -23,6 +23,7 @@
             [xi.session.sidebar :as sb :refer [format-relative-time session-status
                                                active-first orphan-rooms
                                                sidebar-session-groups sidebar-session-order]]
+            [xi.session-links :as session-links]
             [xi.tui.snippets :as snippets]
             [xi.url :as url]
             [xi.util :as util]
@@ -5884,6 +5885,47 @@
                    vec)
               [])}))
 
+(defn- chat-links
+  "{:cwd :urls :files} the active chat mentions (xi.session-links), from the
+   room's history or the :web/cache snapshot, like session-edited-files."
+  [state]
+  (let [room   (state/active-room state)
+        cached (get-in state [:web/cache (get-in state [:web/route :session-id])])
+        cwd    (or (:cwd room) (:cwd cached))
+        hist   (or (seq (:history room)) (:history cached))]
+    (assoc (session-links/links hist cwd) :cwd cwd)))
+
+(defn- palette-links-page
+  "The chat's URLs (open in a new tab) and files (open in a buffer), newest
+   first; :scope :urls or :files shows one group."
+  [state dispatch! {:keys [scope]}]
+  (let [{:keys [cwd urls files]} (chat-links state)
+        urls  (when (#{:all :urls} scope) urls)
+        files (when (#{:all :files} scope) files)]
+    (if (and (empty? urls) (empty? files))
+      [:div {:class ["command-empty"]}
+       (case scope
+         :urls  "No URLs in this chat"
+         :files "No files in this chat"
+         "No links or files in this chat")]
+      (list
+       (when (seq urls)
+         (apply cmd/command-group {:heading "URLs"}
+           (for [u urls]
+             (cmd/command-item
+              {:icon :globe
+               :value (str "url " u)
+               :on-click (fn [_] (.open js/window u "_blank" "noopener"))}
+              u))))
+       (when (seq files)
+         (apply cmd/command-group {:heading "Files"}
+           (for [path files]
+             (cmd/command-item
+              {:icon :file-text
+               :value (str "file " path)
+               :on-click (fn [_] (dispatch! {:type :files/open :path path :cwd cwd}))}
+              path))))))))
+
 (defn- palette-file-finder-page
   "Fuzzy file finder as a palette sub-page: the palette input is the query
    (:file-finder/input), ranked client-side over the preloaded file list. Rows
@@ -6047,6 +6089,11 @@
                                                     "Find edited file…"
                                                     "Find file…")
                                      buffers-page? "Switch buffer…"
+                                     (= :links (:kind palette-page))
+                                     (case (:scope palette-page)
+                                       :urls  "Find URL…"
+                                       :files "Find file mentioned in this chat…"
+                                       "Find link or file…")
                                      projects-page? "Find project…"
                                      new-chat-page? (str "Prompt for a new chat in "
                                                          (:label palette-page) "…")
@@ -6121,6 +6168,7 @@
          :files          (palette-files-page state dispatch!)
          :file-finder    (palette-file-finder-page state dispatch! palette-page)
          :buffers        (palette-buffers-page state dispatch!)
+         :links          (palette-links-page state dispatch! palette-page)
          :projects       (palette-projects-page state dispatch! palette-page)
          :snippets       (palette-snippets-page state dispatch!)
          :commands       (palette-commands-page state dispatch!)
@@ -6187,6 +6235,15 @@
                                   :on-click (fn [_] (dispatch! event))}
                     state {:event event})
                   "Find edited file…")))
+         (and room (let [{:keys [urls files]} (chat-links state)]
+                     (or (seq urls) (seq files))))
+         (conj (let [event {:type :palette/open-links :scope :all}]
+                 (cmd/command-item
+                  (with-shortcut {:icon :link
+                                  :value "Find link or file in this chat urls"
+                                  :on-click (fn [_] (dispatch! event))}
+                    state {:event event})
+                  "Find link or file in this chat…")))
          :always (into (for [item (concat (nav-items-for state :palette)
                                           (map with-default-icon (palette-items/items state)))]
                          (cmd/command-item (with-shortcut {:icon (:icon item)
