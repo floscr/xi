@@ -1884,6 +1884,15 @@
         (set! (.-display st) "none")
         (js/requestAnimationFrame (fn [] (set! (.-display st) "")))))))
 
+(defn- palette-item-click-in-flight?
+  "True while handling a click on a palette item: the ui-runtime closes the
+   dialog in its document click listener, after ours. On Enter it has already
+   closed it before the synthetic click, so the dialog's open state can't tell."
+  []
+  (let [^js ev (.-event js/window)]
+    (boolean (and ev (= "click" (.-type ev))
+                  (some-> ^js (.-target ev) (.closest ".command-dialog"))))))
+
 (defn- web-effects [routes]
   {:history/push (router/history-effect routes)
    :sidebar/repaint
@@ -1925,13 +1934,17 @@
           (.dispatchEvent input (js/Event. "input" #js {:bubbles true}))
           (.focus input #js {:preventScroll true})))))
    ;; Idempotent re-open after the ui-runtime force-closed the palette on an
-   ;; item click.
+   ;; item click: that close runs after our handler, so it waits a frame.
+   ;; Otherwise it opens at once, still inside the tap's gesture, which is
+   ;; what lets iOS show the keyboard for the focused input.
    :palette/reopen
    (fn [_ _]
-     (js/requestAnimationFrame
-      (fn []
-        (when-let [^js cmd (aget js/window "__uiCommand")]
-          (.open cmd "cmdk")))))
+     (let [open! (fn []
+                   (when-let [^js cmd (aget js/window "__uiCommand")]
+                     (.open cmd "cmdk")))]
+       (if (palette-item-click-in-flight?)
+         (js/requestAnimationFrame open!)
+         (open!))))
    ;; Close by id: the ui-runtime's click handler misses a node the dispatch
    ;; already detached.
    :palette/close
