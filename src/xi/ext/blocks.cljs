@@ -13,7 +13,8 @@
   (:require [clojure.string :as str]
             [xi.blocks :as b]
             [xi.dialog :as dialog]
-            [xi.ext.blocks.handlers :as h]))
+            [xi.ext.blocks.handlers :as h]
+            [xi.ext.manager :as manager]))
 
 (def ^:private hiccup-help
   (str "For kind hiccup, pass `hiccup` instead of data: JSON arrays like "
@@ -27,16 +28,18 @@
        "A control with action: \"name\" records that action on the block (read it with ui_state); "
        "add send: true to also post it to you as a message when clicked."))
 
-(defn- ui-block-def []
+(defn- ui-block-def
+  "`extra`: extension kinds ({\"<id>/<name>\" kind}), listed after the built-ins."
+  [extra]
   {:name "ui_block"
    :description (str "Show a visual block in the chat instead of a wall of text: a checklist, table, "
                      "chart, form, choice, … The user sees it right after this call and can interact "
                      "with it; you get a short summary back, not the block. Read what the user did with "
                      "ui_state, change the block with ui_update. Use blocks for structured output the "
                      "user scans or acts on; keep prose answers as text.\n\nKinds and their data:\n"
-                     (b/catalog) "\n\n" hiccup-help)
+                     (b/catalog extra) "\n\n" hiccup-help)
    :input_schema {:type "object"
-                  :properties {:kind   {:type "string" :enum (b/kind-names)}
+                  :properties {:kind   {:type "string" :enum (b/kind-names extra)}
                                :title  {:type "string" :description "Short heading shown in the block's frame"}
                                :data   {:type "object" :description "The kind's payload (see the list above)"}
                                :hiccup {:description "For kind hiccup: the tree, as JSON arrays (or an EDN string)"}
@@ -100,7 +103,7 @@
   (if (= "hiccup" kind) (or hiccup data) data))
 
 (defn- show-block
-  [args {:keys [dispatch! get-state room-id call]}]
+  [extra args {:keys [dispatch! get-state room-id call]}]
   (let [st     (get-state)
         room   (get-in st [:rooms room-id])
         kind   (some-> (:kind args) str str/trim str/lower-case)
@@ -123,18 +126,18 @@
                             :source {:type :tool :name "ui_block"}
                             :call-id (own-call-id room call)
                             :anchor (count (:history room))
-                            :at now})]
+                            :at now :extra extra})]
         (if error
           (fail (str "Block not shown: " error))
           (do (dispatch! {:type :ext.blocks/add :room-id room-id :block record})
               (ok (str "Showed " kind (when-let [t (:title record)] (str " \"" t "\""))
                        " as block " id "."
-                       (when (b/interactive? kind) " The user can interact with it; read what they did with ui_state.")
+                       (when (b/interactive? record) " The user can interact with it; read what they did with ui_state.")
                        (dropped-note record)
                        (unread-note st room-id id)))))))))
 
 (defn- update-block
-  [args {:keys [dispatch! get-state room-id]}]
+  [extra args {:keys [dispatch! get-state room-id]}]
   (let [st (get-state)
         id (some-> (:id args) str str/trim)]
     (if-let [record (h/find-block st room-id id)]
@@ -142,7 +145,7 @@
         (if (and (nil? data) (str/blank? (:title args)))
           (fail "Nothing to change: pass data (or hiccup) and/or title.")
           (let [{r :record error :error} (b/update-record record {:data data :title (:title args)
-                                                                  :at (js/Date.now)})]
+                                                                  :at (js/Date.now) :extra extra})]
             (if error
               (fail (str "Block not updated: " error))
               (do (dispatch! {:type :ext.blocks/update :room-id room-id :block r})
@@ -179,17 +182,23 @@
       (f args ctx)
       (fail "blocks: no chat to show the block in"))))
 
-(def ^:private tool-registry
-  {"ui_block"  (with-room show-block)
-   "ui_update" (with-room update-block)
+(defn- tool-registry [extra]
+  {"ui_block"  (with-room #(show-block (extra) %1 %2))
+   "ui_update" (with-room #(update-block (extra) %1 %2))
    "ui_state"  (with-room block-state)})
 
 ;; ── Extension ────────────────────────────────────────────────────────────────
 
-(def extension
-  {:id               h/ext-id
-   :init             {:room {:blocks {}}}
-   :persist-room     [:blocks]
-   :handlers         h/handlers
-   :tool-definitions [(ui-block-def) ui-update-def ui-state-def]
-   :tool-registry    tool-registry})
+(defn create
+  "The extension. With the server's `:manager`, `ui_block` lists and accepts
+   the loaded user extensions' `:block-kinds` (re-read every turn)."
+  [{:keys [manager]}]
+  (let [extra (fn [] (or (some-> manager manager/composed :block-kinds) {}))]
+    {:id               h/ext-id
+     :init             {:room {:blocks {}}}
+     :persist-room     [:blocks]
+     :handlers         h/handlers
+     :tool-definitions [(assoc (ui-block-def {})
+                               :resolve #(select-keys (ui-block-def (extra)) [:description :input_schema]))
+                        ui-update-def ui-state-def]
+     :tool-registry    (tool-registry extra)}))

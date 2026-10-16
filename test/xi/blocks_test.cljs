@@ -139,3 +139,35 @@
   (let [c (b/catalog {"gtd/board" "a board"})]
     (doseq [k (b/kind-names)] (is (str/includes? c (str "- " k ": "))))
     (is (str/includes? c "- gtd/board: a board"))))
+
+(def ^:private board-kind
+  {"deploys/board" {:describe "a deploy board"
+                     :actions ["approve"] :send ["ship"]
+                     :normalize (fn [d] (update d :envs vec))
+                     :text (fn [spec state] (str "envs: " (count (:envs spec))
+                                                 (when-let [l (:last state)] (str ", last " (:action l)))))}})
+
+(deftest extension-kinds
+  (testing "normalize, rules and text come from the kind"
+    (let [{r :record} (b/make-record {:id "x" :kind "deploys/board" :data {:envs ["a" "b"]}
+                                      :at 1 :extra board-kind})]
+      (is (= {:envs ["a" "b"]} (:spec r)))
+      (is (= {:actions ["approve"] :send ["ship"]} (:rules r)))
+      (is (= "envs: 2" (b/body-text r)))
+      (is (b/interactive? r))
+      (testing "actions: declared ones only; :send ones post a message"
+        (is (nil? (b/act r {:action "delete"} "u" 2)))
+        (is (false? (:send? (b/act r {:action "approve" :value "a"} "u" 2))))
+        (is (true? (:send? (b/act r {:action "ship"} "u" 2))))
+        (is (= {:action "approve" :value "a"}
+               (get-in (b/act r {:action "approve" :value "a"} "u" 2) [:record :state :last]))))
+      (testing "an update refreshes the text form"
+        (is (= "envs: 1" (b/body-text (:record (b/update-record r {:data {:envs ["a"]} :at 3
+                                                                    :extra board-kind}))))))))
+  (testing "an unknown kind names the extension kinds too"
+    (is (str/includes? (:error (b/normalize "nope" {} board-kind)) "deploys/board")))
+  (testing "non-plain data from :normalize is refused"
+    (is (str/includes? (:error (b/normalize "x/y" {} {"x/y" {:normalize (fn [_] {:f identity})}}))
+                       "plain data")))
+  (is (str/includes? (b/catalog board-kind) "- deploys/board: a deploy board"))
+  (is (= "deploys/board" (last (b/kind-names board-kind)))))

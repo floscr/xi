@@ -27,6 +27,7 @@
             [xi.core.state :as state]
             [xi.ext.blocks.handlers :as h]
             [xi.markdown.hiccup :as md]
+            [xi.web.block-kinds :as block-kinds]
             [xi.web.views :as views]))
 
 
@@ -305,9 +306,11 @@
       (= :a tag)    (assoc :target "_blank" :rel "noopener noreferrer nofollow")
       (= :img tag)  (assoc :loading "lazy" :referrerpolicy "no-referrer"))))
 
-(defn- hiccup-view [dispatch! room-id {:keys [id spec]}]
-  (let [sends (bh/send-actions (:tree spec))
-        fire! (fn [action value]
+(defn- tree-view
+  "An allowlisted tree (xi.blocks.hiccup) with its controls bound to block
+   actions; `sends` are the actions that also post a message."
+  [dispatch! room-id id tree sends]
+  (let [fire! (fn [action value]
                 (if (contains? sends action)
                   (submit! dispatch! room-id id action nil value)
                   (act! dispatch! room-id id action nil value)))
@@ -349,7 +352,18 @@
                                            :label (apply str (filter string? label))})
                                :on-change (fn [v] (when action (fire! action v)))})
                 (into [tag (dom-attrs tag attrs)] kids)))))]
-    [:div {:class ["ab-hiccup"]} (render (:tree spec))]))
+    [:div {:class ["ab-hiccup"]} (render tree)]))
+
+(defn- hiccup-view [dispatch! room-id {:keys [id spec]}]
+  (tree-view dispatch! room-id id (:tree spec) (bh/send-actions (:tree spec))))
+
+(defn- ext-kind-view
+  "A user extension's kind, drawn by its web half's renderer through the
+   same allowlist; its text form when there is no renderer."
+  [dispatch! room-id {:keys [id kind spec state rules] :as record}]
+  (if-let [tree (some-> (block-kinds/render kind spec state) bh/normalize :tree)]
+    (tree-view dispatch! room-id id tree (set (:send rules)))
+    [:pre {:class ["ab-raw"]} (b/body-text record)]))
 
 ;; ── Frame ────────────────────────────────────────────────────────────────────
 
@@ -373,7 +387,7 @@
     "form"      (form-view dispatch! room-id record ui)
     "cards"     (cards-view dispatch! room-id record)
     "hiccup"    (hiccup-view dispatch! room-id record)
-    [:pre {:class ["ab-raw"]} (b/body-text record)]))
+    (ext-kind-view dispatch! room-id record)))
 
 (defn- block-menu [dispatch! {:keys [id] :as record} ui]
   (let [menu-id (str "ab-menu-" id)
@@ -421,16 +435,19 @@
 ;; ── Timeline ─────────────────────────────────────────────────────────────────
 
 (defonce ^:private memo
-  ;; block id → [record ui room-id dispatch! node]: a chat with many blocks
-  ;; rebuilds only the ones whose record or browser state changed
+  ;; block id → [record ui room-id dispatch! renderers node]: a chat with
+  ;; many blocks rebuilds only the ones whose record or browser state changed,
+  ;; or all once a user web half registers its kinds
   (atom {}))
 
 (defn- memo-post [dispatch! room-id record ui]
-  (let [[r u rid d node] (get @memo (:id record))]
-    (if (and (identical? r record) (= u ui) (= rid room-id) (identical? d dispatch!))
+  (let [[r u rid d kinds node] (get @memo (:id record))
+        kinds-now (block-kinds/version)]
+    (if (and (identical? r record) (= u ui) (= rid room-id) (identical? d dispatch!)
+             (identical? kinds kinds-now))
       node
       (let [node (block-post dispatch! room-id record ui)]
-        (swap! memo assoc (:id record) [record ui room-id dispatch! node])
+        (swap! memo assoc (:id record) [record ui room-id dispatch! kinds-now node])
         node))))
 
 (defn- timeline-posts

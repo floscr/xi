@@ -578,23 +578,66 @@
                 :normalize norm-hiccup :text (fn [spec _] (bh/text (:tree spec)))
                 :act act-hiccup}))
 
-(defn kind-names [] (vec (keys kinds)))
+(defn kind-names
+  "The built-in kind names, then `extra`'s (extension kinds)."
+  ([] (kind-names nil))
+  ([extra] (into (vec (keys kinds)) (keys extra))))
 
 (defn interactive?
-  "Does a block of `kind` take user actions?"
-  [kind]
-  (some? (get-in kinds [kind :act])))
+  "Does `record` take user actions?"
+  [{:keys [kind rules]}]
+  (boolean (or (get-in kinds [kind :act]) (seq (:actions rules)) (seq (:send rules)))))
+
+;; ── Extension kinds ──────────────────────────────────────────────────────────
+;; A user extension declares kinds (`:block-kinds`, namespaced <ext-id>/<name>
+;; by xi.ext.user.guard): {:describe str :actions [str] :send [str]
+;; :normalize (fn [data] → spec) :text (fn [spec state] → str)}. Its record
+;; carries what it accepts as :rules and its text as :text-form, so reducers
+;; and clients, which don't have the extension's fns, need no registry.
+
+(defn- plain-data? [x]
+  (letfn [(ok? [x depth]
+            (and (< depth 30)
+                 (cond
+                   (scalar? x) true
+                   (map? x)    (every? (fn [[k v]] (and (scalar? k) (ok? v (inc depth)))) x)
+                   (or (sequential? x) (set? x)) (every? #(ok? % (inc depth)) x)
+                   :else false)))]
+    (ok? x 0)))
+
+(defn- ext-normalize [{f :normalize} data]
+  (let [spec (if f (f data) data)]
+    (when-not (plain-data? spec)
+      (invalid! "the data must be plain data: maps, vectors, strings, numbers, booleans"))
+    spec))
+
+(defn- ext-rules [{:keys [actions send]}]
+  (let [r (cond-> {}
+            (seq actions) (assoc :actions (vec (distinct (map ->str actions))))
+            (seq send)    (assoc :send (vec (distinct (map ->str send)))))]
+    (not-empty r)))
+
+(defn- act-ext [{:keys [rules] :as block} {:keys [action target value]}]
+  (let [send (set (:send rules))]
+    (when (and (contains? (into send (:actions rules)) action)
+               (or (scalar? value) (and (map? value) (every? scalar? (vals value)))))
+      {:block (assoc-in block [:state :last] (cond-> {:action action}
+                                               target        (assoc :target target)
+                                               (some? value) (assoc :value value)))
+       :send? (contains? send action)})))
 
 ;; ── Specs and records ────────────────────────────────────────────────────────
 
 (defn normalize
   "Validate and normalize a model's `data` for `kind`: {:spec spec} or
    {:error message} (worded for the model, so it can fix the call)."
-  [kind data]
-  (if-let [{:keys [normalize]} (get kinds kind)]
+  ([kind data] (normalize kind data nil))
+  ([kind data extra]
+  (if-let [normalize (or (get-in kinds [kind :normalize])
+                         (when-let [d (get extra kind)] (partial ext-normalize d)))]
     (try
       (let [data (if (= "hiccup" kind) data (coerce-data data))]
-        (when-not (or (map? data) (= "hiccup" kind))
+        (when-not (or (map? data) (= "hiccup" kind) (contains? extra kind))
           (invalid! "data must be an object"))
         (let [spec (normalize data)
               size (count (pr-str spec))]
@@ -605,7 +648,7 @@
         (if (::invalid (ex-data e))
           {:error (ex-message e)}
           {:error (str "invalid " kind " data: " (ex-message e))})))
-    {:error (str "unknown kind " (pr-str kind) "; one of " (str/join ", " (kind-names)))}))
+    {:error (str "unknown kind " (pr-str kind) "; one of " (str/join ", " (kind-names extra)))})))
 
 (defn initial-state [kind spec]
   (if-let [f (get-in kinds [kind :init-state])] (f spec) {}))
@@ -626,33 +669,45 @@
           not-empty
           (#(subs % 0 (min 40 (count %))))))
 
+(defn- with-ext-form
+  "An extension kind's record gets its :rules and current :text-form."
+  [record extra]
+  (if-let [d (get extra (:kind record))]
+    (let [t (when-let [f (:text d)] (f (:spec record) (:state record)))]
+      (cond-> (dissoc record :text-form)
+        (ext-rules d) (assoc :rules (ext-rules d))
+        (string? t)   (assoc :text-form t)))
+    record))
+
 (defn make-record
   "A new block record, or {:error …}. `opts`: :id (already safe) :kind :title
-   :data :source :call-id :anchor :at."
-  [{:keys [id kind title data source call-id anchor at]}]
-  (let [{:keys [spec error]} (normalize kind data)]
+   :data :source :call-id :anchor :at, and :extra (extension kinds)."
+  [{:keys [id kind title data source call-id anchor at extra]}]
+  (let [{:keys [spec error]} (normalize kind data extra)]
     (if error
       {:error error}
-      {:record (cond-> {:id id :kind kind :spec spec
-                        :state (initial-state kind spec)
-                        :source source :actions [] :unread 0
-                        :at at :updated-at at}
-                 (text-or-nil title) (assoc :title (text-or-nil title))
-                 call-id             (assoc :call-id call-id)
-                 (number? anchor)    (assoc :anchor anchor))})))
+      {:record (-> (cond-> {:id id :kind kind :spec spec
+                            :state (initial-state kind spec)
+                            :source source :actions [] :unread 0
+                            :at at :updated-at at}
+                     (text-or-nil title) (assoc :title (text-or-nil title))
+                     call-id             (assoc :call-id call-id)
+                     (number? anchor)    (assoc :anchor anchor))
+                   (with-ext-form extra))})))
 
 (defn update-record
   "`record` with a new spec from `data` and/or a new `title`, or {:error …}."
-  [record {:keys [data title at]}]
+  [record {:keys [data title at extra]}]
   (let [kind (:kind record)
-        {:keys [spec error]} (if (some? data) (normalize kind data) {:spec (:spec record)})]
+        {:keys [spec error]} (if (some? data) (normalize kind data extra) {:spec (:spec record)})]
     (if error
       {:error error}
-      {:record (cond-> (assoc record :spec spec :updated-at at
-                              :state (if (some? data)
-                                       (carry-state kind (:spec record) (:state record) spec)
-                                       (:state record)))
-                 (text-or-nil title) (assoc :title (text-or-nil title)))})))
+      {:record (-> (cond-> (assoc record :spec spec :updated-at at
+                                  :state (if (some? data)
+                                           (carry-state kind (:spec record) (:state record) spec)
+                                           (:state record)))
+                     (text-or-nil title) (assoc :title (text-or-nil title)))
+                   (with-ext-form extra))})))
 
 ;; ── Actions ──────────────────────────────────────────────────────────────────
 
@@ -661,7 +716,7 @@
    to `record`: {:record r :send? bool} or nil when the kind doesn't take it.
    A block action only ever changes the block itself."
   [record {:keys [action target value]} user at]
-  (when-let [f (get-in kinds [(:kind record) :act])]
+  (when-let [f (or (get-in kinds [(:kind record) :act]) (when (:rules record) act-ext))]
     (let [action (some-> action ->str)
           target (some-> target ->str)]
       (when-let [{:keys [block send?]} (f record {:action action :target target :value value})]
@@ -679,10 +734,10 @@
 
 (defn body-text
   "A block's body as plain text."
-  [{:keys [kind spec state]}]
+  [{:keys [kind spec state text-form]}]
   (if-let [f (get-in kinds [kind :text])]
     (f spec state)
-    ""))
+    (or text-form (let [s (pr-str spec)] (subs s 0 (min 2000 (count s)))))))
 
 (defn text
   "A block as plain text: a header line, then its body."
@@ -732,7 +787,7 @@
   ([extra]
    (str/join "\n" (concat (for [[k {:keys [describe]}] kinds]
                             (str "- " k ": " describe))
-                          (for [[k d] extra] (str "- " k ": " d))))))
+                          (for [[k d] extra] (str "- " k ": " (if (map? d) (:describe d) d)))))))
 
 ;; ── Room slice ───────────────────────────────────────────────────────────────
 

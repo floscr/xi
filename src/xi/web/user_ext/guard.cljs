@@ -21,7 +21,7 @@
    the server half."
   #{:id :routes :pages :nav-items :palette-items :taps :tool-views :sidebar-groups
     :session-menu-items :dashboard-cards :handlers :block-menu-items
-    :terminal-toolbar-items})
+    :terminal-toolbar-items :block-kinds})
 
 (def builtin-segments
   "First URL segments the web client routes itself."
@@ -127,6 +127,13 @@
       (and (some? (:terminal-toolbar-items ext)) (not (fn? (:terminal-toolbar-items ext))))
       (str ":terminal-toolbar-items must be a fn [buffer state] → "
            "[{:label str :icon kw :title str} + :send str or :event {…}]")
+      (and (some? (:block-kinds ext))
+           (not (and (map? (:block-kinds ext))
+                     (every? (fn [[k f]] (and (or (string? k) (keyword? k))
+                                              (re-matches #"[a-z0-9][a-z0-9-]*" (name k))
+                                              (fn? f)))
+                             (:block-kinds ext)))))
+      ":block-kinds must be a map of a simple kind name (\"board\") → fn [spec state] → hiccup"
       (and (some? views) (not (map? views)))
       ":tool-views must be a map of tool name → fn"
       (seq alien)
@@ -377,6 +384,21 @@
                         (catch :default e
                           (log-blocked id (str "tool view threw: " (.-message e)))
                           nil))))))
+
+      ;; named <id>/<name> like the server half's kinds; the output goes
+      ;; through the hiccup allowlist where it is drawn (xi.ext.blocks.web)
+      (map? (:block-kinds ext))
+      (update :block-kinds
+              (fn [kinds]
+                (into {}
+                      (map (fn [[k f]]
+                             [(str (name id) "/" (name k))
+                              (fn [spec state]
+                                (try (f spec state)
+                                     (catch :default e
+                                       (log-blocked id (str "block kind threw: " (.-message e)))
+                                       nil)))]))
+                      kinds)))
 
       (:taps ext)
       (update :taps

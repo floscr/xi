@@ -43,6 +43,7 @@ and `:remove-tools` are not available: whether a tool call runs is the
 | `:keybindings` | Terminal client only, read at startup. Each entry is a keyboard action: `:key` is its default key (`"alt+r"`, `"ctrl+shift+n"`, any spelling from [Keyboard shortcuts](keyboard.md#writing-a-key)), which the user may change under `:keys` in `config.edn`; `:id` names the action (default: the event's `:type`), `:label` is its name in the shortcut list, `:layer` where the key applies (default `:global`; e.g. `:buffer/diff`). `:when (fn [state])` makes it conditional. |
 | `:mcp-servers` | Private servers; see [the tutorial](extension-tutorial-mcp.md). |
 | `:usage-sources` | Accounts for the web client's [usage page](web-client.md#usage), polled with the built-in ones (every five minutes, and on refresh). `:fetch` gets the same `ctx` as a hook and resolves to a list of readings: `{:id "claude/me@x" :provider :claude :title "me@x" :subtitle "Claude · Max" :windows [{:id "five-hour" :label "5-hour" :used 14 :resets-at "2026-…Z" :period-ms 18000000}] :badges [{:label "Stored" :tone :outline}] :balances [{:label "Credits" :value "$5"}] :notes ["…"]}`. `:used` is a percent; a window with both `:resets-at` and `:period-ms` gets a pace and a chart. A failing fetch keeps the source's last readings. |
+| `:block-kinds` | [Agent block](agent-blocks.md) kinds: `{"board" {:describe "…" :actions ["promote"] :send ["rollback"] :normalize (fn [data] → spec) :text (fn [spec state] → string)}}`. A kind is named `<id>/board`; the agent sees it in `ui_block`'s list with `:describe` and shows one with `ui_block`, the extension with [`xi.api.blocks`](#xiapiblocks). `:normalize` turns the payload into the stored spec (plain data; a throw is reported as invalid data), `:text` is the block's text in the terminal, in `xi prompt` and for `ui_state`. A control may record only the actions named in `:actions` and `:send`; `:send` ones also post a message for the user. Draw it with the web half's `:block-kinds`. Optional: everything but `:describe`. |
 | `:on-mount` / `:on-unmount` | Load and unload, including every reload. `ctx` has `:dispatch!` and `:get-state`. |
 | `:on-enable` / `:on-disable` | `/ext enable` and `/ext disable`. |
 
@@ -250,6 +251,23 @@ The text is shown prefixed with the extension's id. A dialog waits for an
 answer even while no client is connected, and shows when one joins; only in
 `xi prompt` mode does it resolve to its safe default at once.
 
+### `xi.api.blocks`
+
+Shows [agent blocks](agent-blocks.md) without the model: a long job's
+progress, a report card. Needs `{:room-id …}` in the opts outside a tool call.
+Not a rules request.
+
+| Function | Returns |
+| --- | --- |
+| `(show! ctx {:kind "steps" :title "Backup" :data {…}})` | the block id; `:id` picks one |
+| `(update! ctx id {:data {…} :title "…"})` | the id |
+| `(state ctx id)` | `{:kind :state :actions :unread}` |
+
+`:kind` is a built-in kind or one of the extension's own `:block-kinds` by its
+short name. The block's header names the extension as its source, and an
+extension can update and read only its own blocks. Invalid data throws with
+the reason.
+
 ### `xi.api.time`
 
 `(now)` → milliseconds since the epoch. The sandbox has no `js/Date`; this is
@@ -317,6 +335,7 @@ keys: `:routes`, `:pages`, `:nav-items`, `:palette-items`, `:taps`, `:tool-views
 | `:session-menu-items` | `[{:label "…" :label-on "…" :flag :flag? :icon :kw :event {…}}]`: entries of every session's context menu and the palette's "Current session" group. The `:event` gets the session's `:session-id`; `:label-on` replaces `:label` while the session's `:flag` is true. |
 | `:dashboard-cards` | `[{:id :<ext>/card :title "…" :render (fn [state dispatch!] → hiccup) :icon :kw :description "…" :order 50 :size :normal/:wide :when (fn [state] → bool) :load {…} :more {:label "…" :event {…}}}]`: cards on the [home page](web-client.md#home). `:render` draws the body (rendered like a page); Xi draws the frame with `:icon`, `:title` and the `:more` link. Cards sort by `:order` (built-in ones use 10–40, default 100); `:wide` takes the whole row; `:when` hides the card while false; `:load` is sent each time the home page opens, so a card can ask its server half for data. `:description` is shown under Customize dashboard. The `:id` is namespaced with the extension's id. |
 | `:block-menu-items` | `(fn [block state] → [{:label "…" :icon :kw :event {…}}])`: entries of the code-block menu (right-click or tap a code block), below Copy / View file / View diff, and of a file header's menu (diff viewer, file buffer), below View file / Copy path, with `block` `{:path}`. `block` is `{:text :path :line :lang :diff-path}`: `:path` when the block belongs to a tool call, file buffer or diff (also a review canvas block) naming a file, `:line` for a line of a diff, `:lang` for a fenced code block. Events follow the `:nav-items` rule; a throw yields no entries. |
+| `:block-kinds` | `{"board" (fn [spec state] → hiccup)}`: draws the server half's [block kind](#the-map) `<id>/board`. The tree goes through the agent blocks' allowlist: their tags, `:ui/button` `:ui/badge` `:ui/progress` `:ui/alert` `:ui/chip`, and the attributes `:layout` `:gap` `:align` `:tone` `:emphasis` instead of classes and styles. A control with `:action "promote"` (and `:value`) records that action on the block. A throw, or no renderer, shows the block's text. |
 | `:terminal-toolbar-items` | `(fn [buffer state] → [{:label "…" :title "…" :icon :kw …}])`: buttons floating over a [terminal](web-client.md#terminals) buffer. `buffer` is `{:term-id :argv :cwd :title :tag …}`; check `:tag` to show buttons only on your own terminals. A button with `:send "…"` types that text into the terminal (`"\u001b:w\r"`), one with `:event` sends it like a nav item. `:icon` replaces the label, which stays the tooltip unless `:title` is set. |
 
 A tool view replaces the text result in the chat's block for one of the

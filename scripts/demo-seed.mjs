@@ -200,6 +200,12 @@ const blockDemos = [
         actions: [{ id: "merge", label: "Merge", send: true }, { id: "later", label: "Later", send: false }] },
       { id: "pr-215", title: "#215 Events index", meta: "acme-api · 1 file", body: "Composite index for the dashboard query.",
         actions: [{ id: "merge", label: "Merge", send: true }] }] } },
+  // A kind from the bundled `deploys` demo extension (resources/extensions).
+  { kind: "deploys/board", title: "Deploys", rules: { actions: ["promote"], send: ["rollback"] },
+    textForm: "dev  1.5.0-rc.2  healthy\nstaging  1.4.2  healthy\nprod  1.4.1  degraded",
+    spec: { envs: [{ name: "dev", version: "1.5.0-rc.2", status: "healthy" },
+                   { name: "staging", version: "1.4.2", status: "healthy" },
+                   { name: "prod", version: "1.4.1", status: "degraded" }] } },
   { kind: "hiccup", title: "Custom layout",
     spec: { tree: raw('[:div {} [:div {:layout "row" :gap "sm"} [:ui/badge {:variant "success"} "build passing"] [:ui/badge {:variant "warning"} "2 flaky"]] [:p {:emphasis "muted"} "Hiccup from the agent, from an allowlist."] [:ul {} [:li {} "no classes, ids or styles"] [:li {} "controls only record block actions"]] [:div {:layout "row"} [:ui/button {:action "rerun" :variant "primary"} "Re-run flaky"] [:ui/button {:action "ship" :send true} "Ship it"]]]') } },
 ];
@@ -218,6 +224,7 @@ const blocksExt = () =>
     id: `demo-${i}`, kind: b.kind, title: b.title, spec: b.spec, state: b.state || {},
     source: { type: kw("tool"), name: "ui_block" }, "call-id": `tu_block${i}`, anchor: 1 + 2 * i,
     actions: [], unread: 0, at: i, "updated-at": i,
+    ...(b.rules ? { rules: b.rules, "text-form": b.textForm } : {}),
   }]))) } }) + "\n";
 
 /**
@@ -400,7 +407,7 @@ if (favorites.length) {
 
 // The bundled demo extensions (resources/extensions) load straight from the
 // repo through :demo-extensions below; `notes` has a web half.
-const demoExtensions = ["notes.cljs", "hn.cljs", "ping.cljs"];
+const demoExtensions = ["notes.cljs", "hn.cljs", "ping.cljs", "deploys.cljs"];
 // Extra user extensions to test against the demo: XI_DEMO_EXTENSIONS_DIR is
 // copied into the demo extensions dir (a file or a directory tree), and
 // XI_DEMO_EXTENSIONS (comma-separated file names) joins the enabled list.

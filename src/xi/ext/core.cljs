@@ -35,7 +35,7 @@
                    pre-dispatch transforms on the app dispatch path;
                    nil blocks the event. Never run on :remote? (mirrored)
                    events — mirrors must replay the server verbatim.
-     :tool-definitions [{:name :description :input_schema}]
+     :tool-definitions [{:name :description :input_schema}]  ; :resolve (fn [] → keys) per turn
      :tool-registry    {name (fn [args ctx] → result|Promise)} — ctx is
                    the per-turn tool ctx {:dispatch! :get-state :room-id
                    :confirm!} with the provider's {:cwd :client-pid} on top
@@ -233,6 +233,8 @@
      :originator-only  (into #{} (mapcat :originator-only) exts)
      :lobby-relevant   (into #{} (mapcat :lobby-relevant) exts)
      :usage-sources    (vec (mapcat :usage-sources exts))
+     ;; agent block kinds of user extensions, already <ext-id>/<name> (xi.blocks)
+     :block-kinds      (apply merge {} (keep :block-kinds exts))
      :server-fx-fns    (vec (keep :server-fx exts))
      :routes           (apply merge {} (keep :routes exts))
      :pages            (apply merge {} (keep :pages exts))

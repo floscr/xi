@@ -59,6 +59,7 @@ Xi ships a few working extensions. Enable one by its file name under
 | `notes.cljs` | A `notes_add` tool, a `/notes` command and a Notes page in the web client | [Tutorial: a page in the browser](extension-tutorial-web.md) |
 | `ping.cljs` | `Ctrl+Shift+N` or `/ping` toggles a desktop notification when a turn ends | [Tutorial: a command and a key](extension-tutorial-command.md) |
 | `hn.cljs` | An `hn_search` tool for Hacker News | [Tutorial: a web tool](extension-tutorial-http.md) |
+| `deploys.cljs` | A `deploys/board` [agent block](agent-blocks.md) kind and `/deploys`, which posts one | [Agent blocks](agent-blocks.md#blocks-from-extensions) |
 
 They run like your own extensions: sandboxed, through the rules, and
 reloaded by `/ext reload`. Their source is in `resources/extensions/` of the
@@ -78,6 +79,7 @@ enabled demo.
 | `:prompt-badge` | A marker next to the prompt, for state you want to see |
 | `:init` | The extension's own state, per chat or per process |
 | `:mcp-servers` | MCP servers only this extension can call |
+| `:block-kinds` | A kind of [agent block](agent-blocks.md) the agent and the extension can show |
 | a `<name>/web.cljs` file | A page and menu entries in the web client |
 
 The tutorials go through each of these with a working example:
@@ -102,6 +104,7 @@ API, `xi.api.*`:
 | `xi.api.http` | Make an HTTP request |
 | `xi.api.mcp` | Call an MCP server's tool |
 | `xi.api.dialog` | Ask the user something |
+| `xi.api.blocks` | Show an [agent block](agent-blocks.md) in a chat |
 | `xi.api.json` | Parse and produce JSON |
 | `xi.api.promise` | Chain the promises the other functions return |
 

@@ -77,10 +77,14 @@
    extra-tool-definitions / extra-tool-registry may be a value OR a 0-arg fn.
    The manager passes fns (xi.cli/tooling-opts) so the enabled tool set is read
    *fresh each turn* — enabling/disabling an extension changes what the model
-   sees on the next turn without a restart (see xi.ext.manager)."
+   sees on the next turn without a restart (see xi.ext.manager). A def
+   may carry `:resolve` (fn [] → def keys), merged in here each turn: a
+   description or schema that depends on what is loaded (xi.ext.blocks lists
+   extension block kinds this way)."
   [{:keys [only-tools extra-tool-definitions extra-tool-registry remove-tools]}]
-  (let [extra-defs (if (fn? extra-tool-definitions)
-                     (extra-tool-definitions) extra-tool-definitions)
+  (let [extra-defs (mapv (fn [d] (if-let [f (:resolve d)] (merge (dissoc d :resolve) (f)) d))
+                         (if (fn? extra-tool-definitions)
+                           (extra-tool-definitions) extra-tool-definitions))
         removed (if (fn? remove-tools) (remove-tools) remove-tools)
         all-defs (into (tool-definitions) extra-defs)
         all-defs (if (seq removed)

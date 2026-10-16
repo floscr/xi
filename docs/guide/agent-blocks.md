@@ -86,6 +86,16 @@ them. [`xi prompt`](prompt.md) prints the same text where the block appears.
 
 None of them asks. See [Built-in tools](builtin-tools.md#blocks).
 
+## Blocks from extensions
+
+An [extension](extensions.md) can add kinds of its own, named after it
+(`deploys/board`): the agent finds them in `ui_block`'s list, and the
+extension can show blocks itself, without the model. Their frame names the
+extension as the source. See `:block-kinds` and `xi.api.blocks` in the
+[extension reference](extensions-reference.md). The bundled `deploys` demo
+extension is an example: enable it with `:demo-extensions ["deploys.cljs"]`
+in `config.edn` and run `/deploys`.
+
 ## Limits
 
 | Limit | Value |

@@ -19,7 +19,7 @@
                           (when-let [{s :state} (f @st ev)] (reset! st s))))}}))
 
 (defn- call [{:keys [ctx]} tool args & [call]]
-  ((get (:tool-registry blocks/extension) tool) args (cond-> ctx call (assoc :call call))))
+  ((get (:tool-registry (blocks/create {})) tool) args (cond-> ctx call (assoc :call call))))
 
 (defn- text [result] (get-in result [:content 0 :text]))
 

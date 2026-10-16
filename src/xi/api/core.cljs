@@ -121,6 +121,18 @@
 
 (defn get-app-host [] @app-host)
 
+;; 0-arg fn → the composed agent block kinds of the loaded user extensions
+;; ({"<id>/<name>" kind}, xi.blocks), for xi.api.blocks. Set by the loader
+;; (xi.ext.user/install!) for the reason the hosts above are.
+(defonce ^:private block-kinds-host (atom (constantly {})))
+
+(defn set-block-kinds-host!
+  "Install the fn xi.api.blocks reads extension block kinds through."
+  [f]
+  (reset! block-kinds-host (or f (constantly {}))))
+
+(defn block-kinds [] (or (@block-kinds-host) {}))
+
 (defn base-cwd
   "Where an extension's relative paths resolve: the room cwd, else its data dir."
   [{:keys [cwd] :as ctx}]

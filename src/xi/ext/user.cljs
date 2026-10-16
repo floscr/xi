@@ -16,6 +16,7 @@
    user's own: built in, but just as sandboxed and reloadable."
   (:require [clojure.string :as str]
             [sci.core :as sci]
+            [xi.api.blocks]
             [xi.api.core :as api-core]
             [xi.api.device]
             [xi.api.dialog]
@@ -61,7 +62,8 @@
 (def ^:private exposed-namespaces
   "The host namespaces a user extension may require. Pure xi helpers + the
    rules-gated capabilities. Nothing here performs an un-gated side effect."
-  {'xi.api.device  (sci/copy-ns xi.api.device  (sci/create-ns 'xi.api.device))
+  {'xi.api.blocks  (sci/copy-ns xi.api.blocks  (sci/create-ns 'xi.api.blocks))
+   'xi.api.device  (sci/copy-ns xi.api.device  (sci/create-ns 'xi.api.device))
    'xi.api.dialog  (sci/copy-ns xi.api.dialog  (sci/create-ns 'xi.api.dialog))
    'xi.api.fs      (sci/copy-ns xi.api.fs      (sci/create-ns 'xi.api.fs))
    'xi.api.sessions (sci/copy-ns xi.api.sessions (sci/create-ns 'xi.api.sessions))
@@ -109,6 +111,8 @@
     :on-mount :on-unmount
     ;; accounts on the web client's /usage page (xi.server.usage)
     :usage-sources
+    ;; agent block kinds (xi.blocks), namespaced <id>/<name> by the guard
+    :block-kinds
     ;; web half, collected but not composed node-side
     :routes :pages :nav-items :taps})
 
@@ -526,7 +530,9 @@
    profile's — see `enabled-files`) and register each valid extension into
    `mgr` (call AFTER the built-ins + MCP are seeded). Returns the load report."
   ([mgr] (install! mgr (extensions-dir)))
-  ([mgr dir] (register-all! mgr (load-sources (sources dir) (taken mgr)))))
+  ([mgr dir]
+   (api-core/set-block-kinds-host! #(:block-kinds (manager/composed mgr)))
+   (register-all! mgr (load-sources (sources dir) (taken mgr)))))
 
 (def ^:private mirror-keys
   "What a TUI client needs of a user extension: the handlers (an event type

@@ -102,3 +102,14 @@
     (is (fn? (get (:registry (registry/resolve-tooling
                               {:extra-tool-registry {"web_search" (fn [_ _] nil)}}))
                   "web_search")))))
+
+(deftest resolve-tooling-resolves-per-turn-defs
+  (let [n   (atom 1)
+        d   {:name "ui_block" :description "static"
+             :resolve (fn [] {:description (str "kinds: " @n)})}
+        get (fn [] (some #(when (= "ui_block" (:name %)) %)
+                         (:defs (registry/resolve-tooling {:extra-tool-definitions [d]}))))]
+    (is (= "kinds: 1" (:description (get))))
+    (swap! n inc)
+    (is (= "kinds: 2" (:description (get))) "read again every turn")
+    (is (not (contains? (get) :resolve)) "the fn never reaches a provider")))

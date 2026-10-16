@@ -186,6 +186,29 @@
       (try (restrict-result id own-fx opts before (f before ev))
            (catch :default e (log-blocked id (str "command threw: " (.-message e))) nil)))))
 
+(defn- guard-block-kinds
+  "An extension's agent block kinds (xi.blocks) named <id>/<name>, so they
+   can't shadow a built-in kind or another extension's. A throwing :normalize
+   reads as invalid data, a throwing :text as no text. Malformed entries are
+   dropped."
+  [id kinds]
+  (into {}
+        (keep (fn [[k d]]
+                (let [n (if (keyword? k) (name k) (str k))]
+                  (if (and (map? d) (re-matches #"[a-z0-9][a-z0-9-]*" n))
+                    [(str (name id) "/" n)
+                     (cond-> (select-keys d [:describe :actions :send])
+                       (fn? (:normalize d)) (assoc :normalize (:normalize d))
+                       (fn? (:text d))
+                       (assoc :text (let [f (:text d)]
+                                      (fn [spec state]
+                                        (try (f spec state)
+                                             (catch :default e
+                                               (log-blocked id (str "block kind text threw: " (.-message e)))
+                                               nil))))))]
+                    (do (log-blocked id (str "block kind " (pr-str k))) nil)))))
+        (when (map? kinds) kinds)))
+
 (defn wrap
   "Return `ext` with every user fn confined (see ns doc). :id / :init /
    :system-prompt / :prompt-badge / :tool-definitions pass through unchanged —
@@ -209,6 +232,8 @@
 
        (:tool-registry ext)
        (update :tool-registry update-vals (partial guard-tool id token))
+
+       (:block-kinds ext) (update :block-kinds (partial guard-block-kinds id))
 
        (:on-mount ext)   (update :on-mount (partial guard-hook id token))
        (:on-unmount ext) (update :on-unmount (partial guard-hook id token))

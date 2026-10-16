@@ -27,6 +27,7 @@
             [xi.web.router :as router]
             [xi.web.terminal :as terminal]
             [xi.web.tool-views :as tool-views]
+            [xi.web.block-kinds :as block-kinds]
             [xi.web.user-ext.guard :as guard]))
 
 (def ^:private evaluator (lazy/loadable xi.web.user-ext.sci/load!))
@@ -134,6 +135,8 @@
           (swap! routes-ref merge (apply merge {} (map :routes ok)))
           (doseq [{:keys [id tool-views]} ok :when tool-views]
             (tool-views/register! id tool-views))
+          (doseq [{:keys [id block-kinds]} ok :when block-kinds]
+            (block-kinds/register! id block-kinds))
           (doseq [{:keys [id palette-items]} ok :when palette-items]
             (palette-items/register! id palette-items))
           (doseq [{:keys [id block-menu-items]} ok :when block-menu-items]

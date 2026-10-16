@@ -155,7 +155,7 @@
       resume/create
       canvas-review/extension
       ;; agent blocks: ui_block / ui_update / ui_state (xi.blocks)
-      blocks/extension
+      blocks/create
       clj-surgeon/extension
       ;; clj (sandboxed SCI scripting tool)
       clj-tool/extension

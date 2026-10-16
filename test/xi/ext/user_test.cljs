@@ -466,7 +466,7 @@
 (deftest the-bundled-demos-all-load
   (let [entries (user/load-dir (user/demo-extensions-dir))]
     (is (every? :id entries) (pr-str (keep :error entries)))
-    (is (= #{:notes :ping :hn} (set (map :id entries))))))
+    (is (= #{:notes :ping :hn :deploys} (set (map :id entries))))))
 
 (deftest demos-load-before-user-files-when-the-config-enables-them
   (let [file (node-path/join (tmp-dir) "config.edn")

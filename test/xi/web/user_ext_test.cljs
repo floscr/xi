@@ -389,3 +389,13 @@
     (is (nil? (:error r)) (str (:error r)))
     (is (= {:last "x"} ((get-in r [:web-ext :handlers :ext.chat/msg]) {} {:text "x"})))
     (is (= [:p "ticking"] ((get-in r [:web-ext :pages :chat/p]) {} identity)))))
+
+(deftest block-kinds-are-validated-named-and-guarded
+  (let [ok {:id :deploys :block-kinds {"board" (fn [spec _] [:p (str (count (:envs spec)))])}}]
+    (is (nil? (guard/validate ok {})))
+    (is (re-find #":block-kinds must be" (guard/validate (assoc ok :block-kinds {"Bad Name" (fn [_ _])}) {})))
+    (is (re-find #":block-kinds must be" (guard/validate (assoc ok :block-kinds {"board" :not-a-fn}) {})))
+    (let [kinds (:block-kinds (guard/wrap (assoc-in ok [:block-kinds "boom"] (fn [_ _] (throw (js/Error. "x"))))))]
+      (is (= #{"deploys/board" "deploys/boom"} (set (keys kinds))) "named <id>/<name>")
+      (is (= [:p "2"] ((get kinds "deploys/board") {:envs [1 2]} {})))
+      (is (nil? ((get kinds "deploys/boom") {} {})) "a throw draws the text form instead"))))
