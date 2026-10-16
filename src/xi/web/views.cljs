@@ -2572,26 +2572,36 @@
                       (pos? ms)    (conj (format-elapsed (js/Math.round (/ ms 1000))))
                       (pos? calls) (conj (str calls " tool call" (when (not= 1 calls) "s")))))))
 
+(defn- answer-turn
+  "One question (none for a sub-agent's task) with its answer `text`: while
+   `status` is :running and no text has come, what `history` shows it doing.
+   `answer-class` styles the answer (a thread caps its height)."
+  [{:keys [key question text status history answer-class]}]
+  [:div {:class ["diff-thread-turn"] :replicant/key key}
+   (when (seq question)
+     [:div {:class ["diff-thread-q"]} question])
+   (cond
+     (seq text)
+     [:div {:class [answer-class "post-content"]} (render-md text)]
+
+     (= :running status)
+     (list
+      [:div {:class ["diff-thread-activity"] :replicant/key "act"}
+       [:span {:class ["agent-status-spinner--sm"]}]
+       [:span (or (ask-activity history) "Thinking…")]]
+      [:div {:class ["diff-thread-skeleton"] :replicant/key "sk"} [:i] [:i] [:i]])
+
+     :else
+     [:div {:class [answer-class "diff-thread-a--empty"]}
+      (if (= :stopped status) "Stopped." "The answer failed.")])])
+
 (defn- ask-turn [{:keys [question sub-id]} child]
-  (let [status   (or (:status child) :running)
-        running? (= :running status)
-        text     (or (:result child) (sa/final-text (:history child)))]
-    [:div {:class ["diff-thread-turn"] :replicant/key sub-id}
-     [:div {:class ["diff-thread-q"]} question]
-     (cond
-       (seq text)
-       [:div {:class ["diff-thread-a" "post-content"]} (render-md text)]
-
-       running?
-       (list
-        [:div {:class ["diff-thread-activity"] :replicant/key "act"}
-         [:span {:class ["agent-status-spinner--sm"]}]
-         [:span (or (ask-activity (:history child)) "Thinking…")]]
-        [:div {:class ["diff-thread-skeleton"] :replicant/key "sk"} [:i] [:i] [:i]])
-
-       :else
-       [:div {:class ["diff-thread-a" "diff-thread-a--empty"]}
-        (if (= :stopped status) "Stopped." "The answer failed.")])]))
+  (answer-turn {:key          sub-id
+                :question     question
+                :text         (or (:result child) (sa/final-text (:history child)))
+                :status       (or (:status child) :running)
+                :history      (:history child)
+                :answer-class "diff-thread-a"}))
 
 (defn- thread-card
   "A question thread answered by sub-agents: each turn's question with its
@@ -3745,30 +3755,77 @@
             (icon/icon {:icon-name :x :size :sm})])]
         [:div {:class ["subagents-list"]} cards]])]))
 
+(defn- subagent-reply
+  "The reply field of a finished sub-agent: the text continues its own
+   conversation (:subagent/reply, xi.ext.subagent.handlers/reply), as a
+   child of this chat rather than a chat of its own."
+  [dispatch! room-id {:keys [id status]} input-id]
+  (when-not (= :running status)
+    (let [send! (fn [_]
+                  (when-let [el (.getElementById js/document input-id)]
+                    (when-not (str/blank? (.-value el))
+                      (dispatch! {:type :subagent/reply :room-id room-id :sub-id id
+                                  :text (.-value el)})
+                      (set! (.-value el) ""))))]
+      [:div {:class ["diff-thread-reply" "subagent-reply"] :replicant/key "reply"}
+       (form/form-textarea-auto
+        {:placeholder "Reply to this sub-agent…"
+         :max-rows    6
+         :class       "diff-thread-input"
+         :attrs       {:id input-id :on {:keydown (enter-submits send!)}}})
+       (button/button {:variant :ghost :size :sm :class "diff-thread-send"
+                       :attrs {:aria-label "Send reply"}
+                       :on-click send!}
+                      (icon/icon {:icon-name :arrow-up :size :sm}))])))
+
+(defn- subagent-exchanges
+  "A replied-to sub-agent's answers (:exchanges) as a thread: the task's
+   answer, then each reply with its own, the last streaming while it runs."
+  [{:keys [exchanges history]}]
+  (let [last-i (dec (count exchanges))]
+    (map-indexed
+     (fn [i {:keys [question answer status]}]
+       (let [status (or status :running)]
+         (answer-turn {:key          (str "x-" i)
+                       :question     question
+                       :text         (or answer
+                                         (when (and (= i last-i) (= :running status))
+                                           (sa/final-text history)))
+                       :status       status
+                       :history      history
+                       :answer-class "subagent-answer"})))
+     exchanges)))
+
 (defn- subagent-result-post
   "A finished sub-agent's answer where the conversation was when it ended
-   (its :ended-anchor): the final text, else why there is none."
-  [dispatch! room-id {:keys [id label task status result] :as child}]
+   (its :ended-anchor): the final text, else why there is none; once replied
+   to, the exchanges. A reply field continues it."
+  [dispatch! room-id {:keys [id label task status result exchanges] :as child}]
   (let [status (or status :done)]
     [:div {:class ["post" "post--assistant" "post--subagent-result"]
            :replicant/key (str "sar-" id)
            :data-ask-sub id}
      [:div {:class ["post-body" "subagent-result" (str "subagent-result--" (name status))]}
       [:div {:class ["subagent-strip"]}
-       (icon/icon {:icon-name :users :size :sm})
+       (if (= :running status)
+         (spinner)
+         (icon/icon {:icon-name :users :size :sm}))
        [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
        (when-let [d (subagent-duration child)]
          [:span {:class ["subagent-card-dur"]} d])
        [:span {:class ["subagent-status" (str "subagent-status--" (name status))]}
         (get subagent-status-label status (name status))]]
       [:div {:class ["subagent-result-body" "post-content"]}
-       (if (seq result)
-         (render-md result)
+       (cond
+         (seq exchanges) (subagent-exchanges child)
+         (seq result)    (render-md result)
+         :else
          [:div {:class ["subagent-empty"]}
           (case status
             :stopped "Stopped before it answered."
             :error   "Failed without an answer."
             "No textual output.")])]
+      (subagent-reply dispatch! room-id child (str "subagent-reply-" id))
       [:div {:class ["subagent-result-foot"]}
        (subagent-actions dispatch! room-id child {:text? true})]]]))
 
@@ -3800,7 +3857,8 @@
          [:div {:class ["subagent-empty"] :replicant/key "sv-empty"}
           (cond session-id            "Promoted to its own session: open it as a chat."
                 (= :running status)   "No output yet."
-                :else                 "No output.")])]]]))
+                :else                 "No output.")])
+       (subagent-reply dispatch! room-id child (str "subagent-view-reply-" id))]]]))
 
 (defn- quick-replies-row
   "One-tap reply chips for the last assistant response (xi.quick-replies); a

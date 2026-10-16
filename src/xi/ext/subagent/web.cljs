@@ -54,6 +54,14 @@
         gone?              (assoc-in [:state :rooms room-id :ui :active-buffer] :chat)
         (not (:remote? ev)) (assoc :effects [[:ws/send ev]])))))
 
+(defn- reply
+  "A reply to a finished sub-agent runs server-side: send the user's, apply
+   the server's echo (which every client of the room gets)."
+  [st ev]
+  (if (:remote? ev)
+    (h/reply st ev)
+    {:effects [[:ws/send ev]]}))
+
 (defn- thread-close
   "Close a thread here at once and on the server, which stops its running
    turns; its echo applies the same state."
@@ -80,6 +88,7 @@
                       (when-not (:remote? ev)
                         {:effects [[:ws/send ev]]}))
                     :subagent/dismiss dismiss
+                    :subagent/reply reply
                     ;; A sidebar row's button (xi.web.views/session-buffer-rows):
                     ;; roomless, by session — the server finds the live room
                     ;; and re-dispatches the room event (xi.ext.subagent), which

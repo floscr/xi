@@ -13,7 +13,7 @@
                   :started :ended :errored? :expanded?
                   :anchor :ended-anchor :call-id
                   :cli-session-id :session-id :upgraded?
-                  :node :thread :question :closed?}]}
+                  :node :thread :question :closed? :exchanges}]}
    status: :running | :done | :error | :stopped
    anchor / ended-anchor: the room history's length at spawn / at the end,
    where the web timeline places the child's card and its result; :call-id
@@ -23,7 +23,10 @@
    (xi.ext.subagent save-fx); the entry is the parent's link to it and is
    saved with the parent chat (`persisted`).
    node / thread / question: a question thread about a block
-   (xi.ext.subagent.threads)."
+   (xi.ext.subagent.threads).
+   exchanges: once the user replies to a finished child (`reply`), its
+   answers as [{:question :answer :status}], the first one the task's (no
+   :question); :result stays the latest answer."
   (:require [clojure.string :as str]
             [xi.agent :as agent]
             [xi.core.state :as state]
@@ -55,10 +58,12 @@
     (if (> (count one-line) 48) (str (subs one-line 0 48) "…") one-line)))
 
 (defn final-text
-  "The sub-agent's last assistant text entry — the concise result the parent
-   polls for."
+  "The sub-agent's last assistant text entry since its latest prompt (a
+   reply's :user entry) — the concise result the parent polls for."
   [history]
-  (->> history (filter #(= :text (:kind %))) last :text))
+  (->> (rseq (vec history))
+       (take-while #(not= :user (:kind %)))
+       (some #(when (= :text (:kind %)) (:text %)))))
 
 (def ^:private SUBAGENT_PREAMBLE
   (str "You are an autonomous SUB-AGENT spawned to handle one focused task in "
@@ -192,11 +197,32 @@
 
 ;; ── State handlers (pure) ─────────────────────────────────────────────────────
 
+(defn- start-effect
+  "The :subagent/start effect of a turn of `child` in `room`: the provider
+   settings come from the room's agent, the system from child-system with
+   the child's spawn options (:system, :parent-context?)."
+  [room child prompt images]
+  [:subagent/start
+   (cond-> {:room-id    (:id room)
+            :sub-id     (:id child)
+            :prompt     prompt
+            :system     (child-system room child)
+            :model      (get-in room [:agent :model])
+            :provider   (get-in room [:agent :provider])
+            :effort     (get-in room [:agent :effort])
+            :cwd        (:cwd room)
+            ;; An agent profile's tool allowlist binds sub-agents
+            ;; too, but they always read their parent.
+            :only-tools (some-> (get-in room [:agent :only-tools])
+                                set
+                                (conj parent-history-tool))}
+     (seq images) (assoc :images images))])
+
 (defn spawn
-  "Append a sub-agent entry and kick off its turn. The provider settings come
-   from the room's agent; the child runs a FRESH context (no resume) that
-   knows the parent conversation through its system prompt (child-system;
-   `:parent-context? false` opts out) and the parent_history tool.
+  "Append a sub-agent entry and kick off its turn. The child runs a FRESH
+   context (no resume) that knows the parent conversation through its
+   system prompt (child-system; `:parent-context? false` opts out) and the
+   parent_history tool.
 
    `:anchor` is the room history's length at spawn time: the web timeline
    renders the child's card there (after the spawn_subagent call that
@@ -204,7 +230,7 @@
    to the same history, so the anchor agrees everywhere.
 
    The event's :call-id / :node / :thread / :question go onto the child as
-   they are (see the ns doc).
+   they are (see the ns doc), :system / :parent-context? too, for `reply`.
 
    Emits the :subagent/start effect — the node build runs the turn; the web
    build registers a no-op for it (the turn only ever runs server-side).
@@ -219,24 +245,40 @@
                          :history []
                          :started (.now js/Date)
                          :anchor  (count (:history room))}
-                        (select-keys ev [:call-id :node :thread :question]))]
+                        (select-keys ev [:call-id :node :thread :question
+                                         :system :parent-context?]))]
       {:state   (update-in st [:rooms room-id :ext ext-id :agents]
                            (fnil conj []) child)
-       :effects [[:subagent/start
-                  (cond-> {:room-id         room-id
-                           :sub-id          sub-id
-                           :prompt          (or prompt task)
-                           :system          (child-system room ev)
-                           :model           (get-in room [:agent :model])
-                           :provider        (get-in room [:agent :provider])
-                           :effort          (get-in room [:agent :effort])
-                           :cwd             (:cwd room)
-                           ;; An agent profile's tool allowlist binds sub-agents
-                           ;; too, but they always read their parent.
-                           :only-tools      (some-> (get-in room [:agent :only-tools])
-                                                    set
-                                                    (conj parent-history-tool))}
-                    (seq images) (assoc :images images))]]})))
+       :effects [(start-effect room child (or prompt task) images)]})))
+
+(defn reply
+  "Continue finished sub-agent `sub-id` with the user's `text`: the same
+   child runs another turn on its own conversation, still a child of the
+   room, not a chat of its own. The node effect resumes the session it was
+   saved as (:resume); sessionless providers replay :history, the task
+   first. The prompt joins the history as a :user entry and :exchanges
+   (see the ns doc). :ended-anchor stays until the turn ends, so the result
+   post doesn't jump while the answer streams into it."
+  [st {:keys [room-id sub-id text images]}]
+  (let [text  (some-> text str/trim not-empty)
+        room  (state/get-room st room-id)
+        child (find-child st room-id sub-id)]
+    (when (and text room child (not= :running (:status child)))
+      (let [prior (cond->> (vec (:history child))
+                    (seq (:task child)) (into [{:kind :user :text (:task child)}]))]
+        {:state   (update-child st room-id sub-id
+                                (fn [c]
+                                  (-> c
+                                      (assoc :status :running :started (.now js/Date))
+                                      (dissoc :ended :errored?)
+                                      (update :exchanges
+                                              #(conj (or % [{:answer (:result c)
+                                                             :status (:status c)}])
+                                                     {:question text}))
+                                      (update :history (fnil conj []) {:kind :user :text text}))))
+         :effects [(update (start-effect room child text images) 1 assoc
+                           :resume (select-keys child [:cli-session-id :session-id])
+                           :history prior)]}))))
 
 (defn- text-delta [st {:keys [room-id sub-id text]}]
   (when (find-child st room-id sub-id)
@@ -284,15 +326,21 @@
     (let [ended-anchor (count (get-in st [:rooms room-id :history]))]
       {:state (update-child st room-id sub-id
                             (fn [a]
-                              (let [history (agent/finalize-history (:history a))]
-                                (assoc a
-                                       :history history
-                                       :ended  (.now js/Date)
-                                       :ended-anchor ended-anchor
-                                       :result (final-text history)
-                                       :status (cond aborted?        :stopped
-                                                     (:errored? a)   :error
-                                                     :else           :done)))))})))
+                              (let [history (agent/finalize-history (:history a))
+                                    result  (final-text history)
+                                    status  (cond aborted?        :stopped
+                                                  (:errored? a)   :error
+                                                  :else           :done)]
+                                (cond-> (assoc a
+                                               :history history
+                                               :ended  (.now js/Date)
+                                               :ended-anchor ended-anchor
+                                               :result result
+                                               :status status)
+                                  (seq (:exchanges a))
+                                  (update :exchanges #(conj (pop %) (assoc (peek %)
+                                                                           :answer result
+                                                                           :status status)))))))})))
 
 (defn- session-init
   "The provider reported the child's CLI session id — remember it so the
@@ -319,7 +367,7 @@
 (def ^:private saved-keys
   [:id :label :task :status :result :started :ended :errored?
    :anchor :ended-anchor :call-id :session-id :upgraded?
-   :node :thread :question :closed?])
+   :node :thread :question :closed? :exchanges])
 
 (defn saved-child
   "A child as the parent chat saves it: the link block without its history,
@@ -570,6 +618,7 @@
    :subagent/explain-call is registered by each half on its own: the web
    forwards it, the node applies it."
   {:subagent/spawn           spawn
+   :subagent/reply           reply
    :subagent/text-delta      text-delta
    :subagent/thinking-delta  thinking-delta
    :subagent/tool-start      tool-start

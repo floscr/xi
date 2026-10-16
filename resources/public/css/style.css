@@ -6759,6 +6759,21 @@ code a:hover,
 }
 .subagent-result-body > :first-child { margin-top: 0; }
 .subagent-result-body > :last-child { margin-bottom: 0; }
+.subagent-result-body .diff-thread-turn + .diff-thread-turn { margin-top: var(--size-3); }
+.subagent-answer > :first-child { margin-top: 0; }
+.subagent-answer > :last-child { margin-bottom: 0; }
+
+/* Reply to a finished sub-agent (continues its own conversation). */
+.subagent-reply {
+  padding: var(--size-2) var(--size-3);
+  border-top: var(--border-0);
+  background: var(--bg-0);
+}
+.subagent-view .subagent-reply {
+  padding: var(--size-3) 0;
+  border-top: none;
+  background: none;
+}
 
 .subagent-result-foot {
   display: flex;

@@ -69,12 +69,28 @@
    :on-error       (fn [error]
                      (dispatch! {:type :subagent/error :room-id room-id :sub-id sub-id :error error}))})
 
+(defn- resume-target
+  "Where a reply to sub-agent `sub-id` resumes its conversation (`resume` is
+   the child's {:cli-session-id :session-id}): {:resume-id :config-dir}.
+   Not saved yet, the transcript is still in its kept throwaway dir; saved,
+   it is the hidden session's, in the live config dir (no :config-dir), so
+   the reply appends to the session Open as chat resumes. No :resume-id when
+   there is nothing to resume (a sessionless provider replays :history)."
+  [sub-id {:keys [cli-session-id session-id]}]
+  (let [kept (config-dir sub-id)
+        rid  (or cli-session-id
+                 (some-> session-id session/find-session-by-id :cli-session-id))]
+    (cond-> {:resume-id rid}
+      kept (assoc :config-dir kept))))
+
 (defn create-fx
   "Sub-agent provider effect. `providers` = provider-id → provider.
    `opts` is the same tooling threaded into xi.agent/create-fx:
      :tool-policy, :extra-tool-definitions, :extra-tool-registry.
 
-   The `:subagent/start` effect runs a fresh (never-resumed) provider turn with
+   The `:subagent/start` effect runs a fresh provider turn (or, with
+   :resume, a reply resuming the child's own conversation, see
+   `resume-target`) with
    the same extension tools + rules policy the main agent gets, so a sub-agent
    can use git/read/etc. A background sub-agent runs unattended, so rule
    confirmations resolve to the safe default (deny) instead of opening an
@@ -87,15 +103,21 @@
                       make-config-dir! remove-config-dir!]}]
    {:subagent/start
     (fn [{:keys [dispatch! get-state]}
-         {:keys [room-id sub-id prompt images system model provider cwd effort only-tools]}]
+         {:keys [room-id sub-id prompt images system model provider cwd effort only-tools
+                 resume history]}]
       (let [prov     (agent/resolve-provider providers {:provider provider :model model})
+            target   (when resume (resume-target sub-id resume))
             ;; Run the sub-agent's turn against a throwaway CLAUDE_CONFIG_DIR so
             ;; the Claude CLI session it leaves behind lands in a temp dir, not
             ;; ~/.claude/projects — otherwise it leaks into the recent-sessions
             ;; list as a top-level chat. The dir is KEPT after the turn (see
             ;; `dirs`) so the transcript can later be promoted into a real,
             ;; resumable session when the user opens the sub-agent as a chat.
-            config-dir (when make-config-dir! (make-config-dir!))
+            ;; A reply resumes where the transcript is (`resume-target`).
+            config-dir (cond (:config-dir target) (:config-dir target)
+                             (:resume-id target)  nil
+                             make-config-dir!     (make-config-dir!))
+            resume-id  (:resume-id target)
             ;; Tool ctx uses the PARENT room-id: the sub-agent's tools act in
             ;; the parent room (cwd, canvas state, confirm dialogs). Handed to
             ;; the tool policy and, as :tool-ctx, to tool exec-fns.
@@ -133,6 +155,8 @@
                             (callbacks dispatch! room-id sub-id))
                policy1                  (assoc :tool-policy policy1)
                only-tools               (assoc :only-tools only-tools)
+               resume-id                (assoc :resume-session-id resume-id)
+               (seq history)            (assoc :history history)
                (seq images)             (assoc :images images)
                extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
                extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
@@ -145,6 +169,10 @@
             (.then
              (fn [result]
                (swap! registry dissoc sub-id)
+               (when (:resume-failed result)
+                 (dispatch! {:type :subagent/error :room-id room-id :sub-id sub-id
+                             :error {:type "error"
+                                     :message "This sub-agent's conversation is gone and can't be resumed."}}))
                (dispatch! {:type :subagent/turn-end :room-id room-id :sub-id sub-id
                            :usage (:usage result) :cost (:cost result)
                            :aborted? (boolean (:aborted result))})))

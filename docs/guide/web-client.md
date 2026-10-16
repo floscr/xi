@@ -78,7 +78,10 @@ projects** in the sidebar opens the project list (`/projects`).
   as a session of its own, hidden from your chats and deleted with the chat.
   The chat keeps the link, so its posts and Open as chat work after a
   restart. **Keep as session** lists it with your other chats; so does the
-  same button on top of the sub-agent's chat.
+  same button on top of the sub-agent's chat. The answer post has a reply
+  field: a reply continues the sub-agent's own conversation, and its answer
+  streams into that post under your reply. The sub-agent stays in this chat;
+  it does not become a chat of its own.
 - **Ask about any block.** Hover a message, tool call or thinking block and
   click the ⚡ button at its right edge. On a phone, tap the block (or
   long-press a tool header); for a code block or your own message, it is in
@@ -164,8 +167,8 @@ refreshes it in place.
   [sub-agents](builtin-tools.md#sub-agents) list under its card with the
   buffers ("2 buffers · 1 sub-agent"), a spinner on the ones still running.
   A row shows the sub-agent in place of the chat, like a buffer: its task
-  and output, read-only, with buttons to stop it, open it as a chat of its
-  own or dismiss it. The topbar pill lists the chat's sub-agents too, and
+  and output, a reply field once it has finished, and buttons to stop it,
+  open it as a chat of its own or dismiss it. The topbar pill lists the chat's sub-agents too, and
   the chat shows them where they were started (above).
   The trailing button stops a running one or dismisses a finished one.
   The list shows the sub-agents of open chats; the chat saves the finished
