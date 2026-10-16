@@ -99,22 +99,22 @@
                                  {:tool :read :path "src/foo.cljs"})))))
 
 (deftest server-control-gate
-  (testing "restarting/stopping the server asks — via bash, the bb tool, or clj sh"
+  (testing "restarting/stopping the server asks — via bash, run_task, or clj sh"
     (is (= :ask (action-type {:tool :bash :command "bb serve:restart"})))
-    (is (= :ask (action-type {:tool :bb   :command "bb serve:stop"})))
+    (is (= :ask (action-type {:tool :task :command "bb serve:stop"})))
     (is (= :ask (action-type {:tool :sh   :cli "bb" :command "bb serve:restart"})))
     (is (= [:yes :no]
            (get-in (rules/first-match defaults/default-rules
-                                      {:tool :bb :command "bb serve:restart"})
+                                      {:tool :task :command "bb serve:restart"})
                    [:action :options]))
         "no [a]lways — every restart is confirmed"))
   (testing "the rule is command-scoped, so clj confirms that exact command"
     (is (rules/arg-scoped? (rules/first-match defaults/default-rules
                                               {:tool :sh :cli "bb" :command "bb serve:restart"}))))
   (testing "other bb tasks and the personal server's tasks don't match"
-    (is (nil? (rules/first-match defaults/default-rules {:tool :bb :command "bb test"})))
+    (is (nil? (rules/first-match defaults/default-rules {:tool :task :command "bb test"})))
     (is (nil? (rules/first-match defaults/default-rules
-                                 {:tool :bb :command "bb serve:personal:restart"})))))
+                                 {:tool :task :command "bb serve:personal:restart"})))))
 
 (defn- script-exec-gated?
   "True when the default tier gates `cmd` with the script-exec rule — told apart
@@ -132,7 +132,7 @@
                         [:sh "bb /tmp/x.clj"]
                         [:sh "bb script.bb"]
                         [:sh "bb -m my.ns/main"]
-                        [:bb "bb -e (slurp \"x\")"]
+                        [:task "bb -e (slurp \"x\")"]
                         [:bash "bb -f x.clj"]
                         [:sh "node -e console.log(1)"]
                         [:sh "node script.js"]
@@ -343,23 +343,31 @@
   (testing "the /tmp cleanup nudge still wins over the chained deny"
     (is (nudged? {:tool :bash :command "rm -rf /tmp/foo; ls" :chained? true}))))
 
-(deftest bb-trust-and-guards
-  (testing "an untrusted bb.edn asks, and is refused when nobody can answer"
+(deftest task-trust-and-guards
+  (testing "an untrusted task file asks, and is refused when nobody can answer"
     (let [rule (rules/first-match defaults/default-rules
-                                  {:tool :bb :command "bb test" :bb-trusted? false})]
+                                  {:tool :task :command "bb test" :task-file-trusted? false})]
       (is (= :ask (get-in rule [:action :type])))
       (is (= :deny (get-in rule [:action :unanswered])))
-      (is (= :ext.clj/trust-bb
+      (is (= :ext.clj/trust-task-file
              (some #(get-in % [:event :type]) (get-in rule [:action :options]))))))
-  (testing "a trusted bb.edn runs without a prompt"
-    (is (nil? (action-type {:tool :bb :command "bb test" :bb-trusted? true}))))
-  (testing "guarded patterns and server control still ask for a trusted bb.edn"
-    (is (= :ask (action-type {:tool :bb :command "bb clean rm -rf target" :bb-trusted? true})))
-    (is (= :ask (action-type {:tool :bb :command "bb serve:restart" :bb-trusted? true}))))
-  (testing "the trust ask comes first, so a narrower ask can't wave an untrusted bb.edn through"
+  (testing "a task of a trusted file runs, from run_task or clj sh alike"
+    (is (= :allow (action-type {:tool :task :command "npm run build" :task-file-trusted? true
+                                :runner-task {:runner "npm" :task "build"}})))
+    (let [rule (rules/first-match defaults/default-rules
+                                  {:tool :sh :cli "bb" :command "bb test" :task-call? true
+                                   :task-file-trusted? true :runner-task {:runner "bb" :task "test"}})]
+      (is (= :allow (get-in rule [:action :type])))
+      (is (rules/arg-scoped? rule) "clj grants the exact command, never the runner CLI")))
+  (testing "guarded patterns and server control still ask for a trusted task file"
+    (is (= :ask (action-type {:tool :task :command "bb clean rm -rf target" :task-file-trusted? true
+                              :runner-task {:runner "bb" :task "clean"}})))
+    (is (= :ask (action-type {:tool :task :command "bb serve:restart" :task-file-trusted? true
+                              :runner-task {:runner "bb" :task "serve:restart"}}))))
+  (testing "the trust ask comes first, so a narrower ask can't wave an untrusted file through"
     (is (= :deny (get-in (rules/first-match defaults/default-rules
-                                            {:tool :bb :command "bb serve:restart"
-                                             :bb-trusted? false})
+                                            {:tool :task :command "bb serve:restart"
+                                             :task-file-trusted? false})
                          [:action :unanswered])))))
 
 (deftest xi-sessions-readable
@@ -488,7 +496,7 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 46 (count defaults/default-rules))))
+    (is (= 47 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
@@ -576,7 +584,7 @@
       (is (= :sane (guard {:tool :read :path "/home/x/.env"})))
       (is (= :sane (guard {:tool :bash :command "git push origin master"}))))
     (testing "relentless still asks before restarting the server"
-      (is (= :always (guard {:tool :bb :command "bb serve:restart"})))
+      (is (= :always (guard {:tool :task :command "bb serve:restart"})))
       (is (= :always (guard {:tool :sh :cli "bb" :command "bb serve:stop"}))))
     (testing "everything else is answered by both levels"
       (is (nil? (guard {:tool :write :path "/etc/x" :outside-cwd? true})))

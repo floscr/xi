@@ -30,9 +30,20 @@
     (is (nil? (tasks/parse ["deno" "run" "x.ts"])))
     (is (nil? (tasks/parse ["make" "test"])))))
 
+(deftest task-argv
+  (is (= ["bb" "test" "a"] (tasks/task-argv "bb" " test " ["a"])))
+  (is (= ["npm" "run" "build" "--" "-w"] (tasks/task-argv "npm" "build" ["--" "-w"])))
+  (is (= ["deno" "task" "dev"] (tasks/task-argv "deno" "dev" nil)))
+  (testing "no task lists the tasks"
+    (is (= ["bb" "tasks"] (tasks/task-argv "bb" nil nil)))
+    (is (= ["pnpm" "run"] (tasks/task-argv "pnpm" "" nil))))
+  (is (nil? (tasks/task-argv "make" "test" nil)) "unknown runner"))
+
 (deftest request-argv
-  (is (= ["bb" "test" "a"] (tasks/request-argv {:tool :bb :arguments {:task " test " :args ["a"]}})))
-  (is (nil? (tasks/request-argv {:tool :bb :arguments {}})) "bb tasks lists, runs nothing")
+  (is (= ["bb" "test" "a"] (tasks/request-argv {:tool :task :runner "bb" :arguments {:task " test " :args ["a"]}})))
+  (is (= ["yarn" "run" "lint"] (tasks/request-argv {:tool :task :runner "npm" :arguments {:task "lint" :runner "yarn"}}))
+      "the call's own runner wins")
+  (is (nil? (tasks/request-argv {:tool :task :runner "bb" :arguments {}})) "a listing runs no task")
   (is (= ["bb" "test"] (tasks/request-argv {:tool :sh :argv ["bb" "test"]})))
   (is (= ["bb" "test" "x"] (tasks/request-argv {:tool :sh :command "bb test x"})))
   (is (nil? (tasks/request-argv {:tool :sh :command "bb test; rm -rf x"}))
@@ -86,7 +97,7 @@
         sub (node-path/join dir "sub")]
     (is (= {:runner "bb" :task "test" :args ["a"]}
            (tasks/request-task {:tool :sh :argv ["bb" "test" "a"] :effective-cwd dir})))
-    (is (= "lint" (:task (tasks/request-task {:tool :bb :arguments {:task "lint"} :effective-cwd sub})))
+    (is (= "lint" (:task (tasks/request-task {:tool :task :runner "bb" :arguments {:task "lint"} :effective-cwd sub})))
         "bb.edn is found from a subdirectory")
     (is (nil? (tasks/request-task {:tool :sh :argv ["bb" "deploy"] :effective-cwd dir}))
         "a task bb.edn doesn't define is no task")
@@ -106,3 +117,31 @@
     (is (= :allow (decide* req)))
     (is (nil? (decide* (assoc req :argv ["bb" "lint"]))))
     (is (nil? (decide* (assoc req :argv ["bb" "nope"]))))))
+
+(deftest detect-runner-and-project-file
+  (let [dir (tmp-project)
+        js  (fs/realpathSync (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-tasks-js-")))]
+    (is (= "bb" (tasks/detect-runner (node-path/join dir "sub"))))
+    (is (= (node-path/join dir "bb.edn") (tasks/project-file (node-path/join dir "sub") "bb")))
+    (fs/writeFileSync (node-path/join js "package.json") "{\"scripts\": {\"build\": \"x\"}}")
+    (is (= "npm" (tasks/detect-runner js)))
+    (fs/writeFileSync (node-path/join js "pnpm-lock.yaml") "")
+    (is (= "pnpm" (tasks/detect-runner js)) "a lockfile picks the package manager")
+    (is (= (node-path/join js "package.json") (tasks/project-file js "yarn")))))
+
+(deftest clj-sh-task-matches-run-task-rules
+  (let [dir     (tmp-project)
+        rule    {:match {:tool :task :task-file-trusted false :task {"bb" "*"}} :action {:type :allow}}
+        req     {:tool :sh :cli "bb" :command "bb test" :argv ["bb" "test"] :effective-cwd dir}
+        enrich  #(store/enrich-request % [rule])
+        decide* #(get-in (rules/first-match [rule] (enrich %)) [:action :type])]
+    (is (true? (:task-call? (enrich req))))
+    (is (= (node-path/join dir "bb.edn") (:task-file (enrich req))))
+    (is (false? (:task-file-trusted? (enrich req))) "trust is resolved for the sh call too")
+    (is (= :allow (decide* req)) "(sh \"bb\" \"test\") is matched like run_task")
+    (is (nil? (decide* (assoc req :argv ["bb" "nope"] :command "bb nope")))
+        "a task bb.edn doesn't define stays a plain :sh call")
+    (is (nil? (decide* (assoc req :argv ["bb" "-e" "(+ 1 2)"] :command "bb -e (+ 1 2)"))))
+    (is (nil? (decide* (dissoc req :argv))) "dynamic args never match")
+    (is (nil? (decide* (assoc req :extension "notes")))
+        "an extension's (sh \"bb\" …) keeps its own asks")))

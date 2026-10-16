@@ -4,7 +4,8 @@
    overrides a default. They express the behavioral nudges and policy gates that
    used to live in dedicated intercept/gate extensions."
   (:require [clojure.string :as str]
-            [xi.rules.readonly :as readonly]))
+            [xi.rules.readonly :as readonly]
+            [xi.rules.tasks :as tasks]))
 
 (defn- alt-re
   "A regex matching any of `substrings` as a literal substring (re-find
@@ -70,7 +71,7 @@
 ;;
 ;; Every pattern is anchored at the command's first token (an optional path
 ;; prefix is allowed), which is the binary for a clj `(sh …)` / bash command and
-;; `bb` for the bb tool. They run over the space-joined command line, and the
+;; the runner for run_task. They run over the space-joined command line, and the
 ;; clj gate matches each literal `(sh …)` / background command on its own.
 
 (def script-exec-res
@@ -84,7 +85,7 @@
    ;; `java -jar x` included.
    #"^\s*(?:\S*/)?(?:node(?:js)?|python|pypy|ruby|perl|php|lua|luajit|Rscript|elixir|julia|sbcl|guile|racket|nbb|tsx|ts-node|java|jshell|groovy)(?:\d+(?:\.\d+)*)?(?=\s|$)(?!\s+(?:-v|-V|--version|-version|--help|-h)\s*$)"
    ;; babashka — eval/file/stdin-expression/main/exec flags, or a script operand.
-   ;; `bb <task>` stays free: its code is the trusted bb.edn.
+   ;; `bb <task>` stays free: its code is the trusted bb.edn (task-trust).
    #"^\s*(?:\S*/)?bb(?=\s)(?:.*\s(?:-e|--eval|-f|--file|-i|-I|-o|-O|-m|--main|-x|--exec|--init|--repl|--nrepl-server|--socket-repl)(?=[\s=]|$)|.*\s\S*\.(?:clj[cs]?|bb)(?=\s|$)|.*\s(?:\.{1,2}/|~/|/)\S*)"
    ;; bun — eval/print flags, x / repl / exec, or a script operand. Package
    ;; management, `bun test`, `bun build` and `bun run <package script>` stay free.
@@ -619,18 +620,19 @@
    [{:match  {:tool :bash :chained true}
      :action {:type :deny :message chained-bash-msg}}]
 
-   ;; bb tasks run bb.edn's code: an untrusted bb.edn (sha not in the trust
-   ;; store, xi.bb-trust) asks first — and is refused when nobody can answer.
-   ;; [a]lways trusts that bb.edn (content-addressed, so an edit re-asks)
-   ;; instead of saving a session rule. Listed before the guards so an
-   ;; untrusted bb.edn is never waved through by a narrower ask.
-   ::bb-trust
-   [{:match  {:tool :bb :bb-trusted false}
+   ;; Project tasks (run_task, or a clj (sh …) running a task) run their
+   ;; project file's code: an untrusted bb.edn / package.json / deno.json (sha
+   ;; not in the trust store, xi.task-trust) asks first — and is refused when
+   ;; nobody can answer. [a]lways trusts that file (content-addressed, so an
+   ;; edit re-asks) instead of saving a session rule. Listed before the guards
+   ;; so an untrusted file is never waved through by a narrower ask.
+   ::task-trust
+   [{:match  {:tool :task :task-file-trusted false}
      :action {:type :ask
               :options [:yes :no
-                        {:value :trust-bb :key "a" :label "Always (trust bb.edn)"
-                         :resolved-label "bb.edn trusted"
-                         :event {:type :ext.clj/trust-bb}}]
+                        {:value :trust-task-file :key "a" :label "Always (trust the task file)"
+                         :resolved-label "task file trusted"
+                         :event {:type :ext.clj/trust-task-file}}]
               :unanswered :deny}}]
 
    ;; Bash gates: remote shells are blocked outright; destructive patterns ask
@@ -640,18 +642,18 @@
      :action {:type :deny
               :message (str "Blocked: remote shell commands (ssh, scp, rsync, "
                             "sftp) are not allowed.")}}
-    {:match  {:tool #{:bash :bb} :command yolo-guarded-command-re}
+    {:match  {:tool #{:bash :task} :command yolo-guarded-command-re}
      :action {:type :ask :message "Guarded command — proceed?" :options [:yes :no]
               :guard :sane}}
-    {:match  {:tool #{:bash :bb} :command guarded-command-re}
+    {:match  {:tool #{:bash :task} :command guarded-command-re}
      :action {:type :ask :message "Guarded command — proceed?" :options [:yes :no]}}]
 
    ;; Restarting/stopping the server drops every connected session — always
-   ;; ask (bash, the bb tool, and clj (sh …) alike), in either yolo level. The
+   ;; ask (bash, run_task, and clj (sh …) alike), in either yolo level. The
    ;; executors run an approved one detached so the agent's own turn gets a
    ;; result.
    ::server-control
-   [{:match  {:tool #{:bash :bb :sh} :command server-control-re}
+   [{:match  {:tool #{:bash :task :sh} :command server-control-re}
      :action {:type :ask :options [:yes :no] :guard :always}}]
 
    ;; External MCP servers are third-party code: a call to a server that isn't
@@ -701,14 +703,23 @@
    ;; `node -e …`, `python x.py`, `bun run x.ts`, …) — the interpreter reads the
    ;; script itself, so neither the read/write gates nor the path guards ever see
    ;; what it does (e.g. `slurp` of a config file). Command-scoped, so clj asks
-   ;; per exact command even when the CLI is allowlisted / `bb` is trusted.
+   ;; per exact command even when the CLI is allowlisted / bb.edn is trusted.
    ;; Placed after extension-sh (an extension's own shell-outs keep that rule's
    ;; [a]lways) and before clj-sh. A higher-precedence `:allow` — config rule,
    ;; `/clj allow <cli>` — lifts it, so prefer arg-scoped allows.
    ::script-exec
-   (mapv (fn [re] {:match  {:tool #{:bash :sh :bb} :command re}
+   (mapv (fn [re] {:match  {:tool #{:bash :sh :task} :command re}
                    :action script-exec-action})
          script-exec-res)
+
+   ;; A task of a trusted project file runs — run_task, or the same task from
+   ;; clj (sh …). After the guards, server control and script-exec; `:task`
+   ;; keeps it arg-scoped, so clj grants only that exact command, never the
+   ;; runner CLI at large.
+   ::trusted-tasks
+   [{:match  {:tool :task :task-file-trusted true
+              :task (zipmap (keys tasks/runners) (repeat #"."))}
+     :action {:type :allow}}]
 
    ;; clj (sh …) shell-outs (:sh) — "disallow * then soften", scoped to :sh so
    ;; the real bash tool is untouched. Read-only/rm CLIs auto-run; every other
@@ -788,7 +799,7 @@
    ::plan-mode
    ::write-gates
    ::bash-chained
-   ::bb-trust
+   ::task-trust
    ::bash-guards
    ::server-control
    ::mcp-confirm
@@ -797,6 +808,7 @@
    ::net-confirm
    ::device-confirm
    ::script-exec
+   ::trusted-tasks
    ::clj-sh])
 
 (def default-rules

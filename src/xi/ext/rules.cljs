@@ -32,12 +32,12 @@
    The pure matcher lives in `xi.rules`; file/state loading + the imperative
    hard-block live in `xi.rules.store`."
   (:require [clojure.string :as str]
-            [xi.bb-trust :as bb-trust]
             [xi.dialog :as dialog]
             [xi.rules :as rules]
             [xi.rules.store :as store]
             [xi.tools.edit :as edit]
-            [xi.tools.write :as write]))
+            [xi.tools.write :as write]
+            ["node:path" :as node-path]))
 
 (def ^:private ext-id store/ext-id)
 
@@ -136,7 +136,7 @@
      "\n## Rule schema\n"
      "A rule is an EDN map `{:match {…} :action {:type …}}`.\n\n"
      "`:match` fields (all ANDed; omit a field to leave it unconstrained):\n"
-     "- :tool     keyword or set of :write :edit :read :grep :find :ls :bash :clj :bb :mcp :other\n"
+     "- :tool     keyword or set of :write :edit :read :grep :find :ls :bash :clj :sh :task :mcp :other\n"
      "- :tool-name exact tool name (string/glob, regex, or set), for :other tools\n"
      "- :path     regex (partial, re-find) or glob string (full; * one segment, ** any, ? one char)\n"
      "- :command  regex (re-find) or string (substring) over the bash command / clj code\n"
@@ -211,11 +211,11 @@
            "Arguments:\n"
            (format-arguments arguments))
 
-      ;; the bb-trust rule: say which bb.edn the [a]lways option would trust
-      (false? (:bb-trusted? req))
-      (str "bb.edn is not trusted ("
-           (or (bb-trust/find-bb-edn (:effective-cwd req)) "none found")
-           ") — run this task?\n\n" command)
+      ;; the task-trust rule: say which file the [a]lways option would trust
+      (false? (:task-file-trusted? req))
+      (if-let [f (:task-file req)]
+        (str (node-path/basename f) " is not trusted (" f ") — run this task?\n\n" command)
+        (str "No project file found — run this task?\n\n" command))
 
       command (str "Run " (name tool) " — approve?\n\n" command)
       path    (str (name tool) " " path " — approve?")
@@ -265,7 +265,7 @@
    in a rule's :options). A fixed allowlist: rules files are data anyone with
    repo access can write, and an option must not become a way to dispatch
    arbitrary events on a click."
-  #{:ext.clj/trust-bb :mcp/trust})
+  #{:ext.clj/trust-task-file :mcp/trust})
 
 (defn- option-event
   "The allowlisted event of the option in `options` the user answered with
@@ -350,14 +350,15 @@
                                                   :grant   grant}))
                                     {:decision :approved})
 
-                                ;; an option carrying an event (the bb-trust
-                                ;; rule's "trust bb.edn") → approve + dispatch it
+                                ;; an option carrying an event (the task-trust
+                                ;; rule's "trust the task file") → approve + dispatch it
                                 (option-event options ans)
                                 (do (when dispatch!
                                       (dispatch! (cond-> (assoc (option-event options ans)
                                                                :room-id room-id
                                                                :cwd (:effective-cwd req))
-                                                   ;; the MCP trust option trusts the call's server
+                                                   ;; the trust options trust the call's file / server
+                                                   (:task-file req)  (assoc :path (:task-file req))
                                                    (:mcp-server req) (assoc :mcp-server (:mcp-server req)))))
                                     {:decision :approved})
 

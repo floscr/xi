@@ -32,7 +32,7 @@ argv-style call you can read before it runs.
 | Tool | Does | Asks |
 | --- | --- | --- |
 | `clj` | Evaluate Clojure in the sandbox. The REPL persists for the chat. Programs run through `(sh "cmd" "arg" …)`, git through `(git …)`, HTTP through `(curl …)`, background processes through the `process` namespace. See [The clj tool](clj-tool.md) and the [reference](clj-tool-reference.md). | Any program that is not read-only, the first time; a path outside the project |
-| `bb` | Run a task from the project's `bb.edn`, or list the tasks when no task is given. | Until the `bb.edn` is trusted with `/clj trust-bb` or once in the dialog, and again after `bb.edn` changes. Destructive task lines and `bb serve:restart` ask every time. |
+| `run_task` | Run a project task: a `bb.edn` task, a `package.json` script (npm, pnpm, yarn) or a `deno.json` task, or list the tasks when no task is given. | Until the project file is trusted with `/clj trust-tasks` or once in the dialog, and again after it changes. Destructive task lines and `bb serve:restart` ask every time. |
 | `sleep` | Pause for up to 60 seconds. Meant for pacing, not for waiting on a process. | Never |
 
 A `bash` tool exists in Xi, but the clj tool hides it. It only comes back

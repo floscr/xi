@@ -6,20 +6,18 @@
  :rules
  [;; `bb release` publishes to npm, pushes and deploys the site: the user runs
   ;; it, never an agent.
-  {:match  {:tool #{:bb :sh} :task {"bb" "release"}}
+  {:match  {:tool #{:task :sh} :task {"bb" "release"}}
    :action {:type :deny :message "Releasing is the user's job: give them the `bb release` command instead."}}
 
   ;; bb.edn is always trusted. The trust store is content-addressed, so every
-  ;; edit to bb.edn re-asked before the next `bb` task. Only an untrusted
-  ;; bb.edn is matched, and only a task bb.edn defines (`:task`; no `bb -e`,
-  ;; no script file). The lookahead leaves serve:restart/stop and the
-  ;; destructive patterns anywhere on the line to the default bb-trust ask;
-  ;; with a trusted bb.edn they reach the server-control and bash-guards asks
-  ;; as usual.
-  {:match  {:tool       :bb
-            :bb-trusted false
-            :task       {"bb" "*"}
-            :command    #"^(?!.*(?:serve:(?:restart|stop)|rm -r|chmod -R|chown -R|git push|kill|mkfs|dd if=|sudo ))"}
+  ;; edit to bb.edn re-asked before the next bb task (run_task, or clj
+  ;; (sh "bb" <task>)). Only an untrusted bb.edn is matched, and only a task
+  ;; bb.edn defines (`:task`; no `bb -e`, no script file). serve:restart/stop
+  ;; are left to the default task-trust ask; with a trusted bb.edn they reach
+  ;; the server-control ask as usual.
+  {:match  {:tool              :task
+            :task-file-trusted false
+            :task              {"bb" ["!serve:restart" "!serve:stop"]}}
    :action {:type :allow}}
 
   ;; tmux, read-only subcommands only: inspecting the xi / xi-serve / xi-demo /

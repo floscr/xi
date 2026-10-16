@@ -108,7 +108,7 @@ Put rules in `~/.config/xi/rules.edn`. They apply to every project.
    :action {:type :allow}}
 
   ;; every bb task of this project but deploy, with any arguments
-  {:match  {:tool #{:bb :sh} :task {"bb" ["*" "!deploy"]}}
+  {:match  {:tool :task :task {"bb" ["*" "!deploy"]}}
    :action {:type :allow}}
 
   ;; always confirm a push
@@ -123,7 +123,7 @@ rule to apply; a key you leave out is no constraint.
 
 | Key | Matches | Value |
 | --- | --- | --- |
-| `:tool` | The kind of call | `:read` `:write` `:edit` `:grep` `:find` `:ls` `:sh` `:bb` `:clj` `:net` `:mcp` `:other`, or a set of them |
+| `:tool` | The kind of call | `:read` `:write` `:edit` `:grep` `:find` `:ls` `:sh` `:task` `:clj` `:net` `:mcp` `:other`, or a set of them. `:task` is the run_task tool and a `(sh …)` running a project task |
 | `:path` | The file a call targets, or every file a `(sh …)` command names | A regex (`#"…"`, partial match) or a glob string (`"src/**/*.cljs"`, full match; `**/` is zero or more directories). Tested against the path as given, resolved, and with `$HOME` shown as `~`. For a command, each non-flag argument must match |
 | `:cli` | The program a command runs | A string, a set, or a regex |
 | `:read-only` | Whether a `(sh …)` call's arguments are read-only for its program (`find` without `-exec`, `git` without `push` or `-c`, …) | `true` or `false`; see the [reference](rules-reference.md#match) |
@@ -188,7 +188,7 @@ them by id, or by what `config.edn` says about them under `:users`:
 
 ;; rules.edn
 [;; alice may not run commands at all
- {:match  {:user "alice" :tool #{:bash :sh :clj :bb}}
+ {:match  {:user "alice" :tool #{:bash :sh :clj :task}}
   :action {:type :deny :message "Commands are off for this account."}}
 
  ;; every guest is asked before any write

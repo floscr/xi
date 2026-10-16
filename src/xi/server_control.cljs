@@ -4,7 +4,7 @@
 
    Run inline they would kill the server mid-command: the agent's own turn dies
    with a severed connection instead of a result. So every executor that can
-   run them — the bash tool, the bb tool, clj's (sh …) — checks `kind` first
+   run them — the bash tool, run_task, clj's (sh …) — checks `kind` first
    and hands the command to `run-detached!`, which returns an explicit result
    immediately and runs the command a moment later under setsid, so it
    survives the server it kills.

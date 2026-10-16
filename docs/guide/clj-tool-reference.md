@@ -155,22 +155,31 @@ port.
 Only `localhost`, `127.x.x.x` and `::1` are accepted; no dialog is shown.
 Sockets persist with the REPL.
 
-## The bb tool
+## The run_task tool
 
-`bb <task>` runs a Babashka task of the project. It is gated by trusting the
-project's `bb.edn` by content: the first run asks and "always" records the
-file's hash in `~/.config/xi/ext/bb-trust.edn`; `/clj trust-bb` does the
-same without a call. An edited `bb.edn` asks again. Guarded patterns in a
-task's command line still ask.
+`run_task` runs a project task: a `bb.edn` task, a `package.json` script or a
+`deno.json` task. Its arguments are `task`, `args` and `runner` (`bb`, `npm`,
+`pnpm`, `yarn`, `deno`). Without `runner` it uses the nearest project file's;
+for `package.json` a `pnpm-lock.yaml` or `yarn.lock` next to it picks pnpm or
+yarn, else npm. Without `task` it lists the tasks.
+
+It is gated by trusting the project file by content: the first run asks and
+"always" records the file's hash in `~/.config/xi/ext/task-trust.edn`;
+`/clj trust-tasks` does the same without a call. An edited file asks again.
+A `(sh …)` call running a task the file defines (`(sh "npm" "run" "build")`)
+is gated the same way. Guarded patterns in a task's command line still ask.
+
+The hash covers the project file only, not the code it calls: bb scripts in
+other files, npm `pre`/`post` scripts and `node_modules` binaries.
 
 ## Commands and files
 
 | | Does |
 | --- | --- |
-| `/clj` | The allowed programs and the `bb.edn` trust state |
+| `/clj` | The allowed programs and which project files are trusted |
 | `/clj allow <cli>` / `/clj revoke <cli>` | Allow or revoke a program for this chat (a chat rule; `/rules` shows it) |
-| `/clj trust-bb` | Trust the project's `bb.edn` |
+| `/clj trust-tasks` | Trust the nearest `bb.edn`, `package.json` and `deno.json` |
 | `/clj reset` | Drop the chat's REPL |
 | `/ext disable clj` / `enable clj` | Turn the tool off (the agent gets `bash`) or on |
 | `~/.config/xi/ext/clj.edn` | `{:allow-clis ["ffmpeg" "jq"] :helper-hints true}` |
-| `~/.config/xi/ext/bb-trust.edn` | Trusted `bb.edn` hashes; written by Xi |
+| `~/.config/xi/ext/task-trust.edn` | Trusted project file hashes; written by Xi. Hashes in `bb-trust.edn` from earlier versions still count |

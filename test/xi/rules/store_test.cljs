@@ -139,17 +139,21 @@
                                       {:cwd "/home/x/proj"})]
       (is (= :clj (:tool req)))
       (is (= "(println 1)" (:command req)))))
-  (testing "bb tool call → :bb kind, :command is the bb command line"
-    (let [req (store/decision-request {:name "bb" :arguments {:task "serve:restart"}}
+  (testing "run_task call → :task kind, :command is the runner's command line"
+    (let [req (store/decision-request {:name "run_task" :arguments {:task "serve:restart" :runner "bb"}}
                                       {:cwd "/tmp"})]
-      (is (= :bb (:tool req)))
+      (is (= :task (:tool req)))
+      (is (= "bb" (:runner req)))
       (is (= "bb serve:restart" (:command req))))
-    (is (= "bb test --focus x"
-           (:command (store/decision-request {:name "bb" :arguments {:task "test" :args ["--focus" "x"]}}
+    (is (= "npm run test --focus x"
+           (:command (store/decision-request {:name "run_task"
+                                              :arguments {:task "test" :args ["--focus" "x"] :runner "npm"}}
                                              {:cwd "/tmp"}))))
     (is (= "bb tasks"
-           (:command (store/decision-request {:name "bb" :arguments {}} {:cwd "/tmp"})))
-        "no task lists the tasks"))
+           (:command (store/decision-request {:name "run_task" :arguments {:runner "bb"}} {:cwd "/tmp"})))
+        "no task lists the tasks")
+    (is (nil? (:command (store/decision-request {:name "run_task" :arguments {:task "test"}} {:cwd "/tmp"})))
+        "no project file, no runner"))
   (testing "mcp tool call parses server + tool"
     (let [req (store/decision-request {:name "mcp__context7__search" :arguments {}}
                                       {:cwd "/tmp"})]
@@ -771,24 +775,24 @@
     (is (not (store/chained-command? "npm test >&2")))
     (is (not (store/chained-command? "npm test &> out.log")))))
 
-(deftest enrich-adds-chained-and-bb-trust-only-when-a-rule-needs-them
+(deftest enrich-adds-chained-and-task-trust-only-when-a-rule-needs-them
   (let [chained [{:match {:tool :bash :chained true} :action {:type :deny}}]
-        bb      [{:match {:tool :bb :bb-trusted false} :action {:type :ask}}]]
+        bb      [{:match {:tool :task :task-file-trusted false} :action {:type :ask}}]]
     (is (true? (:chained? (store/enrich-request {:tool :bash :command "a | b"} chained))))
     (is (false? (:chained? (store/enrich-request {:tool :bash :command "ls"} chained))))
     (is (not (contains? (store/enrich-request {:tool :bash :command "a | b"} []) :chained?)))
     (is (not (contains? (store/enrich-request {:tool :sh :command "a | b"} chained) :chained?))
         "only the bash tool")
-    (is (false? (:bb-trusted? (store/enrich-request {:tool :bb :effective-cwd "/tmp"} bb)))
+    (is (false? (:task-file-trusted? (store/enrich-request {:tool :task :runner "bb" :effective-cwd "/tmp"} bb)))
         "no trusted bb.edn above /tmp")
     (is (not (contains? (store/enrich-request {:tool :bash :effective-cwd "/tmp"} bb)
-                        :bb-trusted?)))
+                        :task-file-trusted?)))
     (testing "matching"
       (is (rules/matches? (first chained) {:tool :bash :chained? true}))
       (is (not (rules/matches? (first chained) {:tool :bash :chained? false})))
-      (is (rules/matches? (first bb) {:tool :bb :bb-trusted? false}))
-      (is (not (rules/matches? (first bb) {:tool :bb :bb-trusted? true})))
-      (is (not (rules/matches? (first bb) {:tool :bb})) "unknown trust never matches"))))
+      (is (rules/matches? (first bb) {:tool :task :task-file-trusted? false}))
+      (is (not (rules/matches? (first bb) {:tool :task :task-file-trusted? true})))
+      (is (not (rules/matches? (first bb) {:tool :task})) "unknown trust never matches"))))
 
 (deftest program-installed?-resolves-like-a-spawn
   (let [cwd (.cwd js/process)]

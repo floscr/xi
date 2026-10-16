@@ -21,14 +21,26 @@
    `:bare?`: the first argument is the task (`bb test`). `:file` is the
    project file defining the tasks, looked up from the cwd upwards. A flag
    before the task (`bb --config x.edn test`, `npm --prefix d run x`) can
-   point the runner at another project file, so it never parses."
-  {"bb"   {:bare? true :file "bb.edn"}
+   point the runner at another project file, so it never parses. `:invoke`
+   is what the run_task tool puts before a task name, `:list` what lists the
+   tasks."
+  {"bb"   {:bare? true :file "bb.edn" :invoke [] :list ["tasks"]}
    "npm"  {:run #{"run" "run-script"} :scripts #{"test" "start" "stop" "restart"}
-           :file "package.json"}
+           :file "package.json" :invoke ["run"] :list ["run"]}
    "pnpm" {:run #{"run" "run-script"} :scripts #{"test" "start" "stop" "restart"}
-           :file "package.json"}
-   "yarn" {:run #{"run"} :file "package.json"}
-   "deno" {:run #{"task"} :file "deno.json"}})
+           :file "package.json" :invoke ["run"] :list ["run"]}
+   "yarn" {:run #{"run"} :file "package.json" :invoke ["run"] :list ["run"]}
+   "deno" {:run #{"task"} :file "deno.json" :invoke ["task"] :list ["task"]}})
+
+(defn task-argv
+  "The argv running `task` with `args` through `runner` (`npm run build`),
+   or listing its tasks when `task` is blank; nil for an unknown runner."
+  [runner task args]
+  (when-let [{:keys [invoke list]} (get runners runner)]
+    (let [task (not-empty (str/trim (str task)))]
+      (into [runner] (if task
+                       (concat invoke [task] (map str args))
+                       list)))))
 
 (defn- task-name? [s]
   (and (string? s) (not (str/blank? s)) (not (str/starts-with? s "-"))))
@@ -48,13 +60,15 @@
       bare?                   (task sub more))))
 
 (defn request-argv
-  "The argv of a decision request that may run a task: the bb tool's
-   task + args, or a `:sh` / `:bash` / `:terminal` command's literal argv
+  "The argv of a decision request that may run a task: a run_task call's
+   (its runner given, or resolved into `:runner` by xi.rules.store; a listing
+   runs no task), or a `:sh` / `:bash` / `:terminal` command's literal argv
    (or plain command line, readonly/request-argv)."
   [{:keys [tool arguments] :as req}]
   (case tool
-    :bb (when-let [t (not-empty (str/trim (str (:task arguments))))]
-          (into ["bb" t] (map str (:args arguments))))
+    :task (when-not (str/blank? (str (:task arguments)))
+            (task-argv (or (not-empty (str (:runner arguments))) (:runner req))
+                       (:task arguments) (:args arguments)))
     (:sh :bash :terminal) (readonly/request-argv req)
     nil))
 
@@ -84,13 +98,43 @@
       nil)
     (catch :default _ nil)))
 
-(defn- find-up [dir file-name]
+(defn find-up
+  "The nearest `file-name` from `dir` upwards, or nil."
+  [dir file-name]
   (loop [dir dir]
     (let [f (path/join dir file-name)]
       (if (fs/existsSync f)
         f
         (let [parent (path/dirname dir)]
           (when (not= parent dir) (recur parent)))))))
+
+(defn project-file
+  "The project file defining `runner`'s tasks, nearest from `cwd` upwards."
+  [cwd runner]
+  (when-let [f (get-in runners [runner :file])]
+    (find-up (paths/real-resolve (or cwd (.cwd js/process)) ".") f)))
+
+(defn- package-runner
+  "npm, unless `dir` holds a pnpm or yarn lockfile."
+  [dir]
+  (cond
+    (fs/existsSync (path/join dir "pnpm-lock.yaml")) "pnpm"
+    (fs/existsSync (path/join dir "yarn.lock"))      "yarn"
+    :else                                           "npm"))
+
+(defn detect-runner
+  "The runner of the nearest project file from `cwd` upwards: bb.edn, then
+   package.json (npm / pnpm / yarn by lockfile), then deno.json in one
+   directory; nil when there is none."
+  [cwd]
+  (loop [dir (paths/real-resolve (or cwd (.cwd js/process)) ".")]
+    (let [has? #(fs/existsSync (path/join dir %))]
+      (cond
+        (has? "bb.edn")       "bb"
+        (has? "package.json") (package-runner dir)
+        (has? "deno.json")    "deno"
+        :else (let [parent (path/dirname dir)]
+                (when (not= parent dir) (recur parent)))))))
 
 (defn- file? [p]
   (try (.isFile (fs/statSync p)) (catch :default _ false)))

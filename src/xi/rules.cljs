@@ -3,7 +3,8 @@
 
    A rule is data:
 
-     {:match  {:tool #{:write :edit}   ; keyword or set of tool kinds
+     {:match  {:tool #{:write :edit}   ; keyword or set of tool kinds (:task also covers
+                                         ; a clj (sh \"npm\" \"run\" <task>), see match-tool)
                :tool-name \"spawn_subagent\" ; raw tool name (glob/exact, regex, set)
                :extension \"notes\"        ; user extension behind an xi.api.* call (true = any)
                :extension-data :own      ; path inside that extension's data dir (opt-in)
@@ -30,7 +31,8 @@
                :within :repo             ; every :sh operand inside the repo (opt-in)
                :tracked :git             ; every :sh operand git-tracked in the repo (opt-in)
                :chained true             ; a :bash command that composes shell commands (opt-in)
-               :bb-trusted false         ; a :bb call whose bb.edn is (not) in the trust store (opt-in)
+               :task-file-trusted false  ; a :task call whose project file is (not) in the
+                                         ; trust store, xi.task-trust (opt-in)
                :mcp-trusted false        ; an :mcp call whose server is (not) trusted (opt-in)
                :xi-rules-file true       ; changes an xi rules.edn (opt-in)
                :xi-config-file true      ; changes xi's config.edn (opt-in)
@@ -136,8 +138,13 @@
 (defn- as-set [x]
   (cond (set? x) x (coll? x) (set x) :else #{x}))
 
-(defn- match-tool [spec tool]
-  (or (nil? spec) (contains? (as-set spec) tool)))
+(defn- match-tool
+  "A clj `(sh …)` running a project task (`:task-call?`, store-computed) is a
+   `:task` call too, so run_task rules cover it."
+  [spec req]
+  (or (nil? spec)
+      (contains? (as-set spec) (:tool req))
+      (and (:task-call? req) (contains? (as-set spec) :task))))
 
 (defn- match-tool-name
   "Raw tool-name spec (e.g. \"spawn_subagent\"): set → membership, regex →
@@ -345,14 +352,14 @@
   (or (nil? spec)
       (and (true? spec) (boolean (:chained? req)))))
 
-(defn- match-bb-trusted
-  "`:bb-trusted true|false` matches a `:bb` call by whether the project's
-   bb.edn is in the trust store (xi.bb-trust)."
+(defn- match-task-file-trusted
+  "`:task-file-trusted true|false` matches a `:task` call by whether its
+   project file is in the trust store (xi.task-trust)."
   [spec req]
   (or (nil? spec)
       (and (boolean? spec)
-           (some? (:bb-trusted? req))
-           (= spec (:bb-trusted? req)))))
+           (some? (:task-file-trusted? req))
+           (= spec (:task-file-trusted? req)))))
 
 (defn- match-mcp-trusted
   "`:mcp-trusted true|false` matches an `:mcp` call by whether its server is
@@ -408,7 +415,7 @@
    All present match keys are ANDed; absent keys are unconstrained."
   [rule req]
   (let [m (:match rule)]
-    (and (match-tool       (:tool m)       (:tool req))
+    (and (match-tool       (:tool m)       req)
          (match-tool-name  (:tool-name m)  (:tool-name req))
          (match-extension  (:extension m)  (:extension req))
          (match-extension-data (:extension-data m) req)
@@ -431,7 +438,7 @@
          (match-within     (:within m)     req)
          (match-tracked    (:tracked m)    req)
          (match-chained    (:chained m)    req)
-         (match-bb-trusted (:bb-trusted m) req)
+         (match-task-file-trusted (:task-file-trusted m) req)
          (match-mcp-trusted (:mcp-trusted m) req)
          (match-xi-rules-file (:xi-rules-file m) req)
          (match-xi-config-file (:xi-config-file m) req)
@@ -551,10 +558,10 @@
   [rules]
   (boolean (some #(some? (some-> (canonical %) :match :mcp-trusted)) rules)))
 
-(defn needs-bb-trusted?
-  "True when any rule carries a `:bb-trusted` matcher."
+(defn needs-task-file-trusted?
+  "True when any rule carries a `:task-file-trusted` matcher."
   [rules]
-  (boolean (some #(some? (some-> (canonical %) :match :bb-trusted)) rules)))
+  (boolean (some #(some? (some-> (canonical %) :match :task-file-trusted)) rules)))
 
 (defn needs-credential?
   "True when any rule carries a `:credential` matcher."

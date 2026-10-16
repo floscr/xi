@@ -90,12 +90,14 @@ Or as a [rule](rules.md), which can also be narrowed to a command line:
 In a chat, `/clj allow <cli>` allows a program until the chat ends, and
 `/clj` shows what is currently allowed.
 
-## The bb tool
+## The run_task tool
 
-Running a project's Babashka tasks is common enough that `bb <task>` is its own
-tool. It is gated by trusting the project's `bb.edn` rather than the `bb`
-program: the first run asks, "always" records that file, and editing the file
-asks again. `/clj trust-bb` does the same without waiting for a call.
+Running a project's tasks is common enough that it is its own tool,
+`run_task`: `bb.edn` tasks, `package.json` scripts and `deno.json` tasks. It is
+gated by trusting the project file rather than the runner program: the first
+run asks, "always" records that file, and editing the file asks again. The
+same task run through `(sh …)` is gated the same way. `/clj trust-tasks` trusts
+the files without waiting for a call.
 
 ## Background processes
 

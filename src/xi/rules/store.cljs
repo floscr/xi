@@ -22,7 +22,7 @@
   (:require [clojure.string :as str]
             [clojure.walk :as walk]
             [cljs.tools.reader :as tr]
-            [xi.bb-trust :as bb-trust]
+            [xi.task-trust :as task-trust]
             [xi.core.state :as core-state]
             [xi.mcp.trust :as mcp-trust]
             [xi.rules :as rules]
@@ -223,15 +223,14 @@
       "ls"    :ls
       "bash"  :bash
       "clj"   :clj
-      "bb"    :bb
+      "run_task" :task
       (if (str/starts-with? n "mcp__") :mcp :other))))
 
-(defn- bb-command
-  "The command line a bb tool call runs (`bb <task> <args…>`, or `bb tasks`),
-   so `:command` rules match bb calls."
-  [{:keys [task args]}]
-  (let [task (not-empty (str/trim (str task)))]
-    (str/join " " (into ["bb"] (if task (into [task] (map str args)) ["tasks"])))))
+(defn task-runner
+  "The runner a run_task call uses: its `:runner`, else the one of the
+   nearest project file from `cwd` (xi.rules.tasks/detect-runner)."
+  [arguments cwd]
+  (or (not-empty (str (:runner arguments))) (tasks/detect-runner cwd)))
 
 ;; ── Decision request ───────────────────────────────────────────────────────
 
@@ -273,9 +272,14 @@
   (let [{:keys [name arguments]} tool-call
         kind    (tool-kind name)
         p       (or (:path arguments) (:file_path arguments))
-        command (if (= kind :bb) (bb-command arguments) (:command arguments))
-        code    (:code arguments)
         eff-cwd (or cwd (.cwd js/process))
+        runner  (when (= kind :task) (task-runner arguments eff-cwd))
+        ;; the command line a run_task call runs, so `:command` rules match it
+        command (if (= kind :task)
+                  (some->> (tasks/task-argv runner (:task arguments) (:args arguments))
+                           (str/join " "))
+                  (:command arguments))
+        code    (:code arguments)
         repo    (git-root (if p (path/dirname (expand-path eff-cwd (str p))) eff-cwd))
         state   (when (and get-state room-id)
                   (get-in (get-state) [:rooms room-id :ext]))]
@@ -285,6 +289,7 @@
       command   (assoc :command command)
       code      (assoc :command code)
       (seq arguments) (assoc :arguments arguments)
+      runner    (assoc :runner runner)
       (= kind :mcp) (merge (parse-mcp name)))))
 
 (defn request
@@ -560,17 +565,33 @@
                 (home-collapse resolved) (conj (home-collapse resolved)))))
           operands)))
 
+(defn- clj-runner-call?
+  "A clj `(sh <runner> …)` (bb, npm, …: xi.rules.tasks/runners) — not an
+   extension's (xi.api.sh), which keeps its own per-command asks."
+  [req]
+  (and (= :sh (:tool req)) (contains? tasks/runners (:cli req)) (:argv req)
+       (not (:extension req))))
+
 (defn enrich-request
   "Add the I/O-derived match fields the given `ruleset` actually needs to
    `req`: :resolved-path / :resolved-home-path (`:path`), :operand-paths
    (`:path` on a `:sh` request), :outside-cwd?, :credential-path?, :nodes
    (`:node`), :operands-within-repo? (`:within`), :operands-tracked?
    (`:tracked`, a delay), :xi-rules-file?, :xi-config-file?, :own-data?
-   (`:extension-data`), :chained?, :bb-trusted?, :mcp-trusted?, :installed?,
-   :runner-task (`:task`), :user-record (map `:user` rules)."
+   (`:extension-data`), :chained?, :mcp-trusted?, :installed?, :runner-task
+   (`:task`), :task-call? (a clj `(sh …)` running a task its project file
+   defines, matched like run_task), :task-file and :task-file-trusted?,
+   :user-record (map `:user` rules)."
   [req ruleset]
-  (let [resolved (when (and (:path req) (rules/needs-resolved-path? ruleset))
-                   (paths/real-resolve (:effective-cwd req) (str (:path req))))]
+  (let [resolved    (when (and (:path req) (rules/needs-resolved-path? ruleset))
+                      (paths/real-resolve (:effective-cwd req) (str (:path req))))
+        runner-task (when (or (rules/needs-task? ruleset) (clj-runner-call? req))
+                      (tasks/request-task req))
+        task-call?  (and (clj-runner-call? req) (some? runner-task))
+        task-file   (when (and (or (= :task (:tool req)) task-call?)
+                               (rules/needs-task-file-trusted? ruleset))
+                      (tasks/project-file (:effective-cwd req)
+                                          (or (:runner runner-task) (:runner req))))]
     (cond-> req
       resolved (assoc :resolved-path resolved)
       (home-collapse resolved) (assoc :resolved-home-path (home-collapse resolved))
@@ -599,9 +620,13 @@
       (and (= :sh (:tool req)) (:cli req) (rules/needs-installed? ruleset))
       (assoc :installed? (program-installed? (:effective-cwd req) (:cli req)))
       (rules/needs-task? ruleset)
-      (assoc :runner-task (tasks/request-task req))
-      (and (= :bb (:tool req)) (rules/needs-bb-trusted? ruleset))
-      (assoc :bb-trusted? (bb-trust/trusted? (:effective-cwd req)))
+      (assoc :runner-task runner-task)
+      task-call?
+      (assoc :task-call? true)
+      task-file
+      (assoc :task-file task-file)
+      (and (or (= :task (:tool req)) task-call?) (rules/needs-task-file-trusted? ruleset))
+      (assoc :task-file-trusted? (task-trust/trusted? task-file))
       (and (= :mcp (:tool req)) (:mcp-server req) (rules/needs-mcp-trusted? ruleset))
       (assoc :mcp-trusted? (mcp-trust/trusted? (:mcp-server req)))
       (and (:path req) (:extension req) (rules/needs-extension-data? ruleset))

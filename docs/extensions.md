@@ -508,7 +508,7 @@ namespace docstring is the authoritative description.
 
 | Extension | What it does |
 |-----------|--------------|
-| clj | Sandboxed Clojure (SCI) scripting tool + `bb` tool — replaces bash. User docs: [clj tool reference](guide/clj-tool-reference.md); worker and gate internals in [architecture.md](architecture.md#the-clj-tools-worker). |
+| clj | Sandboxed Clojure (SCI) scripting tool + `run_task` tool (bb / npm / pnpm / yarn / deno tasks) — replaces bash. User docs: [clj tool reference](guide/clj-tool-reference.md); worker and gate internals in [architecture.md](architecture.md#the-clj-tools-worker). |
 | process-manager | Registry of background processes started via clj's `process` ns; `/ps`, `/kill`. |
 | treesitter | Large-file `read` → structural outline; `read_source`. See [treesitter.md](treesitter.md). |
 | clj-surgeon | Structural Clojure refactoring tools; auto-fixes parens after write/edit. |

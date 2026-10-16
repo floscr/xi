@@ -36,7 +36,6 @@
             [cljs.reader :as reader]
             [edamame.core :as e]
             [sci.core :as sci]
-            [xi.bb-trust :as bb-trust]
             [xi.dialog :as dialog]
             [xi.ext.clj-bytes :as bytes]
             [xi.ext.clj-process :as proc]
@@ -48,9 +47,11 @@
             [xi.rules.foreign-git :as foreign-git]
             [xi.rules.readonly :as readonly]
             [xi.rules.store :as rules-store]
+            [xi.rules.tasks :as tasks]
             [xi.paths :as paths]
             [xi.sandbox.sci :as sandbox]
             [xi.server-control :as server-control]
+            [xi.task-trust :as task-trust]
             [xi.tools.truncate :as trunc]
             ["node:child_process" :as cp]
             ["node:fs" :as fs]
@@ -1121,7 +1122,7 @@
                   :required ["code"]}})
 
 ;; ── Worker client (main thread) ──────────────────────────────────────────────
-;; The clj/bb tools post a request to the room's long-lived worker thread
+;; The clj/run_task tools post a request to the room's long-lived worker thread
 ;; (target/main.js re-entered via xi.cli/main → xi.ext.clj-worker) and await
 ;; the reply, so a blocking eval stalls only its own room, never the server's
 ;; event loop. Workers spawn lazily and die on :room/close / /clj reset.
@@ -1153,7 +1154,7 @@
   (let [mine (filter (fn [[_ entry]] (= rk (:room-key entry))) @pending)]
     (swap! pending #(apply dissoc % (map first mine)))
     (doseq [[_ {:keys [resolve]}] mine]
-      (resolve #js {:text (str "clj/bb worker stopped: " reason
+      (resolve #js {:text (str "clj/run_task worker stopped: " reason
                                " — retry the command.")
                     :isError true}))))
 
@@ -1382,49 +1383,59 @@
                           :cwd     (or cwd (.cwd js/process))})
       (.then (fn [^js m] (reply->result m (:_hint args))))))
 
-;; ── bb tool ────────────────────────────────────────────────────────────────
+;; ── run_task tool ──────────────────────────────────────────────────────────
 
-(defn- bb-argv [args]
-  (let [task  (not-empty (str/trim (str (:task args))))
-        extra (mapv str (:args args))]
-    (into ["bb"] (if task (into [task] extra) ["tasks"]))))
-
-(def ^:private bb-tool-def
-  {:name "bb"
+(def ^:private run-task-tool-def
+  {:name "run_task"
    :description
-   (str "Run a Babashka task from this project's bb.edn (build, test, check, "
-        "serve, …). Pass {\"task\": \"test\"} to run `bb test`; add "
-        "{\"args\": [\"--foo\"]} for extra CLI args; omit `task` to list the "
-        "available tasks (`bb tasks`). The project's bb.edn must be trusted "
-        "first — run /clj trust-bb, or approve once when prompted; editing "
-        "bb.edn requires re-trusting. serve:restart / serve:stop run detached.")
+   (str "Run a project task: a bb.edn task, a package.json script (npm / pnpm / "
+        "yarn) or a deno.json task. Pass {\"task\": \"test\"} to run it with the "
+        "runner of the nearest project file (`bb test`, `npm run test`, …); add "
+        "{\"args\": [\"--foo\"]} for extra CLI args and {\"runner\": \"pnpm\"} "
+        "to pick the runner; omit `task` to list the tasks. The project file "
+        "must be trusted first — run /clj trust-tasks, or approve once when "
+        "prompted; editing it requires re-trusting. serve:restart / serve:stop "
+        "run detached.")
    :input_schema {:type "object"
-                  :properties {:task {:type "string"
-                                      :description "Task name (e.g. test, build, check). Omit to list tasks."}
-                               :args {:type "array" :items {:type "string"}
-                                      :description "Extra CLI args appended to the task."}}
+                  :properties {:task   {:type "string"
+                                        :description "Task name (e.g. test, build, check). Omit to list tasks."}
+                               :args   {:type "array" :items {:type "string"}
+                                        :description "Extra CLI args appended to the task."}
+                               :runner {:type "string"
+                                        :enum (vec (sort (keys tasks/runners)))
+                                        :description "Task runner; default: the nearest project file's."}}
                   :required []}})
 
-
-(defn- bb-tool-in-worker [args cwd]
-  (-> (run-in-worker #js {:kind   "bb"
-                          :roomId (room-key (:_room-id args))
-                          :task   (some-> (:task args) str)
-                          :args   (clj->js (mapv str (:args args)))
+(defn- run-task-in-worker [argv room-id cwd]
+  (-> (run-in-worker #js {:kind   "task"
+                          :roomId (room-key room-id)
+                          :argv   (clj->js argv)
                           :cwd    (or cwd (.cwd js/process))})
       (.then
        (fn [^js m]
          {:content  [{:type "text" :text (.-text m)}]
           :is-error (boolean (.-isError m))}))))
 
-(defn- bb-tool
-  "The bb tool. Whether the call may run (bb.edn trust, guarded patterns,
-   server control) was decided by the rules engine before this."
+(defn- run-task-tool
+  "The run_task tool. Whether the call may run (project file trust, guarded
+   patterns, server control) was decided by the rules engine before this."
   [args {:keys [cwd room-id]}]
-  (let [cmd (str/join " " (bb-argv args))]
-    (if (server-control/kind cmd)
+  (let [runner (rules-store/task-runner args cwd)
+        argv   (tasks/task-argv runner (:task args) (:args args))
+        cmd    (str/join " " argv)]
+    (cond
+      (nil? argv)
+      (js/Promise.resolve
+       {:content  [{:type "text"
+                    :text (if runner
+                            (str "run_task: unknown runner `" runner "`")
+                            "run_task: no bb.edn, package.json or deno.json found from this directory")}]
+        :is-error true})
+
+      (server-control/kind cmd)
       (js/Promise.resolve (server-control/tool-result cmd cwd))
-      (bb-tool-in-worker (assoc args :_room-id room-id) cwd))))
+
+      :else (run-task-in-worker argv room-id cwd))))
 
 
 ;; ── Worker: eval side (worker thread) ────────────────────────────────────────
@@ -1452,8 +1463,8 @@
              :text    (get-in res [:content 0 :text])
              :isError (boolean (:is-error res))})
 
-      "bb"
-      (let [argv (bb-argv {:task (.-task m) :args (js->clj (.-args m))})
+      "task"
+      (let [argv (vec (js->clj (.-argv m)))
             {:keys [exit out err]} (spawn-sync! argv cwd)
             body (truncate (str/trim (str out (when (seq err) (str "\n" err))))
                            MAX_RESULT)
@@ -1771,10 +1782,11 @@
 
 (defn- approve-clis!
   "Confirm each cli in turn → {:approved #{…}} or {:denied cli}. :always
-   persists a session allow-rule, except `bb`, whose :always trusts the
-   project's bb.edn sha. `reasons` (cli → text) explains why a read-only CLI
+   persists a session allow-rule, except for a cli in `task-files` (cli →
+   project file: a runner whose every call here runs a task), whose :always
+   trusts that file's sha. `reasons` (cli → text) explains why a read-only CLI
    wasn't auto-run."
-  [confirm! dispatch! room-id cwd code clis & [reasons]]
+  [confirm! dispatch! room-id code clis {:keys [reasons task-files]}]
   (reduce
    (fn [chain cli]
      (.then chain
@@ -1790,8 +1802,8 @@
                     (.then (fn [answer]
                              (cond
                                (= answer :always)
-                               (do (if (= cli "bb")
-                                     (bb-trust/trust! cwd)
+                               (do (if-let [f (get task-files cli)]
+                                     (task-trust/trust! f)
                                      (dispatch! {:type    :ext.rules/add
                                                  :room-id room-id :scope :session
                                                  :rule    (cli-allow-rule cli)}))
@@ -1993,12 +2005,11 @@
         gate-id (or (:gate-id ctx) (str "g" (swap! gate-seq inc)))
         ctx     (assoc ctx :gate-id gate-id)
         _       (swap! call-ctxs assoc gate-id ctx)
-        ;; A trusted bb.edn (sha in the trust store) makes `bb` an allowed CLI
-        ;; for (sh "bb" …), same as the dedicated bb tool. Session-allowed CLIs
-        ;; are no longer a private allowlist — they live as session rules and
-        ;; reach clj through the engine consult (`engine-allowed`) below.
-        base    (cond-> (global-allow-clis)
-                  (bb-trust/trusted? cwd) (conj "bb"))
+        ;; Session-allowed CLIs are no longer a private allowlist — they live
+        ;; as session rules and reach clj through the engine consult
+        ;; (`engine-allowed`) below, as does a task of a trusted project file
+        ;; (the trusted-tasks default rule).
+        base    (global-allow-clis)
         ;; :_allowed — CLIs the worker runs with any argv; :_allowed-commands
         ;; — exact argvs (vectors) it runs; :_approved — the CLIs the user (or
         ;; their config / rules) approved as such, exempt from the worker's
@@ -2144,6 +2155,18 @@
                                              (= command (:command %)))
                                     (:argv %))
                                  cmds))
+            ;; Runner CLIs (bb, npm, …) whose every scanned call runs a project
+            ;; task: their :always trusts the project file, not the CLI.
+            task-files (->> cmds
+                            (group-by #(command-cli (:command %)))
+                            (keep (fn [[cli cs]]
+                                    (when (every? #(tasks/request-task
+                                                    {:tool :sh :argv (:argv %)
+                                                     :effective-cwd (cmd-eff-cwd (:dir %))})
+                                                  cs)
+                                      (some->> (tasks/project-file (cmd-eff-cwd (:dir (first cs))) cli)
+                                               (vector cli)))))
+                            (into {}))
             ;; A deletion under tmp — `(sh "rm" …)` or the builtin `(rm …)` —
             ;; gets the "unnecessary" note whether or not a rule allowed it.
             tmp-rm?  (or (some (fn [cmd]
@@ -2304,8 +2327,8 @@
                                                      "attached to confirm: " (str/join ", " needed')))
 
                                        :else
-                                       (-> (approve-clis! confirm! dispatch! room-id cwd code needed'
-                                                          refused)
+                                       (-> (approve-clis! confirm! dispatch! room-id code needed'
+                                                          {:reasons refused :task-files task-files})
                                            (.then (fn [{:keys [approved denied]}]
                                                     (if denied
                                                       (blocked (str "clj: user denied running `" denied "`"))
@@ -2357,19 +2380,30 @@
                  (get-in r [:match :cli]))))
        sort))
 
+(defn- task-files
+  "The project files (bb.edn, package.json, deno.json) nearest from `cwd`."
+  [cwd]
+  (->> (sort (keys tasks/runners))
+       (keep #(tasks/project-file cwd %))
+       distinct))
+
 (defn- status-text [st room-id]
   (let [session (session-allow-clis st room-id)
         global  (sort (global-allow-clis))
-        cwd     (get-in st [:rooms room-id :cwd])]
+        cwd     (get-in st [:rooms room-id :cwd])
+        files   (task-files cwd)]
     (str "clj — sandboxed Clojure tool\n"
          "  Global allowlist:  " (if (seq global) (str/join ", " global)
                                     (str "(none — " (config-path) ")")) "\n"
          "  Session allowlist: " (if (seq session) (str/join ", " session) "(none)") "\n"
-         "  bb.edn:            " (cond
-                                   (not (bb-trust/find-bb-edn cwd)) "(none found)"
-                                   (bb-trust/trusted? cwd)       "trusted — bb tasks allowed"
-                                   :else                   "not trusted — /clj trust-bb") "\n"
-         "  /clj allow <cli> · /clj revoke <cli> · /clj trust-bb · /clj reset (drop REPL state)\n"
+         "  Task files:        " (if (seq files)
+                                   (str/join "\n                     "
+                                             (map #(str % (if (task-trust/trusted? %)
+                                                            " — trusted"
+                                                            " — not trusted (/clj trust-tasks)"))
+                                                  files))
+                                   "(none found)") "\n"
+         "  /clj allow <cli> · /clj revoke <cli> · /clj trust-tasks · /clj reset (drop REPL state)\n"
          "  Disable with /ext disable clj")))
 
 (defn- command [st {:keys [room-id args]}]
@@ -2398,10 +2432,10 @@
       {:state   (status-line st room-id "clj: REPL context reset")
        :effects [[:ext.clj/reset-runtime {:room-id room-id}]]}
 
-      "trust-bb"
+      "trust-tasks"
       {:state   st
-       :effects [[:ext.clj/trust-bb {:room-id room-id
-                                     :cwd     (get-in st [:rooms room-id :cwd])}]]}
+       :effects [[:ext.clj/trust-task-file {:room-id room-id
+                                            :cwd     (get-in st [:rooms room-id :cwd])}]]}
 
       {:state (status-line st room-id (status-text st room-id))})))
 
@@ -2432,21 +2466,26 @@
 (defn- ext-status [st {:keys [room-id text]}]
   {:state (status-line st room-id text)})
 
-(defn- on-trust-bb
-  "Trust the room's bb.edn, dispatched by the bb-trust rule's [a]lways option;
-   same as /clj trust-bb."
-  [st {:keys [room-id cwd]}]
-  {:effects [[:ext.clj/trust-bb {:room-id room-id
-                                 :cwd     (or cwd (get-in st [:rooms room-id :cwd]))}]]})
+(defn- on-trust-task-file
+  "Trust the call's project file (`:path`), dispatched by the task-trust
+   rule's [a]lways option."
+  [st {:keys [room-id cwd path]}]
+  {:effects [[:ext.clj/trust-task-file {:room-id room-id
+                                        :cwd     (or cwd (get-in st [:rooms room-id :cwd]))
+                                        :path    path}]]})
 
-(defn- trust-bb-fx [{:keys [dispatch!]} {:keys [room-id cwd]}]
-  (let [{:keys [path sha]} (bb-trust/trust! cwd)]
+(defn- trust-task-file-fx
+  "Trust `path`, or without one every project file nearest from `cwd`
+   (/clj trust-tasks)."
+  [{:keys [dispatch!]} {:keys [room-id cwd path]}]
+  (let [trusted (keep task-trust/trust! (if path [path] (task-files cwd)))]
     (dispatch! {:type :ext.clj/status :room-id room-id
-                :text (if sha
-                        (str "clj: trusted bb.edn — bb tasks allowed\n"
-                             "  " path "\n"
-                             "  sha256: " (subs sha 0 16) "…")
-                        "clj: no bb.edn found from this directory")})))
+                :text (if (seq trusted)
+                        (str "clj: trusted — their tasks run without asking\n"
+                             (str/join "\n" (map (fn [{:keys [path sha]}]
+                                                   (str "  " path "  sha256: " (subs sha 0 16) "…"))
+                                                 trusted)))
+                        "clj: no bb.edn, package.json or deno.json found from this directory")})))
 
 (def ^:private SYSTEM_PROMPT
   (str "## clj tool\n"
@@ -2477,10 +2516,10 @@
        "The REPL "
        "persists across your tool calls: (def x …) once, reuse it later "
        "instead of re-reading files. "
-       "Run this project's Babashka tasks (build, test, check, …) with the "
-       "dedicated `bb` tool ({\"task\":\"test\"}, or no task to list tasks) — "
-       "it needs the project's bb.edn trusted once (/clj trust-bb, or approve "
-       "when prompted). "
+       "Run this project's tasks (bb.edn tasks, package.json scripts, deno.json "
+       "tasks: build, test, check, …) with the dedicated `run_task` tool "
+       "({\"task\":\"test\"}, or no task to list tasks) — it needs the project "
+       "file trusted once (/clj trust-tasks, or approve when prompted). "
        "Background processes (dev servers, watchers, slow builds — anything "
        "that outlives the eval) use the `process` namespace: "
        "(process/start \"npm run dev\") → {:pid :log} spawns detached with "
@@ -2511,20 +2550,20 @@
 (def extension
   {:id               ext-id
    :handlers         {:ext.clj/status ext-status
-                      :ext.clj/trust-bb on-trust-bb
+                      :ext.clj/trust-task-file on-trust-task-file
                       :agent/turn-end on-turn-end
                       :room/close     on-room-close}
    :fx               {:ext.clj/reset-runtime    reset-runtime-fx
-                      :ext.clj/trust-bb         trust-bb-fx
+                      :ext.clj/trust-task-file  trust-task-file-fx
                       :ext.clj/abort-evals      abort-evals-fx
                       :ext.clj/terminate-worker terminate-worker-fx}
-   :tool-definitions [tool-def bb-tool-def]
-   :tool-registry    {"clj" clj-tool
-                      "bb"  bb-tool}
+   :tool-definitions [tool-def run-task-tool-def]
+   :tool-registry    {"clj"      clj-tool
+                      "run_task" run-task-tool}
    :remove-tools     #{"bash"}
    :system-prompt    SYSTEM_PROMPT
    :commands         [{:name "clj"
-                       :description "Sandboxed Clojure tool — status, allow/revoke CLIs, trust bb.edn, reset REPL"
+                       :description "Sandboxed Clojure tool — status, allow/revoke CLIs, trust task files, reset REPL"
                        :handler command}]
    :on-disable       (fn []
                        (reset! runtimes {})

@@ -157,7 +157,7 @@ The permission-gate extension is gone. Its last pieces:
   the `bash-guards` rule is built from; the `clj` gate confirms them for
   scanned `(sh …)` commands.
 - **Server control** (`bb serve:restart` / `serve:stop`) — asked by the
-  `server-control` default rule; the executors (bash, the bb tool, clj `sh`)
+  `server-control` default rule; the executors (bash, run_task, clj `sh`)
   run an approved one detached via `xi.server-control`.
 
 To add a policy, add a rule (`.xi/rules.edn`, `/rules`, or a default in

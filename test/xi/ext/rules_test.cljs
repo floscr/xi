@@ -120,30 +120,30 @@
                  (is (= {:name "bash" :arguments {:command "git status"}} plain))
                  (done))))))
 
-;; /tmp has no trusted bb.edn, so a bb call there hits the bb-trust rule.
+;; /tmp has no trusted bb.edn, so a run_task call there hits the task-trust rule.
 
-(deftest untrusted-bb-asks-and-always-trusts-via-the-option-event
+(deftest untrusted-task-file-asks-and-always-trusts-via-the-option-event
   (async done
-    (let [tc         {:name "bb" :arguments {:task "test"}}
+    (let [tc         {:name "run_task" :arguments {:task "test" :runner "bb"}}
           asked      (atom nil)
           dispatched (atom [])
           c          (assoc (ctx {})
                             :confirm!  (fn [msg opts] (reset! asked [msg opts])
-                                         (js/Promise.resolve :trust-bb))
+                                         (js/Promise.resolve :trust-task-file))
                             :dispatch! (fn [ev] (swap! dispatched conj ev)))]
       (-> (rules-ext/tool-policy tc c)
           (.then (fn [out]
                    (is (= tc out) "the call runs")
-                   (is (re-find #"not trusted" (first @asked)))
+                   (is (re-find #"No project file found" (first @asked)))
                    (is (re-find #"bb test" (first @asked)))
-                   (is (some #(= :trust-bb (:value %)) (:options (second @asked))))
-                   (is (= [{:type :ext.clj/trust-bb :room-id "r1" :cwd "/tmp"}] @dispatched)
-                       "trusts bb.edn instead of saving a session rule")
+                   (is (some #(= :trust-task-file (:value %)) (:options (second @asked))))
+                   (is (= [{:type :ext.clj/trust-task-file :room-id "r1" :cwd "/tmp"}] @dispatched)
+                       "trusts the task file instead of saving a session rule")
                    (done)))))))
 
-(deftest untrusted-bb-is-refused-when-nobody-can-answer
+(deftest untrusted-task-file-is-refused-when-nobody-can-answer
   (async done
-    (-> (rules-ext/tool-policy {:name "bb" :arguments {:task "test"}} (ctx {}))
+    (-> (rules-ext/tool-policy {:name "run_task" :arguments {:task "test" :runner "bb"}} (ctx {}))
         (.then (fn [out]
                  (is (:is-error (:result out)))
                  (is (re-find #"no client" (get-in out [:result :content 0 :text])))

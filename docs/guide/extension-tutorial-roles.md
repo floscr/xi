@@ -55,7 +55,7 @@ against their profile, so `{:meta {:roles "guest"}}` means "anyone whose
  :version 1
  :rules
  [;; guests never run programs
-  {:match  {:user {:meta {:roles "guest"}} :tool #{:bash :clj :sh :bb}}
+  {:match  {:user {:meta {:roles "guest"}} :tool #{:bash :clj :sh :task}}
    :action {:type :deny :message "Guests can't run programs."}}
 
   ;; guests can't clear the board, whatever the extension allows

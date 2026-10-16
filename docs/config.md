@@ -83,7 +83,7 @@ Plain `def`s read by their consuming namespace.
 | `xi.ext.mcp` | `~/.config/xi/mcp.edn`, `~/.config/xi/mcp/<id>/tools.edn` |
 | `xi.ext.config` | `~/.config/xi/ext/<id>.env` (dotenv; a non-blank `process.env` value wins) |
 | `xi.ext.clj` | `~/.config/xi/ext/clj.edn` (once per server process) |
-| `xi.bb-trust`, `xi.mcp.trust` | `~/.config/xi/ext/bb-trust.edn`, `mcp-trust.edn` |
+| `xi.task-trust`, `xi.mcp.trust` | `~/.config/xi/ext/task-trust.edn` (and the legacy `bb-trust.edn`, read only), `mcp-trust.edn` |
 | `xi.system-prompt` | `~/.config/xi/prompt-files.edn` |
 | `xi.auth` | `~/.config/xi/client-key`, `clients.edn`, `pending-clients.edn` |
 | `xi.server.ws` (`resolve-tls`) | `XI_TLS_CERT`/`XI_TLS_KEY`, else `~/.config/xi/tls/xi.{crt,key}` |

@@ -1,5 +1,5 @@
 (ns xi.ext.clj-worker
-  "Worker-thread entry for the clj/bb tools.
+  "Worker-thread entry for the clj/run_task tools.
 
    The clj sandbox runs shell commands via synchronous spawnSync; running that
    on the server's single event loop freezes every room and WS client for the

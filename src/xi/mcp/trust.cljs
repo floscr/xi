@@ -2,7 +2,7 @@
   "Trust for MCP servers: approve a server once, then its calls run without
    asking — until its code changes.
 
-   Trust is content-addressed like bb.edn trust (xi.bb-trust). A server's
+   Trust is content-addressed like task file trust (xi.task-trust). A server's
    fingerprint is a sha256 over its ~/.config/xi/mcp.edn entry (transport,
    command, args, url — not :env or :enabled) and the content of its code:
      - every file named by the entry's :command or :args (a value that is a
