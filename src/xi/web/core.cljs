@@ -3275,6 +3275,23 @@
            (.preventDefault e))))
      #js {:passive false})))
 
+(defn- install-palette-touch-guard!
+  "While the command palette is open, a drag that its list cannot consume
+   must move nothing else. With the keyboard open iOS lets such a touch pan
+   the visual viewport over the page (WebKit 191204), which reads as the
+   chat scrolling behind the palette; cancelling the move keeps the pan
+   from starting. A list with room to scroll keeps its native scroll."
+  []
+  (.addEventListener
+   js/document "touchmove"
+   (fn [^js e]
+     (when (and (.-cancelable e)
+                (.querySelector js/document ".command-dialog[open]"))
+       (let [^js list (some-> (.-target e) (.closest ".command-list"))]
+         (when-not (and list (> (.-scrollHeight list) (inc (.-clientHeight list))))
+           (.preventDefault e)))))
+   #js {:passive false}))
+
 ;; TEMP: on-screen palette scroll diagnostics for iOS — remove after. Off
 ;; unless localStorage has "xi/debug-palette-scroll" (any value).
 (defn- install-palette-scroll-debug! []
@@ -3469,6 +3486,7 @@
       (.addEventListener mql "change"
                          (fn [e] (dispatch! {:type :web/set-wide :wide? (.-matches e)}))))
     (install-sidebar-swipe! state dispatch!)
+    (install-palette-touch-guard!)
     (when (some? (.getItem js/localStorage "xi/debug-palette-scroll"))
       (install-palette-scroll-debug!))
     ;; Prevent iOS Safari smart-zoom (double-tap & pinch).
