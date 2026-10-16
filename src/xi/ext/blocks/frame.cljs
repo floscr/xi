@@ -184,17 +184,33 @@
 (defonce ^:private listening
   (do (.addEventListener js/window "message" on-message) true))
 
+(defonce ^:private last-theme (atom nil))
+(defonce ^:private theme-check (atom nil))
+
 (defn- theme-changed!
-  "Xi's theme switched: every open view gets the new theme and tokens."
+  "Xi's theme may have switched: every open view gets the new theme and
+   tokens, but only when they changed. The `<html>` attributes this watches
+   also move for other reasons: on iOS --app-height is rewritten on every
+   visual-viewport scroll, and re-sending the tokens then made every view
+   restyle itself mid-scroll."
   []
+  (reset! theme-check nil)
   (let [ctx {:theme (theme) :styles {:variables (host-styles)}}]
-    (doseq [[w _] (frame-entries)]
-      (post! w {:method "ui/notifications/host-context-changed" :params ctx}))))
+    (when (not= ctx @last-theme)
+      (reset! last-theme ctx)
+      (doseq [[w _] (frame-entries)]
+        (post! w {:method "ui/notifications/host-context-changed" :params ctx})))))
+
+(defn- schedule-theme-check!
+  "At most one theme check per animation frame."
+  []
+  (when-not @theme-check
+    (reset! theme-check (js/requestAnimationFrame theme-changed!))))
 
 (defonce ^:private watching-theme
-  (do (.observe (js/MutationObserver. (fn [_] (js/setTimeout theme-changed! 0)))
+  (do (.observe (js/MutationObserver. (fn [_] (schedule-theme-check!)))
                 js/document.documentElement #js {:attributes true :attributeFilter #js ["data-theme" "class" "style"]})
-      (.addEventListener (js/matchMedia "(prefers-color-scheme: dark)") "change" theme-changed!)
+      (.addEventListener (js/matchMedia "(prefers-color-scheme: dark)") "change" schedule-theme-check!)
       true))
 
 (defn notify-mode!
