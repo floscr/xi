@@ -50,6 +50,8 @@ The home page (`/`) starts chats and shows cards.
   replies, or running, in that order.
 - **Recent chats**, **Projects** (+ starts a chat in one) and **Usage** (the
   [usage](#usage) meters).
+- **Extensions**, only when a [user extension](extensions.md) failed to load
+  or is not listed in `config.edn`: the file and the error.
 
 **Customize dashboard** in the ⋮ menu switches cards on and off.
 [Extensions](extensions-reference.md#browser-halves) can add cards. **All

@@ -256,6 +256,8 @@
              :started-at server-started-at}
       model    (assoc :model model)
       agent-id (assoc :agent-id agent-id)
+      ;; what the user-extension loader did (xi.ext.user/report)
+      (:user-ext/report st) (assoc :extension-report (:user-ext/report st))
       ;; The sidebar ring's reading, plus when the usage poll last ran so a
       ;; client on the /usage page knows to refetch (xi.web.usage).
       (usage/claude-summary) (assoc :claude-usage (usage/claude-summary))

@@ -76,7 +76,9 @@
   (let [dir (tmp-dir)
         mgr (doto (manager/create) (manager/seed! []))
         {:keys [log app]} (recording-app)
-        types #(mapv (juxt :type :v) @log)]
+        types #(into [] (comp (remove (comp #{:user-ext/report} :type))
+                              (map (juxt :type :v)))
+                     @log)]
     (write! dir "life.cljs" (ext-source 1 ""))
     (user/install! mgr dir)
     (is (empty? @log) "nothing mounts before the app runs")
@@ -92,6 +94,32 @@
     (user/reload! mgr dir)
     (is (= [[:ext.life/unmounted 2]] (types)) "a removed file unmounts without remounting")
     (is (false? (manager/known? mgr :life)))))
+
+(deftest the-load-report-reaches-the-app
+  (let [dir (tmp-dir)
+        mgr (doto (manager/create) (manager/seed! []))
+        {:keys [log app]} (recording-app)
+        reports #(keep (fn [ev] (when (= :user-ext/report (:type ev)) (:report ev))) @log)]
+    (write! dir "life.cljs" (ext-source 1 ""))
+    (write! dir "other.cljs" "(ns other) (def extension {:id :other :bogus 1})")
+    (write! dir "off.cljs" "(ns off) (def extension {:id :off})")
+    (user/install! mgr dir)
+    (is (empty? (reports)) "no app to tell before start!")
+    (user/start! app)
+    (let [{:keys [loaded rejected skipped]} (last (reports))]
+      (is (= [:life] loaded))
+      (is (= ["other.cljs"] (map (comp #(node-path/basename %) :file) rejected)))
+      (is (string? (:error (first rejected))))
+      (is (= ["off.cljs"] skipped)))
+    (testing "a reload sends the new report"
+      (remove! dir "other.cljs")
+      (reset! log [])
+      (user/reload! mgr dir)
+      (is (= [] (:rejected (last (reports))))))
+    (testing "the server extension keeps it in app state"
+      (let [handler (get-in user/server-extension [:handlers :user-ext/report])]
+        (is (= {:loaded [:life]}
+               (:user-ext/report (:state (handler {} {:report {:loaded [:life]}})))))))))
 
 (deftest mounting-seeds-new-init-keys-and-keeps-existing-state
   (let [dir (tmp-dir)

@@ -562,9 +562,29 @@
       (node/text (str (ansi/fg :yellow "●") (ansi/fg :dim " Connecting to server…"))))
     (node/spacer)]))
 
+(defn- extension-lines
+  "The user-extension loader's report (xi.ext.user/report) as header lines;
+   nil when it loaded, rejected and skipped nothing."
+  [{:keys [loaded rejected skipped]}]
+  (when (or (seq loaded) (seq rejected) (seq skipped))
+    (-> []
+        (cond-> (seq loaded)
+          (conj (node/text (str (ansi/fg :dim "Extensions: ")
+                                (ansi/fg :accent (str/join ", " (map name loaded)))))))
+        (into (for [{:keys [file error]} rejected]
+                (node/text (str (ansi/fg :red "✗") " " (ansi/fg :dim "Extension ")
+                                (ansi/fg :accent (last (str/split file #"/")))
+                                (ansi/fg :dim " rejected: ") error))))
+        (cond-> (seq skipped)
+          (conj (node/text (str (ansi/fg :yellow "●") (ansi/fg :dim " Not enabled: ")
+                                (ansi/fg :accent (str/join ", " skipped))
+                                (ansi/fg :dim " (list under :extensions in config.edn)")))))
+        (conj (node/spacer)))))
+
 (defn launch-header
-  "Header components shown at the top of a room's chat."
-  [{:keys [model cwd agents-files]}]
+  "Header components shown at the top of a room's chat. `extensions` is the
+   user-extension report (:user-ext/report)."
+  [{:keys [model cwd agents-files extensions]}]
   (node/children
    [(node/text (str (ansi/fg :bold "Xi") " " (ansi/fg :dim "— coding harness")))
     (when model
@@ -577,7 +597,8 @@
       [(node/text
         (str (ansi/fg :dim "Loaded ") (ansi/fg :accent (str (count files) " AGENTS.md"))
              (ansi/fg :dim (str " file" (when (> (count files) 1) "s")))))
-       (node/spacer)])]))
+       (node/spacer)])
+    (extension-lines extensions)]))
 
 ;; ── Logs / prompt buffer views ───────────────────────────────────────────────
 

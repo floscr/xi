@@ -33,6 +33,11 @@ Enable it by listing the file in your [config](configuration.md):
 Start Xi (or run `/ext reload` in a running one) and type `/hello`. The
 status line shows the text.
 
+The top of a new terminal chat lists the loaded extensions, the files that
+failed to load with their error, and the files in the directory that are not
+listed. The web home page shows the failed and unlisted ones in an
+**Extensions** card. A headless server prints them on startup.
+
 A file that is not listed is never read. This is deliberate: the agent cannot
 write to `~/.config/xi`, so nothing the agent does, and nothing in a project
 you cloned, can get code loaded. Only you can.

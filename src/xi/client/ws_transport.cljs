@@ -149,14 +149,17 @@
     {:effects [[:ws/send ev]]}))
 
 (defn lobby-state
-  "Replace the lobby slice, keeping the last Claude usage reading when the payload omits it."
+  "Replace the lobby slice, keeping the last Claude usage reading when the
+   payload omits it. The user-extension report lands at :user-ext/report, where
+   a standalone process keeps its own (xi.ext.user)."
   [st ev]
   (let [lobby (select-keys ev [:rooms :sessions :read :profiles :user-ids :agent-id :started-at :claude-usage :model
                                :buffers :usage-at])
         prev  (get-in st [:lobby :claude-usage])]
-    {:state (assoc st :lobby (cond-> lobby
-                               (and prev (not (:claude-usage lobby)))
-                               (assoc :claude-usage prev)))}))
+    {:state (cond-> (assoc st :lobby (cond-> lobby
+                                       (and prev (not (:claude-usage lobby)))
+                                       (assoc :claude-usage prev)))
+              (:extension-report ev) (assoc :user-ext/report (:extension-report ev)))}))
 
 (defn auth-ok
   "Record the user this connection acts as and our client id (xi.server.ws), so

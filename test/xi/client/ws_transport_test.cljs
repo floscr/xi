@@ -16,6 +16,15 @@
                   {:type :room/joined :remote? true :room-id "r1"
                    :room (state/make-room "r1" {:model "test-model" :cwd "/tmp"})})))
 
+(deftest lobby-state-installs-the-extension-report
+  (let [report {:loaded [:kb] :rejected [] :skipped ["calendar.cljs"]}
+        st     (:state (handle (state/initial-state {:mode :client})
+                               {:type :lobby/state :rooms [] :sessions []
+                                :extension-report report}))]
+    (is (= report (:user-ext/report st)))
+    (testing "a lobby without one keeps the last"
+      (is (= report (:user-ext/report (:state (handle st {:type :lobby/state :rooms []}))))))))
+
 (deftest room-joined-installs-snapshot
   (let [st (joined-state)]
     (is (= "r1" (:active-room st)))

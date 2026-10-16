@@ -57,6 +57,7 @@
         [xi.ext.subagent.web :as subagent-web]
         [xi.ext.terminal.web :as terminal-web]
         [xi.ext.usage.web :as usage-web]
+        [xi.ext.user.web :as user-ext-web]
         [xi.ext.yolo.web :as yolo-web]])))
 
 (def tui
@@ -204,6 +205,8 @@
       yolo-web/extension
       ;; the dashboard's Active / Recent chats / Projects cards
       home-web/extension
+      ;; the dashboard card for rejected / not enabled user extensions
+      user-ext-web/extension
       ;; the /usage page (readings polled by xi.server.usage), plus its
       ;; dashboard card
       usage-web/extension

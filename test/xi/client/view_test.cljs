@@ -62,6 +62,23 @@
     (is (vector? nodes))
     (is (pos? (count nodes)))))
 
+(defn- header-text [opts]
+  (->> (view/launch-header opts)
+       (mapcat #((:render %) 200))
+       (map ansi/strip-ansi)
+       (str/join "\n")))
+
+(deftest launch-header-shows-the-extension-report
+  (let [text (header-text {:extensions {:loaded   [:kb :vim]
+                                        :rejected [{:file "/x/ext/broken.cljs" :error "eval error: boom"}]
+                                        :skipped  ["calendar.cljs"]}})]
+    (is (str/includes? text "Extensions: kb, vim"))
+    (is (str/includes? text "Extension broken.cljs rejected: eval error: boom"))
+    (is (str/includes? text "Not enabled: calendar.cljs")))
+  (testing "nothing to say, no lines"
+    (is (not (str/includes? (header-text {:extensions {:loaded [] :rejected [] :skipped []}})
+                            "Extension")))))
+
 ;; ── retint-difft ─────────────────────────────────────────────────────────────
 
 (def ^:private difft-del-fg "\033[38;2;191;97;106m")

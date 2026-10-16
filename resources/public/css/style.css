@@ -3880,6 +3880,19 @@ code a:hover,
 .dash-list .project-card-path { font-size: var(--font-xs); }
 .dash-card-error { color: var(--danger); font-size: var(--font-sm); }
 
+/* The user-extension report card (xi.ext.user.web). */
+.ext-report-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+  padding-block: var(--size-2);
+  min-width: 0;
+}
+.ext-report-row + .ext-report-row { border-top: var(--border-0); }
+.ext-report-file { font-family: var(--font-mono); font-size: var(--font-sm); color: var(--fg-0); }
+.ext-report-detail { font-size: var(--font-xs); color: var(--fg-1); overflow-wrap: anywhere; }
+.ext-report-error { color: var(--danger); white-space: pre-wrap; }
+
 .dash-customize-row {
   display: flex;
   align-items: center;

@@ -920,7 +920,8 @@ See docs/guide/command-line.md for the full reference.")
         _ ((:dispatch! app) (users/loaded-event (own-user opts)))
         {actual-port :port} ((:start! server) app {:port port :host host})]
     (if headless?
-      (do (js/console.error (str "[xi] Headless server on ws://" (str/join "," (ws/resolve-hosts host)) ":" actual-port))
+      (do (user-ext/log-report!)
+          (js/console.error (str "[xi] Headless server on ws://" (str/join "," (ws/resolve-hosts host)) ":" actual-port))
           (js/console.error "[xi] Connect with: xi join"))
       (start-client! {:target "new" :port actual-port :user (:user opts)}))))
 

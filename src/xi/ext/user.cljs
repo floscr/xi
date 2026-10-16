@@ -256,6 +256,28 @@
 
 (defn loaded-entries [] @loaded)
 
+(defn report
+  "What the last load did → {:loaded [ids] :rejected [{:file :error}]
+   :skipped [file names]}. Kept in app state as :user-ext/report, shown by
+   the TUI launch header and the web dashboard (xi.ext.user.web)."
+  []
+  (let [entries @loaded]
+    {:loaded   (vec (keep :id entries))
+     :rejected (mapv #(select-keys % [:file :error]) (filter :error entries))
+     :skipped  (mapv #(node-path/basename (:file %)) (filter :skipped? entries))}))
+
+(defn log-report!
+  "Print `report` to stderr: a headless server has no UI to show it in."
+  []
+  (let [{:keys [loaded rejected skipped]} (report)]
+    (when (seq loaded)
+      (js/console.error (str "[user-ext] loaded: " (str/join ", " (map name loaded)))))
+    (when (seq skipped)
+      (js/console.error (str "[user-ext] not enabled (list under :extensions in "
+                             (user-config/config-file) "): " (str/join ", " skipped))))
+    (doseq [{:keys [file error]} rejected]
+      (js/console.error (str "[user-ext] rejected " (node-path/basename file) ": " error)))))
+
 (defonce ^:private enabled-override
   ;; A 0-arg fn → set of file names that replaces the config file's top-level
   ;; `:extensions` for this process, or nil. Set once at startup from an agent
@@ -354,11 +376,17 @@
 
    :user-ext/sync carries a user extension's changed room slice (emitted by
    xi.ext.user.guard) — a no-op here, it exists to be broadcast so clients,
-   which lack the extension's server handlers, can mirror the slice."
+   which lack the extension's server handlers, can mirror the slice.
+
+   :user-ext/report stores the loader's `report`; clients get it on
+   :lobby/state (xi.server.ws)."
   {:id              :user-extensions
    :handlers        {:user-ext/web-sources
                      (fn [_st {:keys [client-id]}]
                        {:effects [[:user-ext/web-sources-reply {:client-id client-id}]]})
+                     :user-ext/report
+                     (fn [st {:keys [report]}]
+                       {:state (assoc st :user-ext/report report)})
                      :user-ext/sync
                      (fn [st {:keys [room-id ext-id state]}]
                        (when (get-in st [:rooms room-id])
@@ -389,7 +417,8 @@
                        (fn [_ {:keys [client-id]}]
                          (send! client-id {:type       :user-ext/web-sources-result
                                            :extensions (web-bundles)}))})
-   :roomless-events #{:user-ext/web-sources}})
+   :roomless-events #{:user-ext/web-sources}
+   :lobby-relevant  #{:user-ext/report}})
 
 ;; ── Mount lifecycle ───────────────────────────────────────────────────────
 
@@ -425,6 +454,10 @@
   (api-core/dispose! id)
   (api-core/revoke! token))
 
+(defn- dispatch-report! []
+  (when-let [{:keys [dispatch!]} @host]
+    (dispatch! {:type :user-ext/report :report (report)})))
+
 (defn start!
   "Tell the loader the app is running (`app` is xi.core.app/create-app's
    result): extensions mount from now on, and the ones already loaded mount now.
@@ -438,7 +471,8 @@
      (api-core/set-app-host! h)
      (api-core/set-dialog-host! (when ask! (assoc h :ask! ask!))))
    (doseq [entry @loaded :when (:extension entry)]
-     (mount! entry))))
+     (mount! entry))
+   (dispatch-report!)))
 
 (defn stop!
   "Unmount every loaded extension and forget the app (shutdown; tests)."
@@ -453,7 +487,7 @@
   "Unmount the previously-loaded extensions, register the accepted extensions
    of `entries` into `mgr` (unregistering any previously-loaded user id that's
    no longer present: file deleted / renamed / now rejected) and mount them.
-   Logs a one-line summary."
+   A running app gets the new `report` as :user-ext/report."
   [mgr entries]
   (let [new-ids (set (keep :id entries))]
     (doseq [old @loaded :when (:id old)]
@@ -468,17 +502,7 @@
       (manager/register! mgr extension))
     (doseq [entry entries :when (:extension entry)]
       (mount! entry))
-    (let [ok      (keep :id entries)
-          bad     (filter :error entries)
-          skipped (filter :skipped? entries)]
-      (when (seq ok)
-        (js/console.error (str "[user-ext] loaded: " (str/join ", " (map name ok)))))
-      (when (seq skipped)
-        (js/console.error (str "[user-ext] not enabled (list under :extensions in "
-                               (user-config/config-file) "): "
-                               (str/join ", " (map #(node-path/basename (:file %)) skipped)))))
-      (doseq [{:keys [file error]} bad]
-        (js/console.error (str "[user-ext] rejected " (node-path/basename file) ": " error))))
+    (dispatch-report!)
     entries))
 
 (defn- taken
@@ -535,10 +559,8 @@
    dropped. Handlers, commands and fx follow at once where the assembly reads
    them through xi.ext.manager/live-view (server, standalone); tool changes
    apply next turn; keybindings need a restart. Room state is kept.
-   → {:loaded [ids] :rejected [{:file :error}] :skipped [file names]}."
+   → `report`."
   ([mgr] (reload! mgr (extensions-dir)))
   ([mgr dir]
-   (let [entries (register-all! mgr (load-sources (sources dir) (taken mgr)))]
-     {:loaded   (vec (keep :id entries))
-      :rejected (mapv #(select-keys % [:file :error]) (filter :error entries))
-      :skipped  (mapv #(node-path/basename (:file %)) (filter :skipped? entries))})))
+   (register-all! mgr (load-sources (sources dir) (taken mgr)))
+   (report)))

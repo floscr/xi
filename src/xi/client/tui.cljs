@@ -1204,13 +1204,15 @@
               ;; change on first prompt), and a model arriving later
               ;; (:lobby/state) refreshes it in place.
               (let [hkey [(get-in room [:agent :model]) (:cwd room)
-                          (get-in room [:agent :agents-files])]]
+                          (get-in room [:agent :agents-files])
+                          (:user-ext/report state)]]
                 (when (not= hkey (.-headerKey ctx))
                   (set! (.-headerKey ctx) hkey)
                   (set! (.-header ctx)
                         (view/launch-header {:model (get-in room [:agent :model])
                                              :cwd (:cwd room)
-                                             :agents-files (get-in room [:agent :agents-files])}))
+                                             :agents-files (get-in room [:agent :agents-files])
+                                             :extensions (:user-ext/report state)}))
                   (set! (.-chatDirty ctx) true)))
               (sync-chat! ctx room loader (state/own-user state))
               (sync-view! ctx room ring dispatch!)
