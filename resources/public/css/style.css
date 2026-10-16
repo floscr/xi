@@ -6990,6 +6990,14 @@ code a:hover,
 }
 
 .post--agent-block { padding: 0; }
+/* a message a block's Send / Submit posted (xi.web.views/block-action-card) */
+.block-action-card { display: grid; gap: var(--size-1); }
+.block-action-head { display: flex; align-items: center; gap: var(--size-2); font-size: var(--font-xs); opacity: 0.8; }
+.block-action-head code { font-family: var(--font-mono); }
+.block-action-kind { font-family: var(--font-mono); }
+.block-action-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.block-action-picked { font-weight: 600; }
+.block-action-unpicked { opacity: 0.6; }
 /* keyboard focus inside a block (xi.web.block-nav) */
 .agent-block:focus-visible, .agent-block:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 

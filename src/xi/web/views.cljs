@@ -38,6 +38,7 @@
             [xi.web.terminal :as terminal]
             [xi.web.tool-views :as tool-views]
             [xi.web.timeline-posts :as timeline-posts]
+            [xi.blocks :as blocks]
             [xi.web.viewer-group :as viewer-group]
             [ui.icon :as icon]
             [ui.alert :as alert]
@@ -1097,6 +1098,24 @@
                          :class "status-alert" :attrs {:role "status"}}
             (remove nil? (if title [detail rows button] [text button])))]))
 
+(defn- block-action-card
+  "A message an agent block's Send / Submit posted for the user
+   (xi.blocks/action-message): which block, and its state, picked lines
+   marked, instead of the raw tag the agent reads."
+  [{:keys [id kind action body]}]
+  [:div {:class ["block-action-card"]}
+   [:div {:class ["block-action-head"]}
+    (icon/icon {:icon-name :layout-dashboard :size :sm})
+    [:span "From block " [:code id]]
+    [:span {:class ["block-action-kind"]} (str kind " · " action)]]
+   [:ul {:class ["block-action-lines"]}
+    (for [[i line] (map-indexed vector (str/split-lines body))]
+      [:li {:replicant/key i
+            :class (cond
+                     (re-find #"^\s*[\(\[]x[\)\]]" line) "block-action-picked"
+                     (re-find #"^\s*[\(\[] [\)\]]" line) "block-action-unpicked")}
+       line])]])
+
 (defn- entry->post [dispatch! entry]
   (case (:kind entry)
     :user
@@ -1182,7 +1201,9 @@
                 [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))
           (when (seq (:text entry))
             [:div {:class ["post-content"]}
-             (render-md (:text entry) {:hard-breaks? true})])
+             (if-let [action (blocks/parse-action-message (:text entry))]
+               (block-action-card action)
+               (render-md (:text entry) {:hard-breaks? true}))])
           (post-badge entry)]]))
 
     :text
