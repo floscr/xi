@@ -4,14 +4,19 @@
 
      newline-delimited JSON-RPC 2.0 on stdin/stdout, stdout carries protocol
      only (log to stderr)
-     initialize · ping · tools/list · tools/call · notifications/* (no reply)
+     initialize · ping · tools/list · tools/call · resources/list ·
+     resources/read · notifications/* (no reply)
      a failing tool is a result with isError true; JSON-RPC errors are for
      protocol faults (unknown method -32601, bad params -32602)
 
    A tool is data: {:name :description :inputSchema :handler}, where the
    handler is (fn [args meta] → string | {:content [...] :isError bool}).
    `args` has keyword keys; `meta` is the request's `_meta` with string keys
-   (\"xi/cwd\", \"xi/roomId\", \"xi/clientPid\", … when xi is the client)."
+   (\"xi/cwd\", \"xi/roomId\", \"xi/clientPid\", … when xi is the client).
+
+   A resource is data too: {:uri :name :mimeType :text :_meta}. A tool whose
+   `_meta` names a `ui://` resource ({:ui {:resourceUri …}}) has an MCP Apps
+   view (SEP-1865) that xi shows in the web client."
   (:require [cheshire.core :as json]
             [clojure.string :as str]))
 
@@ -24,16 +29,21 @@
 
 (defn handle
   "One decoded request → the reply map, or nil for a notification."
-  [{:keys [name version tools]} {:keys [id method params]}]
+  [{:keys [name version tools resources]} {:keys [id method params]}]
   (let [reply (fn [result] (when (some? id) {:jsonrpc "2.0" :id id :result result}))
         fail  (fn [code msg] (when (some? id) {:jsonrpc "2.0" :id id :error {:code code :message msg}}))
-        by-name (into {} (map (juxt :name identity)) tools)]
+        by-name (into {} (map (juxt :name identity)) tools)
+        by-uri  (into {} (map (juxt :uri identity)) resources)]
     (case method
       "initialize" (reply {:protocolVersion (or (:protocolVersion params) protocol-version)
-                           :capabilities    {:tools {}}
+                           :capabilities    (cond-> {:tools {}} (seq resources) (assoc :resources {}))
                            :serverInfo      {:name name :version version}})
       "ping"       (reply {})
       "tools/list" (reply {:tools (mapv #(dissoc % :handler) tools)})
+      "resources/list" (reply {:resources (mapv #(dissoc % :text) resources)})
+      "resources/read" (if-let [r (get by-uri (:uri params))]
+                         (reply {:contents [(select-keys r [:uri :mimeType :text :_meta])]})
+                         (fail -32602 (str "Unknown resource: " (:uri params))))
       "tools/call" (if-let [{:keys [handler]} (get by-name (:name params))]
                      (reply (try (->result (handler (or (:arguments params) {})
                                                     ;; keyword :xi/cwd → "xi/cwd", namespace kept

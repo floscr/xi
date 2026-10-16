@@ -96,6 +96,29 @@ extension as the source. See `:block-kinds` and `xi.api.blocks` in the
 extension is an example: enable it with `:demo-extensions ["deploys.cljs"]`
 in `config.edn` and run `/deploys`.
 
+## App views
+
+A tool can come with an interactive view of its own, an
+[MCP App](mcp-servers.md#apps), from an MCP server or an extension. The web
+client shows it as an agent block of kind `app` after the tool ran: the
+view's page in a sandboxed frame, inside the same frame and header as any
+block.
+
+The view runs isolated from Xi: it cannot read the chat, your login or other
+pages, and it reaches the network only where its server declared it may
+(nothing by default). What it can do goes through Xi:
+
+| The view asks to | What happens |
+| --- | --- |
+| Call a tool | Only tools of its own server or extension, through the [rules](rules.md) like the agent's call. The agent sees each call with `ui_state`. |
+| Read a resource | Only from its own server. |
+| Send a message | The text goes into the message box; you send it or not. |
+| Open a link | Xi asks first. |
+| Go full screen | The view fills the chat; **Exit full screen** in the header returns. |
+| Update the agent's context | Kept on the block; the agent reads it with `ui_state`. |
+
+The terminal client and `xi prompt` show the tool's text result instead.
+
 ## Limits
 
 | Limit | Value |

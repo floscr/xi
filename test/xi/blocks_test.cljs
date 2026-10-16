@@ -171,3 +171,22 @@
                        "plain data")))
   (is (str/includes? (b/catalog board-kind) "- deploys/board: a deploy board"))
   (is (= "deploys/board" (last (b/kind-names board-kind)))))
+
+(deftest app-views-are-the-hosts-kind
+  (is (not (some #{"app"} (b/kind-names))) "not offered to the model")
+  (is (not (str/includes? (b/catalog) "- app:")))
+  (let [{r :record} (b/make-record {:id "a" :kind "app" :at 1
+                                    :data {:resource-uri "ui://x/v" :tool-input {:q 1}
+                                           :tool-result {:content [{:type "text" :text "ok"}]}}})]
+    (is (= "App view ui://x/v\nok" (b/body-text r)))
+    (is (not (b/interactive? r)) "users' controls don't act on it; the host notes what the view did")
+    (let [r2 (b/note r {:action "context" :value "selected prod"} 2)]
+      (is (= "selected prod" (get-in r2 [:state :model-context])))
+      (is (= 1 (:unread r2)))
+      (is (= "app" (:user (last (:actions r2)))))))
+  (is (str/includes? (:error (b/normalize "app" {:resource-uri "https://x"})) "ui://"))
+  (testing "a structured result too large to keep is dropped, not the view"
+    (let [{:keys [spec]} (b/normalize "app" {:resource-uri "ui://x/v"
+                                             :tool-result {:structured-content {:blob (apply str (repeat 40000 "x"))}}})]
+      (is (:truncated (:tool-result spec)))
+      (is (nil? (get-in spec [:tool-result :structured-content]))))))

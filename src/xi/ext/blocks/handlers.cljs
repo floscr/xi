@@ -10,7 +10,8 @@
    Each change also stamps the block's text on its tool call's history entry
    as :block-text, which the TUI shows under the call (xi.client.view)."
   (:require [xi.blocks :as b]
-            [xi.core.state :as state]))
+            [xi.core.state :as state]
+            [xi.dialog :as dialog]))
 
 (def ext-id b/ext-id)
 
@@ -72,9 +73,37 @@
                                   (state/event-user st ev) (or (:event/ts ev) (:updated-at record)))]
       {:state (put-block st room-id r)})))
 
+(defn note-block
+  "An action the host recorded on a block itself (an app view's tool call or
+   context update): `{:block-id :action :target :value}`."
+  [st {:keys [room-id block-id] :as ev}]
+  (when-let [record (find-block st room-id block-id)]
+    (when-not (from-client? ev)
+      {:state (put-block st room-id (b/note record (select-keys ev [:action :target :value])
+                                            (or (:event/ts ev) (:updated-at record))))})))
+
+(defn running-call-id
+  "The id of the still-running tool call `call` ({:name :arguments}) in the
+   room's history, or nil (a sub-agent's call is in its own history)."
+  [st room-id call]
+  (let [entries (vec (get-in st [:rooms room-id :history]))
+        i       (when call (dialog/permission-tool-index {:call call} entries 0))]
+    (when (and i (= :running (:status (nth entries i))))
+      (:id (nth entries i)))))
+
+(defn app-open
+  "A tool with a UI ran (xi.ext.mcp, a user extension's tool): resolve its
+   view's resource in an effect, which adds the block (xi.ext.blocks.app).
+   The call is still running now, not once the resource is read, so its id
+   is taken here."
+  [st {:keys [room-id call] :as ev}]
+  (when (and (state/get-room st room-id) (not (from-client? ev)))
+    {:effects [[:ext.blocks/app-open (-> ev (dissoc :type) (assoc :call-id (running-call-id st room-id call)))]]}))
+
 (def handlers
   {:ext.blocks/add    add-block
    :ext.blocks/update update-block
    :ext.blocks/remove remove-block
    :ext.blocks/read   read-block
-   :ext.blocks/act    act})
+   :ext.blocks/act    act
+   :ext.blocks/note   note-block})

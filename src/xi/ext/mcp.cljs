@@ -75,19 +75,42 @@
         {:server (subs body 0 idx)
          :tool   (subs body (+ idx 2))}))))
 
+(defn tool-ui
+  "An MCP tool's MCP Apps metadata (SEP-1865 `_meta.ui`, or the deprecated
+   flat `_meta[\"ui/resourceUri\"]`) as {:resource-uri :visibility}, or nil.
+   :visibility defaults to [\"model\" \"app\"]."
+  [t]
+  (let [meta (:_meta t)
+        uri  (or (get-in meta [:ui :resourceUri]) (get meta :ui/resourceUri))
+        vis  (get-in meta [:ui :visibility])]
+    (when (or (string? uri) (sequential? vis))
+      (cond-> {:visibility (if (sequential? vis) (vec vis) ["model" "app"])}
+        (and (string? uri) (str/starts-with? uri "ui://")) (assoc :resource-uri uri)))))
+
+(defn model-visible?
+  "May the agent see tool `t`? Not when its MCP Apps visibility leaves out
+   \"model\" (an app-only tool, callable from its server's view only)."
+  [t]
+  (some #{"model"} (:visibility (tool-ui t) ["model"])))
+
 (defn normalize-tool-def
-  "MCP tool map -> Xi tool-definition (namespaced, :input_schema key)."
+  "MCP tool map -> Xi tool-definition (namespaced, :input_schema key). A tool
+   with a UI carries it as :ui (resolve-tooling keeps it from providers)."
   [id t]
-  {:name         (qualify-name id (:name t))
-   :description  (or (:description t) "")
-   :input_schema (or (:inputSchema t) {:type "object" :properties {}})})
+  (cond-> {:name         (qualify-name id (:name t))
+           :description  (or (:description t) "")
+           :input_schema (or (:inputSchema t) {:type "object" :properties {}})}
+    (:resource-uri (tool-ui t)) (assoc :ui (tool-ui t))))
 
 (defn normalize-result
-  "MCP tools/call result (raw JS {content, isError}) -> Xi tool result."
+  "MCP tools/call result (raw JS {content, isError}) -> Xi tool result. The
+   UI-only `structuredContent` rides along as :structured-content; the tool
+   pipeline passes only :content on to the model."
   [js-result]
   (let [m (js->clj js-result :keywordize-keys true)]
-    {:content  (or (:content m) [{:type "text" :text ""}])
-     :is-error (boolean (:isError m))}))
+    (cond-> {:content  (or (:content m) [{:type "text" :text ""}])
+             :is-error (boolean (:isError m))}
+      (map? (:structuredContent m)) (assoc :structured-content (:structuredContent m)))))
 
 (defn enabled-entry?
   "An entry is enabled unless it explicitly sets :enabled false."
@@ -188,9 +211,27 @@
 ;; stateful server like a browser must not be started twice).
 (defonce ^:private callers (atom {}))
 
+;; server id → {:read (fn [uri] → Promise) :tools {tool-name ui-meta}}: what an
+;; MCP Apps view of that server may reach (xi.ext.blocks), the app-only tools
+;; included.
+(defonce ^:private apps (atom {}))
+
 ;; The manager install! registered the servers into: whether a server is
 ;; enabled is the manager's call, also for xi.api.mcp.
 (defonce ^:private manager* (atom nil))
+
+(defn- open-app!
+  "After a tool with a UI ran for the agent, ask the agent blocks
+   (xi.ext.blocks) to show its view: `:ext.blocks/app-open`, a server-side
+   request the blocks reducer turns into the block. A sub-agent's call opens
+   it in the parent room."
+  [{:keys [dispatch! room-id call]} {:keys [server tool resource-uri args result]}]
+  (when (and dispatch! room-id (not (:is-error result)))
+    (dispatch! {:type :ext.blocks/app-open :room-id room-id :call call
+                :source {:type :mcp :server server :tool tool}
+                :resource-uri resource-uri
+                :tool-input args
+                :tool-result (select-keys result [:content :structured-content])})))
 
 (defn- close-conn! [conn]
   (when-let [p @conn]
@@ -229,6 +270,8 @@
                                                          "' error: " (.-message e))}]
                                   :is-error true}))))]
     {:call  call
+     :read  (fn [uri]
+              (-> (connect!) (.then (fn [c] (client/read-resource c uri)))))
      ;; kill a live child right away (this also runs from the process exit
      ;; hook, where a promise would never settle), then drop the connection
      :stop! (fn []
@@ -244,16 +287,45 @@
    agent; user extensions still reach them (xi.api.mcp)."
   [{:keys [id] :as entry}]
   (let [hidden   (set (:hidden-tools entry))
-        cached   (remove #(contains? hidden (:name %)) (read-cached-tools id))
-        {:keys [call stop!]} (server-conn (name id) entry)]
+        all      (read-cached-tools id)
+        cached   (filter model-visible? (remove #(contains? hidden (:name %)) all))
+        {:keys [call read stop!]} (server-conn (name id) entry)]
     (swap! callers assoc (keyword id) call)
+    (swap! apps assoc (keyword id)
+           {:call call :read read
+            :tools (into {} (keep (fn [t] (when-let [ui (tool-ui t)] [(:name t) ui]))) all)})
     {:id               (ext-id id)
      :tool-definitions (mapv #(normalize-tool-def id %) cached)
-     :tool-registry    (into {} (map (fn [t] [(qualify-name id (:name t))
-                                              (fn [args ctx] (call (:name t) args ctx))]))
+     :tool-registry    (into {} (map (fn [t]
+                                       (let [ui (tool-ui t)]
+                                         [(qualify-name id (:name t))
+                                          (fn [args ctx]
+                                            (cond-> (call (:name t) args ctx)
+                                              (:resource-uri ui)
+                                              (.then (fn [result]
+                                                       (open-app! ctx {:server (name id) :tool (:name t)
+                                                                       :resource-uri (:resource-uri ui)
+                                                                       :args args :result result})
+                                                       result))))])))
                              cached)
      :on-disable       stop!
      :on-shutdown      stop!}))
+
+(defn read-resource!
+  "Read `uri` from configured server `id` → Promise of its result
+   ({:contents […]}). For MCP Apps views; no policy here."
+  [id uri]
+  (if-let [read (get-in @apps [(keyword id) :read])]
+    (read uri)
+    (js/Promise.reject (js/Error. (str "MCP server '" (name id) "' is not configured (mcp.edn)")))))
+
+(defn app-tool
+  "Tool `tool` of server `id` when an MCP Apps view may call it: its
+   visibility includes \"app\" (the default). nil otherwise."
+  [id tool]
+  (let [{:keys [tools]} (get @apps (keyword id))]
+    (when (and tools (some #{"app"} (:visibility (get tools tool) ["model" "app"])))
+      tool)))
 
 (defn enabled?
   "Whether server `id` is registered and enabled in the live manager."

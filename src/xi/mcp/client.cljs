@@ -153,6 +153,15 @@
     {:proc proc :request request :notify notify :close close
      :dead? (fn [] @dead)}))
 
+(def ui-mime-type
+  "The MCP Apps resource type (SEP-1865), the only one Xi renders."
+  "text/html;profile=mcp-app")
+
+(def client-capabilities
+  "What Xi tells a server in `initialize`: it hosts MCP Apps views
+   (io.modelcontextprotocol/ui), so a server may offer tools with a UI."
+  {:extensions {"io.modelcontextprotocol/ui" {:mimeTypes [ui-mime-type]}}})
+
 (defn connect
   "Spawn an MCP stdio server ({:command :args :env :cwd :timeout-ms}) and
    perform the initialize handshake. Returns a promise of the client map with
@@ -162,7 +171,7 @@
         client (make-client proc opts)]
     (-> ((:request client) "initialize"
          {:protocolVersion PROTOCOL_VERSION
-          :capabilities    {}
+          :capabilities    client-capabilities
           :clientInfo      {:name "xi" :version "0.1.0"}})
         (.then (fn [init-result]
                  ((:notify client) "notifications/initialized" {})
@@ -257,7 +266,7 @@
   (let [client (make-http-client url headers opts)]
     (-> ((:request client) "initialize"
          {:protocolVersion PROTOCOL_VERSION
-          :capabilities    {}
+          :capabilities    client-capabilities
           :clientInfo      {:name "xi" :version "0.1.0"}})
         (.then (fn [init-result]
                  ((:notify client) "notifications/initialized" {})
@@ -272,6 +281,13 @@
   (-> ((:request client) "tools/list" {})
       (.then (fn [result]
                (js->clj (unchecked-get result "tools") :keywordize-keys true)))))
+
+(defn read-resource
+  "Read resource `uri` → promise of the keywordized result ({:contents
+   [{:uri :mimeType :text|:blob :_meta}]})."
+  [client uri]
+  (-> ((:request client) "resources/read" {:uri uri})
+      (.then (fn [result] (js->clj result :keywordize-keys true)))))
 
 (defn call-tool
   "Invoke a tool by (unqualified) name with a JS arguments object. Returns a

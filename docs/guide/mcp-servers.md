@@ -128,6 +128,21 @@ session id on the first request gets it echoed on every later one.
 - A call that takes longer than `:timeout-ms` fails instead of hanging the
   turn.
 
+## Apps
+
+A server's tool can come with a view, an [MCP App](https://modelcontextprotocol.io/extensions/apps/overview):
+an HTML page the web client shows in the chat after the tool ran, as an
+[agent block](agent-blocks.md#app-views). Xi tells servers it supports
+this when it connects (`io.modelcontextprotocol/ui`); a tool names its view
+in `_meta.ui.resourceUri`, a `ui://` resource Xi reads with
+`resources/read`.
+
+- A tool whose `_meta.ui.visibility` leaves out `"model"` is not offered to
+  the agent; only the server's view can call it.
+- A view's tool calls go to its own server only, through the same rules as
+  the agent's call; the agent sees them with `ui_state`.
+- After `/mcp refresh`, a changed view shows on the next server start.
+
 ## From an extension
 
 An [extension](extensions.md) can call a registered server's tools itself,
@@ -152,6 +167,10 @@ line, and answers on stdout. The conventions that matter:
 - A tool that fails returns a result with `isError: true`, so the model sees
   why. JSON-RPC errors are for protocol faults.
 - Read context from `_meta`, not from extra tool arguments.
+- For a view, list `resources {}` in `capabilities`, answer `resources/read`
+  with `{contents [{uri mimeType: "text/html;profile=mcp-app" text}]}`, and
+  return the data the view draws as `structuredContent` beside `content`.
+  The Babashka example's `uuids` tool shows a view.
 
 Xi ships two small, dependency-free servers to start from: a ClojureScript
 one in `src/xi/mcp/server.cljs` and a Babashka one in

@@ -6,7 +6,8 @@
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.e2e.harness :as h :refer [of-type]]
-            [xi.e2e.profiles :as profiles]))
+            [xi.e2e.profiles :as profiles]
+            ["node:path" :as node-path]))
 
 (def ^:private checklist
   {:kind "checklist" :id "rel" :title "Release"
@@ -111,6 +112,64 @@
                  (let [t (sidecar env)]
                    (is (str/includes? t "\"rel\"") "the slice is saved with the chat")
                    (is (not (str/includes? t "forged")) "the forged block never landed"))))
+              (.finally (fn []
+                          (some-> @client :close! (apply []))
+                          (some-> @server :stop! (apply []))))))))))
+
+;; ── MCP Apps: a real stdio server with a view ────────────────────────────────
+
+(def ^:private uuids-tool
+  {:name "uuids" :description "A few UUIDs"
+   :inputSchema {:type "object" :properties {}}
+   :_meta {:ui {:resourceUri "ui://hello-mcp/uuids"}}})
+
+(def ^:private mcp-profile
+  (merge profiles/minimal
+         {".config/xi/config.edn" (pr-str {:type :xi/config :version 1 :trusted-mcp-servers ["bb-example"]})
+          ".config/xi/mcp.edn"
+          (pr-str {:bb-example {:command "bb"
+                                :args ["--config" (node-path/resolve "packages/mcp-bb-example/bb.edn")
+                                       "-m" "hello-mcp.main"]}})
+          ;; the discovered tools, as /mcp refresh caches them
+          ".config/xi/mcp/bb-example/tools.edn"
+          (pr-str [uuids-tool {:name "uuid" :description "A UUID" :inputSchema {:type "object" :properties {}}}])}))
+
+(deftest an-mcp-apps-view-over-the-websocket
+  (async done
+    (h/with-env! mcp-profile
+      {:rules [{:when {:prompt "uuids please"}
+                :reply [{:tool "mcp__bb-example__uuids" :args {:n 2}} {:text "{{tool-result}}"}]}]
+       :side [{:text "Apps"}]}
+      done
+      (fn [env]
+        (let [server (atom nil) client (atom nil) room (atom nil) block (atom nil)]
+          (-> (h/start-server! env)
+              (.then (fn [s] (reset! server s) (h/connect! s)))
+              (.then (fn [c] (reset! client c) (join! env c)))
+              (.then (fn [rid] (reset! room rid) (turn! @client rid "uuids please")))
+              (.then (fn [_]
+                       (h/await-event @client #(and ((of-type :ext.blocks/add @room) %)
+                                                    (= "app" (get-in % [:block :kind]))))))
+              (.then (fn [ev]
+                       (reset! block (:block ev))
+                       (testing "the view is a block pointing at the call, with the structured result"
+                         (is (= {:type :mcp :server "bb-example" :tool "uuids"} (:source @block)))
+                         (is (= "ui://hello-mcp/uuids" (get-in @block [:spec :resource-uri])))
+                         (is (= 2 (count (get-in @block [:spec :tool-result :structured-content :uuids]))))
+                         (is (some? (:call-id @block))))
+                       (let [from (count @(:events @client))]
+                         ((:send! @client) {:type :ext.blocks/app-load :room-id @room :block-id (:id @block)})
+                         (h/await-event @client (of-type :ext.blocks/app-html) {:from from}))))
+              (.then (fn [ev]
+                       (is (str/includes? (:html ev) "ui/initialize") "the view's HTML, to this client")
+                       (let [from (count @(:events @client))]
+                         ((:send! @client) {:type :ext.blocks/app-rpc :room-id @room :block-id (:id @block)
+                                            :rpc-id "r1" :method "tools/call"
+                                            :params {:name "uuid" :arguments {}}})
+                         (h/await-event @client (of-type :ext.blocks/app-reply) {:from from}))))
+              (.then (fn [ev]
+                       (is (re-matches #"[0-9a-f-]{36}" (get-in ev [:result :content 0 :text]))
+                           "the view called a tool of its own server")))
               (.finally (fn []
                           (some-> @client :close! (apply []))
                           (some-> @server :stop! (apply []))))))))))

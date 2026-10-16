@@ -59,7 +59,7 @@ Xi ships a few working extensions. Enable one by its file name under
 | `notes.cljs` | A `notes_add` tool, a `/notes` command and a Notes page in the web client | [Tutorial: a page in the browser](extension-tutorial-web.md) |
 | `ping.cljs` | `Ctrl+Shift+N` or `/ping` toggles a desktop notification when a turn ends | [Tutorial: a command and a key](extension-tutorial-command.md) |
 | `hn.cljs` | An `hn_search` tool for Hacker News | [Tutorial: a web tool](extension-tutorial-http.md) |
-| `deploys.cljs` | A `deploys/board` [agent block](agent-blocks.md) kind and `/deploys`, which posts one | [Agent blocks](agent-blocks.md#blocks-from-extensions) |
+| `deploys.cljs` | A `deploys/board` [agent block](agent-blocks.md) kind, `/deploys`, which posts one, and a `deploy_map` tool with an [app view](agent-blocks.md#app-views) | [Agent blocks](agent-blocks.md#blocks-from-extensions) |
 
 They run like your own extensions: sandboxed, through the rules, and
 reloaded by `/ext reload`. Their source is in `resources/extensions/` of the

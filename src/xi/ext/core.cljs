@@ -235,6 +235,8 @@
      :usage-sources    (vec (mapcat :usage-sources exts))
      ;; agent block kinds of user extensions, already <ext-id>/<name> (xi.blocks)
      :block-kinds      (apply merge {} (keep :block-kinds exts))
+     ;; user extensions' MCP Apps views, uri → {:html … :ext id} (xi.ext.blocks.app)
+     :ui-resources     (apply merge {} (keep :ui-resources exts))
      :server-fx-fns    (vec (keep :server-fx exts))
      :routes           (apply merge {} (keep :routes exts))
      :pages            (apply merge {} (keep :pages exts))

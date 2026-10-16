@@ -14,7 +14,7 @@
           :serverInfo {:name "hello-mcp" :version "0.1.0"}}
          (:result (server/handle srv {:id 1 :method "initialize" :params {:protocolVersion "2024-11-05"}}))))
   (is (nil? (server/handle srv {:method "notifications/initialized"})) "notifications get no reply")
-  (is (= ["git_log" "uuid"] (map :name (get-in (server/handle srv {:id 2 :method "tools/list"}) [:result :tools]))))
+  (is (= ["git_log" "uuid" "uuids"] (map :name (get-in (server/handle srv {:id 2 :method "tools/list"}) [:result :tools]))))
   (is (not-any? :handler (get-in (server/handle srv {:id 2 :method "tools/list"}) [:result :tools]))))
 
 (deftest tool-failures-are-results-protocol-faults-are-errors
@@ -24,7 +24,23 @@
       (is (str/includes? (-> r :content first :text) "no xi/cwd"))))
   (testing "unknown tool / method"
     (is (= -32602 (get-in (server/handle srv {:id 4 :method "tools/call" :params {:name "nope"}}) [:error :code])))
-    (is (= -32601 (get-in (server/handle srv {:id 5 :method "resources/list"}) [:error :code])))))
+    (is (= -32601 (get-in (server/handle srv {:id 5 :method "prompts/list"}) [:error :code])))))
+
+(deftest an-mcp-apps-view
+  (let [srv (assoc srv :resources hello/resources)
+        tool (some #(when (= "uuids" (:name %)) %)
+                   (get-in (server/handle srv {:id 1 :method "tools/list"}) [:result :tools]))]
+    (is (= {:tools {} :resources {}}
+           (get-in (server/handle srv {:id 1 :method "initialize" :params {}}) [:result :capabilities])))
+    (is (= "ui://hello-mcp/uuids" (get-in tool [:_meta :ui :resourceUri])) "the tool names its view")
+    (let [[c] (get-in (server/handle srv {:id 2 :method "resources/read" :params {:uri "ui://hello-mcp/uuids"}})
+                      [:result :contents])]
+      (is (= "text/html;profile=mcp-app" (:mimeType c)))
+      (is (str/includes? (:text c) "ui/initialize")))
+    (is (= -32602 (get-in (server/handle srv {:id 3 :method "resources/read" :params {:uri "ui://nope"}})
+                          [:error :code])))
+    (let [r (:result (server/handle srv {:id 4 :method "tools/call" :params {:name "uuids" :arguments {:n 2}}}))]
+      (is (= 2 (count (get-in r [:structuredContent :uuids])))))))
 
 (deftest stdio-round-trip-with-meta
   ;; the real thing: a bb child speaking newline-delimited JSON-RPC

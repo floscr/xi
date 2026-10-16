@@ -76,3 +76,24 @@
            (mcp/parse-command "add context7 npx -y @upstash/context7-mcp")))
     (is (= {:sub "add" :id "foo" :command "server" :args []}
            (mcp/parse-command "add foo server")))))
+
+(deftest mcp-apps-tool-metadata
+  (let [view {:name "show_map" :_meta {:ui {:resourceUri "ui://maps/view"}}}
+        app  {:name "refresh" :_meta {:ui {:resourceUri "ui://maps/view" :visibility ["app"]}}}
+        old  {:name "legacy" :_meta {:ui/resourceUri "ui://maps/view"}}]
+    (is (= {:resource-uri "ui://maps/view" :visibility ["model" "app"]} (mcp/tool-ui view))
+        "visibility defaults to model + app")
+    (is (= "ui://maps/view" (:resource-uri (mcp/tool-ui old))) "the deprecated flat key")
+    (is (nil? (mcp/tool-ui {:name "plain"})))
+    (is (nil? (:resource-uri (mcp/tool-ui {:_meta {:ui {:resourceUri "https://evil"}}}))) "ui:// only")
+    (is (mcp/model-visible? view))
+    (is (not (mcp/model-visible? app)) "an app-only tool is not the agent's")
+    (is (= {:resource-uri "ui://maps/view" :visibility ["model" "app"]}
+           (:ui (mcp/normalize-tool-def :maps view))))
+    (is (not (contains? (mcp/normalize-tool-def :x {:name "t"}) :ui)))))
+
+(deftest normalize-result-keeps-structured-content-aside
+  (let [r (mcp/normalize-result #js {:content #js [#js {:type "text" :text "3 envs"}]
+                                     :structuredContent #js {:envs #js [1 2 3]}})]
+    (is (= {:envs [1 2 3]} (:structured-content r)))
+    (is (= [{:type "text" :text "3 envs"}] (:content r)))))

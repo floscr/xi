@@ -113,3 +113,12 @@
     (swap! n inc)
     (is (= "kinds: 2" (:description (get))) "read again every turn")
     (is (not (contains? (get) :resolve)) "the fn never reaches a provider")))
+
+(deftest resolve-tooling-keeps-view-only-tools-from-the-model
+  (let [defs (:defs (registry/resolve-tooling
+                     {:extra-tool-definitions [{:name "show_map" :description "" :ui {:resource-uri "ui://m/v"}}
+                                               {:name "refresh" :description "" :ui {:visibility ["app"]}}]}))
+        d    (some #(when (= "show_map" (:name %)) %) defs)]
+    (is (some? d))
+    (is (not (contains? d :ui)) "providers never see :ui")
+    (is (not-any? #(= "refresh" (:name %)) defs))))

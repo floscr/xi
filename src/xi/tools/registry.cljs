@@ -80,9 +80,15 @@
    sees on the next turn without a restart (see xi.ext.manager). A def
    may carry `:resolve` (fn [] → def keys), merged in here each turn: a
    description or schema that depends on what is loaded (xi.ext.blocks lists
-   extension block kinds this way)."
+   extension block kinds this way). A def's `:ui` (the view of a tool with a
+   UI, xi.ext.blocks.app) stays here; one whose `:visibility` leaves out
+   \"model\" is callable from its view only and not advertised."
   [{:keys [only-tools extra-tool-definitions extra-tool-registry remove-tools]}]
-  (let [extra-defs (mapv (fn [d] (if-let [f (:resolve d)] (merge (dissoc d :resolve) (f)) d))
+  (let [extra-defs (into []
+                         (comp (remove #(when-let [v (get-in % [:ui :visibility])]
+                                          (not (some #{"model"} v))))
+                               (map (fn [d] (if-let [f (:resolve d)] (merge (dissoc d :resolve) (f)) d)))
+                               (map #(dissoc % :ui)))
                          (if (fn? extra-tool-definitions)
                            (extra-tool-definitions) extra-tool-definitions))
         removed (if (fn? remove-tools) (remove-tools) remove-tools)

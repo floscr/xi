@@ -25,6 +25,7 @@
             [xi.blocks :as b]
             [xi.blocks.hiccup :as bh]
             [xi.core.state :as state]
+            [xi.ext.blocks.frame :as frame]
             [xi.ext.blocks.handlers :as h]
             [xi.markdown.hiccup :as md]
             [xi.web.block-kinds :as block-kinds]
@@ -65,6 +66,30 @@
 
 (defn- on-draft [st {:keys [block-id field value]}]
   {:state (assoc-in st (ui-path block-id :draft field) value)})
+
+;; app views (xi.ext.blocks.frame)
+
+(defn- forward-local
+  "A request for the server about an app view: sent, answered to this client."
+  [_st ev]
+  (when-not (:remote? ev)
+    {:effects [[:ws/send ev]]}))
+
+(defn- on-app-html [st {:keys [block-id] :as ev}]
+  (frame/loaded! ev)
+  {:state (assoc-in st (ui-path block-id :html-at) (js/Date.now))})
+
+(defn- on-app-reply [_st ev]
+  (frame/reply! ev)
+  nil)
+
+(defn- on-app-display [st {:keys [block-id fullscreen?]}]
+  {:state (assoc-in st (ui-path block-id :fullscreen?) (boolean fullscreen?))})
+
+(defn- on-app-message
+  "A view's ui/message: into the message box for the user to send, or not."
+  [st {:keys [text]}]
+  {:effects [[:app/dispatch {:type :compose/prefill :text text :draft-key (views/draft-key st)}]]})
 
 ;; ── Small pieces ─────────────────────────────────────────────────────────────
 
@@ -387,6 +412,7 @@
     "form"      (form-view dispatch! room-id record ui)
     "cards"     (cards-view dispatch! room-id record)
     "hiccup"    (hiccup-view dispatch! room-id record)
+    "app"       (frame/view dispatch! room-id record ui)
     (ext-kind-view dispatch! room-id record)))
 
 (defn- block-menu [dispatch! {:keys [id] :as record} ui]
@@ -412,7 +438,8 @@
 
 (defn- block-post [dispatch! room-id {:keys [id kind title source unread] :as record} ui]
   [:div {:class ["post" "post--assistant" "post--agent-block"]}
-   [:section {:class ["agent-block"] :data-block-kind kind
+   [:section {:class ["agent-block" (when (:fullscreen? ui) "agent-block--fullscreen")]
+              :data-block-kind kind
               :aria-label (str "Agent block: " (or title kind))}
     [:header {:class ["agent-block-head"]}
      (icon/icon {:icon-name :layout-dashboard :size :sm})
@@ -425,6 +452,12 @@
                :title (str unread " action" (when (not= 1 unread) "s") " the agent hasn't read yet")}
         (str unread " new")])
      [:span {:class ["agent-block-source"] :title (str "Block " id)} (source-label source)]
+     (when (:fullscreen? ui)
+       (button/button {:variant :ghost :size :sm
+                       :on-click (fn [_]
+                                   (frame/notify-mode! id "inline")
+                                   (dispatch! {:type :ext.blocks/app-display :block-id id :fullscreen? false}))}
+                      "Exit full screen"))
      (block-menu dispatch! record ui)]
     [:div {:class ["agent-block-body"]}
      (block-body dispatch! room-id record ui)]
@@ -470,6 +503,12 @@
    :handlers       (merge h/handlers
                           {:ext.blocks/act    on-act
                            :ext.blocks/submit on-submit
+                           :ext.blocks/app-load    forward-local
+                           :ext.blocks/app-rpc     forward-local
+                           :ext.blocks/app-html    on-app-html
+                           :ext.blocks/app-reply   on-app-reply
+                           :ext.blocks/app-display on-app-display
+                           :ext.blocks/app-message on-app-message
                            :ext.blocks/sort   on-sort
                            :ext.blocks/raw    on-raw
                            :ext.blocks/draft  on-draft})

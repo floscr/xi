@@ -9,10 +9,11 @@
    every client and is `:persist-room`, so a reload or restart brings the
    blocks back. The web half (xi.ext.blocks.web) draws each one as its own
    post after the tool call that made it; the TUI shows its text under that
-   call (xi.ext.blocks.handlers stamps it)."
+   call (xi.ext.blocks.handlers stamps it). Views of tools with a UI (MCP
+   Apps) are blocks too; xi.ext.blocks.app hosts them."
   (:require [clojure.string :as str]
             [xi.blocks :as b]
-            [xi.dialog :as dialog]
+            [xi.ext.blocks.app :as app]
             [xi.ext.blocks.handlers :as h]
             [xi.ext.manager :as manager]))
 
@@ -74,16 +75,6 @@
 (defn- gen-id []
   (str "b-" (.toString (js/Math.floor (* (js/Math.random) 0x7fffffff)) 36)))
 
-(defn- own-call-id
-  "The id of the running tool call `call` ({:name :arguments}) in the room's
-   history, which the web shows the block after; nil when it isn't there (a
-   sub-agent's call lives in the sub-agent's history)."
-  [room call]
-  (let [entries (vec (:history room))
-        i       (when call (dialog/permission-tool-index {:call call} entries 0))]
-    (when (and i (= :running (:status (nth entries i))))
-      (:id (nth entries i)))))
-
 (defn- unread-note
   "A line about other blocks with actions the agent hasn't read, or nil."
   [st room-id except-id]
@@ -113,6 +104,9 @@
       (>= (count (h/blocks st room-id)) b/max-blocks)
       (fail (str "This chat has " b/max-blocks " blocks, the most it keeps. Update an existing one with ui_update."))
 
+      (get-in b/kinds [kind :internal?])
+      (fail (str "unknown kind " (pr-str kind) "; one of " (str/join ", " (b/kind-names extra))))
+
       (h/find-block st room-id id)
       (fail (str "A block with id " id " exists already. Change it with ui_update, or pick another id."))
 
@@ -124,7 +118,7 @@
             (b/make-record {:id id :kind kind :title (:title args)
                             :data (payload (assoc args :kind kind))
                             :source {:type :tool :name "ui_block"}
-                            :call-id (own-call-id room call)
+                            :call-id (h/running-call-id st room-id call)
                             :anchor (count (:history room))
                             :at now :extra extra})]
         (if error
@@ -142,8 +136,14 @@
         id (some-> (:id args) str str/trim)]
     (if-let [record (h/find-block st room-id id)]
       (let [data (payload (assoc args :kind (:kind record)))]
-        (if (and (nil? data) (str/blank? (:title args)))
+        (cond
+          (get-in b/kinds [(:kind record) :internal?])
+          (fail (str "Block " id " is an app view; it can't be changed with ui_update."))
+
+          (and (nil? data) (str/blank? (:title args)))
           (fail "Nothing to change: pass data (or hiccup) and/or title.")
+
+          :else
           (let [{r :record error :error} (b/update-record record {:data data :title (:title args)
                                                                   :at (js/Date.now) :extra extra})]
             (if error
@@ -191,13 +191,18 @@
 
 (defn create
   "The extension. With the server's `:manager`, `ui_block` lists and accepts
-   the loaded user extensions' `:block-kinds` (re-read every turn)."
-  [{:keys [manager]}]
+   the loaded user extensions' `:block-kinds` (re-read every turn), and app
+   views reach their MCP server or extension; `:ask!` lets a view's tool call
+   ask like the agent's."
+  [{:keys [manager ask!]}]
   (let [extra (fn [] (or (some-> manager manager/composed :block-kinds) {}))]
     {:id               h/ext-id
      :init             {:room {:blocks {}}}
      :persist-room     [:blocks]
-     :handlers         h/handlers
+     :handlers         (merge h/handlers app/handlers)
+     :fx               {:ext.blocks/app-open (partial app/open-fx manager)}
+     :server-fx        (app/server-fx manager ask!)
+     :no-broadcast     app/no-broadcast
      :tool-definitions [(assoc (ui-block-def {})
                                :resolve #(select-keys (ui-block-def (extra)) [:description :input_schema]))
                         ui-update-def ui-state-def]

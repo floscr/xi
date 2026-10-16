@@ -546,9 +546,32 @@
       {:block (assoc-in block [:state :last] {:action action :value value})
        :send? (contains? (bh/send-actions (:tree spec)) action)})))
 
+(defn- norm-app
+  "An MCP Apps view (tier 3): built by the host from a tool with a UI, never
+   by the model. The HTML stays on the server (xi.ext.blocks); a structured
+   result too large to keep is dropped from the spec."
+  [{:keys [resource-uri tool-input tool-result csp prefers-border tool] :as data}]
+  (when-not (and (string? resource-uri) (str/starts-with? resource-uri "ui://"))
+    (invalid! "an app needs a ui:// resource-uri"))
+  (let [spec (cond-> {:resource-uri resource-uri
+                      :tool-input   (if (map? tool-input) tool-input {})
+                      :tool-result  (if (map? tool-result) tool-result {})}
+               (map? csp)             (assoc :csp csp)
+               (boolean? prefers-border) (assoc :prefers-border prefers-border)
+               (map? tool)            (assoc :tool tool)
+               (string? (:title data)) (assoc :title (:title data)))]
+    (if (> (count (pr-str spec)) max-spec-chars)
+      (update spec :tool-result #(-> % (dissoc :structured-content) (assoc :truncated true)))
+      spec)))
+
+(defn- text-app [{:keys [resource-uri tool-result]} _]
+  (str "App view " resource-uri
+       (when-let [t (->> (:content tool-result) (keep :text) (str/join "\n") not-empty)]
+         (str "\n" t))))
+
 (def kinds
   "kind name → {:describe :normalize :text …}. The catalog the `ui_block`
-   tool lists, in this order."
+   tool lists, in this order; `:internal?` kinds are built by the host only."
   (array-map
    "checklist" {:describe "{items: [{id?, label, done?, note?}]} — a list the user can tick off; read the ticks with ui_state"
                 :normalize norm-checklist :text text-checklist
@@ -576,12 +599,13 @@
                 :carry carry-cards :act act-cards}
    "hiccup"    {:describe "pass `hiccup` instead of data: a tree of JSON arrays like [\"div\", {\"layout\": \"row\"}, [\"strong\", \"Hi\"]]; see the tool description for the allowed tags"
                 :normalize norm-hiccup :text (fn [spec _] (bh/text (:tree spec)))
-                :act act-hiccup}))
+                :act act-hiccup}
+   "app"       {:internal? true :normalize norm-app :text text-app}))
 
 (defn kind-names
   "The built-in kind names, then `extra`'s (extension kinds)."
   ([] (kind-names nil))
-  ([extra] (into (vec (keys kinds)) (keys extra))))
+  ([extra] (into (vec (keep (fn [[k d]] (when-not (:internal? d) k)) kinds)) (keys extra))))
 
 (defn interactive?
   "Does `record` take user actions?"
@@ -730,6 +754,21 @@
                      (assoc :updated-at at))
          :send?  (boolean send?)}))))
 
+(defn note
+  "`record` with an action the host recorded itself (an app view's tool
+   call or context update, xi.ext.blocks), not a user's control: logged and
+   unread like one. A \"context\" note keeps its value as the view's
+   :model-context."
+  [record {:keys [action target value]} at]
+  (-> (cond-> record
+        (= "context" action) (assoc-in [:state :model-context] value))
+      (update :actions (fn [as] (vec (take-last max-actions
+                                                (conj (vec as) (cond-> {:action action :at at :user "app"}
+                                                                 target        (assoc :target target)
+                                                                 (some? value) (assoc :value value)))))))
+      (update :unread (fnil inc 0))
+      (assoc :updated-at at)))
+
 ;; ── Text ─────────────────────────────────────────────────────────────────────
 
 (defn body-text
@@ -785,7 +824,7 @@
    extensions ({name describe})."
   ([] (catalog nil))
   ([extra]
-   (str/join "\n" (concat (for [[k {:keys [describe]}] kinds]
+   (str/join "\n" (concat (for [[k {:keys [describe internal?]}] kinds :when (not internal?)]
                             (str "- " k ": " describe))
                           (for [[k d] extra] (str "- " k ": " (if (map? d) (:describe d) d)))))))
 

@@ -164,13 +164,47 @@
       (try (f (guard-ctx id token opts ctx) payload)
            (catch :default e (log-blocked id (str "fx threw: " (.-message e))) nil)))))
 
-(defn- guard-tool [id token f]
-  (fn [args ctx]
-    (try (f args (guard-ctx id token {:user-initiated? false} ctx))
-         (catch :default e
-           (log-blocked id (str "tool threw: " (.-message e)))
-           {:content [{:type "text" :text (str "extension error: " (.-message e))}]
-            :is-error true}))))
+(defn- open-view!
+  "After a tool with a view (`:ui {:resource-uri}` on its definition) ran for
+   the agent, ask the agent blocks to show it (xi.ext.blocks.app), with the
+   host's own dispatch: :ext.blocks/* aren't the extension's events. Not
+   when the call came from that view itself."
+  [id tool resource-uri args {:keys [dispatch! room-id call from-app?]} result]
+  (when (and dispatch! room-id (not from-app?) (map? result) (not (:is-error result)))
+    (dispatch! {:type :ext.blocks/app-open :room-id room-id :call call
+                :source {:type :ext :id id}
+                :resource-uri resource-uri
+                :tool-input args
+                :tool-result (select-keys result [:content :structured-content])})))
+
+(defn- guard-tool
+  ([id token f] (guard-tool id token f nil))
+  ([id token f resource-uri]
+   (fn [args ctx]
+     (try (let [r (f args (guard-ctx id token {:user-initiated? false} ctx))]
+            (when resource-uri
+              (-> (js/Promise.resolve r)
+                  (.then #(open-view! id nil resource-uri args ctx %))))
+            r)
+          (catch :default e
+            (log-blocked id (str "tool threw: " (.-message e)))
+            {:content [{:type "text" :text (str "extension error: " (.-message e))}]
+             :is-error true})))))
+
+(defn- guard-ui-resources
+  "An extension's MCP Apps views (`:ui-resources {\"ui://<id>/name\" html |
+   {:html :csp :prefers-border}}`), kept only under its own ui://<id>/ and
+   tagged with the owner."
+  [id resources]
+  (into {}
+        (keep (fn [[uri r]]
+                (let [r (if (string? r) {:html r} r)]
+                  (if (and (string? uri) (str/starts-with? uri (str "ui://" (name id) "/"))
+                           (map? r) (string? (:html r)))
+                    [uri (-> (select-keys r [:html :csp :prefers-border]) (assoc :ext id))]
+                    (do (log-blocked id (str "ui resource " (pr-str uri) " (must be ui://" (name id) "/…)"))
+                        nil)))))
+        (when (map? resources) resources)))
 
 (defn- guard-hook
   "A lifecycle hook (:on-mount / :on-unmount): called with the host ctx
@@ -231,7 +265,15 @@
        (update :fx update-vals (partial guard-fx id token h-opts))
 
        (:tool-registry ext)
-       (update :tool-registry update-vals (partial guard-tool id token))
+       (update :tool-registry
+               (fn [reg]
+                 (let [views (into {} (keep (fn [d] (when-let [u (get-in d [:ui :resource-uri])]
+                                                      (when (str/starts-with? (str u) (str "ui://" (name id) "/"))
+                                                        [(:name d) u]))))
+                                   (:tool-definitions ext))]
+                   (into {} (map (fn [[n f]] [n (guard-tool id token f (get views n))])) reg))))
+
+       (:ui-resources ext) (update :ui-resources (partial guard-ui-resources id))
 
        (:block-kinds ext) (update :block-kinds (partial guard-block-kinds id))
 

@@ -113,6 +113,8 @@
     :usage-sources
     ;; agent block kinds (xi.blocks), namespaced <id>/<name> by the guard
     :block-kinds
+    ;; MCP Apps views of its tools (`:ui {:resource-uri}`), xi.ext.blocks.app
+    :ui-resources
     ;; web half, collected but not composed node-side
     :routes :pages :nav-items :taps})
 

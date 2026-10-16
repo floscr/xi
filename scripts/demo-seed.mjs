@@ -206,6 +206,13 @@ const blockDemos = [
     spec: { envs: [{ name: "dev", version: "1.5.0-rc.2", status: "healthy" },
                    { name: "staging", version: "1.4.2", status: "healthy" },
                    { name: "prod", version: "1.4.1", status: "degraded" }] } },
+  // An MCP Apps view from the same extension (its deploy_map tool, ui://deploys/map).
+  { kind: "app", title: "deploy_map", tool: "deploy_map", source: { type: kw("ext"), id: kw("deploys") },
+    spec: { "resource-uri": "ui://deploys/map", "tool-input": {}, tool: { name: "deploy_map" },
+            "tool-result": { content: [{ type: "text", text: "dev 1.5.0-rc.2 healthy\nstaging 1.4.2 healthy\nprod 1.4.1 degraded" }],
+                             "structured-content": { envs: [{ name: "dev", version: "1.5.0-rc.2", status: "healthy" },
+                                                            { name: "staging", version: "1.4.2", status: "healthy" },
+                                                            { name: "prod", version: "1.4.1", status: "degraded" }] } } } },
   { kind: "hiccup", title: "Custom layout",
     spec: { tree: raw('[:div {} [:div {:layout "row" :gap "sm"} [:ui/badge {:variant "success"} "build passing"] [:ui/badge {:variant "warning"} "2 flaky"]] [:p {:emphasis "muted"} "Hiccup from the agent, from an allowlist."] [:ul {} [:li {} "no classes, ids or styles"] [:li {} "controls only record block actions"]] [:div {:layout "row"} [:ui/button {:action "rerun" :variant "primary"} "Re-run flaky"] [:ui/button {:action "ship" :send true} "Ship it"]]]') } },
 ];
@@ -213,7 +220,9 @@ const blockDemos = [
 const blocksLines = (cwd, sid) => [
   userMsg(cwd, sid, "Show me every kind of agent block.", mins(30)),
   ...blockDemos.flatMap((b, i) => [
-    asstMsg(cwd, sid, [toolUse(`tu_block${i}`, "mcp__xi-tools__ui_block", { kind: b.kind, title: b.title, id: `demo-${i}` })], mins(29 - i)),
+    asstMsg(cwd, sid, [b.tool
+      ? toolUse(`tu_block${i}`, `mcp__xi-tools__${b.tool}`, {})
+      : toolUse(`tu_block${i}`, "mcp__xi-tools__ui_block", { kind: b.kind, title: b.title, id: `demo-${i}` })], mins(29 - i)),
     userBlocks(cwd, sid, [toolResult(`tu_block${i}`, `Showed ${b.kind} "${b.title}" as block demo-${i}.`)], mins(29 - i)),
   ]),
   asstMsg(cwd, sid, [text("That's one block of each kind.")], mins(15)),
@@ -222,7 +231,7 @@ const blocksLines = (cwd, sid) => [
 const blocksExt = () =>
   edn({ blocks: { blocks: strMap(Object.fromEntries(blockDemos.map((b, i) => [`demo-${i}`, {
     id: `demo-${i}`, kind: b.kind, title: b.title, spec: b.spec, state: b.state || {},
-    source: { type: kw("tool"), name: "ui_block" }, "call-id": `tu_block${i}`, anchor: 1 + 2 * i,
+    source: b.source || { type: kw("tool"), name: "ui_block" }, "call-id": `tu_block${i}`, anchor: 1 + 2 * i,
     actions: [], unread: 0, at: i, "updated-at": i,
     ...(b.rules ? { rules: b.rules, "text-form": b.textForm } : {}),
   }]))) } }) + "\n";

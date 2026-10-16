@@ -67,6 +67,33 @@ echoed on later requests. Auth is an `:auth` descriptor on the entry
 from `~/.config/xi/ext/<id>.env`; a missing key omits the header and the
 server's `401` surfaces. OAuth (`/mcp auth`) is not implemented.
 
+## MCP Apps (SEP-1865)
+
+`xi.mcp.client` sends `capabilities.extensions["io.modelcontextprotocol/ui"]
+{:mimeTypes ["text/html;profile=mcp-app"]}` in `initialize` and has
+`read-resource`. `xi.ext.mcp/tool-ui` reads a tool's `_meta.ui`
+(`resourceUri`, `visibility`; also the deprecated flat
+`_meta["ui/resourceUri"]`): `normalize-tool-def` carries it as `:ui`
+(`xi.tools.registry/resolve-tooling` strips it, and drops defs whose
+visibility leaves out `"model"`), app-only tools are left out of the
+extension's defs and registry, and the per-server `apps` atom keeps every
+tool's meta plus the connection's `:call` / `:read` for the views
+(`app-tool`, `read-resource!`). `normalize-result` keeps `structuredContent`
+as `:structured-content`, which the tool pipeline never passes to a model.
+After a tool with a `resourceUri` ran for the agent, its registry fn
+dispatches `:ext.blocks/app-open`; `xi.ext.blocks.app` turns that into an
+agent block (reading the resource, caching it per server + URI) and answers
+the browser's frame host (`xi.ext.blocks.frame`): HTML on
+`:ext.blocks/app-load`, the view's `tools/call` (rules-gated, only
+`app-tool`s), `resources/read` and `ui/update-model-context` on
+`:ext.blocks/app-rpc`. The web host replaces the spec's sandbox proxy with a
+`sandbox="allow-scripts"` srcdoc iframe (an opaque origin) and the resource's
+CSP as the document's first `<meta>` (`xi.blocks.csp`). Not implemented:
+`tool-input-partial` / `tool-cancelled` (a view opens after its call
+finished), `host-context-changed` on a theme switch, `permissions`,
+`domain`, `pip`. The Babashka example server's `uuids` tool is a reference
+view, exercised by `test/xi/e2e/blocks_e2e.cljs`.
+
 ## Servers of a user extension
 
 `:mcp-servers` on a user extension map declares private servers in
