@@ -417,6 +417,12 @@
         (js/JSON.stringify (js/JSON.parse t) nil 2)
         (catch :default _ nil)))))
 
+(defn- block-display
+  "An agent block's text (xi.blocks/text): its header line accented."
+  [text]
+  (let [[head & body] (str/split-lines text)]
+    (str/join "\n" (cons (ansi/fg :accent head) body))))
+
 (defn- tool-block
   "Tool-call entry → box with header, output and (when live) spinner/timer.
    Entries that arrive already finished (resumed sessions) render statically."
@@ -460,6 +466,16 @@
                                 (truncate-output (highlight-text grammar text) truncate-output-block-after-n-lines)
                                 (truncate-output text truncate-output-block-after-n-lines)))))))
                       (set! (.-outputSet st) true))
+        ;; An agent block's text form (xi.ext.blocks.handlers stamps it on the
+        ;; call that made the block), kept current as the block changes.
+        show-block! (fn [text]
+                      (let [shown (block-display text)]
+                        (if-let [node (.-blockNode st)]
+                          ((:set-text node) shown)
+                          (let [node (comp/make-text shown)]
+                            ((:add-child box) (comp/make-spacer 1))
+                            ((:add-child box) node)
+                            (set! (.-blockNode st) node)))))
         finish! (fn [is-error]
                   (when spinner
                     ((:stop spinner))
@@ -480,6 +496,7 @@
       ;; Already settled (resumed session) — render result statically
       (do (when (and (:result entry) (not collapsed?))
             (set-output! (:result entry) (:is-error entry)))
+          (when-let [t (:block-text entry)] (show-block! t))
           (set! (.-finished st) true)))
     {:nodes [box (comp/make-spacer 1)]
      :update! (fn [old new]
@@ -492,6 +509,8 @@
                       ((:set-text code-text) (clj-code-display (:arguments new)))))
                   (when (and (:result new) (not (.-outputSet st)) (not collapsed?))
                     (set-output! (:result new) (:is-error new)))
+                  (when (and (:block-text new) (not= (:block-text old) (:block-text new)))
+                    (show-block! (:block-text new)))
                   (when (and (not= :running (:status new)) (not (.-finished st)))
                     (finish! (= :error (:status new))))
                   true))}))

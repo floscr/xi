@@ -28,6 +28,7 @@
             [xi.web.appearance :as appearance]
             [xi.web.block-menu :as block-menu]
             [xi.web.buffer-views :as buffer-views]
+            [xi.web.timeline-posts :as timeline-posts]
             [xi.web.terminal :as terminal]
             [xi.web.rename :as rename]
             [xi.web.threads :as threads]
@@ -3402,9 +3403,10 @@
                          :on-render     render!})]
     (reset! pages-ref (:pages composed))
     (dashboard/register! (:dashboard-cards composed))
-    (doseq [{:keys [id block-menu-items terminal-toolbar-items buffer-views]} (:extensions composed)]
+    (doseq [{:keys [id block-menu-items terminal-toolbar-items buffer-views timeline-posts]} (:extensions composed)]
       (when block-menu-items (block-menu/register! id block-menu-items))
       (when buffer-views (buffer-views/register! id buffer-views))
+      (when timeline-posts (timeline-posts/register! id timeline-posts))
       (when terminal-toolbar-items (terminal/register-toolbar! id terminal-toolbar-items)))
     (when-let [send! (:send! transport)]
       (terminal/set-send! send!))

@@ -59,7 +59,8 @@ provider effects, and TUI.
    :taps             [(fn [dispatch!] → tap-fn)]
    :block-menu-items (fn [block state] → [{:label :icon :event}])  ; code-block menu (xi.web.block-menu)
    :terminal-toolbar-items (fn [buffer state] → [{:label :icon :title :send|:event}])  ; xi.web.terminal
-   :buffer-views     {kind {:view (fn [state dispatch! room id buffer] → hiccup) :icon kw}}})  ; xi.web.buffer-views
+   :buffer-views     {kind {:view (fn [state dispatch! room id buffer] → hiccup) :icon kw}}  ; xi.web.buffer-views
+   :timeline-posts   (fn [state dispatch! room entries] → [{:pos :key :node}])})  ; xi.web.timeline-posts
 ```
 
 ## Architecture
@@ -466,6 +467,12 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
   `xi.web.buffer-views`; built-in web halves only. Example: the review canvas
   (`:canvas`, `xi.ext.canvas-review.web`), whose buffer the shared
   `:canvas-review/load` / `:canvas-review/hydrate` reducers install.
+- **`:timeline-posts`** — `(fn [state dispatch! room entries] → [{:pos p
+  :key str :node hiccup}])`, posts placed in the chat timeline before history
+  entry `p` (`p` = the history length: at the end), outside any folded tool
+  group; a `p` above the rendered window pins at its top. Keys are unique per
+  room. Registered in `xi.web.timeline-posts`; built-in web halves only.
+  Example: the agent blocks (`xi.ext.blocks.web`), each after its tool call.
 
 `:block-menu-items` and `:terminal-toolbar-items` are open to user web halves too (`xi.web.user-ext.guard/wrap` confines
 their events like `:palette-items`).
@@ -525,6 +532,7 @@ namespace docstring is the authoritative description.
 |-----------|--------------|
 | resume | `/trim`, `/rollover`, `/lineage`. See [architecture.md](architecture.md#session-tools) and the guide's [sessions](guide/sessions.md). |
 | worktree | `/worktree` — move the room into a fresh git worktree (`merge`/`list`/`remove`). |
+| blocks | Agent blocks (`ui_block` / `ui_update` / `ui_state`; user guide [agent-blocks.md](guide/agent-blocks.md)). `xi.blocks` (cljc, pure) is the kind catalog: normalizing a model payload into a spec, caps, `act` (which actions a kind takes; a block action only ever changes its own block), text forms; `xi.blocks.hiccup` is the `hiccup` kind's allowlist. The tools build the record and dispatch `:ext.blocks/add|update|read` into the room slice `[:ext :blocks :blocks]` (`:persist-room`); the shared reducers (`xi.ext.blocks.handlers`) refuse add/update/remove/read events that carry a `:client-id`, so only `:ext.blocks/act` comes from clients. The record's `:call-id` is its own running tool call (matched by name + arguments like a permission ask), its `:anchor` the history length; each change stamps the block's text on that call's history entry as `:block-text` (the TUI shows it), and prompt mode prints it from its tap. The web half draws blocks through `:timeline-posts` after their call; submit / send actions also send `:input/submit` with `xi.blocks/action-message`. |
 | canvas-review | Experimental node-based review canvas (`canvas_review_*` tools), shown as the room's `:canvas` buffer (`/canvas-review` switches the originating client to it); has a web half. A code block's Explain button spawns a sub-agent (`:canvas-review/explain-start` fx, no confirmation) and stores its final text on the node through a `:subagent/turn-end` chain — canvas-review is composed before subagent in `xi.config`, so that chain runs first and reads the child's history directly; keep that order. |
 | diff | `/diff` viewer buffer, one per source (`git` \| `staged` \| `unstaged` \| `session-edits` \| `session-git` \| `session-commits` \| `<ref>`; no args = session diff), id `diff:<source>` (`xi.buffers`); has a web half. |
 | file-view | Opens files touched by write/edit into a `file:<path>` buffer; has a web half. |

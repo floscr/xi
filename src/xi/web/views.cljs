@@ -37,6 +37,7 @@
             [xi.web.palette-items :as palette-items]
             [xi.web.terminal :as terminal]
             [xi.web.tool-views :as tool-views]
+            [xi.web.timeline-posts :as timeline-posts]
             [xi.web.viewer-group :as viewer-group]
             [ui.icon :as icon]
             [ui.alert :as alert]
@@ -129,7 +130,9 @@
   []
   (and ios? (not js/window.isSecureContext)))
 
-(defn- copy!
+(defn copy!
+  "Copy `text`, or open the manual-copy dialog where the clipboard API is
+   unavailable (iOS over plain HTTP)."
   [dispatch! text]
   (if (needs-copy-dialog?)
     (dispatch! {:type :copy/open :text text})
@@ -4177,6 +4180,14 @@
                                   (map (fn [c] {:key (str "sar-" (:id c)) :group? false
                                                 :node (subagent-result-post dispatch! (:id room) c)})
                                        (get by-end p))))
+                     ;; Extension posts (xi.web.timeline-posts), e.g. agent
+                     ;; blocks after their tool call.
+                     by-xpost  (group-by :pos (timeline-posts/items state dispatch! room entries))
+                     xitems    (fn [p]
+                                 (map (fn [{:keys [key node]}]
+                                        {:key (str "xp-" key) :group? false
+                                         :node (with-post-key (str "xp-" key) node)})
+                                      (get by-xpost p)))
                      ;; The user's open/closed blocks, kept per session across
                      ;; switches (core's :timeline/block-toggle).
                      session-key (or sid (:id room))
@@ -4189,17 +4200,19 @@
                   (concat
                    ;; Resolved bubbles and sub-agent posts anchored above the
                    ;; window pin at the top.
-                   (mapcat (fn [p] (concat (ritems p) (sitems p)))
+                   (mapcat (fn [p] (concat (ritems p) (sitems p) (xitems p)))
                            (sort (filter #(< % start)
                                          (distinct (concat (keys by-anchor)
                                                            (keys by-spawn)
-                                                           (keys by-end))))))
+                                                           (keys by-end)
+                                                           (keys by-xpost))))))
                    (mapcat
                     (fn [p]
                       (concat
                        (titems p)
                        (ritems p)
                        (sitems p)
+                       (xitems p)
                        (when (< p total)
                          (let [entry (nth entries p)
                                ;; A tool awaiting Allow/Deny stays open and out of

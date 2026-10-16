@@ -17,7 +17,8 @@
    (see docs/guide/extensions.md)."
   (:require
    #?@(:node
-       [[xi.ext.canvas-review :as canvas-review]
+       [[xi.ext.blocks :as blocks]
+        [xi.ext.canvas-review :as canvas-review]
         [xi.ext.clipboard-image :as clipboard-image]
         [xi.ext.clj :as clj-tool]
         [xi.ext.clj-surgeon :as clj-surgeon]
@@ -49,7 +50,8 @@
         [xi.providers.openai.codex :as openai-codex]
         [xi.providers.zen :as zen]]
        :browser
-       [[xi.ext.canvas-review.web :as canvas-review-web]
+       [[xi.ext.blocks.web :as blocks-web]
+        [xi.ext.canvas-review.web :as canvas-review-web]
         [xi.ext.device.web :as device-web]
         [xi.ext.diff.web :as diff-web]
         [xi.ext.file-view.web :as file-view-web]
@@ -152,6 +154,8 @@
       commit/extension
       resume/create
       canvas-review/extension
+      ;; agent blocks: ui_block / ui_update / ui_state (xi.blocks)
+      blocks/extension
       clj-surgeon/extension
       ;; clj (sandboxed SCI scripting tool)
       clj-tool/extension
@@ -200,6 +204,8 @@
       file-view-web/extension
       terminal-web/extension
       canvas-review-web/extension
+      ;; draws agent blocks after their tool call (xi.ext.blocks)
+      blocks-web/extension
       subagent-web/extension
       ;; mirrors the /yolo flag and its status line (xi.ext.yolo)
       yolo-web/extension

@@ -51,6 +51,7 @@
             [xi.agent :as agent]
             [xi.agent-profile :as profile]
             [xi.auth :as auth]
+            [xi.blocks :as blocks]
             [xi.client.tui :as client-tui]
             [xi.crash-log :as crash-log]
             [xi.client.ws-transport :as ws-transport]
@@ -579,6 +580,12 @@ See docs/guide/command-line.md for the full reference.")
          :agent/error
          (set! (.-error acc) (or (get-in event [:error :message])
                                  (str (:error event))))
+
+         ;; agent blocks print their text form where they appear
+         (:ext.blocks/add :ext.blocks/update)
+         (let [t (str "\n" (blocks/text (:block event)) "\n")]
+           (set! (.-out acc) (str (.-out acc) t))
+           (when (and stream? (not json?)) (.write js/process.stdout t)))
 
          ;; Deferred a tick: the :agent/turn-end effects include the session save.
          :agent/turn-end (js/setTimeout finish! 0)

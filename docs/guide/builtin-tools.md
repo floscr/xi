@@ -154,6 +154,17 @@ Asking the agent for a canvas in plain words works too: it starts one with
 
 None of them asks.
 
+## Blocks
+
+Instead of text the agent can show a block in the chat: a checklist, table,
+chart, form and more. See [Agent blocks](agent-blocks.md).
+
+| Tool | Does | Asks |
+| --- | --- | --- |
+| `ui_block` | Show a block of a kind with its data; returns the block's id. | Never |
+| `ui_update` | Change a block's data or title. | Never |
+| `ui_state` | What you did on a block since the agent last looked; without an id, the chat's blocks. | Never |
+
 ## Xi itself
 
 | Tool | Does | Asks |
