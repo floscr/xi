@@ -6602,6 +6602,9 @@ code a:hover,
 /* A spawn's children post where it happened (.post--subagents, one card per
    child) and each finished child's answer where the chat was by then
    (.post--subagent-result); both scroll away with the conversation. */
+/* Flush like a .post--tool, so the cards line up with the tool boxes. */
+.post--subagents,
+.post--subagent-result { padding: 0; }
 .post--subagents .post-body,
 .post--subagent-result .post-body { width: 100%; }
 
@@ -6652,8 +6655,8 @@ code a:hover,
 /* A child is a viewer super-group (.viewer-tool-group--super) dressed as a
    report sheet, so it never passes for the agent's own post: an
    accent-tinted header strip (.subagent-strip, shared with the result's
-   head) with the label in small caps mono, then the rows / the answer on an
-   inset darker "paper". */
+   head) with the label in mono, then the rows / the answer on an inset
+   darker "paper". */
 .subagent-strip {
   display: flex;
   align-items: center;
@@ -6664,8 +6667,6 @@ code a:hover,
               color-mix(in srgb, var(--accent) 7%, var(--bg-1)));
   font-family: var(--font-mono, monospace);
   font-size: var(--font-xs);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--fg-1);
 }
 .subagent-strip .subagent-card-label {
@@ -6674,11 +6675,7 @@ code a:hover,
   color: color-mix(in srgb, var(--accent) 55%, var(--fg-0));
 }
 .subagent-strip .viewer-group-latest,
-.subagent-strip .subagent-card-dur {
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--fg-3);
-}
+.subagent-strip .subagent-card-dur { color: var(--fg-3); }
 .subagent-strip .viewer-group-latest { flex: 1; }
 .subagent-strip .viewer-group-count { color: var(--fg-2); font-weight: 400; }
 .subagent-strip .subagent-card-dur { margin-left: auto; }
@@ -6689,10 +6686,9 @@ code a:hover,
 
 .subagent-card {
   border: var(--border-0);
-  border-radius: var(--radius-md);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
 }
-.subagent-card > .subagent-strip { padding: var(--size-1) var(--size-3); }
+.subagent-card > .subagent-strip { padding: var(--size-1) var(--size-2); }
 /* The paper: the page surface (--bg-0), set off from the --bg-1 group box. */
 .subagent-rows { background: var(--bg-0); }
 /* Open, the rows sit flush in the group box like a folded run's: tool and
