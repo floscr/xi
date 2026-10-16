@@ -909,6 +909,21 @@
 
                whole))))))))
 
+(defn- system-class
+  "`System`: the clock plus `getProperty` for the JVM properties scripts reach
+   for. No getenv (the env allowlist lives in the `env` helper); a `:compute`
+   room gets no home or working directory, like its helpers."
+  [opts compute?]
+  (let [props (fn [] (cond-> {"file.separator" "/" "path.separator" ":"
+                               "line.separator" "\n" "os.name" (os/type)
+                               "java.io.tmpdir" (os/tmpdir)}
+                       (not compute?) (assoc "user.home" (os/homedir)
+                                             "user.dir"  (opts-cwd opts))))]
+    (sandbox/null-proto
+     {:currentTimeMillis (fn [] (js/Date.now))
+      :lineSeparator     (fn [] "\n")
+      :getProperty       (fn [k & [default]] (get (props) (str k) default))})))
+
 (defn- make-ctx
   "The SCI ctx of a room; `compute?` swaps the file, program and socket
    helpers and the process / socket namespaces for refusals (compute-helpers)."
@@ -933,13 +948,12 @@
                         'socket  (if compute? (compute-namespace "socket/" socket) socket)}
                        ;; Every class is a null-proto object (xi.sandbox.sci), never a real
                        ;; class, so `Class/constructor` can't reach js/Function. Instance interop
-                       ;; still works: SCI keys it on the class name. System exposes the clock
-                       ;; only (no getenv), keeping the env allowlist intact.
+                       ;; still works: SCI keys it on the class name.
                        :classes (merge
                                  bytes/classes
                                  {'Math (sandbox/null-proto-copy js/Math)
                                   'Thread  (sandbox/null-proto {:sleep (fn [ms] (proc/sleep-abortable opts ms))})
-                                  'System  (sandbox/null-proto {:currentTimeMillis (fn [] (js/Date.now))})
+                                  'System  (system-class opts compute?)
                                   'Long    (sandbox/null-proto {:parseLong   (fn [s & [radix]]
                                                                        (js/parseInt s (or radix 10)))})
                                   'Integer (sandbox/null-proto {:parseInt    (fn [s & [radix]]
@@ -1020,6 +1034,14 @@
       (str "Hint: clj runs in a sandbox — clojure.java.shell and babashka.process "
            "don't exist. Use (sh \"cmd\" \"arg\" …) for synchronous CLIs, or "
            "(process/start \"cmd\") for long-running ones.")
+
+      ;; `Class/member` on a stubbed class that lacks the member reads undefined;
+      ;; calling it fails with engine wording that names neither (Bun, then Node).
+      (re-find #"Reflect\.apply requires the first argument be a function|apply was called on undefined" msg)
+      (str "Hint: clj runs in a sandbox (ClojureScript/SCI, not the JVM) — "
+           "JVM classes are stubs with a few members, so a static call like "
+           "(System/getenv …) or (Thread/currentThread) doesn't exist. Use the builtin "
+           "helpers: (env k), (cwd), (tmpdir), paths accept a leading ~.")
 
       (and (str/includes? msg "not allowed!")
            (re-find #"Method \S" msg))

@@ -8,8 +8,9 @@ commands get approved. The [introduction](clj-tool.md) explains the idea.
 Scripts get `clojure.core` and `clojure.string` (`str`), `clojure.set`
 (`set`), `clojure.walk` (`walk`), `clojure.edn` (`edn`), plus the helpers
 below. There is no host interop: no `js/`, no `aget`, no `eval`, no class
-constructors. `Math`, `Date` and `System/currentTimeMillis` exist;
-`System/getenv` does not (use `env`). Base64 works as in babashka:
+constructors. `Math`, `Date`, `System/currentTimeMillis` and
+`System/getProperty` (`user.home`, `user.dir`, `java.io.tmpdir`, `os.name`,
+the separators) exist; `System/getenv` does not (use `env`). Base64 works as in babashka:
 `(String. (.decode (java.util.Base64/getDecoder) s))` and
 `(.encodeToString (java.util.Base64/getEncoder) (.getBytes s))`.
 `(catch Exception e …)` catches any error, and `(.getMessage e)` works.

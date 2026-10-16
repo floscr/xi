@@ -207,6 +207,16 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "=> true"))))
 
+(deftest system-get-property
+  (let [res (eval! "[(System/getProperty \"user.home\") (System/getProperty \"nope\" :d)]")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) (pr-str [(.homedir (js/require "node:os")) :d])))))
+
+(deftest missing-static-member-hints-helpers
+  (let [res (eval! "(System/getenv \"HOME\")")]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) "(env k)"))))
+
 (deftest repl-persistence
   (eval! "(def xi-test-x 41)" {:room-id :persist})
   (let [res (eval! "(inc xi-test-x)" {:room-id :persist})]
