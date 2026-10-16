@@ -108,6 +108,24 @@ A profile is the `~/.config/xi` a user starts with, as data: a map of path
 | `agent` | An `:agents` profile `helper` with a prompt and two tools |
 | `broken` | Unreadable `config.edn` and `rules.edn` |
 
+## In a browser (`xi.e2e.browser`)
+
+Scenarios that need the real web client drive headless Chromium over the
+DevTools protocol, with no npm dependency: `launch!` starts it in a throwaway
+profile (`XI_E2E_CHROME`, else `chromium` / `google-chrome` on `PATH`; a
+scenario skips when there is none), `open!` loads a page, `eval!` runs JS in
+it and `until!` polls an expression. JavaScript dialogs are recorded in
+`(:dialogs browser)` and dismissed. WebGL runs on SwiftShader, so a 3D view
+draws without a GPU. Open the e2e server's own URL
+(`http://127.0.0.1:<port>`), put `h/client-key` into `localStorage`
+(`xi-client-key`) and go to `/chat/<session-id>`.
+
+`xi.e2e.app-views-e2e` is the example: its `orbit` extension
+(`xi.e2e.app-views`) shows a WebGL probe as an app view, which checks its
+sandbox from the inside (origin, page, storage, cookies, CSP) and reports
+through `ui/update-model-context`, read back from the block's
+`:ext.blocks/note` on the test's WebSocket client.
+
 ## Writing a scenario
 
 Add a `deftest` to the matching `*_e2e.cljs` (or a new `xi.e2e.<area>-e2e`

@@ -121,4 +121,9 @@
         d    (some #(when (= "show_map" (:name %)) %) defs)]
     (is (some? d))
     (is (not (contains? d :ui)) "providers never see :ui")
-    (is (not-any? #(= "refresh" (:name %)) defs))))
+    (is (not-any? #(= "refresh" (:name %)) defs))
+    (is (nil? (get (:registry (registry/resolve-tooling
+                               {:extra-tool-definitions [{:name "refresh" :ui {:visibility ["app"]}}]
+                                :extra-tool-registry {"refresh" (fn [_ _] nil)}}))
+                   "refresh"))
+        "nor callable by a model that guesses the name")))

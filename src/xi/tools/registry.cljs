@@ -82,15 +82,18 @@
    description or schema that depends on what is loaded (xi.ext.blocks lists
    extension block kinds this way). A def's `:ui` (the view of a tool with a
    UI, xi.ext.blocks.app) stays here; one whose `:visibility` leaves out
-   \"model\" is callable from its view only and not advertised."
+   \"model\" is callable from its view only: neither advertised nor in the
+   turn's registry, so a model that guesses its name gets Unknown tool."
   [{:keys [only-tools extra-tool-definitions extra-tool-registry remove-tools]}]
-  (let [extra-defs (into []
-                         (comp (remove #(when-let [v (get-in % [:ui :visibility])]
-                                          (not (some #{"model"} v))))
+  (let [all-extra  (if (fn? extra-tool-definitions)
+                     (extra-tool-definitions) extra-tool-definitions)
+        view-only? #(when-let [v (get-in % [:ui :visibility])] (not (some #{"model"} v)))
+        view-only  (into #{} (comp (filter view-only?) (map :name)) all-extra)
+        extra-defs (into []
+                         (comp (remove view-only?)
                                (map (fn [d] (if-let [f (:resolve d)] (merge (dissoc d :resolve) (f)) d)))
                                (map #(dissoc % :ui)))
-                         (if (fn? extra-tool-definitions)
-                           (extra-tool-definitions) extra-tool-definitions))
+                         all-extra)
         removed (if (fn? remove-tools) (remove-tools) remove-tools)
         all-defs (into (tool-definitions) extra-defs)
         all-defs (if (seq removed)
@@ -99,7 +102,7 @@
         defs (if only-tools
                (filterv #(contains? only-tools (:name %)) all-defs)
                all-defs)]
-    {:defs defs :registry (with-extensions extra-tool-registry)}))
+    {:defs defs :registry (apply dissoc (with-extensions extra-tool-registry) view-only)}))
 
 (defn run-tool
   "Run a tool's `exec-fn` with `args`/`ctx` and normalize its result to a
