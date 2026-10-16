@@ -4074,12 +4074,22 @@ code a:hover,
 }
 .session-buffer-row .icon { flex-shrink: 0; color: var(--fg-2); }
 /* A background sub-agent among the rows (xi.server.room-manager/
-   session-buffers): a spinner stands in for the icon while it runs; a
-   finished one colours its icon by outcome, like the panel's status label. */
-.session-buffer-row .agent-status-spinner--sm { margin: 0 2px; }
-.session-buffer-row--sub-error .icon   { color: var(--danger, #dc2626); }
-.session-buffer-row--sub-done .icon    { color: var(--success); }
-.session-buffer-row--sub-stopped .icon { color: var(--fg-3); }
+   session-buffers): its status is a dot badge on the icon, like the session
+   cards' (card-status-indicator), cut out of the row's own fill. */
+.session-buffer-row { --card-ring: var(--bg-0); }
+.session-buffer-icon--badged {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+.session-buffer-icon--badged .status-dot {
+  --dot-ring: 0 0 0 2px var(--card-ring);
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 6px;
+  height: 6px;
+}
 /* The buffer in view: accent tint, like the current session card. */
 .session-buffer-row--active {
   color: var(--fg-0);
@@ -4104,7 +4114,7 @@ code a:hover,
   color: var(--fg-2);
 }
 @media (hover: hover) {
-  .session-buffer-row:hover { background: var(--bg-1); color: var(--fg-0); }
+  .session-buffer-row:hover { background: var(--bg-1); color: var(--fg-0); --card-ring: var(--bg-1); }
   .session-buffer-row--active:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
   .session-buffer-row:not(:hover) .session-buffer-close { visibility: hidden; }
   .session-buffer-close:hover { color: var(--fg-0); background: var(--bg-2); }

@@ -2954,17 +2954,41 @@
 ;; ── Tab bar ──────────────────────────────────────────────────────────────────
 
 (defn buffer-icon
-  "The icon of a buffer kind (xi.buffers); `:subagent` is a background
-   sub-agent listed with the buffers (xi.server.room-manager/session-buffers).
-   Kinds an extension renders bring their own (xi.web.buffer-views)."
+  "The framework icon name of a buffer kind (xi.buffers). Kinds an extension
+   renders bring their own (xi.web.buffer-views). `:subagent` has none: render
+   kinds with `buffer-kind-icon`."
   [kind]
   (case kind
     :diff     :code
     :file     :file-text
     :terminal :terminal
     :prompt   :terminal
-    :subagent :users
     (or (buffer-views/icon kind) :list)))
+
+(defn- messages-icon
+  "Tabler's messages, the sub-agent icon, which the clj-ui-framework icon set lacks."
+  ([] (messages-icon nil))
+  ([class]
+   [:svg {:class ["icon" "icon-sm" class]
+          :xmlns "http://www.w3.org/2000/svg"
+          :viewBox "0 0 24 24"
+          :fill "none"
+          :stroke "currentColor"
+          :stroke-width "2"
+          :stroke-linecap "round"
+          :stroke-linejoin "round"
+          :aria-hidden "true"}
+    [:path {:d "M21 14l-3 -3h-7a1 1 0 0 1 -1 -1v-6a1 1 0 0 1 1 -1h9a1 1 0 0 1 1 1v10"}]
+    [:path {:d "M14 15v2a1 1 0 0 1 -1 1h-7l-3 3v-10a1 1 0 0 1 1 -1h2"}]]))
+
+(defn- buffer-kind-icon
+  "The icon of a buffer kind as hiccup; `:subagent` is a background sub-agent
+   listed with the buffers (xi.server.room-manager/session-buffers)."
+  ([kind] (buffer-kind-icon kind nil))
+  ([kind class]
+   (if (= :subagent kind)
+     (messages-icon class)
+     (icon/icon {:icon-name (buffer-icon kind) :size :sm :class class}))))
 
 (defn- text-tab-view
   [id {:keys [text] :as buf}]
@@ -3064,6 +3088,15 @@
 (def ^:private subagent-status-label
   {:running "running" :done "done" :error "error" :stopped "stopped"})
 
+(defn- subagent-status-dot
+  "card-status-indicator flags for a sub-agent's status; stopped shows none."
+  [status]
+  (case (or status :running)
+    :running {:busy? true}
+    :error   {:error? true}
+    :done    {:active? true}
+    nil))
+
 (defn- buffer-menu
   "The topbar's view switch once the room has a buffer or sub-agent: a pill
    naming the view in front, opening a popover listing the chat, every buffer
@@ -3115,7 +3148,7 @@
                       :title "Switch view"
                       :replicant/key "buffer-menu-trigger"}
                      (popover/trigger-attrs menu-id))
-      (when kind (icon/icon {:icon-name (buffer-icon kind) :size :sm}))
+      (when kind (buffer-kind-icon kind))
       [:span {:class ["buffer-menu-label"]} label]
       (icon/icon {:icon-name :chevron-down :size :sm})]
      (popover/popover-content
@@ -3129,13 +3162,13 @@
              :on-click #(switch! :chat)})
       (for [[id buf] (buffers/ordered buffers)
             :let [title (buffers/label id buf)]]
-        (item {:id (str id) :icon (buffer-icon (buffers/kind id buf)) :title title
+        (item {:id (str id) :icon (buffer-kind-icon (buffers/kind id buf)) :title title
                :active? (= id active-buffer)
                :people (people-of id)
                :on-click #(switch! id)
                :on-close #(close! id)}))
       (for [{:keys [id label task status]} sub-agents]
-        (item {:id id :icon (buffer-icon :subagent)
+        (item {:id id :icon (messages-icon)
                :title (str (or label task "Sub-agent") " · "
                            (get subagent-status-label status (name (or status :running))))
                :active? (= id active-buffer)
@@ -3649,7 +3682,7 @@
   [dispatch! room]
   (when-let [{parent :session-id} (get-in room [:session :subagent-origin])]
     [:div {:class ["subagent-origin"]}
-     (icon/icon {:icon-name :users :size :sm})
+     (messages-icon)
      [:span {:class ["subagent-origin-text"]} "A sub-agent's session, hidden from your chats"]
      [:span {:class ["diff-thread-spacer"]}]
      (when parent
@@ -3766,7 +3799,7 @@
        [:div {:class ["post-body" "subagents-single"]} cards]
        [:div {:class ["post-body" "subagents-panel"]}
         [:div {:class ["subagents-head"]}
-         (icon/icon {:icon-name :users :size :sm})
+         (messages-icon)
          [:span {:class ["subagents-title"]} "Sub-agents"]
          [:span {:class ["subagents-count"]} n]
          (when (pos? running)
@@ -3836,7 +3869,7 @@
       [:div {:class ["subagent-strip"]}
        (if (= :running status)
          (spinner)
-         (icon/icon {:icon-name :users :size :sm}))
+         (messages-icon))
        [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
        (when-let [d (subagent-duration child)]
          [:span {:class ["subagent-card-dur"]} d])
@@ -4443,8 +4476,7 @@
                  running? (and sub? (= :running status))
                  people   (sb/room-people state (get viewers id))]]
        [:button {:class ["session-buffer-row"
-                         (when (= id active) "session-buffer-row--active")
-                         (when sub? (str "session-buffer-row--sub-" (name (or status :running))))]
+                         (when (= id active) "session-buffer-row--active")]
                  :replicant/key (str id)
                  :data-nav (str "b:" session-id ":" id)
                  :title (if sub?
@@ -4454,9 +4486,11 @@
                                (.stopPropagation e)
                                (dispatch! {:type :route/navigate :page :chat
                                            :session-id session-id :buffer-id id}))}}
-        (if running?
-          [:span {:class ["agent-status-spinner--sm"]}]
-          (icon/icon {:icon-name (buffer-icon kind) :size :sm}))
+        (if sub?
+          [:span {:class ["session-buffer-icon--badged"]}
+           (messages-icon)
+           (card-status-indicator (when-not (= id active) (subagent-status-dot status)))]
+          (buffer-kind-icon kind))
         [:span {:class ["session-buffer-title"]} title]
         ;; buffer presence: who else is on it
         (when (seq people)
@@ -5836,12 +5870,13 @@
                       chat? (with-leading-icon (message-circle-icon "command-item-icon"))))}
           {:heading "Other sessions"
            :items (for [{:keys [id kind title session-id session-name]} others]
-                    (cmd/command-item
-                     {:icon (buffer-icon kind)
-                      :value (str "buffer " title " " session-name)
-                      :on-click (fn [_] (dispatch! {:type :route/navigate :page :chat
-                                                    :session-id session-id :buffer-id id}))}
-                     (str title " · " session-name)))}
+                    (with-leading-icon
+                      (cmd/command-item
+                       {:value (str "buffer " title " " session-name)
+                        :on-click (fn [_] (dispatch! {:type :route/navigate :page :chat
+                                                      :session-id session-id :buffer-id id}))}
+                       (str title " · " session-name))
+                      (buffer-kind-icon kind "command-item-icon")))}
           {:heading "Buffer actions"
            :items (concat
                    (when (seq own)
