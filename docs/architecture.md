@@ -439,7 +439,7 @@ session save. See `xi.cli/start-prompt!`.
 
 SCI eval is synchronous and `(sh …)` uses `spawnSync`, so evaluating on the
 server's event loop froze every room for the command's duration. `clj` and
-`run_task` post the request to a **per-room worker thread** (`target/main.js`diff --git a/src/xi/web/views.cljs b/src/xi/web/views.cljs
+`run_task` post the request to a **per-room worker thread** (`target/main.js`
 re-enters itself as a `node:worker_threads` Worker; `xi.cli/main`'s
 `isMainThread` guard → `xi.ext.clj-worker` → `xi.ext.clj/eval-message`).
 Each worker holds its own SCI runtimes (so `def` persists per room), is
