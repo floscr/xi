@@ -1,9 +1,10 @@
 # Agent blocks
 
-The agent can answer with a block instead of a wall of text: a checklist you
-tick off, a table you sort, a chart, a form you fill in. A block appears in
-the chat right after the tool call that made it, the agent can change it
-while it works, and it can read what you did with it.
+The agent can put something in the chat that you act on: a checklist you
+tick off, options to pick, a form to fill in, cards with buttons. A block
+appears right after the tool call that made it, the agent can change it while
+it works, and it can read what you did with it. Tables, lists and notes you
+only read come as ordinary text in the agent's answer.
 
 ```text
 show the failing tests as a checklist, I'll tick the ones I've looked at
@@ -12,7 +13,7 @@ show the failing tests as a checklist, I'll tick the ones I've looked at
 ## What a block looks like
 
 Every block sits in a frame Xi draws, never the agent: a dashed border, a
-header with **Agent block**, the kind (`checklist`, `table`, …), its title,
+header with **Agent block**, the kind (`checklist`, `form`, …), its title,
 and where it came from (`ui_block` for the agent, an extension or MCP server
 by name). The `≡` menu in the header opens the block as a
 [buffer](web-client.md#buffers) of the chat, shows its data and copies it as
@@ -28,19 +29,13 @@ block: permission questions appear on the tool call they belong to.
 | Kind | Shows | You can |
 | --- | --- | --- |
 | `checklist` | Items with a checkbox | Tick items |
-| `table` | Columns and rows | Sort by a column (click its header) |
-| `keyvalue` | Labels and values | |
-| `steps` | Steps marked todo, running, done, failed or skipped | |
-| `progress` | A progress bar | |
-| `callout` | A highlighted note: info, warn, success or error | |
-| `chart` | A bar, line or sparkline chart; hover a bar or point for its value | |
 | `choice` | Options to pick, one or several | Pick, then **Send** |
 | `form` | Text, text area, select, checkbox and number fields | Fill in, then submit |
 | `cards` | Cards with a title, text and buttons | Press a button |
-| `hiccup` | A layout the agent composes from a fixed set of elements and Xi's own components | Press its buttons, use its fields |
+| `hiccup` | A layout the agent composes from a fixed set of elements and Xi's own components, for what text can't show: badges, a progress bar, an SVG chart | Press its buttons, use its fields |
 
-The agent picks the kind. Asking for one by name works ("as a table", "give
-me a form for the issue").
+The agent picks the kind. Asking for one works ("as a checklist", "give me a
+form for the issue").
 
 ## Answering the agent
 
@@ -131,7 +126,6 @@ The terminal client and `xi prompt` show the tool's text result instead.
 | --- | --- |
 | Blocks per chat | 64 |
 | Size of one block's data | 32 KB |
-| Table cells | 10 000 |
 | Elements in a `hiccup` block | 2 000 |
 | Actions a block remembers | the last 50 |
 

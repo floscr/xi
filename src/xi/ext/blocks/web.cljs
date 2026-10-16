@@ -9,7 +9,7 @@
    the server, which records them on the block). A form's Submit, a choice's
    Send and a control marked to send also post a message for the user
    (`:input/submit` with xi.blocks/action-message): user-initiated, never on
-   mount or hover. Table sort, the raw-data view and unsent form values are
+   mount or hover. The raw-data view and unsent form values are
    this browser's own ([:web/blocks …])."
   (:require [clojure.string :as str]
             [ui.alert :as alert]
@@ -21,7 +21,6 @@
             [ui.icon :as icon]
             [ui.popover :as popover]
             [ui.progress :as progress]
-            [ui.table :as table]
             [xi.blocks :as b]
             [xi.blocks.hiccup :as bh]
             [xi.core.state :as state]
@@ -56,11 +55,6 @@
          :effects (cond-> [[:ws/send ev]]
                     send? (conj [:ws/send {:type :input/submit :room-id room-id
                                            :text (b/action-message r action)}]))}))))
-
-(defn- on-sort [st {:keys [block-id col]}]
-  (let [{c :col dir :dir} (get-in st (ui-path block-id :sort))]
-    {:state (assoc-in st (ui-path block-id :sort)
-                      {:col col :dir (if (and (= c col) (= :asc dir)) :desc :asc)})}))
 
 (defn- on-raw [st {:keys [block-id]}]
   {:state (update-in st (ui-path block-id :raw?) not)})
@@ -109,9 +103,6 @@
                target      (assoc :target target)
                (some? value) (assoc :value value))))
 
-(def ^:private tone->variant
-  {"info" :info "warn" :warning "success" :success "error" :danger})
-
 ;; ── Kinds ────────────────────────────────────────────────────────────────────
 
 (defn- checklist-view [dispatch! room-id {:keys [id spec state]}]
@@ -124,125 +115,6 @@
         :checked   on?
         :on-change (fn [e] (act! dispatch! room-id id "toggle" (:id it) (.. e -target -checked)))})
       (when-let [n (:note it)] [:span {:class ["ab-note"]} n])])])
-
-(defn- sort-rows [rows {:keys [col dir]}]
-  (if (nil? col)
-    rows
-    (let [num   (fn [s] (let [n (js/parseFloat (str/replace s #"[,_\s]" ""))]
-                          (when-not (js/isNaN n) n)))
-          k     (fn [r] (let [s (get r col "")] (if-let [n (num s)] [0 n ""] [1 0 (str/lower-case s)])))
-          rows  (sort-by k rows)]
-      (if (= :desc dir) (reverse rows) rows))))
-
-(defn- table-view [dispatch! {:keys [id spec]} ui]
-  (let [{:keys [columns rows]} spec
-        srt (:sort ui)]
-    (table/table
-     {:variant :striped
-      :class   "ab-table"
-      :headers (map-indexed
-                (fn [i {:keys [label align]}]
-                  [:button {:class ["ab-sort" (str "ab-cell-" align)]
-                            :title "Sort"
-                            :on {:click (fn [_] (dispatch! {:type :ext.blocks/sort :block-id id :col i}))}}
-                   label
-                   (when (= i (:col srt))
-                     (icon/icon {:icon-name (if (= :asc (:dir srt)) :chevron-up :chevron-down) :size :sm}))])
-                columns)
-      :rows    (for [r (sort-rows rows srt)]
-                 (map-indexed (fn [i c] [:span {:class [(str "ab-cell-" (:align (nth columns i)))]} c]) r))})))
-
-(defn- keyvalue-view [{:keys [spec]}]
-  [:dl {:class ["ab-kv"]}
-   (for [[i {:keys [key value]}] (map-indexed vector (:pairs spec))]
-     (list [:dt {:replicant/key (str "k" i)} key]
-           [:dd {:replicant/key (str "v" i)} value]))])
-
-(defn- steps-view [{:keys [spec]}]
-  [:ol {:class ["ab-steps"]}
-   (for [it (:items spec)]
-     [:li {:replicant/key (:id it) :class [(str "ab-step-" (:status it))]}
-      [:span {:class ["ab-step-mark"] :title (:status it)} (b/step-marks (:status it))]
-      [:span {:class ["ab-step-label"]} (:label it)]
-      (when-let [n (:note it)] [:span {:class ["ab-note"]} n])])])
-
-(defn- progress-view [{:keys [spec]}]
-  (let [pct (b/percent spec)]
-    [:div {:class ["ab-progress"]}
-     [:div {:class ["ab-progress-head"]}
-      [:span (or (:label spec) "")]
-      [:span {:class ["ab-progress-pct"]} (str pct "%")]]
-     (progress/progress {:value pct :variant (when (>= pct 100) :success)})
-     (when-let [n (:note spec)] [:div {:class ["ab-note"]} n])]))
-
-(defn- callout-view [{:keys [spec]}]
-  (alert/alert {:variant (tone->variant (:tone spec))} (markdown (:body spec))))
-
-;; chart (pure SVG; hover values through <title>)
-
-(def ^:private chart-w 320)
-(def ^:private chart-h 120)
-
-(defn- fmt [n] (if (== n (js/Math.round n)) (str n) (.toFixed n 2)))
-
-(defn- bar-chart [{:keys [labels series]}]
-  (let [vals    (mapcat :values series)
-        hi      (max 0 (reduce max 0 vals))
-        lo      (min 0 (reduce min 0 vals))
-        span    (let [s (- hi lo)] (if (zero? s) 1 s))
-        n       (max 1 (count labels))
-        k       (count series)
-        slot    (/ chart-w n)
-        bw      (max 1 (/ (* 0.8 slot) k))
-        y-of    (fn [v] (* chart-h (/ (- hi v) span)))
-        zero-y  (y-of 0)]
-    [:svg {:class ["ab-chart"] :viewBox (str "0 0 " chart-w " " (+ chart-h 18)) :role "img"}
-     [:line {:class ["ab-axis"] :x1 0 :x2 chart-w :y1 zero-y :y2 zero-y}]
-     (for [[si s] (map-indexed vector series)
-           [i v]  (map-indexed vector (:values s))
-           :let [x (+ (* i slot) (* 0.1 slot) (* si bw))
-                 y (min (y-of v) zero-y)
-                 h (max 1 (js/Math.abs (- (y-of v) zero-y)))]]
-       [:rect {:replicant/key (str si "-" i) :class [(str "ab-series-" (mod si 6))]
-               :x x :y y :width (max 1 (- bw 1)) :height h :rx 1}
-        [:title (str (when (> k 1) (str (:name s) " · ")) (get labels i "") ": " (fmt v))]])
-     (when (<= n 24)
-       (for [[i l] (map-indexed vector labels)]
-         [:text {:replicant/key (str "l" i) :class ["ab-chart-label"]
-                 :x (+ (* i slot) (/ slot 2)) :y (+ chart-h 14) :text-anchor "middle"}
-          l]))]))
-
-(defn- line-chart [{:keys [labels series type]}]
-  (let [spark? (= "sparkline" type)
-        w      (if spark? 120 chart-w)
-        h      (if spark? 28 chart-h)
-        vals   (mapcat :values series)
-        hi     (reduce max 0 vals)
-        lo     (reduce min (if (seq vals) (first vals) 0) vals)
-        span   (let [s (- hi lo)] (if (zero? s) 1 s))
-        n      (max 2 (reduce max 0 (map (comp count :values) series)))
-        x-of   (fn [i] (* w (/ i (dec n))))
-        y-of   (fn [v] (- h 2 (* (- h 4) (/ (- v lo) span))))]
-    [:svg {:class ["ab-chart" (when spark? "ab-chart--spark")] :viewBox (str "0 0 " w " " h) :role "img"}
-     (for [[si s] (map-indexed vector series)]
-       [:g {:replicant/key si :class [(str "ab-series-" (mod si 6))]}
-        [:polyline {:class ["ab-line"]
-                    :points (str/join " " (map-indexed (fn [i v] (str (x-of i) "," (y-of v))) (:values s)))}]
-        (when-not spark?
-          (for [[i v] (map-indexed vector (:values s))]
-            [:circle {:replicant/key i :class ["ab-point"] :cx (x-of i) :cy (y-of v) :r 3}
-             [:title (str (when (> (count series) 1) (str (:name s) " · ")) (get labels i "") ": " (fmt v))]]))])]))
-
-(defn- chart-view [{:keys [spec]}]
-  [:div {:class ["ab-chart-wrap"]}
-   (if (= "bar" (:type spec)) (bar-chart spec) (line-chart spec))
-   (when (> (count (:series spec)) 1)
-     [:div {:class ["ab-legend"]}
-      (for [[si s] (map-indexed vector (:series spec))]
-        [:span {:replicant/key si :class ["ab-legend-item"]}
-         [:span {:class ["ab-swatch" (str "ab-series-" (mod si 6))]}] (:name s)])])])
-
-;; interactive kinds
 
 (defn- choice-view [dispatch! room-id {:keys [id spec state]}]
   (let [sel (set (:selected state))]
@@ -387,9 +259,19 @@
   "A user extension's kind, drawn by its web half's renderer through the
    same allowlist; its text form when there is no renderer."
   [dispatch! room-id {:keys [id kind spec state rules] :as record}]
-  (if-let [tree (some-> (block-kinds/render kind spec state) bh/normalize :tree)]
+  (let [tree (some-> (block-kinds/render kind spec state) bh/normalize :tree)]
+   (cond
+    tree
     (tree-view dispatch! room-id id tree (set (:send rules)))
-    [:pre {:class ["ab-raw"]} (b/body-text record)]))
+
+    (:text-form record)
+    [:pre {:class ["ab-raw"]} (b/body-text record)]
+
+    ;; a kind Xi no longer has (the static presets), in an older chat
+    :else
+    [:div
+     [:p {:class ["ab-note"]} (str "Blocks of kind " kind " aren't drawn any more. Their data:")]
+     [:pre {:class ["ab-raw"]} (js/JSON.stringify (clj->js spec) nil 2)]])))
 
 ;; ── Frame ────────────────────────────────────────────────────────────────────
 
@@ -403,12 +285,6 @@
 (defn- block-body [dispatch! room-id {:keys [kind] :as record} ui]
   (case kind
     "checklist" (checklist-view dispatch! room-id record)
-    "table"     (table-view dispatch! record ui)
-    "keyvalue"  (keyvalue-view record)
-    "steps"     (steps-view record)
-    "progress"  (progress-view record)
-    "callout"   (callout-view record)
-    "chart"     (chart-view record)
     "choice"    (choice-view dispatch! room-id record)
     "form"      (form-view dispatch! room-id record ui)
     "cards"     (cards-view dispatch! room-id record)
@@ -533,7 +409,6 @@
                            :ext.blocks/app-reply   on-app-reply
                            :ext.blocks/app-display on-app-display
                            :ext.blocks/app-message on-app-message
-                           :ext.blocks/sort   on-sort
                            :ext.blocks/raw    on-raw
                            :ext.blocks/draft  on-draft})
    :timeline-posts timeline-posts

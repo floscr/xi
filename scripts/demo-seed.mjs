@@ -157,31 +157,6 @@ const blockDemos = [
       { id: "1", label: "Bump the version", done: true },
       { id: "2", label: "Update the changelog", done: false },
       { id: "3", label: "Tag and push", done: false, note: "after CI is green" }] } },
-  { kind: "table", title: "Slowest endpoints",
-    spec: { columns: [
-      { key: "path", label: "Path", align: "left" },
-      { key: "p95", label: "p95 (ms)", align: "right" },
-      { key: "calls", label: "Calls", align: "right" }],
-      rows: [["/api/dashboard", "3920", "18204"], ["/api/events", "610", "90233"],
-             ["/api/users/:id", "84", "40512"], ["/api/auth/refresh", "41", "122019"]] } },
-  { kind: "keyvalue", title: "Deploy",
-    spec: { pairs: [{ key: "Environment", value: "staging" }, { key: "Commit", value: "f142361e" },
-                    { key: "Duration", value: "2m 14s" }] } },
-  { kind: "steps", title: "Migration",
-    spec: { items: [
-      { id: "1", label: "Back up the database", status: "done" },
-      { id: "2", label: "Add the (org_id, created_at) index", status: "running" },
-      { id: "3", label: "Backfill events", status: "todo" },
-      { id: "4", label: "Drop the old index", status: "failed", note: "still referenced by a view" }] } },
-  { kind: "progress", title: "Test run", spec: { value: 142, max: 200, label: "Specs", note: "3 failing so far" } },
-  { kind: "callout", title: "Heads up",
-    spec: { tone: "warn", body: "`auth.test.ts` stubs `Date.now()` **globally**; restore it in `afterEach`." } },
-  { kind: "chart", title: "Query time (ms)",
-    spec: { type: "bar", labels: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-            series: [{ name: "", values: [3900, 3700, 410, 52, 40] }] } },
-  { kind: "chart", title: "Errors vs. deploys",
-    spec: { type: "line", labels: ["1", "2", "3", "4", "5", "6"],
-            series: [{ name: "Errors", values: [4, 9, 3, 12, 5, 2] }, { name: "Deploys", values: [1, 2, 1, 3, 2, 1] }] } },
   { kind: "choice", title: "Which fix?", state: { selected: [] },
     spec: { options: [
       { id: "1", label: "Composite index", description: "fast, one migration" },
@@ -214,7 +189,7 @@ const blockDemos = [
                                                             { name: "staging", version: "1.4.2", status: "healthy" },
                                                             { name: "prod", version: "1.4.1", status: "degraded" }] } } } },
   { kind: "hiccup", title: "Custom layout",
-    spec: { tree: raw('[:div {} [:div {:layout "row" :gap "sm"} [:ui/badge {:variant "success"} "build passing"] [:ui/badge {:variant "warning"} "2 flaky"]] [:p {:emphasis "muted"} "Hiccup from the agent, from an allowlist."] [:ul {} [:li {} "no classes, ids or styles"] [:li {} "controls only record block actions"]] [:div {:layout "row"} [:ui/button {:action "rerun" :variant "primary"} "Re-run flaky"] [:ui/button {:action "ship" :send true} "Ship it"]]]') } },
+    spec: { tree: raw('[:div {} [:div {:layout "row" :gap "sm"} [:ui/badge {:variant "success"} "build passing"] [:ui/badge {:variant "warning"} "2 flaky"]] [:p {:emphasis "muted"} "Hiccup from the agent, from an allowlist."] [:table {} [:thead {} [:tr {} [:th {} "Endpoint"] [:th {} "p95 (ms)"]]] [:tbody {} [:tr {} [:td {} "/api/dashboard"] [:td {} "3920"]] [:tr {} [:td {} "/api/events"] [:td {} "610"]]]] [:ui/progress {:value 71}] [:ul {} [:li {} "no classes, ids or styles"] [:li {} "controls only record block actions"]] [:div {:layout "row"} [:ui/button {:action "rerun" :variant "primary"} "Re-run flaky"] [:ui/button {:action "ship" :send true} "Ship it"]]]') } },
 ];
 
 const blocksLines = (cwd, sid) => [

@@ -3,7 +3,7 @@
    without the model, such as a long job's progress or a report card, and
    change or read it later.
 
-     (show!   ctx {:kind \"steps\" :title \"Backup\" :data {:items […]}}) → the block id
+     (show!   ctx {:kind \"checklist\" :title \"Backup\" :data {:items […]}}) → the block id
      (update! ctx id {:data … :title …})                               → the id
      (state   ctx id)                       → {:kind :state :actions :unread}
 

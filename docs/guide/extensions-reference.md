@@ -260,7 +260,7 @@ Not a rules request.
 
 | Function | Returns |
 | --- | --- |
-| `(show! ctx {:kind "steps" :title "Backup" :data {…}})` | the block id; `:id` picks one |
+| `(show! ctx {:kind "checklist" :title "Backup" :data {…}})` | the block id; `:id` picks one |
 | `(update! ctx id {:data {…} :title "…"})` | the id |
 | `(state ctx id)` | `{:kind :state :actions :unread}` |
 

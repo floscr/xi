@@ -33,11 +33,12 @@
   "`extra`: extension kinds ({\"<id>/<name>\" kind}), listed after the built-ins."
   [extra]
   {:name "ui_block"
-   :description (str "Show a visual block in the chat instead of a wall of text: a checklist, table, "
-                     "chart, form, choice, … The user sees it right after this call and can interact "
-                     "with it; you get a short summary back, not the block. Read what the user did with "
-                     "ui_state, change the block with ui_update. Use blocks for structured output the "
-                     "user scans or acts on; keep prose answers as text.\n\nKinds and their data:\n"
+   :description (str "Show a block in the chat that the user acts on: a checklist to tick, a choice to "
+                     "pick, a form to fill in, cards with buttons. The user sees it right after this call; "
+                     "you get a short summary back, not the block. Read what the user did with ui_state, "
+                     "change the block with ui_update. Tables, lists, notes and numbers the user only "
+                     "reads belong in your reply as markdown, not in a block; use kind hiccup only for "
+                     "a layout markdown can't do (badges, a progress bar, an SVG chart).\n\nKinds and their data:\n"
                      (b/catalog extra) "\n\n" hiccup-help)
    :input_schema {:type "object"
                   :properties {:kind   {:type "string" :enum (b/kind-names extra)}
@@ -50,7 +51,7 @@
 (def ^:private ui-update-def
   {:name "ui_update"
    :description (str "Change a block you showed with ui_block: replace its data (or hiccup) and/or "
-                     "its title. Use it for progress, steps that advance, tables that fill in. What the "
+                     "its title: new items or options, ticks you set, a hiccup layout that shows progress. What the "
                      "user did on it (ticks, selections, field values) is kept where the ids still exist.")
    :input_schema {:type "object"
                   :properties {:id     {:type "string" :description "The block id ui_block returned"}

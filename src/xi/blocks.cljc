@@ -29,10 +29,7 @@
   "Most blocks one chat keeps."
   64)
 
-(def max-table-cells 10000)
 (def max-items 500)
-(def max-series 12)
-(def max-points 500)
 (def max-value-chars 4000)
 
 (def max-actions
@@ -106,17 +103,6 @@
       :else (invalid! (str what " must be one of " (str/join ", " (sort allowed))
                            ", got " (pr-str x))))))
 
-(defn- number-or [x default what]
-  (cond
-    (nil? x)    default
-    (number? x) x
-    (and (string? x) (re-matches #"\s*-?\d+(\.\d+)?\s*" x))
-    #?(:cljs (js/parseFloat x) :clj (Double/parseDouble (str/trim x)))
-    :else (invalid! (str what " must be a number, got " (pr-str x)))))
-
-(defn- round [x]
-  #?(:cljs (js/Math.round x) :clj (Math/round (double x))))
-
 (defn- truthy? [x]
   (boolean (if (string? x) (#{"true" "yes" "1" "x" "done"} (str/lower-case x)) x)))
 
@@ -165,39 +151,7 @@
              (boolean? value))
     {:block (assoc-in block [:state :checked target] value)}))
 
-;; table
-
-(defn- norm-columns [columns rows]
-  (let [cols (as-vec columns "columns")
-        cols (if (and (empty? cols) (map? (first rows)))
-               (mapv name (keys (first rows)))
-               cols)]
-    (mapv (fn [i c]
-            (if (map? c)
-              {:key   (or (some-> (:key c) ->str) (str i))
-               :label (or (text-or-nil (:label c)) (some-> (:key c) ->str) "")
-               :align (one-of (:align c) #{"left" "right" "center"} "left" "align")}
-              {:key (->str c) :label (->str c) :align "left"}))
-          (range) cols)))
-
-(defn- norm-table [{:keys [columns rows] :as data}]
-  (let [rows (as-vec (or rows (:data data)) "rows")
-        cols (norm-columns columns rows)
-        cells (mapv (fn [r]
-                      (cond
-                        (map? r)        (mapv (fn [{:keys [key]}]
-                                                (->str (get r (keyword key) (get r key))))
-                                              cols)
-                        (sequential? r) (mapv ->str r)
-                        :else           (invalid! "each row must be an array or an object")))
-                    rows)
-        width (max (count cols) (reduce max 0 (map count cells)))]
-    (when (> (* width (max 1 (count cells))) max-table-cells)
-      (invalid! (str "table too large: " (* width (count cells)) " cells (at most "
-                     max-table-cells ")")))
-    {:columns (into cols (for [i (range (count cols) width)]
-                           {:key (str i) :label "" :align "left"}))
-     :rows    (mapv #(into % (repeat (- width (count %)) "")) cells)}))
+;; text helpers (the form's text form)
 
 (defn- pad [s w align]
   (let [n (- w (count s))]
@@ -224,146 +178,6 @@
              (str/trimr (str/join "  " (map-indexed (fn [i w] (pad (get r i "") w (get aligns i "left")))
                                                     widths))))
            rows))))
-
-(defn- text-table [{:keys [columns rows]} _]
-  (let [aligns (mapv :align columns)
-        head?  (some (comp seq :label) columns)
-        lines  (aligned-rows (cond->> rows head? (cons (mapv :label columns))) aligns)]
-    (str/join "\n" (if head?
-                     (let [[h & body] lines]
-                       (concat [h (apply str (repeat (count h) "-"))] body))
-                     lines))))
-
-;; keyvalue
-
-(defn- norm-keyvalue [data]
-  (let [pairs (or (:pairs data) (:items data))
-        pairs (cond
-                (map? pairs) (map (fn [[k v]] {:key (->str k) :value v}) pairs)
-                (nil? pairs) (map (fn [[k v]] {:key (->str k) :value v}) (dissoc data :pairs :items))
-                :else (as-vec pairs "pairs"))]
-    {:pairs (-> (mapv (fn [p]
-                        (cond
-                          (map? p)        {:key (->str (or (:key p) (:label p) (:name p)))
-                                           :value (->str (:value p))}
-                          (sequential? p) {:key (->str (first p)) :value (->str (second p))}
-                          :else           (invalid! "each pair must be {key, value} or [key, value]")))
-                      pairs)
-                (capped max-items "pairs"))}))
-
-(defn- text-keyvalue [{:keys [pairs]} _]
-  (str/join "\n" (aligned-rows (mapv (juxt :key :value) pairs))))
-
-;; steps
-
-(def ^:private step-statuses #{"todo" "running" "done" "failed" "skipped"})
-
-(defn- norm-steps [{:keys [items steps]}]
-  (let [items (-> (as-vec (or items steps) "items") (capped max-items "items"))]
-    {:items (unique-ids!
-             (vec (map-indexed (fn [i it]
-                                 (cond-> {:id (item-id i it) :label (label-of it)
-                                          :status (if (map? it)
-                                                    (one-of (:status it) step-statuses "todo" "status")
-                                                    "todo")}
-                                   (and (map? it) (text-or-nil (:note it)))
-                                   (assoc :note (text-or-nil (:note it)))))
-                               items))
-             "step")}))
-
-(def step-marks {"todo" "○" "running" "◐" "done" "✓" "failed" "✗" "skipped" "–"})
-
-(defn- text-steps [{:keys [items]} _]
-  (str/join "\n" (for [it items]
-                   (str (step-marks (:status it)) " " (:label it)
-                        (when-let [n (:note it)] (str " — " n))))))
-
-;; progress
-
-(defn- norm-progress [{:keys [value max label note]}]
-  (let [mx (number-or max 100 "max")
-        v  (number-or value 0 "value")]
-    (when-not (pos? mx) (invalid! "max must be positive"))
-    (cond-> {:value (min mx (clojure.core/max 0 v)) :max mx}
-      (text-or-nil label) (assoc :label (text-or-nil label))
-      (text-or-nil note)  (assoc :note (text-or-nil note)))))
-
-(defn percent [{:keys [value max]}]
-  (round (* 100 (/ value max))))
-
-(defn- bar [fraction width]
-  (let [n (round (* fraction width))]
-    (str (apply str (repeat n "█")) (apply str (repeat (- width n) "░")))))
-
-(defn- text-progress [{:keys [value max label note] :as spec} _]
-  (str (when label (str label "  "))
-       (bar (/ value max) 20) " " (percent spec) "%"
-       (when note (str "\n" note))))
-
-;; callout
-
-(def tones #{"info" "warn" "success" "error"})
-
-(defn- norm-callout [{:keys [tone body text markdown]}]
-  {:tone (one-of tone tones "info" "tone")
-   :body (or (text-or-nil body) (text-or-nil text) (text-or-nil markdown)
-             (invalid! "callout needs a body"))})
-
-(defn- text-callout [{:keys [tone body]} _]
-  (str "[" tone "] " body))
-
-;; chart
-
-(def chart-types #{"bar" "line" "sparkline"})
-
-(defn- norm-series [{:keys [series values]}]
-  (let [series (cond
-                 (seq series) (as-vec series "series")
-                 (some? values) [{:name "" :values values}]
-                 :else (invalid! "chart needs series or values"))]
-    (capped series max-series "series")
-    (mapv (fn [i s]
-            (let [s    (if (sequential? s) {:values s} s)
-                  vals (-> (as-vec (:values s) "series values") (capped max-points "points"))]
-              {:name   (or (text-or-nil (:name s)) (text-or-nil (:label s))
-                           (if (= 1 (count series)) "" (str "Series " (inc i))))
-               :values (mapv #(number-or % 0 "a value") vals)}))
-          (range) series)))
-
-(defn- norm-chart [{:keys [type labels] :as data}]
-  (let [series (norm-series data)
-        n      (reduce max 0 (map (comp count :values) series))
-        labels (-> (as-vec labels "labels") (capped max-points "labels"))]
-    {:type   (one-of type chart-types "bar" "type")
-     :labels (mapv ->str (concat labels (map #(str (inc %)) (range (count labels) n))))
-     :series series}))
-
-(def ^:private spark-chars "▁▂▃▄▅▆▇█")
-
-(defn sparkline
-  "Unicode sparkline of `values`."
-  [values]
-  (if (empty? values)
-    ""
-    (let [lo (reduce min values) hi (reduce max values) span (- hi lo)]
-      (apply str (for [v values]
-                   (nth spark-chars (if (zero? span) 3 (round (* 7 (/ (- v lo) span))))))))))
-
-(defn- fmt-num [n]
-  (if (== n (round n)) (str (round n)) (str (/ (round (* n 100)) 100))))
-
-(defn- text-chart [{:keys [type labels series]} _]
-  (if (= "bar" type)
-    (let [hi   (reduce max 1 (mapcat :values series))
-          rows (for [s series
-                     [l v] (map vector labels (:values s))]
-                 [(if (> (count series) 1) (str (:name s) " · " l) l)
-                  (str (apply str (repeat (round (* 24 (/ (max 0 v) hi))) "█")) " " (fmt-num v))])]
-      (str/join "\n" (aligned-rows (vec rows))))
-    (str/join "\n" (aligned-rows (mapv (fn [s] [(:name s) (sparkline (:values s))
-                                                (str (fmt-num (reduce min (:values s))) "–"
-                                                     (fmt-num (reduce max (:values s))))])
-                                       series)))))
 
 ;; choice
 
@@ -576,18 +390,6 @@
    "checklist" {:describe "{items: [{id?, label, done?, note?}]} — a list the user can tick off; read the ticks with ui_state"
                 :normalize norm-checklist :text text-checklist
                 :carry carry-checklist :act act-checklist}
-   "table"     {:describe "{columns: [string | {key, label, align?}], rows: [[cell…] | {key: cell}]} — sortable table"
-                :normalize norm-table :text text-table}
-   "keyvalue"  {:describe "{pairs: [{key, value}]} or an object — a key/value card"
-                :normalize norm-keyvalue :text text-keyvalue}
-   "steps"     {:describe "{items: [{id?, label, status: todo|running|done|failed|skipped, note?}]} — progress through steps; update it with ui_update"
-                :normalize norm-steps :text text-steps}
-   "progress"  {:describe "{value, max? (100), label?, note?} — a progress bar"
-                :normalize norm-progress :text text-progress}
-   "callout"   {:describe "{tone: info|warn|success|error, body: markdown} — a highlighted note"
-                :normalize norm-callout :text text-callout}
-   "chart"     {:describe "{type: bar|line|sparkline, labels?: [string], series: [{name, values: [number]}]} or {values: [number]} — a small chart"
-                :normalize norm-chart :text text-chart}
    "choice"    {:describe "{options: [{id?, label, description?}], multi?, submit?: button label} — the user picks and presses Send, which posts the choice to you as a message"
                 :normalize norm-choice :text text-choice
                 :init-state (fn [_] {:selected []}) :carry carry-choice :act act-choice}

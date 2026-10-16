@@ -23,7 +23,7 @@
             :reply [{:tool "ui_state" :args {:id "rel"}}
                     {:text "{{tool-result}}"}]}
            {:when {:prompt "bad block"}
-            :reply [{:tool "ui_block" :args {:kind "chart" :data {:type "pie" :values [1]}}}
+            :reply [{:tool "ui_block" :args {:kind "choice" :data {:options []}}}
                     {:text "{{tool-result}}"}]}]
    :side [{:text "Blocks"}]})
 
@@ -54,7 +54,7 @@
                (is (= 0 code))
                (let [call (first (:tool-calls (first (h/llm-log env))))]
                  (is (:is-error call))
-                 (is (str/includes? (:content call) "type must be one of bar, line, sparkline"))))))))))
+                 (is (str/includes? (:content call) "choice needs options"))))))))))
 
 (defn- join! [env client]
   (let [from (count @(:events client))]

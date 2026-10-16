@@ -13,7 +13,7 @@
 (deftest unknown-kind-and-bad-data
   (is (str/includes? (err "nope" {}) "unknown kind"))
   (is (str/includes? (err "checklist" "{not json") "not valid JSON"))
-  (is (= "data must be an object" (err "table" [1 2])))
+  (is (= "data must be an object" (err "form" [1 2])))
   (testing "a JSON string is read back"
     (is (= ["a"] (map :label (:items (spec "checklist" "{\"items\": [\"a\"]}")))))))
 
@@ -26,44 +26,8 @@
   (is (= "item ids must be unique" (err "checklist" {:items [{:id "a"} {:id "a"}]})))
   (is (str/includes? (err "checklist" {:items (repeat 501 "x")}) "too many items")))
 
-(deftest table
-  (testing "object rows take their columns from the first row"
-    (let [s (spec "table" {:rows [{:name "a" :n 1} {:name "bb" :n 22}]})]
-      (is (= ["name" "n"] (map :label (:columns s))))
-      (is (= [["a" "1"] ["bb" "22"]] (:rows s)))
-      (is (= "name  n\n-------\na     1\nbb    22"
-             (b/body-text {:kind "table" :spec s})))))
-  (testing "short rows are padded, right alignment kept"
-    (let [s (spec "table" {:columns ["a" {:key "b" :label "B" :align "right"}] :rows [["x"] ["y" 10]]})]
-      (is (= [["x" ""] ["y" "10"]] (:rows s)))
-      (is (= "right" (:align (second (:columns s)))))))
-  (is (str/includes? (err "table" {:columns ["a"] :rows (repeat 10001 ["x"])}) "table too large")))
-
-(deftest keyvalue-progress-callout-steps
-  (is (= [{:key "Name" :value "xi"}] (:pairs (spec "keyvalue" {:Name "xi"}))))
-  (is (= [{:key "a" :value "1"}] (:pairs (spec "keyvalue" {:pairs [["a" 1]]}))))
-  (is (= {:value 30 :max 60 :label "Tests"} (spec "progress" {:value 30 :max 60 :label "Tests"})))
-  (is (= 50 (b/percent (spec "progress" {:value 30 :max 60}))))
-  (is (= {:value 100 :max 100} (spec "progress" {:value 150})))
-  (is (str/includes? (err "progress" {:value "lots"}) "value must be a number"))
-  (is (= {:tone "warn" :body "careful"} (spec "callout" {:tone "WARN" :body "careful"})))
-  (is (str/includes? (err "callout" {:tone "loud" :body "x"}) "tone must be one of"))
-  (is (= "✓ a\n✗ b — boom"
-         (b/body-text {:kind "steps"
-                       :spec (spec "steps" {:items [{:label "a" :status "done"}
-                                                    {:label "b" :status "failed" :note "boom"}]})}))))
-
-(deftest chart
-  (let [s (spec "chart" {:values [1 5 3]})]
-    (is (= "bar" (:type s)))
-    (is (= ["1" "2" "3"] (:labels s)))
-    (is (= [{:name "" :values [1 5 3]}] (:series s))))
-  (is (= "▁█▅" (b/sparkline [1 5 3])))
-  (is (str/includes? (err "chart" {:type "pie" :values [1]}) "type must be one of"))
-  (is (str/includes? (err "chart" {}) "needs series or values")))
-
 (deftest size-cap
-  (is (str/includes? (err "callout" {:body (apply str (repeat 40000 "x"))}) "block too large")))
+  (is (str/includes? (err "checklist" {:items [(apply str (repeat 40000 "x"))]}) "block too large")))
 
 (deftest safe-ids
   (is (= "release-steps" (b/safe-id "Release Steps!")))
@@ -79,7 +43,7 @@
     (testing "illegal actions are refused"
       (is (nil? (b/act r {:action "toggle" :target "zzz" :value true} "alice" 2)))
       (is (nil? (b/act r {:action "toggle" :target "a" :value "yes"} "alice" 2)))
-      (is (nil? (b/act (record "table" {:rows [["x"]]}) {:action "toggle"} "alice" 2))))
+      (is (nil? (b/act (record "hiccup" ["p" "x"]) {:action "toggle"} "alice" 2))))
     (testing "an update keeps toggles unless the agent re-marked the item"
       (let [{r3 :record} (b/act r2 {:action "toggle" :target "b" :value false} "alice" 3)
             {r4 :record} (b/update-record r3 {:data {:items [{:id "a" :label "A"}
@@ -134,6 +98,10 @@
                   r (range 60))]
     (is (= b/max-actions (count (:actions r))))
     (is (= 59 (:at (last (:actions r)))))))
+
+(deftest static-kinds-are-gone
+  (doseq [k ["table" "keyvalue" "steps" "progress" "callout" "chart"]]
+    (is (str/includes? (err k {}) "unknown kind") (str k " is markdown or hiccup now"))))
 
 (deftest catalog-lists-every-kind
   (let [c (b/catalog {"gtd/board" "a board"})]

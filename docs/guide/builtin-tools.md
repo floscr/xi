@@ -156,8 +156,8 @@ None of them asks.
 
 ## Blocks
 
-Instead of text the agent can show a block in the chat: a checklist, table,
-chart, form and more. See [Agent blocks](agent-blocks.md).
+The agent can show a block in the chat that you act on: a checklist, options
+to pick, a form and more. See [Agent blocks](agent-blocks.md).
 
 | Tool | Does | Asks |
 | --- | --- | --- |

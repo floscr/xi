@@ -54,7 +54,7 @@
 (deftest errors-are-worded-for-the-model
   (let [hs (harness [])]
     (is (str/includes? (text (call hs "ui_block" {:kind "pie" :data {}})) "unknown kind"))
-    (is (str/includes? (text (call hs "ui_block" {:kind "table"})) "Pass the table payload as `data`."))
+    (is (str/includes? (text (call hs "ui_block" {:kind "form"})) "Pass the form payload as `data`."))
     (is (str/includes? (text (call hs "ui_update" {:id "x" :title "t"})) "No block \"x\""))
     (is (str/includes? (text (call hs "ui_state" {:id "x"})) "No block"))))
 
@@ -73,4 +73,4 @@
   (let [{:keys [st] :as hs} (harness [])]
     (swap! st assoc-in [:rooms "r" :ext :blocks :blocks]
            (into {} (for [i (range 64)] [(str "b" i) {:id (str "b" i)}])))
-    (is (str/includes? (text (call hs "ui_block" {:kind "callout" :data {:body "x"}})) "64 blocks"))))
+    (is (str/includes? (text (call hs "ui_block" {:kind "checklist" :data {:items ["x"]}})) "64 blocks"))))
