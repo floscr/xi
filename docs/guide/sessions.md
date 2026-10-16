@@ -22,8 +22,10 @@ Resuming from the command line: `xi --session <id>`.
 ## Going back: `/tree`
 
 `/tree` opens a selector over the chat's history. Pick an earlier message and
-the chat continues from there, in a new direction. Nothing on disk is lost:
-the old transcript stays, the chat just stops following it.
+the chat continues from there: everything after it is removed from the chat
+and from its saved transcript, and a reply still streaming stops. Delete,
+Retry and Edit on a message in the web client do the same. To keep the old
+version, `/fork` first.
 
 | Key | Does |
 | --- | --- |
@@ -34,8 +36,7 @@ the old transcript stays, the chat just stops following it.
 | Ctrl+Enter | On one of your messages: go back to just before it and put its text in the editor, to send a changed version |
 | Esc | Close |
 
-The next message starts a fresh model session with the kept history in
-front of it.
+The next message continues the same model session from that point.
 
 ## Making room: `/truncate`
 

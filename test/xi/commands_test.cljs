@@ -261,14 +261,76 @@
                          {:type :prompt/submit :room-id "r" :text "again"}
                          {:type :agent/text-delta :room-id "r" :text "reply"})
         ;; Navigate to index 2 (keep first 2 entries)
-        {:keys [state]} (handle st {:type :tree/navigate :room-id "r" :index 2})]
+        {:keys [state effects]} (handle st {:type :tree/navigate :room-id "r" :index 2})]
     (is (= 2 (count (history state))))
-    (is (nil? (get-in state [:rooms "r" :session :provider-session-id])))
-    (is (= ["cli-1"] (get-in state [:rooms "r" :session :superseded-cli-session-ids]))
-        "the dropped Claude session stays claimed so its transcript isn't listed as a duplicate")
-    (is (true? (get-in state [:rooms "r" :session :inject-history?]))
-        "flags the session so the next turn injects the truncated history")
-    (is (nil? (get-in state [:rooms "r" :ui :tree-open?])))))
+    (is (nil? (get-in state [:rooms "r" :ui :tree-open?])))
+    (testing "the live turn ends and the stored conversation is rewound to the kept prompts"
+      (is (false? (get-in state [:rooms "r" :agent :busy?])))
+      (is (true? (get-in state [:rooms "r" :agent :rewinding?])))
+      (is (= [[:session/rewind {:room-id "r" :provider :anthropic :model "claude-sonnet-4-5"
+                                :ref {:cwd "/tmp" :session-id "cli-1"}
+                                :keep-prompts ["hello"]}]]
+             effects)))
+    (is (= "cli-1" (get-in state [:rooms "r" :session :provider-session-id]))
+        "the session id stays until the store answers")))
+
+(deftest tree-navigate-keeps-only-this-transcripts-prompts
+  (let [st (-> (apply-events (with-room)
+                             {:type :prompt/submit :room-id "r" :text "hello"}
+                             {:type :agent/turn-end :room-id "r" :provider-session-id "cli-1"}
+                             {:type :prompt/submit :room-id "r" :text "again"}
+                             {:type :agent/turn-end :room-id "r"})
+               ;; shown from before a /truncate, never in cli-1's transcript
+               (update-in [:rooms "r" :history] #(into [{:kind :user :text "old" :no-llm? true}] %)))
+        ;; [old hello again] → keep old + hello
+        {:keys [effects]} (handle st {:type :tree/navigate :room-id "r" :index 2})]
+    (is (= ["hello"] (-> effects first second :keep-prompts)))))
+
+(deftest rewind-queues-prompts-until-the-store-answers
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "hello"}
+                         {:type :agent/turn-end :room-id "r" :provider-session-id "cli-1"}
+                         {:type :prompt/submit :room-id "r" :text "oops"}
+                         {:type :agent/text-delta :room-id "r" :text "streaming…"}
+                         ;; Retry: rewind before "oops", resubmit at once
+                         {:type :tree/navigate :room-id "r" :index 1}
+                         {:type :prompt/submit :room-id "r" :text "meant this"})]
+    (is (= ["meant this"] (map :text (get-in st [:rooms "r" :agent :queued])))
+        "no turn starts on the uncut transcript")
+    (testing "a cut transcript keeps its session id; the queue is sent"
+      (let [{:keys [state effects]} (handle st {:type :session/rewound :room-id "r"
+                                                :result {:status :ok}})]
+        (is (= "cli-1" (get-in state [:rooms "r" :session :provider-session-id])))
+        (is (nil? (get-in state [:rooms "r" :session :inject-history?])))
+        (is (false? (get-in state [:rooms "r" :agent :rewinding?])))
+        (is (= [[:app/dispatch {:type :prompt/submit :room-id "r" :text "meant this"
+                                :images [] :user "root"}]]
+               effects))))))
+
+(deftest rewind-without-a-cut-falls-back-to-injected-history
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "hello"}
+                         {:type :agent/turn-end :room-id "r" :provider-session-id "cli-1"}
+                         {:type :tree/navigate :room-id "r" :index 1})]
+    (doseq [status [:mismatch :missing :unsupported :error]]
+      (testing (str status)
+        (let [{:keys [state]} (handle st {:type :session/rewound :room-id "r"
+                                          :result {:status status :message "boom"}})]
+          (is (nil? (get-in state [:rooms "r" :session :provider-session-id])))
+          (is (= ["cli-1"] (get-in state [:rooms "r" :session :superseded-cli-session-ids]))
+              "the dropped Claude session stays claimed so its transcript isn't listed as a duplicate")
+          (is (true? (get-in state [:rooms "r" :session :inject-history?]))
+              "the next turn injects the kept history"))))
+    (testing "a store error is reported"
+      (let [{:keys [state]} (handle st {:type :session/rewound :room-id "r"
+                                        :result {:status :error :message "boom"}})]
+        (is (str/includes? (:text (peek (history state))) "boom"))))
+    (testing "nothing kept: the transcript is gone, the next turn starts fresh"
+      (let [{:keys [state]} (handle st {:type :session/rewound :room-id "r"
+                                        :result {:status :emptied}})]
+        (is (nil? (get-in state [:rooms "r" :session :provider-session-id])))
+        (is (nil? (get-in state [:rooms "r" :session :cli-session-id])))
+        (is (nil? (get-in state [:rooms "r" :session :inject-history?])))))))
 
 (deftest tree-navigate-to-first-message-rearms-titling
   (let [st (-> (apply-events (with-room)
@@ -292,14 +354,19 @@
         {:keys [state]} (handle st {:type :tree/navigate :room-id "r" :index 2})]
     (is (nil? (get-in state [:rooms "r" :agent :title-provisional?])))))
 
-(deftest tree-navigate-accumulates-superseded-sessions
+(deftest rewind-fallback-accumulates-superseded-sessions
   (let [st (-> (apply-events (with-room)
                              {:type :prompt/submit :room-id "r" :text "hello"}
                              {:type :agent/turn-end :room-id "r" :provider-session-id "cli-1"})
                (assoc-in [:rooms "r" :session :superseded-cli-session-ids] ["cli-0"]))
-        {:keys [state]} (handle st {:type :tree/navigate :room-id "r" :index 0})
-        ;; A second fork before any new turn has nothing live to record.
-        {again :state} (handle state {:type :tree/navigate :room-id "r" :index 0})]
+        fallback (fn [st]
+                   (apply-events st
+                                 {:type :tree/navigate :room-id "r" :index 0}
+                                 {:type :session/rewound :room-id "r"
+                                  :result {:status :mismatch}}))
+        state (fallback st)
+        ;; A second fallback before any new turn has nothing live to record.
+        again (fallback state)]
     (is (= ["cli-0" "cli-1"] (get-in state [:rooms "r" :session :superseded-cli-session-ids])))
     (is (= ["cli-0" "cli-1"] (get-in again [:rooms "r" :session :superseded-cli-session-ids]))
         "no duplicate entries")))

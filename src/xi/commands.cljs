@@ -72,28 +72,6 @@
 
 ;; ── Resumed-session messages → history entries (pure) ────────────────────────
 
-(def ^:private attachment-ref-re
-  ;; The provider-only reference lines appended by
-  ;; xi.agent/prompt-with-attachment-paths ("[Attached image: …]" /
-  ;; "[Attached file: …]"). Stripped from the resumed bubble text so it stays
-  ;; clean, matching the live (non-resumed) message.
-  #"(?m)^\[Attached (?:image|file): .*\]$")
-
-(defn- strip-attachment-refs [text]
-  (some-> text
-          (str/replace attachment-ref-re "")
-          str/trimr))
-
-(def ^:private cli-interrupt-marker-re
-  ;; The user message the Claude CLI writes into its own transcript when a
-  ;; turn is interrupted ("[Request interrupted by user]", "… for tool use]").
-  ;; Not something anyone typed — dropped on resume, as the live turn never
-  ;; showed it either (the :aborted history entry marks the interruption).
-  #"^\s*\[Request interrupted by user[^\]]*\]\s*$")
-
-(defn- cli-interrupt-marker? [text]
-  (boolean (re-matches cli-interrupt-marker-re (str text))))
-
 (defn messages->history
   "Session blocks (xi.session/read-session-messages) → history entries
    (xi.agent): tool results fold into their call, attached images reattach to
@@ -138,8 +116,8 @@
               ;; :collapsed-label from it and strip it so the entry reads clean.
               (let [raw   (:text block)
                     label (util/collapse-label raw)
-                    text  (strip-attachment-refs (util/strip-collapse-marker raw))]
-                (if (cli-interrupt-marker? raw)
+                    text  (util/transcript-prompt-text raw)]
+                (if (util/cli-interrupt-marker? raw)
                   (recur (next ms) out imgs)
                   (recur (next ms)
                          (conj (flush-imgs out imgs)
@@ -573,28 +551,45 @@
   (when (state/get-room st room-id)
     {:state (update-in st [:rooms room-id :ui] dissoc :tree-open?)}))
 
+(defn- kept-prompts
+  "The typed texts of the prompts a rewound history keeps, in order — the
+   provider-neutral cut point a session store applies (xi.session.claude-store).
+   Display-only entries from before a /truncate were never in this transcript."
+  [history]
+  (into [] (comp (filter #(and (= :user (:kind %)) (not (:no-llm? %))))
+                 (map #(or (:text %) "")))
+        history))
+
 (defn- tree-navigate
   "Truncate history to `index` (exclusive for :edit, inclusive + 1 for
-   :navigate), clear the provider session (recorded as superseded,
-   state/drop-provider-session) and flag :inject-history? so the next turn
-   injects the truncated conversation as context. Dropping every user message
-   re-arms auto-titling."
-  [st {:keys [room-id index mode editor-text]}]
+   :navigate) and rewind the stored conversation to match: :session/rewind
+   (xi.agent) discards a live turn, waits for its exit and has the provider's
+   store cut the transcript in place; prompts submitted meanwhile queue until
+   :session/rewound. Dropping every user message re-arms auto-titling."
+  [st {:keys [room-id index editor-text]}]
   (when-let [room (state/get-room st room-id)]
     (let [history (:history room)
           new-history (subvec (vec history) 0 index)
-          fresh-convo? (not-any? #(= :user (:kind %)) new-history)]
-      (cond-> {:state (-> st
-                          (assoc-in [:rooms room-id :history] new-history)
-                          (update-in [:rooms room-id :session]
-                                     #(-> (state/drop-provider-session %)
-                                          (assoc :inject-history? true)))
-                          (update-in [:rooms room-id :ui] dissoc :tree-open?)
-                          (update-in [:rooms room-id :agent] assoc :busy? false :queued [])
-                          (cond-> fresh-convo?
-                            (update-in [:rooms room-id] naming/rearm-titling)))}
-        editor-text
-        (assoc :effects [[:editor/insert-text {:text editor-text}]])))))
+          fresh-convo? (not-any? #(= :user (:kind %)) new-history)
+          session (:session room)]
+      {:state (-> st
+                  (assoc-in [:rooms room-id :history] new-history)
+                  ;; the resumed snapshot no longer prefixes the history
+                  (update-in [:rooms room-id] dissoc :msg-hash :msg-count)
+                  (update-in [:rooms room-id :ui] dissoc :tree-open?)
+                  (update-in [:rooms room-id :agent] assoc
+                             :busy? false :rewinding? true :queued [])
+                  (cond-> fresh-convo?
+                    (update-in [:rooms room-id] naming/rearm-titling)))
+       :effects (cond-> [[:session/rewind
+                          {:room-id      room-id
+                           :provider     (get-in room [:agent :provider])
+                           :model        (get-in room [:agent :model])
+                           :ref          {:cwd        (or (:cwd room) (:cwd session))
+                                          :session-id (or (:provider-session-id session)
+                                                          (:cli-session-id session))}
+                           :keep-prompts (kept-prompts new-history)}]]
+                  editor-text (conj [:editor/insert-text {:text editor-text}]))})))
 
 (defn- buffer-open
   "Install a named buffer (xi.buffers) and switch to it on the client it was

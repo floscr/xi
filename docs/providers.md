@@ -3,8 +3,15 @@
 How model providers are wired. Picking and authenticating a model as a user
 is in the guide: [models](guide/models.md).
 
-A provider is a map `{:id kw :start-turn! (fn [opts] {:promise :abort!})
-:list-models! (fn [] Promise<[id…]>)}`. Which providers load is the
+A provider is a map `{:id kw :start-turn! (fn [opts] {:promise :abort!
+:exited}) :list-models! (fn [] Promise<[id…]>) :store {:rewind! …}}`.
+`:exited` (optional, default `:promise`) settles once the turn's process is
+gone and can no longer write its transcript. `:store` (optional) translates
+conversation edits to the data the provider keeps:
+`(:rewind! store) {:cwd :session-id} {:keep-prompts [text…]}` →
+`Promise<{:status …}>` cuts the stored conversation to those prompts
+(`xi.session.claude-store`, shared by Claude and the fake provider; design in
+`tasks/session-store.md`). Which providers load is the
 `providers` vector in `src/xi/config.cljc`; `xi.cli` derives the id →
 provider lookup from it. Routing: an explicit `:provider` on the room's
 agent wins, else `xi.util/provider-for-model` picks by model-name prefix

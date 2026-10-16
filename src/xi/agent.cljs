@@ -8,6 +8,9 @@
                          :agent/tool-result | :agent/error
      provider resolves ─► :agent/turn-end (busy off, queued prompt drained)
      :agent/abort ─► [:provider/abort …] (turn-end follows with :aborted? true)
+     :tree/navigate ─► [:session/rewind …] (discard the turn, await its exit,
+                       the provider :store cuts the transcript) ─►
+                       :session/rewound (queued prompts drained)
 
    History entries (room :history) are flat maps:
      {:kind :user      :text :images}
@@ -17,7 +20,8 @@
       :started-at}          ;; epoch ms the call began (drives the web run timer)
      {:kind :error     :error}
 
-   Providers are maps {:id kw :start-turn! (fn [opts] {:promise :abort!})}
+   Providers are maps {:id kw :start-turn! (fn [opts] {:promise :abort! :exited})
+   :store {:rewind! …}} (:exited and :store optional; xi.session.claude-store)
    using the callback opts built here — they never touch app state.
    All handlers are pure; `create-fx` is the contained impure edge (holds
    in-flight turn handles, which are runtime resources, not app state)."
@@ -240,8 +244,10 @@
                           ;; and server-side submits are this process' user
                           :user (state/event-user st ev)}
                    collapsed-label (assoc :collapsed-label collapsed-label))]
-      (if (get-in room [:agent :busy?])
-        ;; Busy — queue for after the current turn settles
+      (if (or (get-in room [:agent :busy?])
+              (get-in room [:agent :rewinding?]))
+        ;; Busy, or the transcript is being cut (session-rewound drains it) —
+        ;; queue for after it settles
         {:state (update-in st [:rooms room-id :agent :queued] (fnil conj []) prompt)}
         (begin-turn st room prompt)))))
 
@@ -347,6 +353,36 @@
     {:state (assoc-in st [:rooms room-id :session :provider-session-id]
                       provider-session-id)}))
 
+(defn- rewound-session
+  "The room session after the store answered a rewind (xi.commands
+   tree-navigate): a cut transcript keeps its id, one with nothing kept is
+   gone (start fresh), and one the store couldn't cut (no store, no session
+   yet, prompts that don't line up) falls back to a fresh provider session
+   with the kept history injected as context."
+  [session status]
+  (case status
+    (:ok :unchanged) session
+    :emptied         (-> session
+                         (assoc :provider-session-id nil :cli-session-id nil)
+                         (dissoc :inject-history?))
+    (-> (state/drop-provider-session session)
+        (assoc :inject-history? true))))
+
+(defn- session-rewound [st {:keys [room-id result]}]
+  (when-let [room (state/get-room st room-id)]
+    (let [queued (get-in room [:agent :queued])
+          error  (when (= :error (:status result))
+                   {:kind :status
+                    :text (str "Couldn't cut the transcript (" (:message result)
+                               ") — the next turn starts a fresh session with this history as context.")})]
+      (cond-> {:state (-> st
+                          (update-in [:rooms room-id :session] rewound-session (:status result))
+                          (update-in [:rooms room-id :agent] assoc :rewinding? false :queued [])
+                          (cond-> error (update-in [:rooms room-id :history] conj error)))}
+        (seq queued)
+        (assoc :effects [[:app/dispatch (merge {:type :prompt/submit :room-id room-id}
+                                               (join-prompts queued))]])))))
+
 (defn- agent-abort [st {:keys [room-id]}]
   (when (get-in st [:rooms room-id :agent :busy?])
     {:effects [[:provider/abort {:room-id room-id}]]}))
@@ -374,6 +410,7 @@
    :agent/turn-end       turn-end
    :agent/retry-fresh    retry-fresh
    :agent/abort          agent-abort
+   :session/rewound      session-rewound
    :prompt/queue-remove  queue-remove})
 
 ;; ── Provider routing (pure) ──────────────────────────────────────────────────
@@ -399,6 +436,27 @@
           {:label "Custom directory…" :value :custom}]
          (remove nil?)
          vec)))
+
+(def ^:private discard-exit-cap-ms
+  "Longest a discard waits for the turn's process to go (the runner kills its
+   CLI after 3s), so a hung runner can't wedge a rewind."
+  10000)
+
+(defn- discard!
+  "Abort `room-id`'s in-flight turn and forget it (its late events and
+   resolution are dropped). Promise that settles once the turn's process is
+   gone, at once without a turn."
+  [^js inflight room-id]
+  (if-let [handle (.get inflight room-id)]
+    (do (.delete inflight room-id)
+        (when-let [abort! (:abort! handle)] (abort!))
+        (js/Promise.
+         (fn [resolve _]
+           (let [t (js/setTimeout resolve discard-exit-cap-ms)]
+             (-> (js/Promise.resolve (:exited handle))
+                 (.catch (fn [_] nil))
+                 (.then (fn [_] (js/clearTimeout t) (resolve nil))))))))
+    (js/Promise.resolve nil)))
 
 (defn- event-callbacks
   [dispatch! room-id]
@@ -515,20 +573,25 @@
                                                        missing-cwd)}})
                      (dispatch! {:type :agent/turn-end :room-id room-id}))))
              client-pid (room-client-pid (get-state) room-id)
-             {:keys [promise abort!]}
+             ;; `token` identifies this turn in `inflight`; a discarded turn
+             ;; (:provider/discard, :session/rewind) loses its entry, so what it
+             ;; still streams before its process dies and its late resolution
+             ;; are dropped.
+             token      #js {}
+             current?   (fn [] (identical? token (:token (.get inflight room-id))))
+             _          (.set inflight room-id {:token token})
+             {:keys [promise abort! exited]}
              ((:start-turn! provider)
-              (cond-> (merge payload (event-callbacks dispatch! room-id)
+              (cond-> (merge payload
+                             (event-callbacks #(when (current?) (dispatch! %)) room-id)
                              {:tool-ctx tool-ctx})
                 policy1                  (assoc :tool-policy policy1)
                 extra-tool-definitions (assoc :extra-tool-definitions extra-tool-definitions)
                 extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
                 remove-tools           (assoc :remove-tools remove-tools)
                 client-pid             (assoc :client-pid client-pid)))]
-         ;; `handle` identifies this turn in `inflight`; a discarded turn
-         ;; (:provider/discard) loses its entry so its late resolution is dropped.
-         (let [handle {:abort! abort!}
-               current? (fn [] (identical? handle (.get inflight room-id)))]
-           (.set inflight room-id handle)
+         (do
+           (.set inflight room-id {:token token :abort! abort! :exited (or exited promise)})
            (-> promise
                (.then
                 (fn [result]
@@ -563,13 +626,28 @@
 
      :provider/abort
      (fn [_ {:keys [room-id]}]
-       (when-let [handle (.get inflight room-id)]
-         ((:abort! handle))))
+       (when-let [abort! (:abort! (.get inflight room-id))]
+         (abort!)))
 
      ;; Abort the in-flight turn and drop its entry so its late resolution
      ;; can't dispatch turn-end into the replaced session (/new, /clear).
      :provider/discard
      (fn [_ {:keys [room-id]}]
-       (when-let [handle (.get inflight room-id)]
-         (.delete inflight room-id)
-         ((:abort! handle))))}))))
+       (discard! inflight room-id))
+
+     ;; A rewind (xi.commands tree-navigate): discard the live turn, wait until
+     ;; its process is gone (it may still write the transcript), then let the
+     ;; provider's :store cut the stored conversation to :keep-prompts.
+     ;; Answers :session/rewound with the store's {:status …}.
+     :session/rewind
+     (fn [{:keys [dispatch!]} {:keys [room-id ref keep-prompts] :as payload}]
+       (let [rewind! (:rewind! (:store (resolve-provider providers payload)))]
+         (-> (discard! inflight room-id)
+             (.then (fn [_]
+                      (if (and rewind! (:session-id ref))
+                        (rewind! ref {:keep-prompts keep-prompts})
+                        {:status :unsupported})))
+             (.catch (fn [e] {:status :error :message (str (.-message e))}))
+             (.then (fn [result]
+                      (dispatch! {:type :session/rewound :room-id room-id
+                                  :result result}))))))}))))

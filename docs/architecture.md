@@ -240,12 +240,19 @@ list is in the guide ([commands](guide/commands.md)).
   chain on resume (blocks tagged `:pre-truncation?`). `history->context` and
   `history->messages` skip `:no-llm?` entries, so the model never sees them.
   `abort-handler` is chained onto `:agent/abort`.
-- **`/tree`** (`xi.commands`, `xi.tui.history-selector`): works on room
-  `:history` directly. `:tree/navigate {:index :mode}` truncates the history,
-  clears `[:session :provider-session-id]` and sets `:inject-history?`; the
-  next turn starts a fresh provider session with the kept exchanges rendered
-  into the system prompt by `xi.agent/history->context`. Once a provider
-  session id lands, resume takes over. Nothing on disk changes.
+- **`/tree`** and the web's Delete / Retry / Edit (`xi.commands`,
+  `xi.tui.history-selector`, `xi.web.resubmit`): `:tree/navigate {:index
+  :mode}` truncates room `:history`, marks the agent `:rewinding?` and emits
+  `:session/rewind` with the kept prompts' texts. The effect (`xi.agent`)
+  discards a live turn, waits for its process to exit (the runner outlives
+  its CLI), then calls the provider's `:store` `:rewind!` — for Claude
+  (`xi.session.claude-store`) the JSONL is cut in place before the first
+  dropped prompt, the session id kept. Prompts submitted meanwhile queue;
+  `:session/rewound` drains them. A store that can't cut (none, no session
+  yet, prompts that don't line up) falls back to a fresh provider session
+  with the kept exchanges rendered into the system prompt
+  (`xi.agent/history->context`, `:inject-history?`). Design and next steps
+  (fork, delete, an Xi-owned store): `tasks/session-store.md`.
 - **`/trim`, `/rollover`, `/lineage`** (`xi.ext.resume`): `/trim` rewrites
   the Claude CLI transcript in place (backup next to it, placeholders citing
   backup file + line), keeping the session id; since every turn re-resumes

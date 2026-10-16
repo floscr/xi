@@ -5,7 +5,8 @@
    registry + permission gate; the runner proxies each tool call back via
    `tool-call` frames.
 
-   Interface: (stream-messages-runner opts) → {:promise :abort!}.
+   Interface: (stream-messages-runner opts) → {:promise :abort! :exited};
+   conversation edits go through the provider's :store (xi.session.claude-store).
    The policy step is injected via :tool-policy (async; nil blocks,
    {:intercepted true :result …} stands in for the tool's result) — no
    dependency on the rules engine here."
@@ -14,6 +15,7 @@
             [xi.error-info :as error-info]
             [xi.providers.runner :as runner]
             [xi.session :as session]
+            [xi.session.claude-store :as claude-store]
             [xi.tools.registry :as tools]
             [xi.util :as util]))
 
@@ -448,7 +450,7 @@
 (defn- start-runner-turn!
   "Run one Claude turn through the SDK runner (xi.providers.runner): forward
    its SDK messages through process-sdk-message and service proxied tool calls
-   on the host. Returns {:promise :abort!}."
+   on the host. Returns {:promise :abort! :exited}."
   [opts]
   (let [callbacks (select-keys opts [:on-text :on-thinking :on-tool-start
                                      :on-tool-args :on-tool-result :on-session
@@ -463,7 +465,7 @@
         ;; the runner transport ships `defs` over the wire and dispatches
         ;; proxied calls via `registry`
         {:keys [defs registry]} (tools/resolve-tooling opts)
-        {:keys [promise abort!]}
+        {:keys [promise abort! exited]}
         (runner/run-turn!
          {:script (runner-path)
           :log-tag "claude-runner"
@@ -502,6 +504,7 @@
                             ((:on-error callbacks) {:type "error" :message msg})))))})]
     (vreset! !abort abort!)
     {:promise (.then promise (fn [_] @state))
+     :exited exited
      :abort! (fn []
                (swap! state assoc :aborted true)
                (abort!))}))
@@ -571,8 +574,9 @@
 
 (defn stream-messages-runner
   "Run one Claude turn (see start-runner-turn!), after making sure the login's
-   access token is fresh. Returns {:promise :abort!}; aborting while the turn
-   still waits on the login resolves it aborted without ever starting it."
+   access token is fresh. Returns {:promise :abort! :exited}; aborting while
+   the turn still waits on the login resolves it aborted without ever starting
+   it."
   [opts]
   (let [started  (volatile! nil)
         aborted? (volatile! false)
@@ -584,6 +588,7 @@
                                   (vreset! started turn)
                                   (:promise turn))))))]
     {:promise promise
+     :exited  (.then promise (fn [_] (some-> @started :exited)))
      :abort!  (fn []
                 (vreset! aborted? true)
                 (when-let [turn @started] ((:abort! turn))))}))
@@ -604,4 +609,5 @@
 (def provider
   {:id :anthropic
    :start-turn! stream-messages-runner
-   :list-models! list-models!})
+   :list-models! list-models!
+   :store claude-store/store})

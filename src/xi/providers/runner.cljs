@@ -31,8 +31,10 @@
      :rest  (last parts)}))
 
 (defn run-turn!
-  "Spawn `script` and drive one turn. Returns {:promise :abort!}; the promise
-   resolves (never rejects) once the runner sent its terminal frame or exited.
+  "Spawn `script` and drive one turn. Returns {:promise :abort! :exited}; the
+   promise resolves (never rejects) once the runner sent its terminal frame or
+   exited, :exited once the runner process is gone (it outlives its CLI, so
+   the transcript is settled).
 
      :script        runner script path
      :start         the `start` frame's payload (a JSON-serializable map)
@@ -49,6 +51,10 @@
                       (try
                         (.write (.-stdin proc) (str (js/JSON.stringify (clj->js m)) "\n"))
                         (catch :default _e nil)))
+        exited (js/Promise.
+                (fn [resolve _reject]
+                  (.once proc "close" (fn [_code] (resolve nil)))
+                  (.once proc "error" (fn [_err] (resolve nil)))))
         promise
         (js/Promise.
          (fn [resolve _reject]
@@ -108,6 +114,7 @@
              (.on proc "close" (fn [_code] (finish!)))
              (send-frame! (assoc start :type "start")))))]
     {:promise promise
+     :exited exited
      :abort! (fn []
                (send-frame! {:type "abort"})
                (js/setTimeout (fn [] (try (.kill proc) (catch :default _e nil))) 500))}))

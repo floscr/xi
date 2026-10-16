@@ -57,6 +57,16 @@
       (is (= "fix the parser bug" (get-in st [:rooms "r" :session :name])))
       (is (true? (get-in st [:rooms "r" :agent :title-provisional?]))))))
 
+(defn- retry-first
+  "Fork at index 0 (tree/navigate) and resubmit `text`: it queues behind the
+   rewind and is sent once the store answers (the drained :prompt/submit)."
+  [st text]
+  (let [st (:state (handle st {:type :tree/navigate :room-id "r" :index 0}))
+        st (:state (handle st {:type :prompt/submit :room-id "r" :text text}))
+        {st :state [[_ submit]] :effects}
+        (handle st {:type :session/rewound :room-id "r" :result {:status :emptied}})]
+    (handle st submit)))
+
 (deftest retry-of-first-message-regenerates-title
   ;; The title turn failed (e.g. expired credentials); the user retries the
   ;; first message — fork at index 0 (tree/navigate) + resubmit. The resubmit
@@ -64,8 +74,7 @@
   (let [st (:state (handle (with-room)
                            {:type :prompt/submit :room-id "r" :text "fix the parser bug"}))
         st (:state (handle st {:type :session/title-generated :room-id "r" :title nil}))
-        st (:state (handle st {:type :tree/navigate :room-id "r" :index 0}))
-        {:keys [effects]} (handle st {:type :prompt/submit :room-id "r" :text "fix the parser bug"})]
+        {:keys [effects]} (retry-first st "fix the parser bug")]
     (is (some #(= :session/generate-title (first %)) effects))))
 
 (deftest retry-of-first-message-after-successful-title-regenerates
@@ -74,8 +83,7 @@
   (let [st (:state (handle (with-room)
                            {:type :prompt/submit :room-id "r" :text "fix the parser bug"}))
         st (:state (handle st {:type :session/title-generated :room-id "r" :title "Parser Bugfix"}))
-        st (:state (handle st {:type :tree/navigate :room-id "r" :index 0}))
-        {:keys [state effects]} (handle st {:type :prompt/submit :room-id "r" :text "use a different parser"})]
+        {:keys [state effects]} (retry-first st "use a different parser")]
     (is (some #(= :session/generate-title (first %)) effects))
     (testing "the old title is provisional again until the new one lands"
       (is (true? (get-in state [:rooms "r" :agent :title-provisional?]))))))

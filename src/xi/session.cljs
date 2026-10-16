@@ -936,7 +936,10 @@
                                           (catch :default _e nil)))))
                        lines)]
       (->> parsed
-           (filter #(contains? #{"user" "assistant"} (:type %)))
+           ;; isMeta lines are the CLI's own (image notes, skill bodies), not
+           ;; prompts anyone typed — the live room never showed them either.
+           (filter #(and (contains? #{"user" "assistant"} (:type %))
+                         (not (:isMeta %))))
            (mapcat (fn [line]
                      (let [content (get-in line [:message :content])
                            role (:type line)]

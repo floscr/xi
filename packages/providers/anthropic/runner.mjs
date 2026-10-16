@@ -305,11 +305,24 @@ function spawnCli({ command, args, cwd, env, signal }) {
   return p;
 }
 
+// Exit only once every CLI is gone: the host treats our exit as "the transcript
+// is settled" (a rewind cuts it next), and a CLI still shutting down may write
+// to it. One that ignores the signal is killed after CLI_EXIT_GRACE_MS.
+const CLI_EXIT_GRACE_MS = 3000;
+
 function shutdown(cliSignal) {
-  for (const p of cliProcs) {
+  const procs = [...cliProcs];
+  for (const p of procs) {
     try { p.kill(cliSignal); } catch { }
   }
-  process.exit(0);
+  const exited = procs.map((p) =>
+    p.exitCode !== null || p.signalCode !== null
+      ? Promise.resolve()
+      : new Promise((resolve) => p.once("exit", resolve)));
+  const grace = setTimeout(() => {
+    for (const p of procs) { try { p.kill("SIGKILL"); } catch { } }
+  }, CLI_EXIT_GRACE_MS);
+  Promise.all(exited).then(() => { clearTimeout(grace); process.exit(0); });
 }
 
 // Host gone (it died or was killed without killing us: tmux SIGHUP, a systemd

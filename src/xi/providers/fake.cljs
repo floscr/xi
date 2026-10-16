@@ -52,6 +52,7 @@
             [clojure.walk :as walk]
             [xi.agent :as agent]
             [xi.session :as session]
+            [xi.session.claude-store :as claude-store]
             [xi.session.sync :as sync]
             [xi.tools.registry :as tools]
             [xi.util :as util]
@@ -319,11 +320,14 @@
                      (swap! !turn assoc :rule rule)
                      (step steps 0))))))))]
     {:promise promise
+     ;; the transcript is written before the promise settles
+     :exited  promise
      :abort!  (fn []
                 (set! (.-aborted flags) true)
                 (when-let [wake (.-wake flags)] (wake)))}))
 
 (defn provider
-  "The fake provider, registered under provider id `id`."
+  "The fake provider, registered under provider id `id`. Its transcripts are
+   Claude-format, so it shares the Claude session store."
   [id]
-  {:id id :start-turn! start-turn!})
+  {:id id :start-turn! start-turn! :store claude-store/store})

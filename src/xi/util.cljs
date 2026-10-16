@@ -274,6 +274,34 @@
   [text]
   (if text (str/replace text collapse-marker-re "") text))
 
+(def ^:private attachment-ref-re
+  ;; The provider-only reference lines appended by
+  ;; xi.agent/prompt-with-attachment-paths ("[Attached image: …]" /
+  ;; "[Attached file: …]").
+  #"(?m)^\[Attached (?:image|file): .*\]$")
+
+(defn strip-attachment-refs [text]
+  (some-> text
+          (str/replace attachment-ref-re "")
+          str/trimr))
+
+(def ^:private cli-interrupt-marker-re
+  ;; The user message the Claude CLI writes into its own transcript when a
+  ;; turn is interrupted ("[Request interrupted by user]", "… for tool use]").
+  ;; Not something anyone typed — dropped on resume, as the live turn never
+  ;; showed it either (the :aborted history entry marks the interruption).
+  #"^\s*\[Request interrupted by user[^\]]*\]\s*$")
+
+(defn cli-interrupt-marker? [text]
+  (boolean (re-matches cli-interrupt-marker-re (str text))))
+
+(defn transcript-prompt-text
+  "A prompt as the user typed it, from its provider transcript text: the
+   collapse marker and attachment reference lines removed. What a resumed
+   :user history entry shows, so rewinds match history against transcripts."
+  [text]
+  (strip-attachment-refs (strip-collapse-marker text)))
+
 (def root-user
   "The default user id. Every connection belongs to a user; one that claims
    none (or an invalid one) is root. Users are plain string ids — names,
