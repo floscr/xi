@@ -1338,28 +1338,29 @@
       (do (.preventDefault e)
           (add-files! dispatch! draft-key files))
       ;; Long / code-like text pastes get fenced (xi.util/fence-paste).
+      ;; Inserted via execCommand so it lands on the browser's undo stack
+      ;; (assigning .value wipes it) and fires the :input that saves the draft.
+      ;; Re-setting the selection first ends Chrome's typing group, so the paste
+      ;; is its own undo step instead of merging with the text typed before it.
       (let [text (some-> (.-clipboardData e) (.getData "text"))]
         (when (and (seq text) (util/paste-should-fence? text))
           (.preventDefault e)
           (let [^js ta (.-target e)
                 value (.-value ta)
-                start (.-selectionStart ta)
-                end (.-selectionEnd ta)
-                before (subs value 0 start)
-                after (subs value end)
+                before (subs value 0 (.-selectionStart ta))
+                after (subs value (.-selectionEnd ta))
                 insertion (util/fence-paste
                            text
                            {:at-line-start? (or (empty? before)
                                                 (str/ends-with? before "\n"))
                             :at-line-end? (or (empty? after)
-                                              (str/starts-with? after "\n"))})
-                new-value (str before insertion after)
-                caret (+ (count before) (count insertion))]
-            (set! (.-value ta) new-value)
-            (.setSelectionRange ta caret caret)
-            (dispatch! {:type :compose/set-draft
-                        :draft-key draft-key
-                        :text new-value})))))))
+                                              (str/starts-with? after "\n"))})]
+            (.setSelectionRange ta (.-selectionStart ta) (.-selectionEnd ta))
+            (when-not (.execCommand js/document "insertText" false insertion)
+              (.setRangeText ta insertion (count before) (- (count value) (count after)) "end")
+              (dispatch! {:type :compose/set-draft
+                          :draft-key draft-key
+                          :text (.-value ta)}))))))))
 
 (defn- sync-compose-draft!
   "On a chat switch (tracked in a data attribute), write the new chat's draft
