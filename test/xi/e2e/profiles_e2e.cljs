@@ -80,8 +80,8 @@
                  (is (not-any? #(str/includes? % "broken") tools)))
                (is (= "remember the milk\n"
                       (h/slurp (h/home-path env ".local/share/xi/extensions/notes/notes.md"))))
-               (is (re-find #"\[user-ext\] loaded: .*board" stderr) stderr)
-               (is (str/includes? stderr "[user-ext] rejected broken.cljs") stderr))))))))
+               (is (not (str/includes? stderr "[user-ext]"))
+                   "the load report stays out of the one-shot output"))))))))
 
 (deftest an-agent-profile-gets-only-its-tools-and-prompt
   (async done
