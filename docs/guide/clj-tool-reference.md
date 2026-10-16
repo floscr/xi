@@ -17,7 +17,7 @@ the separators) exist; `System/getenv` does not (use `env`). Base64 works as in 
 
 In an [agent profile](agents.md)'s chats the tool is `:compute` unless the
 profile sets `:clj :full`: of the helpers below only `curl`, `now`, `sleep`,
-`basename` and `dirname` remain, and there is no `process` or `socket`.
+`basename` and `dirname` remain, and there is no `process`, `socket` or `fs`.
 
 The REPL persists per chat: `def` once, use later. `/clj reset` drops it.
 A result longer than 30k characters is saved to a file under the temp
@@ -45,6 +45,16 @@ truncated: `(sh …)`, `(curl …)` and `(jq …)` return complete output (up to
 | `(cwd)` `(env "KEY")` `(now)` | Working directory, an allowed environment variable, the time |
 
 Paths expand a leading `~` and `$VAR` for allowed variables.
+
+`babashka.fs` is there too, required as `fs`, with path strings where
+babashka returns `Path`s. Its file access follows the same rules as the
+helpers, and `fs/delete-tree` asks like `rm`.
+
+| Kind | `fs/` functions |
+| --- | --- |
+| Paths | `path` `file` `file-name` `parent` `extension` `strip-ext` `split-ext` `absolute?` `relative?` `absolutize` `normalize` `relativize` `components` `expand-home` `hidden?` `home` `cwd` `temp-dir` |
+| Reads | `exists?` `directory?` `regular-file?` `sym-link?` `readable?` `writable?` `executable?` `size` `canonicalize` `read-all-lines` `list-dir` `glob` `which` |
+| Writes | `create-dirs` `create-dir` `create-file` `create-temp-dir` `write-lines` `delete` `delete-if-exists` `delete-tree` `copy` `copy-tree` `move` |
 
 **Where they may go.** The working directory and the temp directory are
 free. A literal path elsewhere asks before the script runs, with `r` to

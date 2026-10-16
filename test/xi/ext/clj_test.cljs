@@ -191,11 +191,16 @@
     (is (str/includes? (result-text res) "none: "))
     (is (not (str/includes? (result-text res) "none: nil")))))
 
-(deftest eval-missing-fs-namespace-hints-builtin-helpers
-  (doseq [ns-name ["babashka.fs" "clojure.java.io"]]
-    (let [res (eval! (str "(require '[" ns-name " :as x])"))]
-      (is (:is-error res) ns-name)
-      (is (str/includes? (result-text res) "(glob ") ns-name))))
+(deftest eval-missing-java-io-hints-builtin-helpers
+  (let [res (eval! "(require '[clojure.java.io :as x])")]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) "(glob "))
+    (is (str/includes? (result-text res) "babashka.fs"))))
+
+(deftest eval-unknown-fs-fn-lists-the-subset
+  (let [res (eval! "(fs/no-such-fn \"x\")")]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) "delete-tree") (result-text res))))
 
 (deftest eval-missing-shell-namespace-hints-sh
   (let [res (eval! "(require '[clojure.java.shell :as s])")]
@@ -1309,6 +1314,47 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "[true nil]"))))
 
+(deftest babashka-fs-namespace
+  ;; prelude-aliased as fs; babashka.fs requires under any alias
+  (let [res (eval! "(require '[babashka.fs :as bfs])
+                    (let [d (str (tmpdir) \"/fx\") f (fs/path d \"a\" \"b.txt\")]
+                      [(fs/exists? d)
+                       (do (fs/create-dirs (fs/parent f)) (spit f \"x\") (bfs/regular-file? f))
+                       (fs/directory? (fs/parent f))
+                       (mapv fs/file-name (fs/list-dir (fs/path d \"a\")))
+                       (mapv fs/file-name (fs/glob d \"**.txt\"))
+                       [(fs/extension f) (fs/strip-ext (fs/file-name f)) (fs/parent \"x\")]
+                       (do (fs/delete-tree d) (fs/exists? d))
+                       (fs/delete-tree d)
+                       (fs/delete-if-exists d)])")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res)
+                       "[false true true [\"b.txt\"] [\"b.txt\"] [\"txt\" \"b\" nil] false nil false]"))))
+
+(deftest babashka-fs-copy-move
+  (let [res (eval! "(let [d (tmpdir) src (str d \"/src\") dst (str d \"/dst\")]
+                      (fs/create-dirs (str src \"/sub\"))
+                      (spit (str src \"/sub/f.txt\") \"x\")
+                      (fs/copy-tree src dst)
+                      (fs/copy (str dst \"/sub/f.txt\") src)
+                      (fs/move (str src \"/f.txt\") (str d \"/moved.txt\"))
+                      [(cat (str dst \"/sub/f.txt\")) (cat (str d \"/moved.txt\"))
+                       (fs/exists? (str src \"/f.txt\"))
+                       (try (fs/move (str d \"/moved.txt\") (str dst \"/sub/f.txt\")) :moved
+                            (catch :default e (boolean (re-find #\"target exists\" (ex-message e)))))])")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "[\"x\" \"x\" false true]"))))
+
+(deftest babashka-fs-writes-refuse-git-directories
+  (let [res (eval! "(fs/create-dirs (str (tmpdir) \"/r/.git/hooks\"))")]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) ".git"))))
+
+(deftest scan-babashka-fs-paths
+  (is (= ["/out/a" "/out/b"]
+         (clj-ext/scan-write-paths "(fs/delete-tree \"/out/a\") (babashka.fs/create-dirs \"/out/b\")")))
+  (is (= ["/out/c"] (clj-ext/scan-read-paths "(when (fs/exists? \"/out/c\") 1)"))))
+
 (deftest rm-helper-force-missing-is-noop
   ;; (rm f) uses force — deleting a non-existent path is a no-op, not an error.
   (let [res (eval! "(do (rm (str (tmpdir) \"/does-not-exist.txt\")) :ok)")]
@@ -1429,6 +1475,22 @@
           (.then (fn [res]
                    (is (:intercepted res))
                    (is (str/includes? (intercepted-text res) "directory deletion"))
+                   (is (some #(str/includes? % "Recursively delete directory") @prompts))
+                   (fs/rmSync dir #js {:recursive true :force true})
+                   (done)))))))
+
+(deftest gate-confirms-fs-delete-tree-directory
+  (async done
+    (let [dir     (mk-tmp-dir)
+          prompts (atom [])
+          ctx     (assoc (gate-ctx) :cwd (os/tmpdir)
+                         :confirm! (fn [msg & _]
+                                     (swap! prompts conj msg)
+                                     (js/Promise.resolve false)))]
+      (-> (js/Promise.resolve
+           (gate {:name "clj" :arguments {:code (str "(fs/delete-tree \"" dir "\")")}} ctx))
+          (.then (fn [res]
+                   (is (:intercepted res))
                    (is (some #(str/includes? % "Recursively delete directory") @prompts))
                    (fs/rmSync dir #js {:recursive true :force true})
                    (done)))))))

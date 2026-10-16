@@ -38,6 +38,7 @@
             [sci.core :as sci]
             [xi.dialog :as dialog]
             [xi.ext.clj-bytes :as bytes]
+            [xi.ext.clj-fs :as clj-fs]
             [xi.ext.clj-process :as proc]
             [xi.ext.clj-socket :as sock]
             [xi.git-lock :as git-lock]
@@ -742,7 +743,8 @@
 (def ^:private PRELUDE
   "(require '[clojure.string :as str] '[clojure.set :as set]
             '[clojure.walk :as walk] '[clojure.edn :as edn]
-            '[clojure.data.json :as json] '[cheshire.core])")
+            '[clojure.data.json :as json] '[cheshire.core]
+            '[babashka.fs :as fs])")
 
 (defn- json-transform
   [data key-fn value-fn]
@@ -931,6 +933,9 @@
   (let [helpers (if compute? (compute-helpers opts) (helper-fns opts))
         process (proc/sci-namespace opts (fn [d] (resolve-dir opts d)))
         socket  (sock/sci-namespace opts)
+        bfs     (clj-fs/sci-namespace {:read  (fn [p op] (resolve-read opts p op))
+                                       :write (fn [p op & [o]] (resolve-write opts p op o))
+                                       :cwd   (fn [] (opts-cwd opts))})
         ctx (sandbox/init {:namespaces
                        {'user helpers
                         ;; Shadow the core vars the helpers collide with, plus the parse-* fns
@@ -945,7 +950,8 @@
                         'clojure.data.json json-data-namespace
                         'cheshire.core cheshire-namespace
                         'process (if compute? (compute-namespace "process/" process) process)
-                        'socket  (if compute? (compute-namespace "socket/" socket) socket)}
+                        'socket  (if compute? (compute-namespace "socket/" socket) socket)
+                        'babashka.fs (if compute? (compute-namespace "fs/" bfs) bfs)}
                        ;; Every class is a null-proto object (xi.sandbox.sci), never a real
                        ;; class, so `Class/constructor` can't reach js/Function. Instance interop
                        ;; still works: SCI keys it on the class name.
@@ -1024,11 +1030,15 @@
            "(catch :default e …) and read the error with (ex-message e) / "
            "(ex-data e).")
 
-      (re-find #"Could not find namespace:? (?:babashka\.fs|clojure\.java\.io)\b" msg)
-      (str "Hint: clj runs in a sandbox — babashka.fs and clojure.java.io "
-           "don't exist. Use the builtin fs helpers instead: (ls d) (glob \"src/**/*.clj\") "
-           "(stat f) (mkdir d) (cp a b) (mv a b) (rm f) (touch f) (tmpdir) "
-           "(realpath p) (basename p) (dirname p) (cat f) (spit f s).")
+      (re-find #"Could not find namespace:? clojure\.java\.io\b" msg)
+      (str "Hint: clj runs in a sandbox — clojure.java.io doesn't exist. Use "
+           "babashka.fs (aliased `fs`) or the builtin fs helpers: (ls d) "
+           "(glob \"src/**/*.clj\") (stat f) (mkdir d) (cp a b) (mv a b) (rm f) "
+           "(touch f) (tmpdir) (realpath p) (basename p) (dirname p) (cat f) (spit f s).")
+
+      (re-find #"resolve symbol:? (?:babashka\.)?fs/" msg)
+      (str "Hint: clj's babashka.fs (aliased `fs`) is a subset on path strings: "
+           (str/join " " (sort (keys (clj-fs/sci-namespace {})))) ".")
 
       (re-find #"Could not find namespace:? (?:clojure\.java\.shell|babashka\.process)\b" msg)
       (str "Hint: clj runs in a sandbox — clojure.java.shell and babashka.process "
@@ -1103,6 +1113,9 @@
         "(mv a b) (rm f) (tmpdir) (cwd) (env k) (stat f) → {:size :mtime-ms …} "
         "(realpath p) (which c) (basename p) (dirname p) (touch f) (now) "
         "(curl url) → {:status :body} "
+        "babashka.fs as `fs` on path strings — (fs/exists? p) (fs/directory? p) "
+        "(fs/delete-tree d) (fs/create-dirs d) (fs/list-dir d) (fs/glob root pat) "
+        "(fs/copy-tree a b) (fs/move a b) (fs/parent p) (fs/file-name p) … "
         "(ports) / (ports 7474) → listening sockets as {:proto :addr :port :process :pid} "
         "(jq \".foo[]\" json-or-data) → parsed result, no tmp file (opts {:raw true}) "
         "(git \"status\" \"--short\") → stdout string (pre-approved for ordinary "
@@ -1507,7 +1520,10 @@
    'cp    [1]
    'mkdir [0]
    'touch [0]
-   'rm    :all})
+   'rm    :all
+   'fs/create-dirs [0] 'fs/create-dir [0] 'fs/create-file [0] 'fs/write-lines [0]
+   'fs/delete [0] 'fs/delete-if-exists [0] 'fs/delete-tree [0]
+   'fs/copy [1] 'fs/copy-tree [1] 'fs/move [0 1]})
 
 (def ^:private READ_HELPER_TARGETS
   "clj builtin read helpers → the 0-based arg positions whose literal values
@@ -1521,7 +1537,23 @@
    'realpath [0]
    'grep     [1]
    'find     [1]
-   'cp       [0]})
+   'cp       [0]
+   'fs/exists? [0] 'fs/directory? [0] 'fs/regular-file? [0] 'fs/sym-link? [0]
+   'fs/readable? [0] 'fs/writable? [0] 'fs/executable? [0] 'fs/size [0]
+   'fs/canonicalize [0] 'fs/read-all-lines [0] 'fs/list-dir [0] 'fs/glob [0]
+   'fs/copy [0] 'fs/copy-tree [0]})
+
+(def ^:private RM_HELPERS
+  "Helpers deleting a tree: each gets the recursive-delete confirm and is
+   judged by the engine as `rm -r <path>`."
+  '#{rm fs/delete-tree})
+
+(defn- scan-head
+  "The gate-scan name of a call head: babashka.fs/x as its prelude alias fs/x."
+  [head]
+  (if (and (symbol? head) (= "babashka.fs" (namespace head)))
+    (symbol "fs" (name head))
+    head))
 
 (def ^:private SCAN_OPTS
   {:all true :auto-resolve {:current 'user} :readers (fn [_] identity)})
@@ -1598,7 +1630,7 @@
       (walk/postwalk
        (fn [f]
          (when (seq? f)
-           (let [head (first f)
+           (let [head (scan-head (first f))
                  args (vec (rest f))]
              (doseq [{:keys [heads collect]} scan-rules
                      :when (contains? heads head)]
@@ -1716,7 +1748,8 @@
 
 (defn- rm-ask-target
   [code path]
-  (ask-target code (fn [f] (and (= 'rm (first f)) (some #(= path %) (rest f))))))
+  (ask-target code (fn [f] (and (contains? RM_HELPERS (scan-head (first f)))
+                                (some #(= path %) (rest f))))))
 
 (defn- sh-summary
   "The (sh …) view {:literals :commands :dynamic? :shell-c?} of a scan-code
@@ -1745,14 +1778,14 @@
 
 (defn- rm-targets-of
   [scan]
-  (into [] (comp (filter #(= 'rm (:head %))) (map :path) (distinct)) (:writes scan)))
+  (into [] (comp (filter #(contains? RM_HELPERS (:head %))) (map :path) (distinct)) (:writes scan)))
 
 (def ^:private ENTRY_HELPERS
   "Write helpers acting on the directory entry itself (unlink, rename): a
    final-component symlink is their target, judged with
    paths/real-resolve-nofollow like the worker's resolve-write {:nofollow?
    true}."
-  '#{rm mv})
+  '#{rm mv fs/delete fs/delete-if-exists fs/delete-tree fs/move})
 
 (defn- outside-write-paths
   "Distinct literal write-target paths of a scan-code result that escape the
@@ -2514,7 +2547,8 @@
        "There is no bash tool — all shell-style work goes through the `clj` "
        "tool (sandboxed Clojure REPL). File ops use the builtin helpers "
        "(cat ls glob grep find head tail spit mkdir cp mv rm tmpdir cwd stat "
-       "realpath which basename dirname touch now); HTTP "
+       "realpath which basename dirname touch now) or babashka.fs, pre-aliased "
+       "as `fs` (fs/exists? fs/delete-tree fs/create-dirs …, on path strings); HTTP "
        "via (curl url) → {:status :body}; listening ports via (ports) / "
        "(ports 7474) → {:proto :addr :port :process :pid} maps (no ss/lsof "
        "needed); JSON via the pre-approved (jq "
