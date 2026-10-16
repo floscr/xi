@@ -77,3 +77,8 @@
 (deftest text-form
   (is (= "Title\n- a\n- b\n[OK]"
          (bh/text (tree ["div" ["h3" "Title"] ["ul" ["li" "a"] ["li" "b"]] ["ui/button" "OK"]])))))
+
+(deftest inline-components-stay-apart-in-text
+  (is (= "a b\n[Nice] [Meh]"
+         (bh/text (tree ["div" ["div" {:layout "row"} ["ui/badge" "a"] ["ui/badge" "b"]]
+                         ["div" ["ui/button" "Nice"] ["ui/button" "Meh"]]])))))

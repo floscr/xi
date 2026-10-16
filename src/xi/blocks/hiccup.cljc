@@ -232,11 +232,13 @@
                             :input (if (= "checkbox" (:type attrs))
                                      (if (:checked attrs) "[x]" "[ ]")
                                      (str "[" (or (:value attrs) (:placeholder attrs) "") "]"))
-                            (:button :ui/button :ui/chip) (str "[" inner "]")
+                            (:button :ui/button :ui/chip) (str "[" inner "] ")
+                            :ui/badge (str inner " ")
                             inner)]
                 (if (block-tags tag) (str "\n" inner "\n") inner))
               :else ""))]
     (-> (walk tree)
         (str/replace #"[ \t]+\n" "\n")
+        (str/replace #"[ \t]+$" "")
         (str/replace #"\n{2,}" "\n")
         str/trim)))
