@@ -157,58 +157,93 @@
                        "turn-end must fire and mark the child :done")
                    (done)))))))
 
-;; ── ROOT CAUSE + FIX: a background sub-agent that needs a tool confirmation
-;; (every external MCP tool call via mcp-tool-gate, every guarded bash op via
-;; permission-gate) used to open an interactive dialog in the PARENT room and
-;; block on it. If nobody answered (e.g. the user switched chats), the provider
-;; turn never settled, so :subagent/turn-end never fired and the child was stuck
-;; :running forever — the reported symptom. The fix: a background sub-agent's
-;; :confirm! auto-denies (safe default) instead of opening a dialog, so the
-;; turn always settles and reaches a terminal status without human input. ────
+;; ── Permission asks: a sub-agent's gated call asks the user in the parent
+;; room like the main agent's, tagged with the sub-agent; Stop denies an ask
+;; still open, so the turn settles. Explanations and questions (inline
+;; children, read-only by their prompt) deny every ask without a dialog. ──
 
-(deftest subagent-tool-confirmation-auto-denies-without-hanging
+(defn- gated-app
+  "An app running sub-agents whose one tool call goes through a confirm gate.
+   The fake turn settles once the gate does, or at once (aborted) on Stop."
+  [gate-result]
+  (let [dialogs  (ext/create-dialogs)
+        gate     (fn [tc {:keys [confirm!]}]
+                   (-> (confirm! "approve?")
+                       (.then (fn [ok] (reset! gate-result ok) (if ok tc nil)))))
+        fake-prov {:id :fake
+                   :start-turn!
+                   (fn [opts]
+                     (let [stop (atom nil)]
+                       {:promise (js/Promise.race
+                                  [(-> ((:tool-policy opts) {:name "mcp__srv__do" :arguments {}})
+                                       (.then (fn [_] {:usage {} :cost 0})))
+                                   (js/Promise. (fn [res] (reset! stop res)))])
+                        :abort!  (fn [] (@stop {:aborted true}))}))}
+        init (-> (state/initial-state {:mode :server})
+                 (assoc-in [:connection :clients] {"c1" {}})
+                 (assoc-in [:rooms "r1"]
+                           {:id "r1" :cwd "/x"
+                            :agent {:model "x" :provider :fake}
+                            :ext {:subagents {:agents [] :collapsed? false}}}))]
+    (app/create-app
+     {:initial-state init
+      :handlers (merge events/core-handlers (:handlers sa-ext/extension) (:handlers dialogs))
+      :effects (merge (subagent/create-fx {:fake fake-prov}
+                                          {:tool-policy gate :ask! (:ask! dialogs)})
+                      (:fx dialogs)
+                      {:subagent/save! (fn [_ _] nil)})})))
+
+(defn- tick [] (js/Promise. (fn [res] (js/setTimeout res 20))))
+
+(defn- open-dialogs [st] (get-in st [:rooms "r1" :ui :dialogs]))
+
+(deftest a-sub-agent-s-ask-waits-for-the-user
   (async done
-    (let [dialogs (ext/create-dialogs)
-          ;; A permission-gate / mcp-tool-gate style gate: confirm, allow on
-          ;; yes, block (nil) on no. This is exactly how every external MCP
-          ;; tool call and every guarded bash command is gated.
-          gate-result (atom :unset)
-          gate (fn [tc {:keys [confirm!]}]
-                 (-> (confirm! "approve?")
-                     (.then (fn [ok] (reset! gate-result ok) (if ok tc nil)))))
-          ;; Fake provider: its turn only settles AFTER the tool-gate settles
-          ;; — the SDK's .next stays pending while a tool call is in flight.
-          fake-prov {:id :fake
-                     :start-turn!
-                     (fn [opts]
-                       {:promise (-> ((:tool-policy opts) {:name "mcp__srv__do" :arguments {}})
-                                     (.then (fn [_] {:usage {} :cost 0})))
-                        :abort!  (fn [])})}
-          handlers (merge events/core-handlers h/handlers (:handlers dialogs))
-          init (-> (state/initial-state {:mode :server})
-                   ;; A client IS connected — so if the sub-agent used the
-                   ;; interactive ask!, it WOULD open a (hanging) dialog. The fix
-                   ;; means it must NOT, even with a client attached.
-                   (assoc-in [:connection :clients] {"c1" {}})
-                   (assoc-in [:rooms "r1"]
-                             {:id "r1" :cwd "/x"
-                              :agent {:model "x" :provider :fake}
-                              :ext {:subagents {:agents [] :collapsed? false}}}))
-          {:keys [dispatch! state]}
-          (app/create-app
-           {:initial-state init
-            :handlers handlers
-            :effects (merge (subagent/create-fx {:fake fake-prov}
-                                                {:tool-policy gate :ask! (:ask! dialogs)})
-                            (:fx dialogs))})]
+    (let [result (atom :unset)
+          {:keys [dispatch! state]} (gated-app result)]
+      (dispatch! {:type :subagent/spawn :room-id "r1" :sub-id "sa-1"
+                  :task "t" :label "Review" :prompt "t"})
+      (-> (tick)
+          (.then (fn [_]
+                   (let [[d :as ds] (open-dialogs @state)]
+                     (is (= 1 (count ds)) "the ask opens in the parent room")
+                     (is (= "sa-1" (:sub-id d)))
+                     (is (= "Sub-agent “Review”: approve?" (:message d)))
+                     (is (= :running (child-status @state "sa-1")) "it waits")
+                     (dispatch! {:type :ui/dialog-response :room-id "r1"
+                                 :dialog-id (:id d) :value true}))
+                   (tick)))
+          (.then (fn [_]
+                   (is (true? @result) "the user's allow reaches the gate")
+                   (is (= :done (child-status @state "sa-1")))
+                   (done)))))))
+
+(deftest stopping-a-sub-agent-denies-its-open-ask
+  (async done
+    (let [result (atom :unset)
+          {:keys [dispatch! state]} (gated-app result)]
       (dispatch! {:type :subagent/spawn :room-id "r1" :sub-id "sa-1"
                   :task "t" :label "L" :prompt "t"})
-      (-> (js/Promise. (fn [res] (js/setTimeout res 30)))
+      (-> (tick)
           (.then (fn [_]
-                   (is (empty? (get-in @state [:rooms "r1" :ui :dialogs]))
-                       "a background sub-agent must NOT open an interactive dialog")
-                   (is (= false @gate-result)
-                       "the gate's :confirm! resolves to the safe default (deny)")
-                   (is (= :done (child-status @state "sa-1"))
-                       "turn-end fires with no human input — child reaches a terminal status")
+                   (is (= 1 (count (open-dialogs @state))))
+                   (dispatch! {:type :subagent/abort :room-id "r1" :sub-id "sa-1"})
+                   (tick)))
+          (.then (fn [_]
+                   (is (= :stopped (child-status @state "sa-1")))
+                   (is (empty? (open-dialogs @state)) "no ask is left for a gone turn")
+                   (is (false? @result) "the gate sees a deny")
+                   (done)))))))
+
+(deftest an-inline-sub-agent-denies-without-asking
+  (async done
+    (let [result (atom :unset)
+          {:keys [dispatch! state]} (gated-app result)]
+      (dispatch! {:type :subagent/spawn :room-id "r1" :sub-id "ask-1"
+                  :task "t" :label "Q" :prompt "t"})
+      (-> (tick)
+          (.then (fn [_]
+                   (is (empty? (open-dialogs @state)))
+                   (is (false? @result))
+                   (is (= :done (child-status @state "ask-1")))
                    (done)))))))

@@ -64,6 +64,14 @@
              parallel-history 1))
       "entries before the rendered window are not considered"))
 
+(deftest permission-tool-index-never-hosts-a-sub-agent-s-ask
+  (is (nil? (dialog/permission-tool-index
+             {:sub-id "sa-1" :call {:name "write" :arguments {:path "/a.clj" :content "x"}}}
+             parallel-history 0))
+      "the same call in the parent's history is not the one gated")
+  (is (nil? (dialog/permission-tool-index {:sub-id "sa-1"} parallel-history 0))
+      "nor the newest running one"))
+
 (deftest permission-tool-index-settled-call-still-hosts-its-ask
   ;; The turn was interrupted under the ask: its call is :aborted, nothing is
   ;; running, but the ask still belongs on that block, not in a standalone

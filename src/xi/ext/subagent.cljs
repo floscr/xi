@@ -116,12 +116,23 @@
       {:effects [[:subagent/save! {:room-id room-id :sub-id sub-id
                                    :open? open?}]]})))
 
+(defn- open-asks
+  "The permission asks sub-agent `sub-id` still waits on in its room."
+  [st room-id sub-id]
+  (filter #(= sub-id (:sub-id %)) (get-in st [:rooms room-id :ui :dialogs])))
+
 (defn- turn-end
-  "The shared turn-end, then save the child as a hidden session (`save-fx`)."
+  "The shared turn-end, then save the child as a hidden session (`save-fx`).
+   A turn stopped under a permission ask leaves it open: deny it, so it
+   doesn't wait in the room for a turn that is gone."
   [st {:keys [room-id sub-id] :as ev}]
   (when-let [res ((:subagent/turn-end h/handlers) st ev)]
-    (update res :effects (fnil conj [])
-            [:subagent/save! {:room-id room-id :sub-id sub-id}])))
+    (update res :effects (fnil into [])
+            (concat
+             (for [{:keys [id]} (open-asks st room-id sub-id)]
+               [:app/dispatch {:type :ui/dialog-response :room-id room-id
+                               :dialog-id id :value false}])
+             [[:subagent/save! {:room-id room-id :sub-id sub-id}]]))))
 
 (defn- upgrade
   "Make a saved child a regular session, listed with the other chats."

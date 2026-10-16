@@ -204,7 +204,9 @@ nothing.
 
 Tool exec-fns get the same context plus the provider's own keys:
 `{:cwd :client-pid :dispatch! :get-state :room-id :confirm!}` (in a
-sub-agent turn, `:room-id` is the parent room and `:confirm!` auto-denies).
+sub-agent turn, `:room-id` is the parent room and `:confirm!` asks there with
+the dialog tagged `:sub-id`, `xi.subagent/confirm-fn`; explanations and
+questions deny instead).
 So a tool can mutate state by dispatching events itself — implement tools in
 `:tool-registry`, never inside a gate. Policy (whether a call may run at all)
 belongs in rules: add a default rule to `xi.rules.defaults`, matching

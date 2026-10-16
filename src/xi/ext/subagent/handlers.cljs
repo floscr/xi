@@ -195,16 +195,43 @@
        (remove str/blank?)
        (str/join "\n\n")))
 
+;; ── Inline sub-agents ─────────────────────────────────────────────────────────
+;; A tool block's Explain (`explain-call`) and the question sub-agents (the
+;; diff viewer's Ask, threads on blocks) are told by their id prefix.
+
+(def ^:private explain-prefix "explain-")
+
+(def ^:private ask-prefix "ask-")
+
+(defn ask-sub-id []
+  (gen-id "ask"))
+
+(defn explain-sub-id
+  "Sub-agent id of the explanation for tool call `call-id` — one per call."
+  [call-id]
+  (str explain-prefix call-id))
+
+(defn inline-sub?
+  "A sub-agent whose answer renders where it was asked (a tool block's
+   Explain, the diff viewer's Ask) instead of in the Sub-agents panel."
+  [sub-id]
+  (and (string? sub-id)
+       (or (str/starts-with? sub-id explain-prefix)
+           (str/starts-with? sub-id ask-prefix))))
+
 ;; ── State handlers (pure) ─────────────────────────────────────────────────────
 
 (defn- start-effect
   "The :subagent/start effect of a turn of `child` in `room`: the provider
    settings come from the room's agent, the system from child-system with
-   the child's spawn options (:system, :parent-context?)."
+   the child's spawn options (:system, :parent-context?). Its label names
+   its permission asks; inline children (`inline-sub?`, read-only by their
+   prompt) run :unattended?, denying them."
   [room child prompt images]
   [:subagent/start
    (cond-> {:room-id    (:id room)
             :sub-id     (:id child)
+            :label      (:label child)
             :prompt     prompt
             :system     (child-system room child)
             :model      (get-in room [:agent :model])
@@ -216,7 +243,8 @@
             :only-tools (some-> (get-in room [:agent :only-tools])
                                 set
                                 (conj parent-history-tool))}
-     (seq images) (assoc :images images))])
+     (seq images)              (assoc :images images)
+     (inline-sub? (:id child)) (assoc :unattended? true))])
 
 (defn spawn
   "Append a sub-agent entry and kick off its turn. The child runs a FRESH
@@ -433,28 +461,6 @@
 ;; (explain-<call-id>), so the block finds its explanation in the mirrored
 ;; :agents list — streaming while it runs, kept after the ask is answered —
 ;; with no extra state. The Sub-agents panel hides these (inline-sub?).
-
-(def ^:private explain-prefix "explain-")
-
-;; The diff viewer's Ask action (xi.web.core diff-ask-submit) spawns its
-;; question sub-agents the same way; their answer renders under the selection.
-(def ^:private ask-prefix "ask-")
-
-(defn ask-sub-id []
-  (gen-id "ask"))
-
-(defn explain-sub-id
-  "Sub-agent id of the explanation for tool call `call-id` — one per call."
-  [call-id]
-  (str explain-prefix call-id))
-
-(defn inline-sub?
-  "A sub-agent whose answer renders where it was asked (a tool block's
-   Explain, the diff viewer's Ask) instead of in the Sub-agents panel."
-  [sub-id]
-  (and (string? sub-id)
-       (or (str/starts-with? sub-id explain-prefix)
-           (str/starts-with? sub-id ask-prefix))))
 
 
 (defn dismiss

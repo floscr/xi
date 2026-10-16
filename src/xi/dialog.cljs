@@ -231,7 +231,8 @@
    newest settled match still hosts it — the ask belongs on that block, not
    in a standalone bubble. A dialog without :call falls back to the newest
    running tool call. No match → nil, so the caller renders the dialog
-   standalone and its buttons never vanish."
+   standalone and its buttons never vanish. A sub-agent's ask (:sub-id)
+   gates a call in the sub-agent's history, never one of `entries`: nil."
   [dialog entries start]
   (let [call  (:call dialog)
         idxs  (range (dec (count entries)) (dec start) -1)
@@ -239,8 +240,9 @@
                 (let [e (nth entries i)]
                   (and (= :tool-call (:kind e))
                        (or (nil? call) (same-call? call e)))))]
-    (or (first (filter #(and (= :running (:status (nth entries %))) (match %)) idxs))
-        (when call (first (filter match idxs))))))
+    (when-not (:sub-id dialog)
+      (or (first (filter #(and (= :running (:status (nth entries %))) (match %)) idxs))
+          (when call (first (filter match idxs)))))))
 
 (defn restamp-gated-call
   "History with the :started-at of the tool call an allowed :confirm `dialog`

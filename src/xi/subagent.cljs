@@ -13,6 +13,7 @@
    the parent room; only its conversation is separate."
   (:require [xi.agent :as agent]
             [xi.core.state :as state]
+            [xi.dialog :as dialog]
             [xi.session :as session]))
 
 ;; sub-id -> {:abort! fn :room-id str}. Process-local; never crosses the wire.
@@ -83,28 +84,51 @@
     (cond-> {:resume-id rid}
       kept (assoc :config-dir kept))))
 
+(defn- deny-all
+  ([_message] (js/Promise.resolve false))
+  ([_message _opts] (js/Promise.resolve false)))
+
+(defn- confirm-fn
+  "The :confirm! of sub-agent `sub-id`'s tools: its permission asks open in
+   the parent room like the main agent's, tagged :sub-id (so they never sit
+   on a parent block, xi.dialog/permission-tool-index, and are denied when
+   the sub-agent stops, xi.ext.subagent) and named by its `label`. Without
+   `ask!` (the client mirror) every ask is denied."
+  [ask! dispatch! get-state room-id sub-id label]
+  (if-not ask!
+    deny-all
+    (fn confirm!
+      ([message] (confirm! message nil))
+      ([message opts]
+       (ask! {:dispatch! dispatch! :state (get-state)}
+             {:room-id   room-id
+              :on-reason (:on-reason opts)
+              :dialog    (merge {:type    :confirm
+                                 :message (str "Sub-agent “" (or label sub-id) "”: " message)
+                                 :sub-id  sub-id}
+                                (into {} (filter val)
+                                      (select-keys opts [:options :diff :call :target :block
+                                                         :hardened? :guard])))})))))
+
 (defn create-fx
   "Sub-agent provider effect. `providers` = provider-id → provider.
    `opts` is the same tooling threaded into xi.agent/create-fx:
-     :tool-policy, :extra-tool-definitions, :extra-tool-registry.
+     :tool-policy, :extra-tool-definitions, :extra-tool-registry, :ask!.
 
    The `:subagent/start` effect runs a fresh provider turn (or, with
    :resume, a reply resuming the child's own conversation, see
-   `resume-target`) with
-   the same extension tools + rules policy the main agent gets, so a sub-agent
-   can use git/read/etc. A background sub-agent runs unattended, so rule
-   confirmations resolve to the safe default (deny) instead of opening an
-   interactive dialog in the parent room: an unanswered dialog would block the
-   sub-agent's turn forever (it never reaches :subagent/turn-end and stays
-   stuck :running). Tools the user already [a]llow-always'd in the parent room
-   skip :confirm! entirely (room-scoped allowlist), so those still run."
+   `resume-target`) with the same extension tools + rules policy the main
+   agent gets, permission asks included (`confirm-fn`): one waits for the
+   user like the main agent's, and Stop denies it. `:unattended?` turns
+   (explanations and questions, read-only by their prompt) deny every ask
+   instead, so they never queue a dialog behind the one they explain."
   ([providers] (create-fx providers nil))
-  ([providers {:keys [tool-policy extra-tool-definitions extra-tool-registry
+  ([providers {:keys [tool-policy extra-tool-definitions extra-tool-registry ask!
                       make-config-dir! remove-config-dir!]}]
    {:subagent/start
     (fn [{:keys [dispatch! get-state]}
-         {:keys [room-id sub-id prompt images system model provider cwd effort only-tools
-                 resume history]}]
+         {:keys [room-id sub-id label prompt images system model provider cwd effort only-tools
+                 resume history unattended?]}]
       (let [prov     (agent/resolve-provider providers {:provider provider :model model})
             target   (when resume (resume-target sub-id resume))
             ;; Run the sub-agent's turn against a throwaway CLAUDE_CONFIG_DIR so
@@ -128,16 +152,15 @@
                       ;; acts for whoever's prompt the parent turn answers
                       :user      (state/turn-user (get-state) room-id)
                       :sub-id    sub-id
-                      ;; Auto-deny (never open a dialog): a background sub-agent
-                      ;; has no interactive operator in its own turn, so a
-                      ;; routed-and-awaited confirm would hang it indefinitely.
-                      ;; MUST stay present-and-denying — a nil :confirm! makes
-                      ;; rules :ask actions *pass through*, i.e. auto-ALLOW
-                      ;; guarded ops + third-party MCP calls.
-                      :confirm!  (fn confirm!
-                                   ([_message] (js/Promise.resolve false))
-                                   ([_message _copts] (js/Promise.resolve false)))}
-            policy1    (when tool-policy (fn [tool-call] (tool-policy tool-call tool-ctx)))
+                      ;; MUST stay present — a nil :confirm! makes rules :ask
+                      ;; actions *pass through*, i.e. auto-ALLOW guarded ops +
+                      ;; third-party MCP calls.
+                      :confirm!  (if unattended?
+                                   deny-all
+                                   (confirm-fn ask! dispatch! get-state room-id sub-id label))}
+            policy1    (when tool-policy
+                         (fn [tool-call]
+                           (tool-policy tool-call (dialog/scope-confirm-to-call tool-ctx tool-call))))
             ;; The PARENT room's driving-client pid, so a sub-agent's MCP calls
             ;; carry the same _meta "xi/clientPid" as the parent's (a browser
             ;; server scopes to that terminal, see xi.ext.mcp/call-meta).

@@ -115,6 +115,12 @@ the chat's last messages with the task and can read the rest with
 in the conversation where they started and lists them in the sidebar with the chat's
 [buffers](web-client.md#buffers).
 
+A sub-agent's tool calls go through the same [rules](rules.md) as the
+agent's: when one asks, the question appears in the chat, named after the
+sub-agent, and the sub-agent waits for your answer. Stopping it denies the
+question. Sub-agents that answer a question about a block or explain a tool
+call never ask: what would need permission is denied.
+
 A finished sub-agent is saved as a session of its own, hidden from your chats
 and deleted with the chat that started it; `subagent_result` with `history`
 still reads it after a restart. Questions you
