@@ -4045,6 +4045,22 @@
      :resuming? resuming?
      :loading?  (and resuming? (empty? history))}))
 
+(defn- flatten-children
+  "Hiccup children with nested seqs spliced in, as Replicant flattens them."
+  [xs]
+  (mapcat #(if (seq? %) (flatten-children %) [%]) xs))
+
+(defn- timeline-content
+  "The .timeline-content div without nil children. Replicant keeps a nil child
+   as a slot, and when keyed siblings shift past one (an answered permission
+   ask moving on to the next tool block) it removes that slot as a node and
+   throws; render! then rebuilds the whole page and the chat jumps to the top
+   and back."
+  [& children]
+  (into [:div {:class ["timeline-content"]}]
+        (remove nil?)
+        (flatten-children children)))
+
 (defn- chat-view [state dispatch!]
   (let [sid     (get-in state [:web/route :session-id])
         room    (viewed-room state sid)
@@ -4124,7 +4140,7 @@
        (list
         [:div {:class ["timeline"
                        (when-not pa? "timeline--float-footer")]}
-         [:div {:class ["timeline-content"]}
+         (timeline-content
           (if ready?
             (let [entries (vec history)
                   total   (count entries)
@@ -4347,9 +4363,10 @@
                                             (askable-kinds (:kind entry))
                                             (with-ask-ref {:index p})))}])))))))
                     (range start (inc total))))))
-               ;; Every child of .timeline-content is keyed: mixing keyed and
-               ;; unkeyed siblings makes Replicant reconcile the tail positionally
-               ;; and throw `removeChild ... not a Node` as these toggle.
+               ;; Every child of .timeline-content is keyed (and nils are
+               ;; dropped, see timeline-content): mixing keyed and unkeyed
+               ;; siblings makes Replicant reconcile the tail positionally and
+               ;; throw `removeChild ... not a Node` as these toggle.
                (with-post-key "tl-optimistic"
                               (optimistic-post dispatch! state room sid history))
                (with-post-key "tl-pending-command"
@@ -4361,7 +4378,7 @@
             (with-post-key "tl-empty"
                            (empty-state/empty-state {} (spinner) [:p "Connecting…"])))
           (with-post-key "tl-quick-replies"
-                         (quick-replies-row dispatch! room busy?))]]
+                         (quick-replies-row dispatch! room busy?)))]
         (copy-dialog-overlay dispatch! (:web/copy-text state))
         (when-let [menu (:web/bubble-menu state)]
           (bubble-menu dispatch! (:id room) menu))
