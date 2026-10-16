@@ -82,14 +82,30 @@
   {:index  (some-> (.getAttribute el "data-ask-index") not-empty parse-long)
    :sub-id (not-empty (.getAttribute el "data-ask-sub"))})
 
+(defn- first-line-center
+  "Viewport y of the middle of block `el`'s first line: its header row
+   (a tool or thinking <summary>) or else its first line of text."
+  [^js el]
+  (if-let [head (.querySelector el ":scope > summary, :scope > details > summary")]
+    (let [r (.getBoundingClientRect head)]
+      (+ (.-top r) (/ (.-height r) 2)))
+    (let [cs (js/getComputedStyle el)
+          lh (js/parseFloat (.-lineHeight cs))]
+      (+ (.-top (.getBoundingClientRect el))
+         (js/parseFloat (.-borderTopWidth cs))
+         (js/parseFloat (.-paddingTop cs))
+         (/ (if (js/isNaN lh) 24 lh) 2)))))
+
 (defn- show-hover-button!
-  "Move the timeline's Ask button (views/ask-hover-button) to block `el` and
-   name the block in its data attributes. Its top is relative to the
-   .timeline-content holding both, so it scrolls with the block."
+  "Move the timeline's Ask button (views/ask-hover-button) to block `el`,
+   centred on its first line, and name the block in its data attributes. Its
+   top is relative to the .timeline-content holding both, so it scrolls with
+   the block."
   [^js el]
   (when-let [content (.closest el ".timeline-content")]
     (when-let [btn (.querySelector content ":scope > .ask-hover")]
-      (let [top (- (.-top (.getBoundingClientRect el))
+      (let [top (- (first-line-center el)
+                   (/ (.-offsetHeight btn) 2)
                    (.-top (.getBoundingClientRect content)))
             ds  (.-dataset btn)]
         (set! (.. btn -style -top) (str (max 0 top) "px"))
@@ -100,6 +116,23 @@
 (defn- hide-hover-buttons! []
   (doseq [btn (array-seq (.querySelectorAll js/document ".ask-hover.is-visible"))]
     (.remove (.-classList btn) "is-visible")))
+
+;; The button sits beside its block, past a gap that is no block: hiding waits
+;; a moment so the pointer can cross it; reaching the button or a block cancels.
+(def ^:private hide-grace-ms 300)
+
+(defonce ^:private hide-timer (atom nil))
+
+(defn- cancel-hide! []
+  (some-> @hide-timer js/clearTimeout)
+  (reset! hide-timer nil))
+
+(defn- hide-soon! []
+  (when-not @hide-timer
+    (reset! hide-timer (js/setTimeout (fn []
+                                        (reset! hide-timer nil)
+                                        (hide-hover-buttons!))
+                                      hide-grace-ms))))
 
 (defn- open-menu! [dispatch! ^js e ^js el]
   (let [{:keys [index sub-id]} (block-ref el)]
@@ -125,13 +158,12 @@
      (fn [^js e]
        (let [t (.-target e)]
          (when (and (= "mouse" (.-pointerType e)) (instance? js/Element t))
-           (cond
-             (.closest t ".ask-hover") nil
-             (.closest t ".timeline-content")
-             (if-let [el (.closest t block-selector)]
-               (show-hover-button! el)
-               (hide-hover-buttons!))
-             :else (hide-hover-buttons!))))))
+           (let [block (when (.closest t ".timeline-content")
+                         (.closest t block-selector))]
+             (cond
+               (.closest t ".ask-hover") (cancel-hide!)
+               block (do (cancel-hide!) (show-hover-button! block))
+               :else (hide-soon!)))))))
     (let [handle (fn [^js e skip]
                    (let [t (.-target e)]
                      (when (and (views/tap-opens-context-menu?)
