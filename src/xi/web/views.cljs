@@ -4252,8 +4252,14 @@
                                                 :node (subagent-result-post dispatch! (:id room) c)})
                                        (get by-end p))))
                      ;; Extension posts (xi.web.timeline-posts), e.g. agent
-                     ;; blocks after their tool call.
-                     by-xpost  (group-by :pos (timeline-posts/items state dispatch! room entries))
+                     ;; blocks after their tool call, which they stand in for.
+                     xposts    (timeline-posts/items state dispatch! room entries)
+                     by-xpost  (group-by :pos xposts)
+                     replaced? (let [hides (into #{} (keep :hides) xposts)]
+                                 (fn [p entry]
+                                   (and (hides p)
+                                        (not= p perm-tool-idx)
+                                        (not (resolved-by-tool (:id entry))))))
                      xitems    (fn [p]
                                  (map (fn [{:keys [key node]}]
                                         {:key (str "xp-" key) :group? false
@@ -4284,7 +4290,7 @@
                        (ritems p)
                        (sitems p)
                        (xitems p)
-                       (when (< p total)
+                       (when (and (< p total) (not (replaced? p (nth entries p))))
                          (let [entry (nth entries p)
                                ;; A tool awaiting Allow/Deny stays open and out of
                                ;; any viewer group.

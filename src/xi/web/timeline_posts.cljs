@@ -1,11 +1,13 @@
 (ns xi.web.timeline-posts
   "Posts a web extension places in the chat timeline between history entries:
    an extension's `:timeline-posts` is (fn [state dispatch! room entries] →
-   [{:pos p :key str :node hiccup}]). The chat view (xi.web.views/chat-view)
-   draws each node before history entry `p` (`p` = the history length puts it
-   at the end), outside any folded tool group; a `p` above the rendered window
-   pins it at the window's top. Keys must be unique per room. The agent blocks
-   (xi.ext.blocks.web) post this way, after the tool call that made them.
+   [{:pos p :key str :node hiccup :hides i?}]). The chat view
+   (xi.web.views/chat-view) draws each node before history entry `p` (`p` =
+   the history length puts it at the end), outside any folded tool group; a
+   `p` above the rendered window pins it at the window's top. `:hides i`
+   leaves history entry `i` out, unless it holds a permission ask or answer.
+   Keys must be unique per room. The agent blocks (xi.ext.blocks.web) post
+   this way, in place of the tool call that made them.
 
    The registry holds fns, so it lives outside the app state (like
    xi.web.buffer-views); built-in web halves register at init.")

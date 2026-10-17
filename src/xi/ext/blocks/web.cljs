@@ -375,17 +375,20 @@
         node))))
 
 (defn- timeline-posts
-  "Each block after its tool call, or at its :anchor when that call isn't in
-   the history (a sub-agent's, or a rebuilt history without it)."
+  "Each block in place of its tool call (the call's row only says it showed
+   the block), or at its :anchor when that call isn't in the history (a
+   sub-agent's, or a rebuilt history without it)."
   [state dispatch! room entries]
   (let [blocks (b/room-blocks room)]
     (when (seq blocks)
       (let [calls (into {} (keep-indexed (fn [i e] (when (= :tool-call (:kind e)) [(:id e) i]))) entries)
             n     (count entries)]
-        (for [{:keys [id call-id anchor] :as record} blocks]
-          {:pos  (if-let [i (get calls call-id)] (inc i) (min n (or anchor n)))
-           :key  (str "block-" id)
-           :node (memo-post dispatch! (:id room) record (get-in state [:web/blocks id]))})))))
+        (for [{:keys [id call-id anchor] :as record} blocks
+              :let [i (get calls call-id)]]
+          (cond-> {:pos  (if i (inc i) (min n (or anchor n)))
+                   :key  (str "block-" id)
+                   :node (memo-post dispatch! (:id room) record (get-in state [:web/blocks id]))}
+            i (assoc :hides i)))))))
 
 (defn- buffer-view
   "A `block:<id>` buffer: the block at full size, outside the timeline."

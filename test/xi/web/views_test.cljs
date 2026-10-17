@@ -1,6 +1,7 @@
 (ns xi.web.views-test
   (:require [cljs.test :refer [deftest is testing]]
             [xi.web.block-menu :as block-menu]
+            [xi.web.timeline-posts :as timeline-posts]
             [xi.web.views :as views]))
 
 ;; ── timeline post memo (typing lag on long chats) ─────────────────────────────
@@ -35,6 +36,23 @@
                                 dispatch!))]
         (is (identical? (get a "h-0") (get c "h-0")))
         (is (not (identical? (get a "h-1") (get c "h-1"))))))))
+
+(deftest a-timeline-post-can-stand-in-for-its-tool-call
+  (let [chat-view @#'views/chat-view
+        history   [{:kind :user :text "show it"}
+                   {:kind :tool-call :id "t1" :tool "ui_block" :status :done :result "Showed"}]
+        state     {:web/route {:session-id "s"}
+                   :active-room "r1"
+                   :rooms {"r1" {:id "r1" :session {:id "s"} :history history}}}
+        render    #(posts (chat-view % (fn [_])))]
+    (timeline-posts/register! ::block (fn [_ _ _ _] [{:pos 2 :key "b" :node [:div] :hides 1}]))
+    (try
+      (is (= #{"h-0"} (set (keys (render state)))) "the tool call's row is left out")
+      (testing "a tool call holding a permission answer stays"
+        (is (contains? (render (assoc state :web/resolved-dialogs
+                                      {"r1" [{:key "d1" :anchor 1 :tool-id "t1" :value true}]}))
+                       "h-1")))
+      (finally (timeline-posts/register! ::block (constantly nil))))))
 
 ;; ── diff-visible-rows (size limit of the diff view) ─────────────────────────
 
