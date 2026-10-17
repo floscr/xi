@@ -820,16 +820,20 @@ a.btn-link {
   text-decoration: underline;
 }
 
+/* The radius steps with the size, by the same size-1 the vertical padding
+   steps, so a small button isn't a pill and a large one isn't boxy. */
 .btn-sm {
   padding: var(--size-1) var(--size-2);
   font-size: var(--font-xs);
   line-height: var(--size-4);
+  border-radius: calc(var(--radius-control) - var(--size-1));
 }
 
 .btn-lg {
   padding: var(--size-3) var(--size-6);
   font-size: var(--font-base);
   line-height: var(--size-6);
+  border-radius: calc(var(--radius-control) + var(--size-1));
 }
 
 /* ── Icon-only button ────────────────────────────────────────── */
