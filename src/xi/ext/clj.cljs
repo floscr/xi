@@ -39,6 +39,7 @@
             [xi.dialog :as dialog]
             [xi.ext.clj-bytes :as bytes]
             [xi.ext.clj-fs :as clj-fs]
+            [xi.ext.clj-http :as clj-http]
             [xi.ext.clj-process :as proc]
             [xi.ext.clj-socket :as sock]
             [xi.git-lock :as git-lock]
@@ -447,35 +448,9 @@
         (into [] (remove str/blank?) (str/split-lines (str/trimr out)))
         (throw (ex-info (str "clj: fd failed: " err) {}))))))
 
-(defn- curl-fn [opts]
-  (fn curl*
-    ([url] (curl* url nil))
-    ([url {:keys [method headers body max-time]}]
-     (when-not (re-matches #"(?i)https?://.*" (str url))
-       (throw (ex-info "clj: curl only supports http(s) URLs" {})))
-     (let [outfile (node-path/join (os/tmpdir)
-                                   (str "xi-clj-curl-" (.getTime (js/Date.))
-                                        "-" (rand-int 1000000)))
-           argv    (cond-> ["curl" "-sS" "-L" "--max-time" (str (or max-time 30))
-                            "-o" outfile "-w" "%{http_code}"]
-                     method  (into ["-X" (str/upper-case (name method))])
-                     body    (into ["--data-binary" (str body)])
-                     headers (into (mapcat (fn [[k v]] ["-H" (str (name k) ": " v)])
-                                           headers))
-                     :always (conj (str url)))
-           res     (spawn-sync! argv (opts-cwd opts))
-           status  (js/parseInt (str/trim (:out res)) 10)
-           body'   (when (fs/existsSync outfile)
-                     (try
-                       (when (> (.-size (fs/statSync outfile)) MAX_DATA)
-                         (throw (ex-info (str "clj: curl response exceeds " MAX_DATA
-                                              " bytes; download it with (sh \"curl\" \"-o\" f url)")
-                                         {})))
-                       (fs/readFileSync outfile "utf8")
-                       (finally (fs/rmSync outfile #js {:force true}))))]
-       (if (and (zero? (:exit res)) (not (js/isNaN status)))
-         {:status status :body (or body' "")}
-         (throw (ex-info (str "clj: curl failed: " (:err res)) {})))))))
+(defn- http-ctx [opts]
+  {:spawn     (fn [argv input] (spawn-sync! argv (opts-cwd opts) {:input input}))
+   :max-bytes MAX_DATA})
 
 (defn git-subcommand
   [args]
@@ -687,7 +662,7 @@
                  nil))
      'now    (fn [] (.toISOString (js/Date.)))
      'cwd    (fn [] (opts-cwd opts))
-     'curl   (curl-fn opts)
+     'curl   (clj-http/curl-fn (http-ctx opts))
      'ports  (ports-fn opts)
      'jq     (jq-fn opts)
      'git    (git-fn opts)
@@ -714,7 +689,7 @@
     (throw (ex-info (str "clj: (" call " …) is not available here: this chat's clj "
                          "is restricted (no file, program or socket access). "
                          "Available: " (str/join " " (sort COMPUTE_HELPERS))
-                         ", clojure.core, str/set/walk/edn, json "
+                         ", babashka.http-client, clojure.core, str/set/walk/edn, json "
                          "(clojure.data.json), cheshire.core.")
                     {}))))
 
@@ -744,7 +719,7 @@
   "(require '[clojure.string :as str] '[clojure.set :as set]
             '[clojure.walk :as walk] '[clojure.edn :as edn]
             '[clojure.data.json :as json] '[cheshire.core]
-            '[babashka.fs :as fs])")
+            '[babashka.fs :as fs] '[babashka.http-client :as http])")
 
 (defn- json-transform
   [data key-fn value-fn]
@@ -951,7 +926,9 @@
                         'cheshire.core cheshire-namespace
                         'process (if compute? (compute-namespace "process/" process) process)
                         'socket  (if compute? (compute-namespace "socket/" socket) socket)
-                        'babashka.fs (if compute? (compute-namespace "fs/" bfs) bfs)}
+                        'babashka.fs (if compute? (compute-namespace "fs/" bfs) bfs)
+                        ;; Network only, like curl: compute rooms keep it.
+                        'babashka.http-client (clj-http/sci-namespace (http-ctx opts))}
                        ;; Every class is a null-proto object (xi.sandbox.sci), never a real
                        ;; class, so `Class/constructor` can't reach js/Function. Instance interop
                        ;; still works: SCI keys it on the class name.
@@ -1040,6 +1017,11 @@
       (str "Hint: clj's babashka.fs (aliased `fs`) is a subset on path strings: "
            (str/join " " (sort (keys (clj-fs/sci-namespace {})))) ".")
 
+      (re-find #"resolve symbol:? (?:babashka\.http-client|http)/" msg)
+      (str "Hint: clj's babashka.http-client (aliased `http`) has "
+           (str/join " " (sort (keys (clj-http/sci-namespace {})))) "; no client, "
+           "async or streaming API.")
+
       (re-find #"Could not find namespace:? (?:clojure\.java\.shell|babashka\.process)\b" msg)
       (str "Hint: clj runs in a sandbox — clojure.java.shell and babashka.process "
            "don't exist. Use (sh \"cmd\" \"arg\" …) for synchronous CLIs, or "
@@ -1112,7 +1094,9 @@
         "(find pat dir) (head f n) (tail f n) (spit f s) (mkdir d) (cp a b) "
         "(mv a b) (rm f) (tmpdir) (cwd) (env k) (stat f) → {:size :mtime-ms …} "
         "(realpath p) (which c) (basename p) (dirname p) (touch f) (now) "
-        "(curl url) → {:status :body} "
+        "(curl url) → {:status :headers :body} "
+        "babashka.http-client as `http` — (http/post url {:form-params {…} "
+        ":follow-redirects false :throw false}) → {:status :headers :body} "
         "babashka.fs as `fs` on path strings — (fs/exists? p) (fs/directory? p) "
         "(fs/delete-tree d) (fs/create-dirs d) (fs/list-dir d) (fs/glob root pat) "
         "(fs/copy-tree a b) (fs/move a b) (fs/parent p) (fs/file-name p) … "
@@ -2549,7 +2533,9 @@
        "(cat ls glob grep find head tail spit mkdir cp mv rm tmpdir cwd stat "
        "realpath which basename dirname touch now) or babashka.fs, pre-aliased "
        "as `fs` (fs/exists? fs/delete-tree fs/create-dirs …, on path strings); HTTP "
-       "via (curl url) → {:status :body}; listening ports via (ports) / "
+       "via (curl url) → {:status :headers :body} or babashka.http-client, "
+       "pre-aliased as `http` (http/get http/post … with :headers :form-params "
+       ":follow-redirects :throw :as :bytes); listening ports via (ports) / "
        "(ports 7474) → {:proto :addr :port :process :pid} maps (no ss/lsof "
        "needed); JSON via the pre-approved (jq "
        "filter json-or-data) helper — pipes to jq on stdin (no tmp file) and "

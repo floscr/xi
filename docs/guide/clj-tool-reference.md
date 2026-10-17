@@ -17,7 +17,8 @@ the separators) exist; `System/getenv` does not (use `env`). Base64 works as in 
 
 In an [agent profile](agents.md)'s chats the tool is `:compute` unless the
 profile sets `:clj :full`: of the helpers below only `curl`, `now`, `sleep`,
-`basename` and `dirname` remain, and there is no `process`, `socket` or `fs`.
+`basename` and `dirname` remain, plus `babashka.http-client`, and there is no
+`process`, `socket` or `fs`.
 
 The REPL persists per chat: `def` once, use later. `/clj reset` drops it.
 A result longer than 30k characters is saved to a file under the temp
@@ -71,9 +72,18 @@ default `rm` of git-tracked content allows that exact command.
 | --- | --- |
 | `(sh "cmd" "arg" …)` | Run a program; stdout on success, an error with `{:exit :out :err}` otherwise. Options first: `(sh {:dir "sub" :env {"PORT" 8080}} "bb" "test")`. |
 | `(git "log" "-5")` | Git without a dialog, for ordinary repository subcommands. Refused here, with the reason, and left to `sh` (which asks): `push`, `clean`, `-c`, `-C`, `--git-dir`, `-p`, `config` writes, `rebase -x`, `merge -s`, `--ext-diff`, `--output`, `--no-index`, `--upload-pack`, `--template`, `bisect run`, `submodule foreach`, aliases and tools (`difftool`, `hook`, …). Another directory of the same repository: `(sh {:dir "sub"} "git" …)`. |
-| `(curl url opts)` | `{:status :body}`; `http(s)` only; opts `{:method :headers :body :max-time}` |
+| `(curl url opts)` | `{:status :headers :body}`; `http(s)` only; follows redirects; opts `{:method :headers :body :max-time}` |
 | `(jq filter input)` | jq over a JSON string or Clojure data; returns data, `{:raw true}` returns text. `{:args […]}` adds output flags (`-S`, `--arg n v`, `--indent 2`, …), not file-reading ones (`-f`, `--rawfile`, `--slurpfile`, `-L`). jq sees only the allowed environment variables. |
 | `(ports)` `(ports 7474)` | Listening sockets as `{:proto :addr :port :process :pid}` |
+
+`babashka.http-client` is there too, required as `http`, with `get`, `head`,
+`post`, `put`, `patch`, `delete` and `request`. Each returns `{:status
+:headers :body}`; a header sent more than once comes as a vector. Options:
+`:headers`, `:body`, `:query-params`, `:form-params`, `:basic-auth`,
+`:timeout` (ms), `:follow-redirects` (default true), `:throw` (default true:
+a status other than 200–207, 300–304 or 307 throws with the response as
+`ex-data`) and `:as` (`:string` or `:bytes`). There is no client, async or
+streaming API.
 
 `sh` takes one program and its arguments. There are no shell strings, and
 `(sh "bash" "-c" …)` is refused, also by path or through `env`, `timeout`,

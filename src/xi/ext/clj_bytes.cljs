@@ -5,14 +5,14 @@
   (:require [clojure.string :as str]
             [xi.sandbox.sci :as sandbox]))
 
-(defn- ->buffer [x]
+(defn ->buffer [x]
   (cond
     (string? x)     (js/Buffer.from x "utf8")
     (array? x)      (js/Buffer.from (js/Uint8Array.from x))
     (sequential? x) (js/Buffer.from (js/Uint8Array.from (into-array x)))
     :else (throw (ex-info (str "Not a byte array: " (pr-str x)) {}))))
 
-(defn- ->bytes [^js buf]
+(defn ->bytes [^js buf]
   (js/Array.from (js/Int8Array. (.-buffer buf) (.-byteOffset buf) (.-length buf))))
 
 ;; Node's charset names are case-insensitive: "UTF-8", "latin1", "ascii", …
