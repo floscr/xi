@@ -3181,6 +3181,9 @@
    and the drawer paint whenever a standalone PWA resumes from the
    background (iOS restores a stale scale and height until then)."
   [state]
+  ;; .iphone: style.css reserves room for the floating keyboard accessory bar
+  (.toggle (.-classList js/document.documentElement) "iphone"
+           (boolean (re-find #"iPhone" (.-userAgent js/navigator))))
   (sync-viewport-height!)
   (if js/window.visualViewport
     (do (.addEventListener js/window.visualViewport "resize" (fn [_] (sync-viewport-height!)))
