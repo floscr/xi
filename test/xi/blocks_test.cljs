@@ -13,7 +13,7 @@
 (deftest unknown-kind-and-bad-data
   (is (str/includes? (err "nope" {}) "unknown kind"))
   (is (str/includes? (err "checklist" "{not json") "not valid JSON"))
-  (is (= "data must be an object" (err "form" [1 2])))
+  (is (= "data must be an object" (err "choice" [1 2])))
   (testing "a JSON string is read back"
     (is (= ["a"] (map :label (:items (spec "checklist" "{\"items\": [\"a\"]}")))))))
 
@@ -66,24 +66,6 @@
       (is (str/starts-with? (b/action-message r3 "submit")
                             "<block-action id=\"b-1\" kind=\"choice\" action=\"submit\">")))))
 
-(deftest form-actions
-  (let [r (record "form" {:fields [{:name "title" :required true}
-                                   {:name "kind" :type "select" :options ["bug" "feature"]}
-                                   {:name "urgent" :type "checkbox"}]})]
-    (is (nil? (b/act r {:action "submit" :value {}} "u" 1)) "required title missing")
-    (is (nil? (b/act r {:action "set" :target "kind" :value "nope"} "u" 1)))
-    (let [{r2 :record send? :send?} (b/act r {:action "submit"
-                                              :value {:title "Crash" :kind "1" :urgent true}} "u" 1)]
-      (is send?)
-      (is (= "title:   Crash\nkind:    bug\nurgent:  [x]" (b/body-text r2))))))
-
-(deftest cards-actions
-  (let [r (record "cards" {:cards [{:id "pr1" :title "PR 1" :actions [{:id "merge" :label "Merge" :send true}
-                                                                      {:id "later" :label "Later"}]}]})]
-    (is (true? (:send? (b/act r {:action "card" :target "pr1" :value "merge"} "u" 1))))
-    (is (false? (:send? (b/act r {:action "card" :target "pr1" :value "later"} "u" 1))))
-    (is (nil? (b/act r {:action "card" :target "pr1" :value "delete"} "u" 1)))))
-
 (deftest state-text-lists-unread-actions
   (let [r (record "checklist" {:items ["A" "B"]})
         r (:record (b/act r {:action "toggle" :target "1" :value true} "alice" 2))
@@ -100,7 +82,7 @@
     (is (= 59 (:at (last (:actions r)))))))
 
 (deftest static-kinds-are-gone
-  (doseq [k ["table" "keyvalue" "steps" "progress" "callout" "chart"]]
+  (doseq [k ["table" "keyvalue" "steps" "progress" "callout" "chart" "form" "cards"]]
     (is (str/includes? (err k {}) "unknown kind") (str k " is markdown or hiccup now"))))
 
 (deftest catalog-lists-every-kind

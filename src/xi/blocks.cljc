@@ -30,7 +30,6 @@
   64)
 
 (def max-items 500)
-(def max-value-chars 4000)
 
 (def max-actions
   "Actions a block remembers (the newest)."
@@ -151,34 +150,6 @@
              (boolean? value))
     {:block (assoc-in block [:state :checked target] value)}))
 
-;; text helpers (the form's text form)
-
-(defn- pad [s w align]
-  (let [n (- w (count s))]
-    (if (pos? n)
-      (case align
-        "right"  (str (apply str (repeat n " ")) s)
-        "center" (let [l (quot n 2)]
-                   (str (apply str (repeat l " ")) s (apply str (repeat (- n l) " "))))
-        (str s (apply str (repeat n " "))))
-      s)))
-
-(defn aligned-rows
-  "Rows of cells (strings) as space-aligned lines, no box drawing.
-   `aligns` is one of left/right/center per column (default left)."
-  ([rows] (aligned-rows rows nil))
-  ([rows aligns]
-   (let [one-line (fn [s] (str/replace (->str s) #"\s*\n\s*" " "))
-         rows     (mapv #(mapv one-line %) rows)
-         widths   (reduce (fn [ws r]
-                            (mapv #(max (get ws % 0) (count (get r % "")))
-                                  (range (max (count ws) (count r)))))
-                          [] rows)]
-     (mapv (fn [r]
-             (str/trimr (str/join "  " (map-indexed (fn [i w] (pad (get r i "") w (get aligns i "left")))
-                                                    widths))))
-           rows))))
-
 ;; choice
 
 (defn- norm-choice [{:keys [options multi submit]}]
@@ -220,130 +191,6 @@
       (when (seq (:selected state))
         {:block (assoc-in block [:state :submitted?] true) :send? true})
       nil)))
-
-;; form
-
-(def field-types #{"text" "textarea" "select" "checkbox" "number"})
-
-(defn- norm-field [i f]
-  (let [f    (if (map? f) f {:name (->str f)})
-        nm   (or (text-or-nil (:name f)) (text-or-nil (:id f)) (str "field" (inc i)))
-        type (one-of (:type f) field-types "text" "field type")
-        opts (when (= "select" type)
-               (let [os (as-vec (:options f) "select options")]
-                 (when (empty? os) (invalid! (str "select field " nm " needs options")))
-                 (mapv (fn [j o] {:id (item-id j o) :label (label-of o)}) (range) os)))]
-    (cond-> {:name nm :type type :label (or (text-or-nil (:label f)) nm)}
-      opts                           (assoc :options opts)
-      (truthy? (:required f))        (assoc :required true)
-      (text-or-nil (:placeholder f)) (assoc :placeholder (text-or-nil (:placeholder f)))
-      (text-or-nil (:hint f))        (assoc :hint (text-or-nil (:hint f)))
-      (some? (:default f))           (assoc :default (if (= "checkbox" type)
-                                                       (truthy? (:default f))
-                                                       (->str (:default f)))))))
-
-(defn- norm-form [{:keys [fields submit]}]
-  (let [fields (-> (as-vec fields "fields") (capped 50 "fields"))]
-    (when (empty? fields) (invalid! "form needs fields"))
-    (let [fields (vec (map-indexed norm-field fields))]
-      (when (not= (count fields) (count (distinct (map :name fields))))
-        (invalid! "field names must be unique"))
-      {:fields fields :submit (or (text-or-nil submit) "Submit")})))
-
-(defn field-value
-  "The current value of form field `f`: the user's, else its default."
-  [state f]
-  (get-in state [:values (:name f)]
-          (if (= "checkbox" (:type f)) (boolean (:default f)) (:default f ""))))
-
-(defn- carry-form [_ old-state new-spec]
-  (let [names (set (map :name (:fields new-spec)))]
-    (cond-> {:values (into {} (filter (comp names key)) (:values old-state))}
-      (:submitted? old-state) (assoc :submitted? true))))
-
-(defn- text-form [{:keys [fields]} state]
-  (str/join "\n" (aligned-rows (mapv (fn [f]
-                                       (let [v (field-value state f)]
-                                         [(str (:label f) ":")
-                                          (cond
-                                            (= "checkbox" (:type f)) (if v "[x]" "[ ]")
-                                            (= "select" (:type f))
-                                            (or (some #(when (= v (:id %)) (:label %)) (:options f)) (->str v))
-                                            :else (->str v))]))
-                                     fields))))
-
-(defn- field-value-ok? [f v]
-  (case (:type f)
-    "checkbox" (boolean? v)
-    "select"   (or (= "" v) (some #(= v (:id %)) (:options f)))
-    (and (string? v) (<= (count v) max-value-chars))))
-
-(defn missing-fields
-  "Required fields of `spec` without a value in `state`."
-  [spec state]
-  (filterv #(and (:required %)
-                 (let [v (field-value state %)]
-                   (or (nil? v) (= "" v) (false? v))))
-           (:fields spec)))
-
-(defn- act-form [{:keys [spec] :as block} {:keys [action target value]}]
-  (let [by-name (into {} (map (juxt :name identity)) (:fields spec))]
-    (case action
-      "set"
-      (when-let [f (by-name target)]
-        (when (field-value-ok? f value)
-          {:block (assoc-in block [:state :values target] value)}))
-
-      "submit"
-      (let [values (if (map? value) (update-keys value ->str) {})]
-        (when (every? (fn [[k v]] (and (by-name k) (field-value-ok? (by-name k) v))) values)
-          (let [block (update-in block [:state :values] merge values)]
-            (when (empty? (missing-fields spec (:state block)))
-              {:block (assoc-in block [:state :submitted?] true) :send? true}))))
-      nil)))
-
-;; cards
-
-(defn- norm-cards [{:keys [cards items]}]
-  (let [cards (-> (as-vec (or cards items) "cards") (capped 100 "cards"))]
-    {:cards (unique-ids!
-             (vec (map-indexed
-                   (fn [i c]
-                     (let [c (if (map? c) c {:title (->str c)})]
-                       (cond-> {:id (item-id i c) :title (label-of c)}
-                         (text-or-nil (:body c)) (assoc :body (text-or-nil (:body c)))
-                         (text-or-nil (:meta c)) (assoc :meta (text-or-nil (:meta c)))
-                         (seq (:actions c))
-                         (assoc :actions
-                                (unique-ids!
-                                 (vec (map-indexed (fn [j a]
-                                                     {:id (item-id j a) :label (label-of a)
-                                                      :send (boolean (and (map? a) (truthy? (:send a))))})
-                                                   (capped (as-vec (:actions c) "card actions") 6 "card actions")))
-                                 "card action")))))
-                   cards))
-             "card")}))
-
-(defn- text-cards [{:keys [cards]} state]
-  (str/join "\n\n" (for [c cards]
-                     (str "### " (:title c)
-                          (when-let [m (:meta c)] (str "\n" m))
-                          (when-let [b (:body c)] (str "\n" b))
-                          (when (seq (:actions c))
-                            (str "\n" (str/join " " (for [a (:actions c)]
-                                                      (str "[" (:label a)
-                                                           (when (= (:id a) (get-in state [:picked (:id c)])) " ✓")
-                                                           "]")))))))))
-
-(defn- carry-cards [_ old-state new-spec]
-  (let [ids (set (map :id (:cards new-spec)))]
-    {:picked (into {} (filter (comp ids key)) (:picked old-state))}))
-
-(defn- act-cards [{:keys [spec] :as block} {:keys [action target value]}]
-  (when (= "card" action)
-    (when-let [c (some #(when (= target (:id %)) %) (:cards spec))]
-      (when-let [a (some #(when (= value (:id %)) %) (:actions c))]
-        {:block (assoc-in block [:state :picked target] value) :send? (:send a)}))))
 
 ;; hiccup (xi.blocks.hiccup has the allowlist)
 
@@ -393,12 +240,6 @@
    "choice"    {:describe "{options: [{id?, label, description?}], multi?, submit?: button label} — the user picks and presses Send, which posts the choice to you as a message"
                 :normalize norm-choice :text text-choice
                 :init-state (fn [_] {:selected []}) :carry carry-choice :act act-choice}
-   "form"      {:describe "{fields: [{name, label?, type: text|textarea|select|checkbox|number, options?, required?, placeholder?, default?}], submit?} — the user fills it in and submits, which posts the values to you as a message"
-                :normalize norm-form :text text-form
-                :carry carry-form :act act-form}
-   "cards"     {:describe "{cards: [{id?, title, body?: markdown, meta?, actions?: [{id?, label, send?}]}]} — cards with buttons; an action with send: true posts the click to you as a message"
-                :normalize norm-cards :text text-cards
-                :carry carry-cards :act act-cards}
    "hiccup"    {:describe "pass `hiccup` instead of data: a tree of JSON arrays like [\"div\", {\"layout\": \"row\"}, [\"strong\", \"Hi\"]]; see the tool description for the allowed tags"
                 :normalize norm-hiccup :text (fn [spec _] (bh/text (:tree spec)))
                 :act act-hiccup}
@@ -616,9 +457,6 @@
   [{:keys [id kind] :as record} action]
   (str "<block-action id=\"" id "\" kind=\"" kind "\" action=\"" action "\">\n"
        (body-text record)
-       (when-let [last-action (last (:actions record))]
-         (when (= "card" (:action last-action))
-           (str "\npicked: " (:target last-action) " → " (value-text (:value last-action)))))
        "\n</block-action>"))
 
 (defn parse-action-message

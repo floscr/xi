@@ -7134,10 +7134,6 @@ code a:hover,
 .ab-choice-options > label > input { flex: none; margin: 0.15em 0 0; }
 .ab-choice-text { display: grid; gap: 2px; min-width: 0; }
 .ab-choice-label { color: var(--fg-0); font-weight: 500; }
-/* form, cards */
-.ab-form { display: grid; gap: var(--size-2); max-width: 36rem; }
-.ab-cards { display: grid; gap: var(--size-2); grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
-.ab-card .card-footer { display: flex; flex-wrap: wrap; gap: var(--size-2); }
 
 /* hiccup: the semantic attributes (xi.blocks.hiccup) */
 .ab-hiccup { display: grid; gap: var(--size-2); }

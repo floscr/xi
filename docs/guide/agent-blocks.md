@@ -1,7 +1,7 @@
 # Agent blocks
 
 The agent can put something in the chat that you act on: a checklist you
-tick off, options to pick, a form to fill in, cards with buttons. A block
+tick off, options to pick, a layout with buttons and fields. A block
 appears right after the tool call that made it, the agent can change it while
 it works, and it can read what you did with it. Tables, lists and notes you
 only read come as ordinary text in the agent's answer.
@@ -14,7 +14,7 @@ show the failing tests as a checklist, I'll tick the ones I've looked at
 
 Every block sits in a frame Xi draws, never the agent: a dashed border in
 the theme's accent color, a header with **Agent block**, the kind
-(`checklist`, `form`, …), its title, and where it came from (`ui_block` for
+(`checklist`, `choice`, …), its title, and where it came from (`ui_block` for
 the agent, an extension or MCP server by name). The `≡` menu in the header
 opens the block as a [buffer](web-client.md#buffers) of the chat, shows its
 data and copies it as text or JSON.
@@ -30,12 +30,10 @@ block: permission questions appear on the tool call they belong to.
 | --- | --- | --- |
 | `checklist` | Items with a checkbox | Tick items |
 | `choice` | Options to pick, one or several | Pick, then **Send** |
-| `form` | Text, text area, select, checkbox and number fields | Fill in, then submit |
-| `cards` | Cards with a title, text and buttons | Press a button |
 | `hiccup` | A layout the agent composes from a fixed set of elements and Xi's own components, for what text can't show: badges, a progress bar, an SVG chart | Press its buttons, use its fields |
 
-The agent picks the kind. Asking for one works ("as a checklist", "give me a
-form for the issue").
+The agent picks the kind. Asking for one works ("as a checklist", "let me
+pick one").
 
 ## Answering the agent
 
@@ -44,8 +42,8 @@ What you do on a block is saved on the block. The agent reads it with
 that are done"). The header shows **n new** while the agent hasn't read your
 latest actions.
 
-**Send** on a choice, submit on a form and buttons the agent marked to send
-post a message to the chat for you, like typing it:
+**Send** on a choice and buttons the agent marked to send post a message to
+the chat for you, like typing it:
 
 ```text
 <block-action id="b-3f9a" kind="choice" action="submit">

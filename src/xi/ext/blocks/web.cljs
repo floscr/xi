@@ -6,16 +6,14 @@
    kind and source, and a ⋯ menu (view data, copy).
 
    Controls only ever produce block actions (`:ext.blocks/act`, forwarded to
-   the server, which records them on the block). A form's Submit, a choice's
-   Send and a control marked to send also post a message for the user
-   (`:input/submit` with xi.blocks/action-message): user-initiated, never on
-   mount or hover. The raw-data view and unsent form values are
-   this browser's own ([:web/blocks …])."
+   the server, which records them on the block). A choice's Send and a
+   control marked to send also post a message for the user (`:input/submit`
+   with xi.blocks/action-message): user-initiated, never on mount or hover.
+   The raw-data view is this browser's own ([:web/blocks …])."
   (:require [clojure.string :as str]
             [ui.alert :as alert]
             [ui.badge :as badge]
             [ui.button :as button]
-            [ui.card :as card]
             [ui.chip :as chip]
             [ui.form :as form]
             [ui.icon :as icon]
@@ -26,7 +24,6 @@
             [xi.core.state :as state]
             [xi.ext.blocks.frame :as frame]
             [xi.ext.blocks.handlers :as h]
-            [xi.markdown.hiccup :as md]
             [xi.web.block-kinds :as block-kinds]
             [xi.web.block-nav :as block-nav]
             [xi.web.views :as views]))
@@ -45,22 +42,18 @@
 
 (defn- on-submit
   "Submit / send: record the action and post the message the block's new
-   state makes, as the user. Clears this browser's unsent form values."
+   state makes, as the user."
   [st {:keys [room-id block-id action target value]}]
   (when-let [record (h/find-block st room-id block-id)]
     (let [ev {:type :ext.blocks/act :room-id room-id :block-id block-id
               :action action :target target :value value}]
       (when-let [{r :record send? :send?} (b/act record ev (state/own-user st) (js/Date.now))]
-        {:state   (update-in st [:web/blocks block-id] dissoc :draft)
-         :effects (cond-> [[:ws/send ev]]
+        {:effects (cond-> [[:ws/send ev]]
                     send? (conj [:ws/send {:type :input/submit :room-id room-id
                                            :text (b/action-message r action)}]))}))))
 
 (defn- on-raw [st {:keys [block-id]}]
   {:state (update-in st (ui-path block-id :raw?) not)})
-
-(defn- on-draft [st {:keys [block-id field value]}]
-  {:state (assoc-in st (ui-path block-id :draft field) value)})
 
 ;; app views (xi.ext.blocks.frame)
 
@@ -88,7 +81,6 @@
 
 ;; ── Small pieces ─────────────────────────────────────────────────────────────
 
-(defn- markdown [s] (when (seq s) (md/render s)))
 
 (defn- hide-popover! [id]
   (some-> (.getElementById js/document id) .hidePopover))
@@ -151,55 +143,6 @@
                       :on-click (fn [_] (submit! dispatch! room-id id "submit"))}
                      (:submit spec))
       (when (:submitted? state) [:span {:class ["ab-note"]} "Sent"])]]))
-
-(defn- form-view [dispatch! room-id {:keys [id spec state]} ui]
-  (let [draft   (:draft ui)
-        value   (fn [f] (get draft (:name f) (b/field-value state f)))
-        put!    (fn [f v] (dispatch! {:type :ext.blocks/draft :block-id id :field (:name f) :value v}))
-        values  (into {} (map (juxt :name value)) (:fields spec))
-        missing (b/missing-fields spec {:values values})]
-    [:div {:class ["ab-form"]}
-     (for [f (:fields spec)]
-       [:div {:replicant/key (:name f)}
-        (if (= "checkbox" (:type f))
-          (form/form-checkbox {:label (:label f) :checked (boolean (value f))
-                               :on-change (fn [e] (put! f (.. e -target -checked)))})
-          (form/form-field
-           {:label (str (:label f) (when (:required f) " *")) :hint (:hint f)}
-           (case (:type f)
-             "textarea" (form/form-textarea {:value (value f) :placeholder (:placeholder f)
-                                             :attrs {:rows 3 :on {:input (fn [e] (put! f (.. e -target -value)))}}})
-             "select"   (form/form-select {:value (value f) :placeholder (or (:placeholder f) "Choose…")
-                                           :options (mapv (fn [o] {:value (:id o) :label (:label o)}) (:options f))
-                                           :on-change (fn [v] (put! f v))})
-             (form/form-input {:type (if (= "number" (:type f)) :number :text)
-                               :value (value f) :placeholder (:placeholder f)
-                               :attrs {:on {:input (fn [e] (put! f (.. e -target -value)))}}}))))])
-     [:div {:class ["ab-actions"]}
-      (button/button {:variant :primary :size :sm :disabled (boolean (seq missing))
-                      :on-click (fn [_] (submit! dispatch! room-id id "submit" nil values))}
-                     (:submit spec))
-      (when (:submitted? state) [:span {:class ["ab-note"]} "Submitted"])]]))
-
-(defn- cards-view [dispatch! room-id {:keys [id spec state]}]
-  [:div {:class ["ab-cards"]}
-   (for [c (:cards spec)
-         :let [picked (get-in state [:picked (:id c)])]]
-     (card/card {:attrs {:replicant/key (:id c)} :class "ab-card"}
-                (card/card-header {} [:strong (:title c)]
-                                  (when-let [m (:meta c)] [:span {:class ["ab-note"]} m]))
-                (when (:body c) (card/card-body {} (markdown (:body c))))
-                (when (seq (:actions c))
-                  (card/card-footer
-                   {}
-                   (for [a (:actions c)]
-                     (button/button {:variant (if (= picked (:id a)) :primary :secondary) :size :sm
-                                     :attrs {:replicant/key (:id a)}
-                                     :on-click (fn [_]
-                                                 (if (:send a)
-                                                   (submit! dispatch! room-id id "card" (:id c) (:id a))
-                                                   (act! dispatch! room-id id "card" (:id c) (:id a))))}
-                                    (:label a)))))))])
 
 ;; hiccup (tier 2): the allowlisted tree from xi.blocks.hiccup
 
@@ -280,7 +223,7 @@
     (:text-form record)
     [:pre {:class ["ab-raw"]} (b/body-text record)]
 
-    ;; a kind Xi no longer has (the static presets), in an older chat
+    ;; a kind Xi no longer has (the static presets, form, cards), in an older chat
     :else
     [:div
      [:p {:class ["ab-note"]} (str "Blocks of kind " kind " aren't drawn any more. Their data:")]
@@ -299,8 +242,6 @@
   (case kind
     "checklist" (checklist-view dispatch! room-id record)
     "choice"    (choice-view dispatch! room-id record)
-    "form"      (form-view dispatch! room-id record ui)
-    "cards"     (cards-view dispatch! room-id record)
     "hiccup"    (hiccup-view dispatch! room-id record)
     "app"       (frame/view dispatch! room-id record ui)
     (ext-kind-view dispatch! room-id record)))
@@ -425,7 +366,6 @@
                            :ext.blocks/app-reply   on-app-reply
                            :ext.blocks/app-display on-app-display
                            :ext.blocks/app-message on-app-message
-                           :ext.blocks/raw    on-raw
-                           :ext.blocks/draft  on-draft})
+                           :ext.blocks/raw    on-raw})
    :timeline-posts timeline-posts
    :buffer-views   {:block {:view buffer-view :icon :layout-dashboard}}})

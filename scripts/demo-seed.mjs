@@ -171,19 +171,6 @@ const blockDemos = [
       { id: "1", label: "Composite index", description: "fast, one migration" },
       { id: "2", label: "Materialized view", description: "faster, needs a refresh job" }],
       multi: false, submit: "Send" } },
-  { kind: "form", title: "File an issue",
-    spec: { fields: [
-      { name: "title", type: "text", label: "Title", required: true },
-      { name: "area", type: "select", label: "Area", options: [{ id: "1", label: "Web" }, { id: "2", label: "API" }] },
-      { name: "details", type: "textarea", label: "Details" },
-      { name: "urgent", type: "checkbox", label: "Urgent" }],
-      submit: "File issue" } },
-  { kind: "cards", title: "Open PRs",
-    spec: { cards: [
-      { id: "pr-212", title: "#212 Dark mode toggle", meta: "acme-web · 3 files", body: "Adds `ThemeToggle` to settings.",
-        actions: [{ id: "merge", label: "Merge", send: true }, { id: "later", label: "Later", send: false }] },
-      { id: "pr-215", title: "#215 Events index", meta: "acme-api · 1 file", body: "Composite index for the dashboard query.",
-        actions: [{ id: "merge", label: "Merge", send: true }] }] } },
   // A kind from the bundled `deploys` demo extension (resources/extensions).
   { kind: "deploys/board", title: "Deploys", rules: { actions: ["promote"], send: ["rollback"] },
     textForm: "dev  1.5.0-rc.2  healthy\nstaging  1.4.2  healthy\nprod  1.4.1  degraded",

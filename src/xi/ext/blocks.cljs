@@ -34,7 +34,7 @@
   [extra]
   {:name "ui_block"
    :description (str "Show a block in the chat that the user acts on: a checklist to tick, a choice to "
-                     "pick, a form to fill in, cards with buttons. The user sees it right after this call; "
+                     "pick, a hiccup layout with buttons and fields. The user sees it right after this call; "
                      "you get a short summary back, not the block. Read what the user did with ui_state, "
                      "change the block with ui_update. Tables, lists, notes and numbers the user only "
                      "reads belong in your reply as markdown, not in a block; use kind hiccup only for "
@@ -52,7 +52,7 @@
   {:name "ui_update"
    :description (str "Change a block you showed with ui_block: replace its data (or hiccup) and/or "
                      "its title: new items or options, ticks you set, a hiccup layout that shows progress. What the "
-                     "user did on it (ticks, selections, field values) is kept where the ids still exist.")
+                     "user did on it (ticks, selections) is kept where the ids still exist.")
    :input_schema {:type "object"
                   :properties {:id     {:type "string" :description "The block id ui_block returned"}
                                :data   {:type "object" :description "The new payload, same shape as for ui_block"}

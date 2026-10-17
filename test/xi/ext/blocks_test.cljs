@@ -54,7 +54,7 @@
 (deftest errors-are-worded-for-the-model
   (let [hs (harness [])]
     (is (str/includes? (text (call hs "ui_block" {:kind "pie" :data {}})) "unknown kind"))
-    (is (str/includes? (text (call hs "ui_block" {:kind "form"})) "Pass the form payload as `data`."))
+    (is (str/includes? (text (call hs "ui_block" {:kind "choice"})) "Pass the choice payload as `data`."))
     (is (str/includes? (text (call hs "ui_update" {:id "x" :title "t"})) "No block \"x\""))
     (is (str/includes? (text (call hs "ui_state" {:id "x"})) "No block"))))
 
