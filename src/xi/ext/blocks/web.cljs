@@ -116,23 +116,36 @@
         :on-change (fn [e] (act! dispatch! room-id id "toggle" (:id it) (.. e -target -checked)))})
       (when-let [n (:note it)] [:span {:class ["ab-note"]} n])])])
 
-(defn- choice-view [dispatch! room-id {:keys [id spec state]}]
+(defn- choice-text [{:keys [label description]}]
+  [:span {:class ["ab-choice-text"]}
+   [:span {:class ["ab-choice-label"]} label]
+   (when description [:span {:class ["ab-note"]} description])])
+
+(defn- choice-options
+  "The options as cards: radios for one pick, checkboxes for `:multi`."
+  [dispatch! room-id {:keys [id spec]} sel]
+  (let [select! #(act! dispatch! room-id id "select" nil %)]
+    (if (:multi spec)
+      [:div {:class ["ab-choice-options"]}
+       (for [o (:options spec)
+             :let [on? (contains? sel (:id o))]]
+         (form/form-checkbox
+          {:label     (choice-text o)
+           :checked   on?
+           :attrs     {:replicant/key (:id o)}
+           :on-change (fn [_] (select! (if on? (vec (disj sel (:id o))) (conj (vec sel) (:id o)))))}))]
+      (let [by-value (into {} (map (juxt (comp str :id) :id)) (:options spec))]
+        (form/form-radio-group
+         {:class       "ab-choice-options"
+          :radio-name  (str "ab-choice-" id)
+          :radio-value (some-> (first sel) str)
+          :options     (mapv (fn [o] {:value (str (:id o)) :label (choice-text o)}) (:options spec))
+          :on-change   (fn [e] (select! [(by-value (.. e -target -value))]))})))))
+
+(defn- choice-view [dispatch! room-id {:keys [id spec state] :as block}]
   (let [sel (set (:selected state))]
     [:div {:class ["ab-choice"]}
-     [:div {:class ["ab-choice-options"]}
-      (for [o (:options spec)
-            :let [on? (contains? sel (:id o))]]
-        [:div {:replicant/key (:id o) :class ["ab-choice-option"]}
-         (chip/chip {:active on?
-                     :on-click (fn [_]
-                                 (act! dispatch! room-id id "select" nil
-                                       (cond
-                                         (and (:multi spec) on?) (vec (disj sel (:id o)))
-                                         (:multi spec)           (conj (vec sel) (:id o))
-                                         on?                     []
-                                         :else                   [(:id o)])))}
-                    (:label o))
-         (when-let [d (:description o)] [:span {:class ["ab-note"]} d])])]
+     (choice-options dispatch! room-id block sel)
      [:div {:class ["ab-actions"]}
       (button/button {:variant :primary :size :sm :disabled (empty? sel)
                       :on-click (fn [_] (submit! dispatch! room-id id "submit"))}

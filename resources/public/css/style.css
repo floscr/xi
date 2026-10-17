@@ -7105,9 +7105,36 @@ code a:hover,
 .ab-checklist li { display: flex; align-items: baseline; gap: var(--size-2); flex-wrap: wrap; }
 .ab-checklist li.ab-done .form-field span { color: var(--fg-2); text-decoration: line-through; }
 
-/* choice, form, cards */
-.ab-choice-options { display: flex; flex-wrap: wrap; gap: var(--size-2); }
-.ab-choice-option { display: inline-flex; flex-direction: column; gap: 2px; }
+/* choice: each option a card around the framework's radio / checkbox (a
+   fieldset for radios, so its own margin, padding and border go) */
+.ab-choice-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: var(--size-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.ab-choice-options > label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--size-2);
+  margin: 0;
+  padding: var(--size-2) var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+.ab-choice-options > label:hover { background: var(--bg-2); }
+.ab-choice-options > label:has(:checked) { border-color: var(--accent); background: var(--accent-subtle); }
+.ab-choice-options > label > input { flex: none; margin: 0.15em 0 0; }
+.ab-choice-text { display: grid; gap: 2px; min-width: 0; }
+.ab-choice-label { color: var(--fg-0); font-weight: 500; }
+/* form, cards */
 .ab-form { display: grid; gap: var(--size-2); max-width: 36rem; }
 .ab-cards { display: grid; gap: var(--size-2); grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
 .ab-card .card-footer { display: flex; flex-wrap: wrap; gap: var(--size-2); }
