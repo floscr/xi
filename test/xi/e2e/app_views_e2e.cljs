@@ -171,17 +171,24 @@
                 (.then (fn [_]
                          (ev! "(() => { const f = document.querySelector('.ab-app-frame');
                                         const blk = f.closest('.agent-block');
+                                        const probe = document.body.appendChild(document.createElement('div'));
+                                        probe.style.color = 'var(--accent)';
+                                        const accent = getComputedStyle(probe).color;
+                                        probe.remove();
                                         return { sandbox: f.getAttribute('sandbox'),
                                                  doc: f.getAttribute('srcdoc').slice(0, 600),
                                                  border: getComputedStyle(blk).borderTopColor,
+                                                 style: getComputedStyle(blk).borderTopStyle,
+                                                 accent,
                                                  badge: blk.querySelector('.agent-block-badge').textContent }; })()")))
-                (.then (fn [{:keys [sandbox doc border badge]}]
-                         (testing "the host's frame: sandboxed, the CSP first, purple, labelled"
+                (.then (fn [{:keys [sandbox doc border style accent badge]}]
+                         (testing "the host's frame: sandboxed, the CSP first, a solid accent border, labelled"
                            (is (= "allow-scripts" sandbox) "no allow-same-origin, no popups, no navigation")
                            (is (str/starts-with? doc "<!doctype html><meta http-equiv=\"Content-Security-Policy\""))
                            (is (str/includes? doc "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net"))
                            (is (str/includes? doc "connect-src 'none'"))
-                           (is (= "rgb(139, 92, 246)" border))
+                           (is (= accent border) "the theme's accent")
+                           (is (= "solid" style) "solid, where an agent block's is dashed")
                            (is (= "External app" badge)))
                          (h/await-event client #(and ((of-type :ext.blocks/note room-id) %)
                                                      (= "context" (:action %))

@@ -12,12 +12,12 @@ show the failing tests as a checklist, I'll tick the ones I've looked at
 
 ## What a block looks like
 
-Every block sits in a frame Xi draws, never the agent: a dashed border, a
-header with **Agent block**, the kind (`checklist`, `form`, …), its title,
-and where it came from (`ui_block` for the agent, an extension or MCP server
-by name). The `≡` menu in the header opens the block as a
-[buffer](web-client.md#buffers) of the chat, shows its data and copies it as
-text or JSON.
+Every block sits in a frame Xi draws, never the agent: a dashed border in
+the theme's accent color, a header with **Agent block**, the kind
+(`checklist`, `form`, …), its title, and where it came from (`ui_block` for
+the agent, an extension or MCP server by name). The `≡` menu in the header
+opens the block as a [buffer](web-client.md#buffers) of the chat, shows its
+data and copies it as text or JSON.
 
 A block can only change itself. Its buttons and fields record what you did on
 the block; they cannot approve a tool call, run a command, open a page or
@@ -101,9 +101,9 @@ in `config.edn` and run `/deploys`.
 A tool can come with an interactive view of its own, an
 [MCP App](mcp-servers.md#apps), from an MCP server or an extension. The web
 client shows it as a block of kind `app` after the tool ran: the view's page
-in a sandboxed frame. Its frame is solid purple in every theme and its header
-says **External app**, so a page from outside Xi never passes for Xi's own
-UI or for the agent's blocks.
+in a sandboxed frame. Its frame is solid where an agent block's is dashed,
+and its header says **External app**, so a page from outside Xi never passes
+for Xi's own UI or for the agent's blocks.
 
 The view runs isolated from Xi: it cannot read the chat, your login or other
 pages, and it reaches the network only where its server declared it may

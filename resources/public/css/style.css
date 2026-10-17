@@ -7004,14 +7004,18 @@ code a:hover,
 /* ── Agent blocks (xi.ext.blocks.web) ─────────────────────────── */
 /* Every block sits in a host-drawn frame its content can't cover: a dashed
    accent border, a background no core surface uses and a header naming it
-   an agent block. Containment keeps it from overlaying anything outside. */
+   an agent block. Containment keeps it from overlaying anything outside.
+   (--border-N are border shorthands, not colors: never mix them.) */
 :root {
   --agent-block-bg: color-mix(in srgb, var(--accent) 5%, var(--bg-0));
-  --agent-block-border: color-mix(in srgb, var(--accent) 55%, var(--border-0));
+  --agent-block-border: var(--accent);
+  --agent-block-divider: color-mix(in srgb, var(--accent) 40%, transparent);
   --agent-block-head-bg: color-mix(in srgb, var(--accent) 10%, var(--bg-0));
 }
 
-.post--agent-block { padding: 0; }
+/* Posts have no gap between them, only their own padding: blocks keep a
+   post's vertical padding so consecutive ones don't touch. */
+.post--agent-block { padding: var(--size-2) 0; }
 /* a message a block's Send / Submit posted (xi.web.views/block-action-card) */
 .block-action-card { display: grid; gap: var(--size-1); }
 .block-action-head { display: flex; align-items: center; gap: var(--size-2); font-size: var(--font-xs); opacity: 0.8; }
@@ -7040,7 +7044,7 @@ code a:hover,
   min-height: 2rem;
   padding: var(--size-1) var(--size-2) var(--size-1) var(--size-3);
   background: var(--agent-block-head-bg);
-  border-bottom: 1px dashed var(--agent-block-border);
+  border-bottom: 1px dashed var(--agent-block-divider);
   font-size: var(--font-xs);
   color: var(--fg-2);
 }
@@ -7086,7 +7090,7 @@ code a:hover,
   padding: var(--size-2) var(--size-3);
   max-height: 16rem;
   overflow: auto;
-  border-top: 1px dashed var(--agent-block-border);
+  border-top: 1px dashed var(--agent-block-divider);
   font-family: var(--font-mono);
   font-size: var(--font-xs);
   color: var(--fg-1);
@@ -7112,10 +7116,11 @@ code a:hover,
 .ab-hiccup { display: grid; gap: var(--size-2); }
 .ab-hiccup :where(h1, h2, h3, h4, h5, h6) { margin: 0; font-size: var(--font-md); line-height: 1.3; }
 .ab-hiccup :where(p, ul, ol, dl, pre, blockquote, figure) { margin: 0; }
+.ab-hiccup :where(ul, ol) { padding-left: 1.25em; }
 .ab-hiccup img { max-width: 100%; height: auto; }
 .ab-hiccup svg { max-width: 100%; height: auto; }
 .ab-hiccup table { border-collapse: collapse; }
-.ab-hiccup :where(th, td) { padding: var(--size-1) var(--size-2); border-bottom: 1px solid var(--border-0); text-align: left; }
+.ab-hiccup :where(th, td) { padding: var(--size-1) var(--size-2); border-bottom: var(--border-subtle); text-align: left; }
 .ab-hiccup a { color: var(--accent); }
 .ab-layout-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-2); }
 .ab-layout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); gap: var(--size-2); }
@@ -7132,16 +7137,12 @@ code a:hover,
 
 /* app views (MCP Apps, xi.ext.blocks.frame): the view's own document in a
    sandboxed iframe; full screen is the host's frame, header included */
-/* External content is purple in every theme, so it never passes for Xi's
-   own UI or the agent's blocks (whose frame follows the accent color). */
-:root { --agent-block-external: #8b5cf6; }
+/* External content: the agent block's accent frame, solid instead of dashed,
+   with a stronger header and its "External app" badge. */
 .agent-block[data-block-kind="app"] {
-  border: 2px solid var(--agent-block-external);
-  --agent-block-border: var(--agent-block-external);
-  --agent-block-head-bg: color-mix(in srgb, var(--agent-block-external) 18%, var(--bg-0));
+  border-style: solid;
+  --agent-block-head-bg: color-mix(in srgb, var(--accent) 18%, var(--bg-0));
 }
-.agent-block[data-block-kind="app"] .agent-block-head > .icon,
-.agent-block[data-block-kind="app"] .agent-block-badge { color: var(--agent-block-external); }
 .agent-block[data-block-kind="app"] .agent-block-head { border-bottom-style: solid; }
 .agent-block[data-block-kind="app"] .agent-block-body { padding: 0; max-height: none; }
 .ab-app-frame { display: block; width: 100%; height: 360px; border: 0; background: transparent; }
