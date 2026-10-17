@@ -14,16 +14,13 @@ all of it into the sandbox in one shot, with **no code changes**.
 
 ```bash
 bb demo            # seed .demo-home + start the demo server (tmux session xi-demo, :7476)
-bb demo:key        # print the demo client key + the localStorage snippet
 ```
 
-Then in the browser, on the `http://localhost:7476` origin, install the
-pre-approved demo client key (so there is **no pairing dance**) and reload:
-
-```js
-localStorage.setItem('xi-client-key',
-  'demo00000000000000000000000000000000000000000000000000000000demo')
-```
+Then open `http://localhost:7476`. The server runs with `--no-pairing`, so
+any browser is admitted without a pairing code. It binds loopback plus
+`XI_HOST` (if set), so keep that a trusted address: whoever reaches the port
+drives an agent with your Claude login. The seeded demo key (`bb demo:key`)
+still works for clients that send it.
 
 The home view shows two demo projects (`acme-web`, `acme-api`) and four seeded
 sessions; opening one renders its full transcript (text + Read/Edit/Bash tool
@@ -98,8 +95,7 @@ To self-test the xi web UI, use the demo server — **never** the real server on
 :7474 unless the user explicitly says so:
 
 1. `bb demo` (starts :7476, seeds data)
-2. Open `http://localhost:7476`, install the demo key in `localStorage` (see
-   `bb demo:key`), reload.
+2. Open `http://localhost:7476`.
 3. Drive the UI. Nothing here can affect the user's real sessions.
 
 ## Customizing the seed

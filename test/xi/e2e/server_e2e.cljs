@@ -88,6 +88,23 @@
                (is (= (:project env) (:cwd (first (h/main-turns env))))
                    "the background room runs in the server's cwd"))))))))
 
+(deftest no-pairing-admits-every-client
+  (async done
+    (h/with-env! profiles/minimal script done
+      (fn [env]
+        (-> (h/start-server! env {:args ["--no-pairing"]})
+            (.then
+             (fn [server]
+               (-> (h/connect! server {:key "an-unknown-device-key-123"})
+                   (.then
+                    (fn [client]
+                      (is (some (comp #{:auth/ok} :type) @(:events client))
+                          "an unknown key is admitted without a pairing code")
+                      ((:close! client))
+                      (h/http! server "/api/rooms/status?ids=x")))
+                   (.then #(is (= 200 (:status %)) "the HTTP API needs no approved key"))
+                   (.finally (:stop! server))))))))))
+
 (deftest a-chat-over-the-websocket
   (async done
     (with-server! profiles/minimal done

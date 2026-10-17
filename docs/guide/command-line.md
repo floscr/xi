@@ -32,6 +32,7 @@ For `join` and `create`, `url` is `host:port` (`ws://` is added) or a full
 | `--no-auto-join` | `xi` | Stay local even when a server is running. |
 | `--join` / `--create` | `xi` | Put a plain `xi` onto the running server, in the latest or a new chat. |
 | `--headless` | `server` | No terminal client. |
+| `--no-pairing` | `server` | Admit every client without a [pairing code](server.md). Anyone who reaches the port gets in; bind it to trusted addresses only. |
 | `--agent ID` | `xi`, `server`, `prompt` | Run an [agent profile](agents.md). A plain `xi --agent ID` stays local. |
 | `--user ID` | all | The user this process acts as (default `root`, or `XI_USER`). A joining terminal claims it; a server owns its own prompts under it. See [Users](server.md#users). |
 | `--stream` | `prompt` | Print tokens as they arrive. |

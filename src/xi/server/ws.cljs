@@ -693,12 +693,16 @@
      ext-fx)
 
      :start!
-     (fn [{:keys [dispatch! state add-tap!]} {:keys [port host]}]
+     (fn [{:keys [dispatch! state add-tap!]} {:keys [port host no-pairing?]}]
        (let [port (or port DEFAULT_PORT)
              hosts (resolve-hosts host)
              public-dir (resolve-public-dir)
              ;; An agent server is single-user/local: no HTTPS, no pairing.
+             ;; --no-pairing (bb demo) admits every client too, HTTPS kept.
              tls        (when-not agent? (resolve-tls))
+             open?      (or agent? (boolean no-pairing?))
+             _ (when no-pairing?
+                 (js/console.error "[ws] --no-pairing: every client is admitted without approval"))
              ;; Pairing requests awaiting approval: code → #js {:cid :key :name
              ;; :platform}, mirrored to pending-clients.edn for `bb serve:approve`.
              pending (js/Map.)
@@ -753,7 +757,7 @@
                  (cond
                    (authed? ws) nil
 
-                   agent? (admit! ws)
+                   open? (admit! ws)
 
                    (not (and (string? client-key) (>= (count client-key) 16)))
                    (send-event! cid {:type :auth/denied :reason "invalid client key"})
@@ -855,7 +859,7 @@
                      key (or (some-> (.get headers "authorization")
                                      (.replace #"(?i)^bearer\s+" ""))
                              (.get headers "x-xi-client-key"))
-                     authed? (or agent? (auth/approved? key))
+                     authed? (or open? (auth/approved? key))
                      json-resp (fn [status obj]
                                  (js/Response. (js/JSON.stringify obj)
                                                #js {:status  status

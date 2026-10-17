@@ -64,7 +64,12 @@
           ;; Isolated demo server (port 7476). HOME is redirected at .demo-home
           ;; (built by scripts/demo-seed.mjs) so it never sees the real active
           ;; session — see docs/demo.md. Reuses the target/main.js compiled by
-          ;; the main watch (bb dev / bb serve).
+          ;; the main watch (bb dev / bb serve). --no-pairing: any browser gets in
+          ;; without a pairing code or the demo key, so it binds loopback (+ XI_HOST)
+          ;; instead of the default 0.0.0.0.
+          (def demo-host (->> ["127.0.0.1" (System/getenv "XI_HOST")]
+                              (remove clojure.string/blank?)
+                              (clojure.string/join ",")))
           (def demo-home (str (System/getProperty "user.dir") "/.demo-home"))
           (def demo-config {:session "xi-demo"
                             ;; XDG_DATA_HOME too: user extensions keep their data
@@ -72,7 +77,8 @@
                             ;; absolute XDG_DATA_HOME would point at the real one.
                             :windows [["server" (str "HOME=" demo-home
                                                      " XDG_DATA_HOME=" demo-home "/.local/share"
-                                                     " bun target/main.js server --headless --port 7476")]]
+                                                     " bun target/main.js server --headless --no-pairing --host " demo-host
+                                                     " --port 7476")]]
                             :print ["Demo web: http://localhost:7476"]})
           ;; Site tour recording server (port 7479): HOME at /tmp/xi-tour-home
           ;; (built by scripts/tour-seed.mjs; outside the repo so Xi's own
@@ -128,7 +134,7 @@
           ;; The demo server leaks the same way (tmux session gone, bun still
           ;; holding :7476), so a demo:restart's fresh server can't bind.
           (defn reap-stray-demo! []
-            (reap! "demo" "target/main.js server --headless --port 7476$"))
+            (reap! "demo" "target/main.js server --headless .*--port 7476$"))
           (defn reap-stray-tour! []
             (reap! "tour" "target/main.js server --headless --port 7479$"))
           ;; Compile + run a :node-test build (autorun). Prints one line when

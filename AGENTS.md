@@ -49,8 +49,8 @@ Personal coding harness in ClojureScript + Bun.
   (one-shot, no TUI) is safe.
 - **Web UI self-tests use the isolated demo server** (`bb demo`, :7476,
   `HOME=.demo-home` with fake sessions) — not the real :7474 unless the user
-  asks. Install the key from `bb demo:key` into `localStorage`
-  (`xi-client-key`), reload, drive it via the chrome-devtools tools. See
+  asks. It runs with `--no-pairing`, so just open it and drive it via the
+  chrome-devtools tools. See
   [docs/demo.md](docs/demo.md).
 
 ## Architecture in brief

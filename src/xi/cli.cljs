@@ -199,6 +199,9 @@ FLAGS
   --no-auto-join             Standalone: stay local, don't join a running server.
   --join, --create           Standalone: redirect onto a running server instead.
   --headless                 server: run without a local TUI (clients attach remotely).
+  --no-pairing               server: admit every client without a pairing code.
+                             Anyone who reaches the port gets in; for throwaway
+                             servers (`bb demo`) on trusted addresses only.
   --agent ID                 Run as the named agent from ~/.config/xi/config.edn
                              [:agents ID] — its :tools allowlist, :extensions
                              and system prompt replace the coding tools +
@@ -264,6 +267,7 @@ See docs/guide/command-line.md for the full reference.")
           ;; Opt out of auto-joining a running server when launching standalone
           "--no-auto-join" (recur (next args) (assoc opts :auto-join? false))
           "--headless"     (recur (next args) (assoc opts :headless? true))
+          "--no-pairing"   (recur (next args) (assoc opts :no-pairing? true))
           "--agent"        (recur (nnext args) (assoc opts :agent (second args)))
           "--user"         (recur (nnext args) (assoc opts :user (second args)))
           "--debug-events" (recur (next args) (assoc opts :debug-events? true))
@@ -834,7 +838,7 @@ See docs/guide/command-line.md for the full reference.")
 (defn- start-server!
   "Host rooms over WS. Unless --headless, a local TUI joins through the same WS
    path as any remote client."
-  [{:keys [port host headless? agent] :as opts}]
+  [{:keys [port host headless? agent no-pairing?] :as opts}]
   (install-crash-guard!)
   ;; Drop stale /nix/store env vars so spawned tools use the current toolchain.
   (env/sanitize-inherited-env!)
@@ -925,7 +929,7 @@ See docs/guide/command-line.md for the full reference.")
         _ (ext-persist/install! app mgr)
         ;; Rooms the server provisions itself act for its own user.
         _ ((:dispatch! app) (users/loaded-event (own-user opts)))
-        {actual-port :port} ((:start! server) app {:port port :host host})]
+        {actual-port :port} ((:start! server) app {:port port :host host :no-pairing? no-pairing?})]
     (if headless?
       (do (user-ext/log-report!)
           (js/console.error (str "[xi] Headless server on ws://" (str/join "," (ws/resolve-hosts host)) ":" actual-port))
