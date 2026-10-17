@@ -120,6 +120,11 @@ pages, and it reaches the network only where its server declared it may
 
 The terminal client and `xi prompt` show the tool's text result instead.
 
+Two bundled [demo extensions](extensions.md#demo-extensions) have app
+views: `deploys.cljs` (`deploy_map`, a clickable environment list) and
+`scene.cljs` (`scene_show`, a three.js scene that loads three.js from
+jsDelivr).
+
 ## Limits
 
 | Limit | Value |

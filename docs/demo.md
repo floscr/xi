@@ -58,8 +58,10 @@ server-side namespaces, run `bb demo:restart`.
 - `.config/xi/favorites.json` — a couple of bookmarked sessions
 - `.config/xi/config.edn` — enables the bundled
   [demo extensions](guide/extensions.md#demo-extensions) (`:demo-extensions
-  ["notes.cljs" "hn.cljs" "ping.cljs"]`, loaded straight from
-  `resources/extensions/`). `notes` has a `notes_add` tool, a `/notes`
+  ["notes.cljs" "hn.cljs" "ping.cljs" "deploys.cljs" "scene.cljs"]`, loaded
+  straight from `resources/extensions/`). The *Agent blocks* session shows
+  one block of each kind, including `deploys`' board and map and `scene`'s
+  three.js view. `notes` has a `notes_add` tool, a `/notes`
   command and a browser half at `/notes` (sidebar → Extensions → Notes; open
   a chat first, since Refresh reads through the active room). It also
   declares two users, `root` ("Demo") and `alice`, so the sidebar's user

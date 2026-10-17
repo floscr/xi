@@ -151,6 +151,15 @@ const edn = (v) => {
   return `{${Object.entries(v).map(([k, x]) => `:${k} ${edn(x)}`).join(" ")}}`;
 };
 
+const sceneObjects = [
+  { shape: "box", position: [-4, 0.5, 0], size: [2, 1, 1], color: "#8ab4f8", label: "load balancer" },
+  { shape: "box", position: [0, 0.75, -2], size: 1.5, color: "#81c995", label: "api-1" },
+  { shape: "box", position: [0, 0.75, 2], size: 1.5, color: "#81c995", label: "api-2" },
+  { shape: "sphere", position: [3, 0.6, 0], size: 1.2, color: "#f28b82", label: "redis cache" },
+  { shape: "cylinder", position: [5.5, 1, 0], size: [2, 2, 2], color: "#fdd663", label: "postgres" },
+  { shape: "torusKnot", position: [0, 3.5, 0], size: 1.5, color: "#c58af9", label: "event bus" },
+];
+
 const blockDemos = [
   { kind: "checklist", title: "Release 2.4", state: { checked: strMap({ "2": true }) },
     spec: { items: [
@@ -188,6 +197,12 @@ const blockDemos = [
                              "structured-content": { envs: [{ name: "dev", version: "1.5.0-rc.2", status: "healthy" },
                                                             { name: "staging", version: "1.4.2", status: "healthy" },
                                                             { name: "prod", version: "1.4.1", status: "degraded" }] } } } },
+  // A three.js app view from the bundled `scene` demo extension (scene_show, ui://scene/view).
+  { kind: "app", title: "scene_show", tool: "scene_show", source: { type: kw("ext"), id: kw("scene") },
+    spec: { "resource-uri": "ui://scene/view", "tool-input": {}, tool: { name: "scene_show" },
+            csp: { resourceDomains: ["https://cdn.jsdelivr.net"] },
+            "tool-result": { content: [{ type: "text", text: `Showing ${sceneObjects.length} objects as "acme-api topology" in a 3D view the user can orbit and click.` }],
+                             "structured-content": { scene: { title: "acme-api topology", objects: sceneObjects } } } } },
   { kind: "hiccup", title: "Custom layout",
     spec: { tree: raw('[:div {} [:div {:layout "row" :gap "sm"} [:ui/badge {:variant "success"} "build passing"] [:ui/badge {:variant "warning"} "2 flaky"]] [:p {:emphasis "muted"} "Hiccup from the agent, from an allowlist."] [:table {} [:thead {} [:tr {} [:th {} "Endpoint"] [:th {} "p95 (ms)"]]] [:tbody {} [:tr {} [:td {} "/api/dashboard"] [:td {} "3920"]] [:tr {} [:td {} "/api/events"] [:td {} "610"]]]] [:ui/progress {:value 71}] [:ul {} [:li {} "no classes, ids or styles"] [:li {} "controls only record block actions"]] [:div {:layout "row"} [:ui/button {:action "rerun" :variant "primary"} "Re-run flaky"] [:ui/button {:action "ship" :send true} "Ship it"]]]') } },
 ];
@@ -391,7 +406,7 @@ if (favorites.length) {
 
 // The bundled demo extensions (resources/extensions) load straight from the
 // repo through :demo-extensions below; `notes` has a web half.
-const demoExtensions = ["notes.cljs", "hn.cljs", "ping.cljs", "deploys.cljs"];
+const demoExtensions = ["notes.cljs", "hn.cljs", "ping.cljs", "deploys.cljs", "scene.cljs"];
 // Extra user extensions to test against the demo: XI_DEMO_EXTENSIONS_DIR is
 // copied into the demo extensions dir (a file or a directory tree), and
 // XI_DEMO_EXTENSIONS (comma-separated file names) joins the enabled list.
