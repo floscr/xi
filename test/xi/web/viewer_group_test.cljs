@@ -21,7 +21,8 @@
     (is (= 1 (:thinking-count s)))
     (is (= 1 (:error-count s)))
     (is (true? (:running? s)))
-    (is (= "Bash" (:name (:latest s))) "latest is the newest block"))
+    (is (= "Bash" (:name (:latest s))) "latest is the newest block")
+    (is (= "Edit" (:name (:previous s))) "previous is the one before it"))
   (testing "a finished run is not running"
     (is (false? (:running? (vg/summarize [{:kind :tool-call :name "Read"}]))))))
 

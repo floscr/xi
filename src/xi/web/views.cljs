@@ -2291,8 +2291,9 @@
   "ui.context-menu entries for a file header: View file (:file/open), Copy
    path, then the extensions' entries for the file (xi.web.block-menu, block
    {:path}). A file `gone?` from disk (deleted in a diff) only offers Copy
-   path; `view?` false drops View file (the file's own viewer)."
-  [dispatch! state path {:keys [gone? view?] :or {view? true}}]
+   path; `view?` false drops View file (the file's own viewer). Copy path
+   copies `abs-path` when given (the server-resolved path of a file buffer)."
+  [dispatch! state path {:keys [gone? view? abs-path] :or {view? true}}]
   (cond-> []
     (and view? (not gone?))
     (conj {:label    "View file"
@@ -2301,7 +2302,7 @@
     true
     (conj {:label    "Copy path"
            :icon     :copy
-           :on-click #(copy! dispatch! path)})
+           :on-click #(copy! dispatch! (or abs-path path))})
     (not gone?)
     (into (map (fn [{:keys [label icon event]}]
                  {:label label :icon (or icon :chevron-right)
@@ -2889,12 +2890,12 @@
           (dispatch! {:type :file/open :path target}))))))
 
 (defn- file-tab-view
-  [dispatch! state {:keys [path text]}]
+  [dispatch! state {:keys [path abs-path text]}]
   (let [ext     (file-ext path)
         grammar (grammars/get-grammar ext)]
     ;; data-file-path: the code-block menu offers the file to extensions
     [:div {:class ["file-tab"] :data-file-path path}
-     (file-header dispatch! state path {:class "file-tab-header" :view? false}
+     (file-header dispatch! state path {:class "file-tab-header" :view? false :abs-path abs-path}
                   [:span {:class ["file-tab-path"]} path])
      (if (contains? md-diff/markdown-exts ext)
        [:div {:class ["file-tab-md"]}
@@ -3938,13 +3939,30 @@
             label)])
         chips)])))
 
+(defn- group-line
+  "A block's `Name detail` in a super-group summary. `phase` :in / :out
+   sweeps it in or out with a soft mask (style.css .viewer-group-line--in
+   / --out); the sweep in takes longer for longer lines, like typing them."
+  [k {action :name :keys [detail]} phase]
+  [:span (cond-> {:class (cond-> ["viewer-group-line"]
+                           phase (conj (str "viewer-group-line--" (name phase))))
+                  :replicant/key k}
+           (= :in phase)
+           (assoc :style {:animation-duration
+                          (str (min 320 (+ 140 (* 3 (+ (count action) (count detail))))) "ms")}))
+   [:span {:class ["tool-call-action"]} action]
+   (when (seq detail)
+     (str " " detail))])
 
 (defn- super-group
   "One summary row standing in for a run of collapsed viewer rows (step count,
    newest block, spinner, error badge). A <details>, shut unless the user's
-   remembered `open-choice` says otherwise; `toggle!` is its remember-open."
+   remembered `open-choice` says otherwise; `toggle!` is its remember-open.
+   While the run streams, each new step erases the previous block's line and
+   types in its own: both are keyed by the step count, so they remount (and
+   replay their sweep) exactly when a block is added."
   [run-key run open-choice toggle!]
-  (let [{n :count :keys [error-count running? latest]}
+  (let [{n :count :keys [error-count running? latest previous]}
         (viewer-group/summarize (map :info run))]
     [:details {:class ["viewer-tool-group" "viewer-tool-group--super"]
                :replicant/key (str "vg-" run-key)
@@ -3956,9 +3974,10 @@
       [:span {:class ["viewer-group-count"]} (viewer-group/count-label n)]
       (when latest
         [:span {:class ["viewer-group-latest"]}
-         [:span {:class ["tool-call-action"]} (:name latest)]
-         (when (seq (:detail latest))
-           (str " " (:detail latest)))])
+         [:span {:class ["viewer-group-swap"]}
+          (when (and running? previous)
+            (group-line (str "out-" n) previous :out))
+          (group-line (str "in-" n) latest (when running? :in))]])
       (when running?
         [:span {:class ["tool-call-running"]} (spinner)])
       (when (pos? error-count)

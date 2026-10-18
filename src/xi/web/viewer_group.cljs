@@ -21,9 +21,10 @@
 
 (defn summarize
   "Reduce the `infos` of a run (oldest → newest) to the summary row's data:
-   {:count :tool-count :thinking-count :error-count :running? :latest}.
-   `:latest` is the newest block's info, `:running?` is true if any block is
-   still in flight."
+   {:count :tool-count :thinking-count :error-count :running? :latest :previous}.
+   `:latest` is the newest block's info, `:previous` the one before it (what
+   the row showed until `:latest` arrived), `:running?` is true if any block
+   is still in flight."
   [infos]
   (let [kinds (frequencies (map :kind infos))]
     {:count          (count infos)
@@ -31,7 +32,8 @@
      :thinking-count (get kinds :thinking 0)
      :error-count    (count (filter :error? infos))
      :running?       (boolean (some :running? infos))
-     :latest         (last infos)}))
+     :latest         (last infos)
+     :previous       (last (butlast infos))}))
 
 (defn count-label
   "\"1 step\" / \"5 steps\" for a summary's `:count`."
