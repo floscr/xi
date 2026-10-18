@@ -8,6 +8,8 @@
 
 (def repo-url "https://github.com/floscr/xi")
 
+(def npm-url "https://www.npmjs.com/package/xi-agent")
+
 (def version
   "Xi's version, from the repo's package.json (the hero's pill)."
   (second (re-find #"\"version\"\s*:\s*\"([^\"]+)\"" (slurp "../package.json"))))
