@@ -55,7 +55,7 @@
                      (str "Could not read " resolved ":\n" (.-message e))))
         id       (buffers/file-id path)]
     (dispatch! {:type :ui/buffer-set :room-id room-id :buffer-id id
-                :buffer {:kind :file :title path :path path :text text}})
+                :buffer {:kind :file :title path :path path :abs-path resolved :text text}})
     (dispatch! (cond-> {:type :ui/buffer-switch :room-id room-id :buffer-id id}
                  client-id (assoc :client-id client-id)))))
 
