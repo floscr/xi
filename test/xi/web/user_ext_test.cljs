@@ -160,6 +160,26 @@
         "an own event map becomes a click handler that forwards it")
     (is (empty? foreign) "another event type is dropped")))
 
+(deftest tool-view-contextmenu-keeps-the-browser-menu-shut
+  (let [seen      (atom [])
+        prevented (atom 0)
+        ext       (guard/wrap {:id :notes
+                               :tool-views {"notes_add"
+                                            (fn [_ _]
+                                              [:div {:data-long-press "true"
+                                                     :on {:contextmenu {:type :ext.notes/arm}
+                                                          :click       {:type :ext.notes/open}}}])}})
+        [_ {:keys [on data-long-press]}] ((get-in ext [:tool-views "notes_add"]) {} nil #(swap! seen conj %))
+        e         #js {:stopPropagation (fn []) :preventDefault #(swap! prevented inc)}]
+    (is (= "true" data-long-press) "the long-press opt-in attribute survives sanitizing")
+    ((:contextmenu on) e)
+    (is (= 1 @prevented) "a contextmenu handler prevents the native menu")
+    ((:click on) e)
+    (is (= 1 @prevented) "a click is left alone")
+    (is (= [{:type :user-ext/forward :event {:type :ext.notes/arm}}
+            {:type :user-ext/forward :event {:type :ext.notes/open}}]
+           @seen))))
+
 ;; ── dispatch filtering + forwarding ──────────────────────────────────────────
 
 (deftest guarded-dispatch

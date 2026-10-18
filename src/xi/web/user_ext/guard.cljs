@@ -277,8 +277,10 @@
 (defn event-binder
   "The `bind` fn for a tool view's `sanitize`. A view gets no dispatch!, so it
    writes a handler as data: `:on {:click {:type :ext.<id>/… …}}` sends that
-   own event to the server (as `:user-ext/forward`, like a page's). Any other
-   non-fn handler is dropped."
+   own event to the server (as `:user-ext/forward`, like a page's). A
+   `:contextmenu` one (right-click, or a long-press on a `data-long-press`
+   element) also keeps the browser's own menu shut. Any other non-fn handler
+   is dropped."
   [id dispatch!]
   (fn [attrs]
     (if-not (map? (:on attrs))
@@ -292,6 +294,7 @@
                                 (and (map? h) (own-event-type? id (:type h)))
                                 [k (fn [e]
                                      (some-> e .stopPropagation)
+                                     (when (= :contextmenu k) (some-> e .preventDefault))
                                      (dispatch! {:type :user-ext/forward :event h}))]
                                 :else nil)))
                       on))))))
