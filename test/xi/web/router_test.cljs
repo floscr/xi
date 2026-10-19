@@ -264,6 +264,14 @@
         {:keys [state]} (router/navigate roomless st {:page :home})]
     (is (nil? (:web/timeline-window state)))))
 
+(deftest navigate-drops-scrolled-up-freeze
+  (testing "the last chat's frozen window start must not pin the next chat's"
+    (let [st (assoc (state/initial-state)
+                    :web/scrolled-up? true :web/frozen-window-start 0)
+          {:keys [state]} (router/navigate roomless st {:page :chat :session-id "s2"})]
+      (is (nil? (:web/scrolled-up? state)))
+      (is (nil? (:web/frozen-window-start state))))))
+
 (deftest navigate-leaving-chat-remembers-session
   (testing "pending-read set when leaving a chat"
     (let [st (-> (state/initial-state)

@@ -125,7 +125,8 @@
     {:state   (-> (router/stash-draft-chat st)
                   (assoc :web/route {:page :chat :session-id nil})
                   (assoc :web/pending-room pending)
-                  (assoc :web/timeline-window nil))
+                  (assoc :web/timeline-window nil)
+                  (dissoc :web/scrolled-up? :web/frozen-window-start))
      :effects (cond-> [[:history/push {:route {:page :chat}}]
                        [:compose/focus]]
                 cwd (conj [:ws/send {:type :cwd/agents-files :cwd cwd}]))}))
@@ -2295,18 +2296,22 @@
             (reset! smooth-follow-raf
                     (js/requestAnimationFrame #(smooth-follow-step! timeline))))))))
 
+(defn- follow-switched-session!
+  "A session switch lands at the bottom, instantly, whatever the last chat's
+   scroll was: the .timeline node is reused across sessions, so its follow
+   state would carry over. Opens a settle window while the history arrives."
+  []
+  (let [sid (some-> @app-ref :state deref (get-in [:web/route :session-id]))]
+    (when (not= sid @smooth-scroll-session)
+      (reset! smooth-scroll-session sid)
+      (reset! auto-scroll? true)
+      (reset! smooth-scroll-armed? false)
+      (reset! smooth-scroll-settle-until (+ (js/Date.now) smooth-scroll-settle-ms))
+      (cancel-smooth-follow!))))
+
 (defn- scroll-to-bottom! []
   (when (and @auto-scroll? (not (user-scrolling?)))
     (when-let [timeline (.querySelector js/document ".timeline")]
-      ;; A session switch lands instantly: disarm the follow and open a settle
-      ;; window while the history is still arriving.
-      (let [st  (some-> @app-ref :state deref)
-            sid (get-in st [:web/route :session-id])]
-        (when (not= sid @smooth-scroll-session)
-          (reset! smooth-scroll-session sid)
-          (reset! smooth-scroll-armed? false)
-          (reset! smooth-scroll-settle-until (+ (js/Date.now) smooth-scroll-settle-ms))
-          (cancel-smooth-follow!)))
       (let [target (- (.-scrollHeight timeline) (.-clientHeight timeline))
             delta  (- target (.-scrollTop timeline))]
         (if (and @smooth-scroll-armed?
@@ -2494,6 +2499,7 @@
 
 (defn- attach-scroll-listener! []
   (when-let [timeline (.querySelector js/document ".timeline")]
+    (follow-switched-session!)
     (when-not (identical? timeline @tracked-timeline)
       (reset! tracked-timeline timeline)
       (reset! auto-scroll? true)

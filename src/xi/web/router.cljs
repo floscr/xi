@@ -263,10 +263,13 @@
                   (and (:web/sidebar-open? st) (not already?))
                   (conj [:sidebar/repaint]))]
     (pace-join
-     {:state   (cond-> (assoc st :web/route route
-                             ;; reset the virtualized timeline window on every
-                             ;; navigation so a new session starts compact
-                             :web/timeline-window nil)
+     {:state   (cond-> (-> (assoc st :web/route route
+                                  ;; reset the virtualized timeline window on every
+                                  ;; navigation so a new session starts compact
+                                  :web/timeline-window nil)
+                           ;; the last chat's scrolled-up freeze would pin the
+                           ;; next one's window start (rendering all of it)
+                           (dissoc :web/scrolled-up? :web/frozen-window-start))
                  (and (= page :chat) session-id (not already?))
                  (assoc :web/timeline-window first-paint-window)
                  ;; Close the recent-sessions drawer on a real navigation, but
