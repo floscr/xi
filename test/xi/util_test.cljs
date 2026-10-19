@@ -135,6 +135,14 @@
     (is (= :ollama (util/provider-for-model "deepseek-r1")))
     (is (= :ollama (util/provider-for-model nil)))))
 
+;; ── strip-file-hash ──
+
+(deftest strip-file-hash-drops-the-trailer
+  (is (= "a.txt\n+ hi" (util/strip-file-hash "a.txt\n+ hi\n[file-hash: 0a1b2c3d]")))
+  (is (= "a.txt\n+ hi" (util/strip-file-hash "a.txt\n+ hi\n[file-hash: 0a1b2c3d]\n")))
+  (is (= "plain" (util/strip-file-hash "plain")))
+  (is (nil? (util/strip-file-hash nil))))
+
 ;; ── extract-text-content ──
 
 (deftest extract-text-string

@@ -383,17 +383,10 @@
                 (when (> (count (str/split-lines args-summary)) 21)
                   (str "\n" (ansi/fg :dim "..."))))))))
 
-(defn- strip-file-hash
-  "Drop the trailing [file-hash: ...] freshness token from tool output — it's
-   an agent-only guard and needn't be shown in the TUI."
-  [text]
-  (when text
-    (str/replace text #"\n?\[file-hash: [0-9a-f]+\]\s*\z" "")))
-
 (defn- result-text
   "Extract display text from a tool result content (string or blocks)."
   [content]
-  (strip-file-hash
+  (util/strip-file-hash
    (cond
      (string? content) content
      (sequential? content)

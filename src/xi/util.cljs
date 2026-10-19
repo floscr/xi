@@ -176,6 +176,13 @@
          (str/join "\n"))
     :else (str content)))
 
+(defn strip-file-hash
+  "Tool output without its trailing `[file-hash: …]` freshness token (read,
+   edit, read_source): a guard for the agent's next edit, not for the user."
+  [text]
+  (when text
+    (str/replace text #"\n?\[file-hash: [0-9a-f]+\]\s*$" "")))
+
 (defn strip-mcp-prefix
   "Strip MCP tool prefix: mcp__xi-tools__bash -> bash"
   [n]

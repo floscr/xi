@@ -567,18 +567,20 @@
 (defn- tool-diff-view
   "An edit/write tool's diff for `path`: the rendered markdown diff with a
    Rendered ⇄ Code toggle (keyed by the call id `k`) for markdown files,
-   else the line diff. `attrs` go on the outer node."
+   else the line diff (xi.diff/tool-diff-body: without the tool's own path
+   line). `attrs` go on the outer node."
   [dispatch! {:keys [path text grammar attrs k code?]}]
   (let [rendered (when (and (md-diff/markdown-path? path) k)
-                   (tool-md-diff-body text))]
+                   (tool-md-diff-body text))
+        lines    (truncate-lines (diff/tool-diff-body text) 100)]
     (if-not rendered
-      (edit-diff-code grammar (truncate-lines text 100) attrs)
+      (edit-diff-code grammar lines attrs)
       [:div (merge {:class ["md-diff-wrap"]} attrs)
        [:div {:class ["md-diff-bar"]}
         (file-path-span path path "md-diff-path")
         (md-diff-toggle dispatch! k code?)]
        (if code?
-         (edit-diff-code grammar (truncate-lines text 100) nil)
+         (edit-diff-code grammar lines nil)
          rendered)])))
 
 (defn- result-images
@@ -854,7 +856,7 @@
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-detail tool-args name arguments cwd)
         running?  (= :running status)
-        text      (util/extract-text-content result)
+        text      (util/strip-file-hash (util/extract-text-content result))
         grammar   (when (and text (not is-error)) (tool-grammar name arguments))
         bash?     (contains? #{"Bash" "bash"} name)
         clj?      (= "clj" name)

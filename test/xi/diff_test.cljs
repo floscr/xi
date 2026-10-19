@@ -125,3 +125,16 @@
 (deftest tool-diff->unified-no-diff-lines
   (is (nil? (diff/tool-diff->unified "a.txt" "Replaced successfully")))
   (is (nil? (diff/tool-diff->unified "a.txt" nil))))
+
+(deftest tool-diff-body-drops-the-heading-line
+  (testing "the edit tool's path line goes, the diff and its gaps stay"
+    (is (= "  (let [a 1]\n-   (old a)\n+   (new a)\n...\n  (tail)\n+ (more)\n[file-hash: abc123]"
+           (diff/tool-diff-body tool-result))))
+  (testing "clj_replace's message line goes too"
+    (is (= "- a\n+ b" (diff/tool-diff-body "Replaced in x.clj at line 3, col 1\n- a\n+ b"))))
+  (testing "a created file keeps its note"
+    (is (= "(created new file)\n+ hi" (diff/tool-diff-body "a.txt\n(created new file)\n+ hi"))))
+  (testing "text without diff lines, or already bare, is untouched"
+    (is (= "Replaced successfully" (diff/tool-diff-body "Replaced successfully")))
+    (is (= "- a\n+ b" (diff/tool-diff-body "- a\n+ b")))
+    (is (= "" (diff/tool-diff-body nil)))))

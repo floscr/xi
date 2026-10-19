@@ -162,6 +162,24 @@
                   (str fname "\n" body))))
          (str/join "\n\n"))))
 
+(defn- tool-diff-line?
+  "A line of an edit tool's diff text proper: a signed line, the `...` gap
+   or the `(created new file)` note."
+  [l]
+  (or (str/starts-with? l "+ ") (str/starts-with? l "- ") (str/starts-with? l "  ")
+      (= "..." l) (= "(created new file)" l)))
+
+(defn tool-diff-body
+  "An edit tool's diff text as a tool block shows it: without the line that
+   heads it (the edit tool's path, clj_replace's message) when diff lines
+   follow, since the block's header already names the file. The
+   `[file-hash: …]` trailer is dropped by xi.util/strip-file-hash."
+  [text]
+  (let [[l & more] (str/split-lines (or text ""))]
+    (if (and l (not (tool-diff-line? l)) (some tool-diff-line? more))
+      (str/join "\n" more)
+      (or text ""))))
+
 (defn tool-diff->unified
   "Convert an edit/write tool's own diff text (xi.tools.util/unified-diff: `- `,
    `+ ` and `  ` prefixed lines, `...` between hunks, plus a path line, an
