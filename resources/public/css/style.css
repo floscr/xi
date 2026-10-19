@@ -5841,8 +5841,13 @@ code a:hover,
   background: color-mix(in srgb, var(--hl-string) 32%, transparent);
 }
 
-/* difftastic: syntax colors stay, dimmed, so its change spans lead */
+/* difftastic: syntax colors stay, dimmed, so its change spans lead. A line
+   changed as a whole (no spans) is the change itself and stays at full color. */
 .diff-tab--difft .diff-text code > span:not(.diff-span) { opacity: 0.7; }
+.diff-tab--difft :is(.diff-line--add, .diff-line--del):not(.diff-line--spans) .diff-text code > span,
+.diff-tab--difft .diff-text:is(.diff-side--add, .diff-side--del):not(.diff-side--spans) code > span {
+  opacity: 1;
+}
 
 .diff-layout-toggle { flex-shrink: 0; }
 
