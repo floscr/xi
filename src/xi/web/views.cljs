@@ -2712,10 +2712,23 @@
      [:div {:class [answer-class "diff-thread-a--empty"]}
       (if (= :stopped status) "Stopped." "The answer failed.")])])
 
-(defn- ask-turn [{:keys [question sub-id]} child]
+(defn- turn-transcript
+  "Every assistant text block since the latest prompt, oldest first: a
+   Modify's narration of what it changed, where final-text keeps only the last."
+  [history]
+  (->> (rseq (vec history))
+       (take-while #(not= :user (:kind %)))
+       (keep #(when (= :text (:kind %)) (:text %)))
+       reverse
+       (str/join "\n\n")
+       not-empty))
+
+(defn- ask-turn [transcript? {:keys [question sub-id]} child]
   (answer-turn {:key          sub-id
                 :question     question
-                :text         (or (:result child) (sa/final-text (:history child)))
+                :text         (if transcript?
+                                (turn-transcript (:history child))
+                                (or (:result child) (sa/final-text (:history child))))
                 :status       (or (:status child) :running)
                 :history      (:history child)
                 :answer-class "diff-thread-a"}))
@@ -2727,9 +2740,10 @@
    (diff-ask-card) and questions on chat blocks (block-thread-card).
    `turns` [{:question :sub-id}], `children` the matching sub-agents (nil
    until the server echoes the spawn); :on-reply gets the reply text;
-   :label names what the thread is about; :actions are extra head buttons."
+   :label names what the thread is about; :actions are extra head buttons;
+   :transcript? shows every text block of a turn instead of only the last."
   [dispatch! room-id {:keys [key turns children collapsed? label input-id actions
-                              on-reply on-toggle on-close]}]
+                              on-reply on-toggle on-close transcript?]}]
   (let [running (some (fn [[t c]] (when (or (nil? c) (= :running (:status c))) t))
                       (map vector turns children))
         reply!  (fn [_]
@@ -2765,7 +2779,7 @@
         (button/button {:variant :ghost :size :sm :attrs {:aria-label "Close thread"}
                         :on-click (fn [_] (on-close))}
                        (icon/icon {:icon-name :x :size :sm}))]
-       (map ask-turn turns children)
+       (map (partial ask-turn transcript?) turns children)
        (when-not running
          [:div {:class ["diff-thread-reply"]}
           (form/form-textarea-auto
@@ -2784,6 +2798,7 @@
   (thread-card dispatch! room-id
                {:key        (str "ask-" id)
                 :label      ({:explain "Explain" :modify "Modify"} kind)
+                :transcript? (= :modify kind)
                 :turns      turns
                 :children   (mapv (comp child-of :sub-id) turns)
                 :collapsed? collapsed?
