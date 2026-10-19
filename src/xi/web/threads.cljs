@@ -74,9 +74,10 @@
        "pre, code, .md-diff, .post--user, .thread-card, .bubble-menu, .ask-hover"))
 
 (def ^:private long-press-skip
-  "A long-press also asks on a tool or thinking header (summary)."
+  "A long-press also asks on a tool or thinking header (summary), but not on
+   a file path in it (its file menu, xi.web.core)."
   (str "a, input, textarea, select, img, pre, code, .md-diff, .post--user, "
-       ".thread-card, .bubble-menu"))
+       ".thread-card, .bubble-menu, .file-path"))
 
 (defn- block-ref [^js el]
   {:index  (some-> (.getAttribute el "data-ask-index") not-empty parse-long)

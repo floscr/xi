@@ -1254,12 +1254,13 @@
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
           ;; Floating Copy button for a tapped code block (attach-code-copy-listener!).
           :code/menu-open        (fn [st {:keys [text path line lang diff-path diff-text x y
-                                                 ask-index ask-sub]}]
+                                                 ask-index ask-sub file?]}]
                                    {:state (assoc st :web/code-menu {:text text :path path :line line :lang lang
                                                                      :diff-path diff-path
                                                                      :diff-text diff-text
                                                                      :ask-index ask-index
                                                                      :ask-sub ask-sub
+                                                                     :file? file?
                                                                      :x x :y y})})
           :code/menu-close       (fn [st _] {:state (dissoc st :web/code-menu)})
           :bubble/edit-start     (fn [st {:keys [index text images]}]
@@ -2606,7 +2607,10 @@
 (defn- attach-code-copy-listener!
   "Delegated document listeners: right-click or tap on a code block, inline
    code, or a rendered markdown diff opens the floating Copy button
-   (:web/code-menu). Skipped inside user bubbles and inline editors."
+   (:web/code-menu). Skipped inside user bubbles and inline editors. A
+   right-click or touch long-press (data-long-press) on a file path of a tool
+   block (views/file-path-span) opens its file menu (views/file-path-menu)
+   instead; a tap keeps the block's own action."
   []
   (when-not @code-copy-attached?
     (reset! code-copy-attached? true)
@@ -2615,6 +2619,24 @@
                         (when (and (not (.closest node ".post--user"))
                                    (not (.closest node ".bubble-edit-textarea")))
                           node)))
+          file-node (fn [^js e] (some-> (.-target e) (.closest ".file-path")))
+          open-file! (fn [^js e ^js node]
+                       (when-let [d @dispatch-ref]
+                         (let [path (.getAttribute node "data-file-path")
+                               ;; the edit result (around a diff bar's path, under a
+                               ;; header's) carries the raw diff for View diff
+                               holder (or (.closest node "[data-diff-path]")
+                                          (some-> (.closest node ".tool-call-block")
+                                                  (.querySelector ":scope > [data-diff-path]")))]
+                           (when (seq path)
+                             (d (cond-> {:type :code/menu-open
+                                         :file? true
+                                         :path path
+                                         :x (.-clientX e)
+                                         :y (.-clientY e)}
+                                  holder (assoc :diff-path (.getAttribute holder "data-diff-path")
+                                                :diff-text (.getAttribute holder "data-diff-text"))))
+                             true))))
           open!     (fn [^js e ^js node]
                       (when-let [d @dispatch-ref]
                         (let [attr (fn [a] (some-> node
@@ -2655,9 +2677,12 @@
       (.addEventListener
        js/document "contextmenu"
        (fn [^js e]
-         (when-let [node (code-node e)]
-           (when (open! e node)
-             (.preventDefault e))))))))
+         (if-let [node (file-node e)]
+           (when (open-file! e node)
+             (.preventDefault e))
+           (when-let [node (code-node e)]
+             (when (open! e node)
+               (.preventDefault e)))))))))
 
 (defonce ^:private file-link-attached? (atom false))
 

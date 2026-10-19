@@ -553,6 +553,17 @@
                                       :on-click (select true)}
                                      "Code"))))
 
+(defn- file-path-span
+  "A file path shown in a tool block. `.file-path` + data-file-path: a
+   right-click, or a touch long-press (data-long-press, the ui runtime),
+   opens the file menu (file-path-menu) through the delegated listener in
+   xi.web.core; a tap keeps the block's own action (toggle, Ask)."
+  [path shown & [class]]
+  [:span {:class (cond-> ["file-path"] class (conj class))
+          :data-file-path path
+          :data-long-press "true"}
+   shown])
+
 (defn- tool-diff-view
   "An edit/write tool's diff for `path`: the rendered markdown diff with a
    Rendered ⇄ Code toggle (keyed by the call id `k`) for markdown files,
@@ -564,7 +575,7 @@
       (edit-diff-code grammar (truncate-lines text 100) attrs)
       [:div (merge {:class ["md-diff-wrap"]} attrs)
        [:div {:class ["md-diff-bar"]}
-        [:span {:class ["md-diff-path"]} path]
+        (file-path-span path path "md-diff-path")
         (md-diff-toggle dispatch! k code?)]
        (if code?
          (edit-diff-code grammar (truncate-lines text 100) nil)
@@ -890,7 +901,13 @@
           (icon/icon {:icon-name :chevron-right :size :sm}))]
        [:span {:class (cond-> ["tool-call-toggle-label"] bash? (conj "tool-call-toggle-label--wrap"))}
         [:span {:class ["tool-call-action"]} name]
-        (subs label (count name))]
+        ;; A file tool's path in the header opens the file menu; under the
+        ;; :all appearance the header shows every argument instead.
+        (let [rest  (subs label (count name))
+              fpath (when (not= :all tool-args) (tool-file-path name arguments))]
+          (if (and fpath (seq (str/trim rest)))
+            (list " " (file-path-span fpath (str/triml rest)))
+            rest))]
        (when clj-preview
          [:span {:class ["clj-head-preview"]} clj-preview])
        ;; No clock while the call waits on its ask; the allow restamps :started-at.
@@ -2289,11 +2306,12 @@
 
 (defn- file-menu-items
   "ui.context-menu entries for a file header: View file (:file/open), Copy
-   path, then the extensions' entries for the file (xi.web.block-menu, block
-   {:path}). A file `gone?` from disk (deleted in a diff) only offers Copy
-   path; `view?` false drops View file (the file's own viewer). Copy path
-   copies `abs-path` when given (the server-resolved path of a file buffer)."
-  [dispatch! state path {:keys [gone? view? abs-path] :or {view? true}}]
+   path, the caller's `extra` entries, then the extensions' entries for the
+   file (xi.web.block-menu, block {:path}). A file `gone?` from disk (deleted
+   in a diff) only offers Copy path; `view?` false drops View file (the
+   file's own viewer). Copy path copies `abs-path` when given (the
+   server-resolved path of a file buffer)."
+  [dispatch! state path {:keys [gone? view? abs-path extra] :or {view? true}}]
   (cond-> []
     (and view? (not gone?))
     (conj {:label    "View file"
@@ -2303,6 +2321,8 @@
     (conj {:label    "Copy path"
            :icon     :copy
            :on-click #(copy! dispatch! (or abs-path path))})
+    (seq extra)
+    (into extra)
     (not gone?)
     (into (map (fn [{:keys [label icon event]}]
                  {:label label :icon (or icon :chevron-right)
@@ -3457,6 +3477,36 @@
        (icon/icon {:icon-name :trash :size :sm})
        [:span "Delete"]]]]))
 
+(defn- file-path-menu
+  "Floating menu for a right-clicked / long-pressed file path in a tool block
+   (file-path-span): the file header's entries (file-menu-items) and, on an
+   edit result, View diff (xi.diff/tool-diff->unified, no server round-trip).
+   Opened by the delegated listener in xi.web.core like code-copy-menu."
+  [dispatch! state room-id {:keys [path diff-path diff-text x y]}]
+  (let [close!  (fn [] (dispatch! {:type :code/menu-close}))
+        unified (some->> diff-text (diff/tool-diff->unified diff-path))
+        extra   (when unified
+                  [{:label    "View diff"
+                    :icon     :code
+                    :on-click #(dispatch! {:type :ui/diff-open :room-id room-id
+                                           :title (str "Diff: " (last (str/split diff-path #"/")))
+                                           :text unified :engine :git})}])]
+    [:div {:class ["bubble-menu-backdrop"]
+           :on {:click (fn [_] (close!))}}
+     (into [:div {:class ["bubble-menu"]
+                  :style {:top (str y "px") :left (str x "px")}
+                  :replicant/on-mount clamp-bubble-menu!
+                  :on {:click (fn [e] (.stopPropagation e))}}]
+           (map (fn [{:keys [label icon on-click]}]
+                  [:button {:class ["bubble-menu-item"]
+                            :on {:click (fn [e]
+                                          (.stopPropagation e)
+                                          (close!)
+                                          (on-click))}}
+                   (icon/icon {:icon-name icon :size :sm})
+                   [:span label]]))
+           (file-menu-items dispatch! state path {:extra extra}))]))
+
 (defn- code-copy-menu
   "Floating menu for a tapped code block: Copy, View file (when the block
    belongs to a tool call naming a file), and View diff (an edit result or
@@ -4443,7 +4493,9 @@
                           (slash-ctx state))))])))
      ;; outside the case: code blocks in file buffers open it too
      (when-let [menu (:web/code-menu state)]
-       (code-copy-menu dispatch! state (:id room) menu))]))
+       (if (:file? menu)
+         (file-path-menu dispatch! state (:id room) menu)
+         (code-copy-menu dispatch! state (:id room) menu)))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 

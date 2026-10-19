@@ -175,6 +175,10 @@
       (testing "the file's own viewer drops View file"
         (is (= ["Copy path" "Open in vim"]
                (labels (items dispatch! {} "a.clj" {:view? false})))))
+      (testing "the caller's extra entries sit between the core and extension ones"
+        (is (= ["View file" "Copy path" "View diff" "Open in vim"]
+               (labels (items dispatch! {} "a.clj"
+                              {:extra [{:label "View diff" :icon :code :on-click identity}]})))))
       (testing "a file gone from disk only offers Copy path"
         (is (= ["Copy path"] (labels (items dispatch! {} "a.clj" {:gone? true})))))
       (finally (swap! registry dissoc :test/vim)))))
