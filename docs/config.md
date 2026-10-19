@@ -58,9 +58,8 @@ mode); there is no switch for that.
 | Key | Default | Description |
 | --- | --- | --- |
 | `:super-collapsed?` | `true` | Fold a fully collapsed group into one summary row (step count + latest block). |
-| `:tool-blocks` | `:collapsed` | `:open` or `:collapsed` for tool call details. A tool awaiting Allow/Deny is always open. |
+| `:tool-blocks` | `:collapsed` | `:open` or `:collapsed` for tool call details and thinking blocks. A tool awaiting Allow/Deny is always open. |
 | `:tool-blocks-except` | `[]` | Tool names that start the other way from `:tool-blocks`: with `:collapsed` the tools that stay open (exclude list), with `:open` the only ones that collapse (include list). Case-insensitive, without the Claude provider's `mcp__xi-tools__` prefix; an MCP server's tool keeps its `mcp__<server>__` part, e.g. `["edit" "mcp__chrome__take_screenshot"]`. Set per user in the Appearance dialog's Chat › Tool blocks pane. |
-| `:thinking-blocks` | `:collapsed` | `:open` or `:collapsed` for thinking blocks. |
 | `:tool-args` | `:summary` | What a tool call's header shows next to the tool name: `:summary` (a per-tool one-liner: the command, the path, the pattern) or `:all` (every argument as `k=v`, values cut at 80 characters). |
 | `:terminal-hints?` | `true` | Show the tooltips a terminal program sends (OSC 7475, e.g. nvim's diagnostics). The command palette's **Hide / Show terminal tooltips** toggles it. |
 

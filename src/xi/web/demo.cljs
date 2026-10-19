@@ -272,12 +272,9 @@ All three tests pass. Want me to add a keyboard shortcut (`⌘⇧D`) for it too?
     "usage" (usage-state)
     "chat" (chat-state)
     "chat-viewer" (assoc (chat-state) :web/appearance {:super-collapsed? false
-                                                       :tool-blocks :collapsed
-                                                       :thinking-blocks :collapsed})
+                                                       :tool-blocks :collapsed})
     "chat-super" (assoc (chat-state) :web/appearance {:super-collapsed? true
-                                                       :tool-blocks :collapsed
-                                                       :thinking-blocks :collapsed})
+                                                       :tool-blocks :collapsed})
     "chat-open" (assoc (chat-state) :web/appearance {:super-collapsed? false
-                                                     :tool-blocks :open
-                                                     :thinking-blocks :open})
+                                                     :tool-blocks :open})
     (sessions-state)))

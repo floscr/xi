@@ -24,12 +24,11 @@
                        one summary row (step count + latest block); click it
                        to reveal the header rows
      :tool-blocks      :open | :collapsed — whether a tool call's details
-                       start expanded
+                       (and a thinking block) start expanded
      :tool-blocks-except
                        tool names that start the other way: with
                        :collapsed the tools that stay open, with :open the
                        only ones that collapse
-     :thinking-blocks  :open | :collapsed — same for thinking blocks
      :tool-args        :summary | :all — what a tool call's header shows
                        next to the tool name: a per-tool one-liner (the
                        command, the path, the pattern) or every argument
@@ -39,7 +38,6 @@
   {:super-collapsed? true
    :tool-blocks      :collapsed
    :tool-blocks-except []
-   :thinking-blocks  :collapsed
    :tool-args        :summary
    :terminal-hints?  true})
 
@@ -49,7 +47,6 @@
    carry)."
   {:super-collapsed? #{true false}
    :tool-blocks      #{:open :collapsed}
-   :thinking-blocks  #{:open :collapsed}
    :tool-args        #{:summary :all}
    :terminal-hints?  #{true false}})
 
@@ -235,7 +232,7 @@
                  (if (some #{(tool-key tool)} (:tool-blocks-except app))
                    (not collapsed?)
                    collapsed?))
-    :thinking  (= :collapsed (:thinking-blocks app))
+    :thinking  (= :collapsed (:tool-blocks app))
     false))
 
 (defn overridden?

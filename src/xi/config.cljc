@@ -98,13 +98,14 @@
      :super-collapsed?
        Fold every group whose blocks are all collapsed into a single summary
        row (step count + the latest block); click it to reveal the header
-       rows. A group holding an open block (:tool-blocks / :thinking-blocks
-       :open) stays unfolded.
+       rows. A group holding an open block (:tool-blocks :open) stays
+       unfolded.
        Default true.
 
      :tool-blocks
        :open | :collapsed — whether a tool call's details (arguments, result)
-       start expanded. A tool awaiting an Allow/Deny answer is always open.
+       and thinking blocks start expanded. A tool awaiting an Allow/Deny
+       answer is always open.
        Default :collapsed.
 
      :tool-blocks-except
@@ -114,10 +115,6 @@
        mcp__xi-tools__ prefix; an MCP server's tool keeps its mcp__<server>__
        part, e.g. [\"edit\" \"mcp__chrome__take_screenshot\"].
        Default [].
-
-     :thinking-blocks
-       :open | :collapsed — whether thinking blocks start expanded.
-       Default :collapsed.
 
      :tool-args
        :summary | :all — what a tool call's header shows next to the tool

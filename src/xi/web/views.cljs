@@ -7144,17 +7144,14 @@
                                  :value (boolean (.. e -target -checked))}))}))
      (appearance-row
       "Tool blocks"
-      "Read, edit, clj… calls and their results"
+      "Read, edit, clj… calls and their results, and thinking"
       (open-collapsed-choice dispatch! :tool-blocks (:tool-blocks app)))
      (tool-exceptions-link dispatch! app)
      (appearance-row
       "Tool arguments"
       "Next to the tool name: a per-tool summary (the command, the path, the pattern) or every argument"
       (appearance-choice dispatch! :tool-args (:tool-args app)
-                         [[:summary "Summary"] [:all "All"]]))
-     (appearance-row
-      "Thinking blocks" nil
-      (open-collapsed-choice dispatch! :thinking-blocks (:thinking-blocks app)))]))
+                         [[:summary "Summary"] [:all "All"]]))]))
 
 (defn- appearance-footer
   "An open theme draft's Delete / Cancel / Save; otherwise the Chat pane's

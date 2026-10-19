@@ -3,11 +3,10 @@
             [xi.web.appearance :as appearance]))
 
 (deftest defaults-are-super-collapsed
-  (testing "no overrides → super collapsed on, tool + thinking blocks collapsed"
+  (testing "no overrides → super collapsed on, tool blocks collapsed"
     (let [app (appearance/effective nil)]
       (is (true? (:super-collapsed? app)))
       (is (= :collapsed (:tool-blocks app)))
-      (is (= :collapsed (:thinking-blocks app)))
       (is (= :summary (:tool-args app)))
       (is (true? (:terminal-hints? app)))))
   (testing "the retired viewer-mode toggle is gone: viewer mode is always on"
@@ -24,10 +23,10 @@
     (is (false? (:super-collapsed? app)))
     (is (false? (:terminal-hints? app)))
     (is (= :open (:tool-blocks app)))
-    (is (= :collapsed (:thinking-blocks app)) "untouched keys keep their default")))
+    (is (= :summary (:tool-args app)) "untouched keys keep their default")))
 
 (deftest config-layer-sits-between-defaults-and-overrides
-  (let [configured {:tool-blocks :open :thinking-blocks :open}]
+  (let [configured {:tool-blocks :open :tool-args :all}]
     (testing "configured values replace the defaults"
       (is (= :open (:tool-blocks (appearance/effective configured nil)))))
     (testing "browser overrides still win over configured values"
@@ -36,8 +35,8 @@
       (is (= :collapsed (:tool-blocks (appearance/effective {:tool-blocks :sideways} nil)))))
     (testing "effective-in reads both layers from state"
       (is (= {:super-collapsed? true
-              :tool-blocks :collapsed :tool-blocks-except [] :thinking-blocks :open
-              :tool-args :summary :terminal-hints? true}
+              :tool-blocks :collapsed :tool-blocks-except []
+              :tool-args :all :terminal-hints? true}
              (appearance/effective-in {:web/appearance-config configured
                                        :web/appearance {:tool-blocks :collapsed}}))))))
 
@@ -45,7 +44,7 @@
   (testing "unknown keys and disallowed values are dropped"
     (is (= {:tool-blocks :open :tool-args :all}
            (appearance/normalize {:tool-blocks :open
-                                  :thinking-blocks :sideways
+                                  :thinking-blocks :open ; retired: thinking follows :tool-blocks
                                   :super-collapsed? "yes"
                                   :tool-args :all
                                   :bogus 1})))
@@ -58,8 +57,8 @@
     (is (= :collapsed (:tool-blocks (appearance/effective {:tool-blocks :sideways}))))))
 
 (deftest block-collapsed
-  (let [open-all  {:tool-blocks :open :thinking-blocks :open}
-        collapsed {:tool-blocks :collapsed :thinking-blocks :collapsed}
+  (let [open-all  {:tool-blocks :open}
+        collapsed {:tool-blocks :collapsed}
         tool      (fn [name] {:kind :tool-call :tool name})]
     (is (false? (appearance/block-collapsed? open-all (tool "read"))))
     (is (false? (appearance/block-collapsed? open-all {:kind :thinking})))
