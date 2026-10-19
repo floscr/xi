@@ -283,6 +283,10 @@
   [_st {:keys [client-id]}]
   {:effects [[:models/web-list-reply {:client-id client-id}]]})
 
+(defn- tools-web-list
+  [_st {:keys [client-id]}]
+  {:effects [[:tools/web-list-reply {:client-id client-id}]]})
+
 (defn- session-content-search
   "Roomless: search saved-session names + conversation text for a query.
    `cwd` scopes to a project; nil searches all sessions."
@@ -523,6 +527,7 @@
    :session/peek           session-peek
    :sessions/all           sessions-all
    :models/web-list        models-web-list
+   :tools/web-list         tools-web-list
    :cwd/agents-files       cwd-agents-files
    :session/content-search session-content-search
    :session/web-search     session-web-search

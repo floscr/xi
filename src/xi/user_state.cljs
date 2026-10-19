@@ -124,13 +124,15 @@
   "Known keys → {:valid? (fn [value] → bool)}."
   {;; \"auto\" | \"light\" | \"dark\"
    :theme            {:valid? #{"auto" "light" "dark"}}
-   ;; xi.web.appearance overrides: {:super-collapsed? bool :tool-blocks :open …}
+   ;; xi.web.appearance overrides: {:super-collapsed? bool :tool-blocks :open
+   ;; :tool-blocks-except ["read" …] …}
    :appearance       {:valid? (fn [v]
                                 (and (map? v)
                                      (<= (count v) 16)
                                      (every? (fn [[k x]]
                                                (and (keyword? k)
-                                                    (or (boolean? x) (keyword? x))))
+                                                    (or (boolean? x) (keyword? x)
+                                                        (bounded-strings? x 64 128))))
                                              v)))}
    ;; xi.web.theme custom color themes: {:active name :themes {name {param n-or-color}}}
    :themes           {:valid? (fn [v]

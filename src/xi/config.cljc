@@ -107,6 +107,14 @@
        start expanded. A tool awaiting an Allow/Deny answer is always open.
        Default :collapsed.
 
+     :tool-blocks-except
+       Tool names that start the other way from :tool-blocks: with
+       :collapsed the tools that stay open, with :open the only ones that
+       collapse. Case-insensitive, without the Claude provider's
+       mcp__xi-tools__ prefix; an MCP server's tool keeps its mcp__<server>__
+       part, e.g. [\"edit\" \"mcp__chrome__take_screenshot\"].
+       Default [].
+
      :thinking-blocks
        :open | :collapsed — whether thinking blocks start expanded.
        Default :collapsed.

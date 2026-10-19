@@ -86,6 +86,7 @@
             [xi.session.recent :as recent]
             [xi.subagent :as subagent]
             [xi.system-prompt :as system-prompt]
+            [xi.tools.registry :as registry]
             [xi.user-state.store :as user-store]
             [xi.users :as users]
             [xi.util :as util]
@@ -162,6 +163,26 @@
                                                   subagent-ext/child-tool-registry))
             :make-config-dir!       session/make-throwaway-config-dir!
             :remove-config-dir!     session/remove-config-dir!})))
+
+(defn- tool-sources
+  "Every enabled tool as {:name :source :ext} for the web Appearance dialog
+   (xi.web.appearance): :source is :builtin (xi.tools.registry), :mcp, :user
+   (a user extension, xi.ext.user) or :extension (a bundled one); :ext names
+   the MCP server or the extension."
+  [mgr ask!]
+  (let [builtin (set (map :name (registry/tool-definitions)))
+        user-of (into {} (for [{:keys [id extension]} (user-ext/loaded-entries)
+                               :when extension
+                               d (:tool-definitions extension)]
+                           [(:name d) id]))
+        owners  (manager/tool-owners mgr)]
+    (for [{n :name} (:defs (registry/resolve-tooling (tooling-opts mgr ask!)))]
+      (if-let [{:keys [server]} (mcp/parse-qualified-name n)]
+        {:name n :source :mcp :ext server}
+        (cond
+          (builtin n)  {:name n :source :builtin}
+          (user-of n)  {:name n :source :user :ext (name (user-of n))}
+          :else        {:name n :source :extension :ext (some-> (owners n) name)})))))
 
 (def ^:private DEFAULT_MODEL "claude-opus-4-8")
 
@@ -862,6 +883,7 @@ See docs/guide/command-line.md for the full reference.")
                  :ext-system-prompt-parts (fn [cwd] (ext/system-prompt-parts (manager/composed mgr) cwd))
                  :room-ext-init (manager/live-view mgr :room-ext-init)
                  :usage-sources (manager/live-view mgr :usage-sources)
+                 :tool-sources #(tool-sources mgr (:ask! dialogs))
                  :ext composed})
         ;; Late-bound: a live extension reload rebuilds handlers and fx.
         handlers (manager/live-view

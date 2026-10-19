@@ -131,6 +131,7 @@
    bookkeeping that uses :client-id, not :room-id). Extensions add theirs
    via :roomless-events."
   #{:client/update :user-state/set :session/counts :session/peek :sessions/all :models/web-list
+    :tools/web-list
     :cwd/agents-files :session/content-search :session/web-search
     :diff/web-load :commits/web-load :files/web-list :file/web-read
     :dismissed/toggle :pinned/toggle :session/delete :session/mark-read
@@ -350,11 +351,12 @@
    → parts); :room-ext-init ext-id → initial room-scoped state (or a 0-arg fn,
    read per room); :ext the composed extension map (xi.ext.core/compose);
    :usage-sources a 0-arg fn of the composition's `:usage-sources`
-   (xi.server.usage).
+   (xi.server.usage); :tool-sources a 0-arg fn → every enabled tool as
+   {:name :source :ext} (the web Appearance dialog's tool list).
    Returns {:fx :start!}, :start! being (fn [app {:keys [port]}] → {:port
    :stop!})."
   [{:keys [server-opts providers agent-id ext-system-prompt-parts room-ext-init ext
-           usage-sources]}]
+           usage-sources tool-sources]}]
   (let [sockets (js/Map.)
         agent?  (some? agent-id)
         ;; XI_ICON: "desktop" (default), "personal" or "green".
@@ -587,6 +589,11 @@
         (fx/web-model-list-reply-fx
          providers
          (fn [event] (send! client-id (wire/encode event)))))
+
+      :tools/web-list-reply
+      (fn [_ {:keys [client-id]}]
+        (send-event! client-id {:type  :tools/web-list-result
+                                :tools (if tool-sources (vec (tool-sources)) [])}))
 
       :session/content-search-reply
       (fn [_ {:keys [client-id key query cwd]}]

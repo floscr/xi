@@ -342,9 +342,14 @@ These keys belong to a control and are not in the keymap:
 
 The gear in the sidebar footer (or "Appearance" in the chat menu and the
 command palette) opens the appearance dialog. Its side menu (tabs at the
-top on a narrow screen) has two panes. **Theme** holds light, dark or
+top on a narrow screen) has three panes. **Theme** holds light, dark or
 system mode and the [color themes](#color-themes). **Chat** holds whether
-tool and thinking blocks start open or collapsed, **tool arguments** (what
+tool and thinking blocks start open or collapsed, its **Tool blocks**
+sub-pane the tools that start the other way (a searchable list of every
+tool, the checked ones first, then built-in tools, Xi's extensions, each of
+your [extensions](extensions.md) and each MCP server; chips above it show
+only the checked tools or one of those sources),
+**tool arguments** (what
 a tool row shows next to the tool name: a per-tool summary such as the
 command, the path or the pattern, or every argument as `key=value`), and
 **super collapsed** (a run of two or more collapsed tool and thinking rows

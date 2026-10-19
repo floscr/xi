@@ -462,6 +462,13 @@ body {
 
 .appearance-nav { align-self: start; }
 
+/* a pane's sub-menu entry (Chat › Tool blocks): no icon, its label under
+   the parent's label; one more tab when narrow */
+.appearance-nav .appearance-nav-sub { font-size: var(--font-sm); }
+@media (min-width: 641px) {
+  .appearance-nav .appearance-nav-sub { padding-left: var(--size-8); }
+}
+
 /* the menu's stock active/hover background is the panel's own */
 .appearance-nav .sidebar-menu-item-active,
 .appearance-nav .sidebar-menu-item:hover {
@@ -518,6 +525,120 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: var(--size-1);
+}
+
+/* Per-tool collapse list (xi.web.views/tool-exceptions-link and
+   appearance-tools-pane): a summary row in the Chat pane that opens a
+   searchable checklist, the checked tools first. */
+.appearance-link {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  width: 100%;
+  margin-top: calc(-1 * var(--size-2));
+  padding: var(--size-2) var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-1);
+  color: var(--fg-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.appearance-link:hover { background: var(--bg-2); }
+
+.appearance-link-summary {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  color: var(--fg-2);
+}
+
+.appearance-tool-list {
+  max-height: 22rem;
+  overflow-y: auto;
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+}
+
+.appearance-tool-section {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--size-1) var(--size-3);
+  background: var(--bg-1);
+  border-bottom: var(--border-0);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-2);
+}
+
+.appearance-tool-item {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  width: 100%;
+  padding: var(--size-2) var(--size-3);
+  border: 0;
+  border-bottom: var(--border-0);
+  background: none;
+  color: var(--fg-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.appearance-tool-item:last-child { border-bottom: 0; }
+.appearance-tool-item:hover { background: var(--bg-1); }
+.appearance-tool-check {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--accent);
+}
+
+.appearance-tool-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+}
+
+.appearance-tool-hint {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
+.appearance-tool-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-1);
+}
+
+.appearance-tool-filter-count {
+  margin-left: var(--size-1);
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.appearance-tool-empty {
+  padding: var(--size-4) var(--size-3);
+  text-align: center;
+  font-size: var(--font-sm);
+  color: var(--fg-2);
 }
 
 /* One row per theme: radio, color strip (xi.web.theme/strip-colors), name,

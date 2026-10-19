@@ -84,6 +84,15 @@
   [{:keys [known]} id]
   (contains? @known id))
 
+(defn tool-owners
+  "Tool name → id of the enabled extension that defines it."
+  [{:keys [order known enabled]}]
+  (into {}
+        (for [id @order
+              :when (contains? @enabled id)
+              d (:tool-definitions (@known id))]
+          [(:name d) id])))
+
 (defn register!
   "Register a runtime-built extension (e.g. an MCP wrapper). Enabled by
    default; pass {:enable? false} to register it disabled. Re-registering an

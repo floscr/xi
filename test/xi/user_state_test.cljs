@@ -9,6 +9,8 @@
 (deftest valid-accepts-known-keys-with-allowed-values
   (is (user-state/valid? :theme "dark"))
   (is (user-state/valid? :appearance {:super-collapsed? false :tool-blocks :open}))
+  (is (user-state/valid? :appearance {:tool-blocks-except ["edit" "mcp__chrome-devtools__performance_analyze_insight"]}))
+  (is (user-state/valid? :appearance {:tool-blocks-except []}))
   (is (user-state/valid? :sidebar-collapsed [:projects :recent]))
   (is (user-state/valid? :dashboard-hidden [:home/projects :usage/subscriptions]))
   (is (user-state/valid? :preferred-model "claude-opus-4-6"))
@@ -28,6 +30,7 @@
     (is (not (user-state/valid? :appearance [:a])))
     (is (not (user-state/valid? :appearance {"super-collapsed?" true})))
     (is (not (user-state/valid? :appearance {:tool-blocks {:nested true}})))
+    (is (not (user-state/valid? :appearance {:tool-blocks-except [1 2]})))
     (is (not (user-state/valid? :sidebar-collapsed ["projects"])))
     (is (not (user-state/valid? :dashboard-hidden ["home/projects"])))
     (is (not (user-state/valid? :dashboard-hidden :home/projects)))

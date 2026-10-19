@@ -1382,15 +1382,32 @@
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
           ;; Appearance dialog (xi.web.appearance): :web/appearance holds only
           ;; this browser's overrides.
-          ;; `:tab` (:theme / :chat) picks the pane; without it the last one
+          ;; `:tab` (:theme / :chat / :chat-tools) picks the pane; without it the last one
           :appearance/open       (fn [st {:keys [tab]}]
-                                   {:state (cond-> (assoc st :web/appearance-open? true)
-                                             tab (assoc :web/appearance-tab tab))})
-          :appearance/tab        (fn [st {:keys [tab]}] {:state (assoc st :web/appearance-tab tab)})
+                                   {:state   (cond-> (-> (assoc st :web/appearance-open? true)
+                                                         (dissoc :web/appearance-tool-query
+                                                                 :web/appearance-tool-filter))
+                                               tab (assoc :web/appearance-tab tab))
+                                    ;; the Tool blocks pane's list
+                                    :effects [[:ws/send {:type :tools/web-list}]]})
+          ;; [{:name :source :ext}] (xi.cli/tool-sources)
+          :tools/web-list-result (fn [st {:keys [tools]}]
+                                   {:state (assoc st :web/tools (vec tools))})
+          :appearance/tab        (fn [st {:keys [tab]}]
+                                   {:state (-> (assoc st :web/appearance-tab tab)
+                                               (dissoc :web/appearance-tool-query
+                                                       :web/appearance-tool-filter))})
+          :appearance/tool-query (fn [st {:keys [query]}]
+                                   {:state (assoc st :web/appearance-tool-query query)})
+          ;; xi.web.appearance/tool-filters
+          :appearance/tool-filter (fn [st {:keys [filter]}]
+                                    {:state (assoc st :web/appearance-tool-filter filter)})
           ;; closing (×, Escape, outside click) abandons an unsaved theme draft
           :appearance/close      (fn [st ev]
                                    (-> (or (themes-draft-cancel st ev) {:state st})
-                                       (update :state dissoc :web/appearance-open?)))
+                                       (update :state dissoc :web/appearance-open?
+                                               :web/appearance-tool-query
+                                               :web/appearance-tool-filter)))
           ;; Done saves it; a draft Save refuses (name taken or invalid) keeps
           ;; the dialog open on the editor instead of losing the edits
           :appearance/done       (fn [st ev]

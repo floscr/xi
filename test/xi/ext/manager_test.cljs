@@ -88,3 +88,10 @@
     (manager/enable! mgr :a)
     (testing "re-enabled ext keeps its original registration slot"
       (is (= [:a :b] (map :id (manager/ext-list mgr)))))))
+
+(deftest tool-owners-maps-enabled-tools-to-their-extension
+  (let [mgr (doto (manager/create)
+              (manager/seed! [(tool-ext :a (atom [])) (tool-ext :b (atom []))]))]
+    (is (= {"a" :a "b" :b} (manager/tool-owners mgr)))
+    (manager/disable! mgr :a)
+    (is (= {"b" :b} (manager/tool-owners mgr)) "a disabled extension's tools drop out")))

@@ -4316,7 +4316,7 @@
                                groupable? (and (#{:tool-call :thinking} (:kind entry))
                                                (not= p perm-tool-idx))
                                collapsed? (and (not= p perm-tool-idx)
-                                               (appearance/block-collapsed? app (:kind entry)))
+                                               (appearance/block-collapsed? app entry))
                                ;; A pending ask's block keeps the native toggle.
                                block-key  (when (and (#{:tool-call :thinking} (:kind entry))
                                                      (not= p perm-tool-idx))
@@ -6655,6 +6655,87 @@
   [dispatch! key value]
   (appearance-choice dispatch! key value [[:open "Open"] [:collapsed "Collapsed"]]))
 
+(defn- tool-exceptions-title
+  "The per-tool list's name: what a checked tool does under \"Tool blocks\"."
+  [app]
+  (if (= :open (:tool-blocks app)) "Start collapsed" "Start open"))
+
+(defn- tool-exceptions-link
+  "The Chat pane's row into its Tool blocks pane: the checked tools in one
+   line (xi.web.appearance/tool-summary)."
+  [dispatch! app]
+  [:button {:type "button"
+            :class ["appearance-link"]
+            :on {:click (fn [_] (dispatch! {:type :appearance/tab :tab :chat-tools}))}}
+   [:span {:class ["appearance-row-label"]} (tool-exceptions-title app)]
+   [:span {:class ["appearance-link-summary"]}
+    (or (appearance/tool-summary (:tool-blocks-except app)) "None")]
+   (icon/icon {:icon-name :chevron-right :size :sm})])
+
+(defn- appearance-tools-pane
+  "Chat › Tool blocks: every tool (the server's list, :tools/web-list)
+   grouped by where it comes from, the checked ones (:tool-blocks-except)
+   first, narrowed by the filter chips and the search; a checked tool starts
+   the other way from \"Tool blocks\"."
+  [state dispatch!]
+  (let [app      (appearance/effective-in state)
+        open?    (= :open (:tool-blocks app))
+        listed   (:tool-blocks-except app)
+        tools    (:web/tools state)
+        query    (:web/appearance-tool-query state)
+        kind     (or (:web/appearance-tool-filter state) :all)
+        sections (appearance/tool-sections tools listed {:query query :filter kind})]
+    [:div {:class ["appearance-pane"] :replicant/key "chat-tools"}
+     [:div {:class ["appearance-row-text"]}
+      [:div {:class ["appearance-row-label"]} (tool-exceptions-title app)]
+      [:div {:class ["form-hint"]}
+       (str "Checked tools start " (if open? "collapsed" "open")
+            "; the others follow “Tool blocks: " (if open? "Open" "Collapsed") "”.")]]
+     (form/form-input
+      {:value (or query "")
+       :placeholder "Search tools"
+       :attrs {:aria-label "Search tools"
+               :on {:input (fn [^js e] (dispatch! {:type :appearance/tool-query
+                                                   :query (.. e -target -value)}))}}})
+     [:div {:class ["appearance-tool-filters"]}
+      (for [[id label n] (appearance/tool-filter-counts tools listed)]
+        (chip/chip {:active   (= id kind)
+                    :attrs    {:replicant/key (name id)}
+                    :on-click (fn [_] (dispatch! {:type :appearance/tool-filter :filter id}))}
+          label
+          [:span {:class ["appearance-tool-filter-count"]} n]))]
+     ;; One flat run of keyed siblings that never reorder: a checked tool
+     ;; gets a second row under Selected instead of moving there (a keyed
+     ;; row that moved and changed in one render left a stray icon behind).
+     (into [:div {:class ["appearance-tool-list"]}]
+           (if (seq sections)
+             (mapcat
+              (fn [[title tools]]
+                (cons
+                 [:div {:class ["appearance-tool-section"] :replicant/key (str "s-" title)}
+                  (cond-> title (= "Selected" title) (str " · " (count tools)))]
+                 (for [{:keys [id key label hint]} tools
+                       :let [on? (boolean (some #{key} listed))]]
+                   [:button {:type "button"
+                             :class ["appearance-tool-item"]
+                             :replicant/key id
+                             :aria-pressed (str on?)
+                             :title key
+                             :on {:click (fn [_]
+                                           (dispatch! {:type :appearance/set
+                                                       :key :tool-blocks-except
+                                                       :value (appearance/toggle-tool listed key)}))}}
+                    [:span {:class ["appearance-tool-name"]} label]
+                    [:span {:class ["appearance-tool-hint"]} hint]
+                    [:span {:class ["appearance-tool-check"]}
+                     (when on? (icon/icon {:icon-name :check :size :sm}))]])))
+              sections)
+             [[:div {:class ["appearance-tool-empty"] :replicant/key "empty"}
+               (cond
+                 (nil? tools)         "Loading tools…"
+                 (= :selected kind)   "No tools checked yet"
+                 :else                "No tools match")]]))]))
+
 ;; ── Color themes (xi.web.theme) ─────────────────────────────────────────────
 
 (defn- theme-slider
@@ -7004,6 +7085,7 @@
       "Tool blocks"
       "Read, edit, clj… calls and their results"
       (open-collapsed-choice dispatch! :tool-blocks (:tool-blocks app)))
+     (tool-exceptions-link dispatch! app)
      (appearance-row
       "Tool arguments"
       "Next to the tool name: a per-tool summary (the command, the path, the pattern) or every argument"
@@ -7034,7 +7116,7 @@
                         :on-click (fn [_] (dispatch! {:type :themes/save}))}
           "Save theme"))
       (dialog/dialog-footer {}
-        (when (= tab :chat)
+        (when (#{:chat :chat-tools} tab)
           (button/button
            {:variant :ghost :size :sm
             :disabled (not (appearance/overridden? (:web/appearance state)))
@@ -7047,14 +7129,17 @@
          "Done")))))
 
 (def ^:private appearance-tabs
+  "[id icon label parent]: a tab with a parent is its sub-menu entry."
   [[:theme :layers "Theme"]
-   [:chat :list "Chat"]])
+   [:chat :list "Chat"]
+   [:chat-tools nil "Tool blocks" :chat]])
 
 (defn- appearance-dialog
   "The Appearance settings dialog: a side menu (top tabs when narrow) over
    the Theme pane (mode, color themes and their editor) and the Chat pane
    (this browser's overrides, :web/appearance, xi.web.appearance, over
-   xi.config/appearance; Reset drops them). :web/appearance-tab is the pane."
+   xi.config/appearance; Reset drops them) with its Tool blocks sub-pane.
+   :web/appearance-tab is the pane."
   [state dispatch!]
   (when (:web/appearance-open? state)
     (let [tab    (or (:web/appearance-tab state) :theme)
@@ -7072,16 +7157,21 @@
             (icon/icon {:icon-name :x :size :md})])
          [:div {:class ["appearance-layout"]}
           (apply sidebar/sidebar-menu {:class "appearance-nav"}
-                 (for [[id icon-name label] appearance-tabs]
+                 (for [[id icon-name label parent] appearance-tabs
+                       :let [n (when (= :chat-tools id)
+                                 (count (:tool-blocks-except (appearance/effective-in state))))]]
                    (sidebar/sidebar-menu-item
                     {:active (= tab id)
                      :icon-name icon-name
+                     :badge (when (and n (pos? n)) n)
+                     :class (when parent "appearance-nav-sub")
                      :attrs {:replicant/key id}
                      :on-click (fn [_] (dispatch! {:type :appearance/tab :tab id}))}
                     label)))
           (dialog/dialog-body {:class "appearance-body"}
             (case tab
-              :chat (appearance-chat-pane state dispatch!)
+              :chat       (appearance-chat-pane state dispatch!)
+              :chat-tools (appearance-tools-pane state dispatch!)
               (appearance-theme-pane state dispatch!)))]
          (appearance-footer state dispatch! tab))))))
 
