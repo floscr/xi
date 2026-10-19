@@ -17,6 +17,7 @@
             [xi.highlight.theme-css :as theme]
             [xi.dialog :as dlg]
             [xi.diff :as diff]
+            [xi.web.diff-state :as diff-state]
             [xi.fuzzy :as fuzzy]
             [xi.keys :as xkeys]
             [xi.palette :as palette]
@@ -2407,6 +2408,26 @@
          {:items (file-menu-items dispatch! state path opts) :class class})
         children))
 
+(def ^:private scroll-tops
+  "scroll key → the view's last scrollTop (UI-only, like the timeline's
+   scroll metrics in xi.web.core)."
+  (js/Map.))
+
+(defn- remembered-scroll
+  "Attrs that keep a scrollable element's position under `k`: saved on
+   scroll, restored on mount. The key remounts it when `k` changes, so one
+   view's position never carries into another's."
+  [k]
+  {:replicant/key k
+   :replicant/on-mount
+   (fn [{:replicant/keys [^js node]}]
+     (when-let [top (.get scroll-tops k)]
+       (set! (.-scrollTop node) top)
+       ;; once more after layout: late content (fonts, sticky headers) can
+       ;; clamp the first write
+       (js/requestAnimationFrame #(set! (.-scrollTop node) top))))
+   :on {:scroll (fn [^js e] (.set scroll-tops k (.. e -target -scrollTop)))}})
+
 (defn diff-rows-view
   "Flattened diff rows as a scrollable view grouped by file (sticky
    file-header, horizontally scrollable body), the selection `toolbar`
@@ -2419,10 +2440,11 @@
    :expanded (filenames shown in full; present ⇒ size-limited by
    diff-row-budget with :diff/show-all), :md-code (the :web/md-diff-code set;
    present ⇒ markdown files render as a rendered diff with a toggle keyed
-   [:diff filename])."
+   [:diff filename]), :scroll-key (remember the scroll position under it,
+   restored when a view with that key mounts again)."
   ([dispatch! rows range toolbar] (diff-rows-view dispatch! rows range toolbar nil))
   ([dispatch! rows range toolbar {:keys [state highlight reviewed line-suffix after-line
-                                         collapsed expanded md-code]}]
+                                         collapsed expanded md-code scroll-key]}]
   (let [grammar-cache (atom {})
         grammar-for (fn [f] (or (@grammar-cache f)
                                 (let [g (diff-file-grammar f)]
@@ -2434,7 +2456,8 @@
         visible     (if (some? expanded)
                       (diff-visible-rows file-groups collapsed expanded diff-row-budget)
                       (vec (repeat (count file-groups) nil)))]
-    [:div {:class ["diff-view"]}
+    [:div (cond-> {:class ["diff-view"]}
+            scroll-key (merge (remembered-scroll (pr-str scroll-key))))
      (if (seq file-groups)
        (map-indexed
         (fn [fi group]
@@ -2586,7 +2609,7 @@
    range's last line: a gutter rail ties it to the range, the text goes where
    the Ask / Explain / Modify switch says and the suggestion chips ask right
    away."
-  [dispatch! room-id rows range intent]
+  [dispatch! room-id rows range intent draft]
   (let [sel-rows (filterv (fn [{:keys [row sel-idx]}]
                             (and (= :line row) sel-idx (<= (first range) sel-idx (second range))))
                           rows)
@@ -2609,13 +2632,16 @@
                      (icon/icon {:icon-name :x :size :sm}))]
      (form/form-textarea-auto
       {:placeholder placeholder
+       :value       draft
        :max-rows    6
        :class       "diff-thread-input"
        :attrs       {:id "diff-compose-input"
                      :replicant/on-mount
                      (fn [{:replicant/keys [^js node]}]
                        (.focus node #js {:preventScroll true}))
-                     :on {:keydown (enter-submits submit!)}}})
+                     :on {:keydown (enter-submits submit!)
+                          :input   (fn [^js e] (dispatch! {:type :diff/draft
+                                                           :text (.. e -target -value)}))}}})
      (when (= :ask intent)
        [:div {:class ["diff-thread-chips"]}
         (for [q (sa/ask-suggestions (map (comp :type :line) sel-rows))]
@@ -2741,9 +2767,10 @@
    `turns` [{:question :sub-id}], `children` the matching sub-agents (nil
    until the server echoes the spawn); :on-reply gets the reply text;
    :label names what the thread is about; :actions are extra head buttons;
-   :transcript? shows every text block of a turn instead of only the last."
+   :draft / :on-draft keep the reply field's text in state; :transcript?
+   shows every text block of a turn instead of only the last."
   [dispatch! room-id {:keys [key turns children collapsed? label input-id actions
-                              on-reply on-toggle on-close transcript?]}]
+                              on-reply on-toggle on-close draft on-draft transcript?]}]
   (let [running (some (fn [[t c]] (when (or (nil? c) (= :running (:status c))) t))
                       (map vector turns children))
         reply!  (fn [_]
@@ -2784,9 +2811,12 @@
          [:div {:class ["diff-thread-reply"]}
           (form/form-textarea-auto
            {:placeholder "Reply…"
+            :value       draft
             :max-rows    4
             :class       "diff-thread-input"
-            :attrs       {:id input-id :on {:keydown (enter-submits reply!)}}})
+            :attrs       {:id input-id
+                          :on (cond-> {:keydown (enter-submits reply!)}
+                                on-draft (assoc :input (fn [^js e] (on-draft (.. e -target -value)))))}})
           (button/button {:variant :ghost :size :sm :attrs {:aria-label "Send reply"} :class "diff-thread-send"
                           :on-click reply!}
                          (icon/icon {:icon-name :arrow-up :size :sm}))])])))
@@ -2794,7 +2824,7 @@
 (defn- diff-ask-card
   "A diff Ask / Explain / Modify thread (xi.web.core diff-thread-start)
    attached after the lines it is about (`child-of`: sub-id → child)."
-  [dispatch! room-id {:keys [id turns collapsed? kind]} child-of]
+  [dispatch! room-id {:keys [id turns collapsed? kind draft]} child-of]
   (thread-card dispatch! room-id
                {:key        (str "ask-" id)
                 :label      ({:explain "Explain" :modify "Modify"} kind)
@@ -2803,6 +2833,8 @@
                 :children   (mapv (comp child-of :sub-id) turns)
                 :collapsed? collapsed?
                 :input-id   (str "diff-ask-reply-" id)
+                :draft      draft
+                :on-draft   #(dispatch! {:type :diff/ask-draft :ask-id id :text %})
                 :on-reply   #(dispatch! {:type :diff/ask-follow-up :ask-id id :text %})
                 :on-toggle  #(dispatch! {:type :diff/ask-collapse-toggle :ask-id id})
                 :on-close   #(dispatch! {:type :diff/ask-close :ask-id id})}))
@@ -2948,19 +2980,21 @@
 
 (defn- diff-inline-cards
   "diff-rows-view's :after-line, {line-key [card …]}: the selection's composer
-   (once an action opened it) under its last line, then the room's Ask threads
+   (once an action opened it) under its last line, then the view's threads
    under theirs."
   [dispatch! state room-id rows range]
   (let [child-of #(sa/find-child state room-id %)
-        last-row (when (and range (:web/diff-intent state))
+        intent   (diff-state/intent state)
+        view     (diff-state/view-key state)
+        last-row (when (and range intent)
                    (some #(when (= (second range) (:sel-idx %)) %) rows))]
     (reduce (fn [m {:keys [anchor] :as ask}]
               (update m anchor (fnil conj []) (diff-ask-card dispatch! room-id ask child-of)))
             (if last-row
               {(diff/line-key last-row)
-               [(diff-composer dispatch! room-id rows range (:web/diff-intent state))]}
+               [(diff-composer dispatch! room-id rows range intent (diff-state/draft state))]}
               {})
-            (filter #(= room-id (:room-id %)) (:web/diff-asks state)))))
+            (filter #(= view (:view %)) (:web/diff-asks state)))))
 
 (defn- diff-tab-view
   "The diff buffer as the active tab: the interactive viewer over its rows in
@@ -2968,14 +3002,14 @@
    syntax under its change spans). A difft buffer without rows (`/diff difft`
    typed by hand) is its read-only ANSI text."
   [dispatch! state room-id diff-buffer]
-  (let [{sel :web/diff-sel collapsed :web/diff-collapsed
-         expanded :web/diff-expanded md-code :web/md-diff-code} state
+  (let [sel       (diff-state/sel state)
+        collapsed (diff-state/collapsed state)
+        md-code   (:web/md-diff-code state)
         engine (or (:engine diff-buffer) :git)
         ansi?  (and (= engine :difft) (nil? (:rows diff-buffer)))
         layout (or (:web/diff-layout state) (diff/default-layout engine))
         rows   (when-not ansi? (diff-buffer-rows diff-buffer layout))
-        filenames (into [] (comp (filter #(= :file (:row %))) (map :filename)) rows)
-        collapsed (or collapsed #{})]
+        filenames (into [] (comp (filter #(= :file (:row %))) (map :filename)) rows)]
     [:div {:class ["diff-tab" (when (= engine :difft) "diff-tab--difft")]}
      (diff-method-bar dispatch! room-id diff-buffer engine
                       {:filenames filenames
@@ -2986,12 +3020,13 @@
      (if ansi?
        (into [:pre {:class ["diff-difft"]}] (difft-spans (:text diff-buffer)))
        (let [range (diff/selection-range sel)
-             pill  (when (and range (not (:web/diff-intent state)))
+             pill  (when (and range (not (diff-state/intent state)))
                      (diff-sel-pill dispatch! state room-id
                                     (some #(when (= (second range) (:sel-idx %)) (:filename %)) rows)))]
          (diff-rows-view dispatch! rows range pill
-                         {:state state :collapsed collapsed :expanded (or expanded #{})
+                         {:state state :collapsed collapsed :expanded (diff-state/expanded state)
                           :md-code (or md-code #{})
+                          :scroll-key (diff-state/view-key state)
                           :after-line (diff-inline-cards dispatch! state room-id rows range)})))]))
 
 (defn- viewable-file? [path]
@@ -3230,7 +3265,6 @@
    its buffers on the pending room."
   [dispatch! room-id active-buffer buffers sub-agents people-of]
   (let [switch! (fn [buffer-id]
-                  (dispatch! {:type :diff/clear-selection})
                   (dispatch! (if room-id
                                {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}
                                {:type :pending/buffer-switch :buffer-id buffer-id})))
@@ -5669,7 +5703,7 @@
         (diff-rows-view dispatch!
                         (diff-rows-for-text text)
                         nil nil {:state    state
-                                 :expanded (or (:web/diff-expanded state) #{})
+                                 :expanded (diff-state/expanded state)
                                  :md-code  (or (:web/md-diff-code state) #{})}))]]))
 
 (defn- palette-chat-item
@@ -6057,7 +6091,6 @@
                          (assoc b :session-id sid :session-name (name-of sid)))
                        (sort-by #(get-in access [(:session-id %) (:id %)] 0) >))
         switch!   (fn [id]
-                    (dispatch! {:type :diff/clear-selection})
                     (dispatch! {:type :ui/buffer-switch :room-id room-id :buffer-id id}))
         all-open  (->> (vals (get-in state [:lobby :buffers]))
                        (mapcat identity)

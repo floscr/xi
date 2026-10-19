@@ -171,8 +171,12 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   (`diff-rows-for-text`, WeakMaps), so re-renders reuse the identical hiccup and
   Replicant skips it; line highlighting is cached per line object, not in
   `hl-cache`; and with the `:expanded` opt only `diff-row-budget` rows render
-  up front, the rest behind a per-file "Show more" (`:diff/show-all`,
-  `:web/diff-expanded`).
+  up front, the rest behind a per-file "Show more" (`:diff/show-all`, the
+  view's `:expanded`). Its UI state — selection, open composer and draft,
+  folded and expanded files — is one slot per `[room-id buffer-id]` view
+  (`xi.web.diff-state`, `:web/diff-views`), threads carry their `:view`, and
+  `:scroll-key` remembers each view's scroll position, so every diff buffer
+  is as you left it after switching away.
 - **Rendered Markdown diffs**: a `.md` diff (tool result / ask preview via
   `tool-diff-view`, diff buffer and Git status via `diff-rows-view`'s
   `:md-code` opt) renders through `xi.markdown.diff`: per hunk, the old side

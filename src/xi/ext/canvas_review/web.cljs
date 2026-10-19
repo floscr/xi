@@ -14,6 +14,7 @@
    it."
   (:require [clojure.string :as str]
             [xi.buffers :as buffers]
+            [xi.web.diff-state :as diff-state]
             [ui.button :as button]
             [ui.icon :as icon]
             [ui.toolbar :as toolbar]
@@ -41,7 +42,7 @@
       {:effects [[:app/dispatch {:type :web/command :room-id rid :name "canvas-review"}]]}
 
       :else
-      {:state   (dissoc st :web/diff-sel)
+      {:state   (update-in st [:web/diff-views [rid buffers/canvas]] dissoc :sel)
        :effects (cond-> []
                   (nil? (get-in st [:rooms rid :ui :buffers buffers/canvas]))
                   (conj [:app/dispatch {:type :ui/buffer-set :room-id rid
@@ -73,7 +74,8 @@
     (when idx {:state (assoc-in st [:web/cr :cursor] idx)})))
 
 ;; ── Line selection → ask / collect (mirrors the diff view, shares its code) ──
-;; Line clicks reuse the base :diff/select-line handler + :web/diff-sel, so the
+;; Line clicks reuse the base :diff/select-line handler + selection
+;; (xi.web.diff-state, the canvas buffer's slot), so the
 ;; selectable diff rows are literally the same component as the diff buffer.
 ;; From a selection you can send one question straight to the agent, or stash it
 ;; in a review "cart" ([:web/cr :items]) and send the whole batch at once.
@@ -81,7 +83,7 @@
 (defn- cr-selection
   "The current selection's snippet + file + range, pulled from the canvas diff."
   [st]
-  (let [range (diff/selection-range (:web/diff-sel st))
+  (let [range (diff/selection-range (diff-state/sel st))
         text  (:diff (cr-state st))]
     (when (and range text)
       (let [rows (diff/diff-rows (diff/parse-diff-text text))
@@ -93,7 +95,7 @@
         {:range range :file file :snippet (diff/selected-snippet rows range)}))))
 
 (defn- cr-clear-sel [st _]
-  {:state (-> st (dissoc :web/diff-sel) (update :web/cr dissoc :composing?))})
+  {:state (-> st (diff-state/dissoc-view :sel) (update :web/cr dissoc :composing?))})
 
 (defn- cr-compose-toggle
   "Toggle the selection popover between its pill and the comment-compose panel."
@@ -127,7 +129,7 @@
   "Send the current selection (+ optional comment) to the agent right away."
   [st {:keys [text]}]
   (when-let [{:keys [range] :as sel} (cr-selection st)]
-    {:state   (-> st (mark-reviewed range) (dissoc :web/diff-sel)
+    {:state   (-> st (mark-reviewed range) (diff-state/dissoc-view :sel)
                   (update :web/cr dissoc :composing?))
      :effects (send-fx st (one-prompt sel (some-> text str/trim)))}))
 
@@ -140,7 +142,7 @@
                            {:file file :range range :snippet snippet
                             :comment (some-> text str/trim not-empty)})
                 (mark-reviewed range)
-                (dissoc :web/diff-sel)
+                (diff-state/dissoc-view :sel)
                 (update :web/cr dissoc :composing?))}))
 
 (defn- cr-remove-item [st {:keys [idx]}]
@@ -712,7 +714,7 @@
         plan     (:plan cr)
         cursor   (get-in state [:web/cr :cursor])
         cur-node (:node (get plan (max 0 (min (dec (count plan)) (or cursor 0)))))
-        range    (diff/selection-range (:web/diff-sel state))
+        range    (diff/selection-range (diff-state/sel state))
         items    (get-in state [:web/cr :items])
         reviewed (get-in state [:web/cr :reviewed])
         comments (comments-index items)
@@ -755,7 +757,7 @@
    Replicant then skips the subtree and its on-update hook (reflow + edges)."
   [state dispatch! room _id _buffer]
   (let [inputs [dispatch! (get-in room [:ext :canvas-review])
-                (:web/cr state) (:web/diff-sel state)]
+                (:web/cr state) (diff-state/sel state)]
         [prev hiccup] @view-memo]
     (if (and hiccup (= prev inputs))
       hiccup

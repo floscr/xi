@@ -18,6 +18,7 @@
             [xi.core.state :as state]
             [xi.dialog :as dlg]
             [xi.diff :as diff]
+            [xi.web.diff-state :as diff-state]
             [xi.ext.core :as ext]
             [xi.ext.subagent.handlers :as sa]
             [xi.config :as config]
@@ -508,44 +509,45 @@
   "Tap a diff line. First tap selects a single line; a second tap extends the
    range from the anchor; tapping again (range active) restarts at one line.
    Closes the selection's inline composer, back to the floating action pill,
-   so selecting never shifts the diff."
+   so selecting never shifts the diff; its draft stays for the next one."
   [st {:keys [idx]}]
-  (let [{:keys [anchor head] :as sel} (:web/diff-sel st)
-        st (dissoc st :web/diff-intent)]
-    {:state (cond
-              (nil? sel)        (assoc st :web/diff-sel {:anchor idx :head idx})
-              (= anchor head)   (assoc-in st [:web/diff-sel :head] idx)
-              :else             (assoc st :web/diff-sel {:anchor idx :head idx}))}))
+  (let [{:keys [anchor head] :as sel} (diff-state/sel st)
+        st (diff-state/dissoc-view st :intent)]
+    {:state (diff-state/assoc-view st :sel (if (and sel (= anchor head))
+                                              {:anchor anchor :head idx}
+                                              {:anchor idx :head idx}))}))
 
 (defn- diff-clear-selection [st _]
-  {:state (dissoc st :web/diff-sel :web/diff-intent)})
+  {:state (diff-state/clear-selection st)})
+
+(defn- toggle [s x]
+  (if (contains? s x) (disj s x) (conj s x)))
 
 (defn- diff-toggle-file
   [st {:keys [filename]}]
-  {:state (update st :web/diff-collapsed
-                  (fn [s] (let [s (or s #{})]
-                            (if (contains? s filename)
-                              (disj s filename)
-                              (conj s filename)))))})
+  {:state (diff-state/assoc-view st :collapsed (toggle (diff-state/collapsed st) filename))})
 
 (defn- diff-show-all
   [st {:keys [filename]}]
-  {:state (update st :web/diff-expanded (fnil conj #{}) filename)})
+  {:state (diff-state/assoc-view st :expanded (conj (diff-state/expanded st) filename))})
 
 (defn- diff-toggle-all
   [st {:keys [filenames]}]
-  {:state (update st :web/diff-collapsed
-                  (fn [s]
-                    (let [s (or s #{})]
-                      (if (every? s filenames)
-                        (apply disj s filenames)
-                        (into s filenames)))))})
+  (let [s (diff-state/collapsed st)]
+    {:state (diff-state/assoc-view st :collapsed (if (every? s filenames)
+                                                    (apply disj s filenames)
+                                                    (into s filenames)))}))
 
 (defn- diff-intent
   "Open the selection's inline composer (or switch it) to what its text does:
    :ask, :explain or :modify. Unset, the selection shows the floating pill."
   [st {:keys [intent]}]
-  {:state (assoc st :web/diff-intent intent)})
+  {:state (diff-state/assoc-view st :intent intent)})
+
+(defn- diff-draft
+  "The composer's text as typed, so it survives a switch to another buffer."
+  [st {:keys [text]}]
+  {:state (diff-state/assoc-view st :draft text)})
 
 (defn- md-diff-toggle
   "Flip a markdown diff between its rendered and code view. `key` is a tool
@@ -577,7 +579,7 @@
 
 (defn- active-diff-rows
   "The active diff buffer's rows as the viewer shows them (its layout), so
-   :web/diff-sel indices pick the same lines."
+   the view's selection indices pick the same lines."
   [st room-id]
   (let [active (get-in st [:rooms room-id :ui :active-buffer])]
     (some-> (get-in st [:rooms room-id :ui :buffers active])
@@ -619,20 +621,21 @@
    of later selections, until closed. Only Explain goes without `text`."
   [st {:keys [room-id text]} kind]
   (let [text     (or (some-> text str/trim) "")
-        range    (diff/selection-range (:web/diff-sel st))
+        range    (diff/selection-range (diff-state/sel st))
         rows     (when range (active-diff-rows st room-id))
         last-row (some #(when (= (second range) (:sel-idx %)) %) rows)]
     (when (and last-row (or (seq text) (= :explain kind)))
       (let [sub-id (thread-sub-id kind)
             ask    {:id      sub-id
                     :room-id room-id
+                    :view    (diff-state/view-key st)
                     :kind    kind
                     :anchor  (diff/line-key last-row)
                     :snippet (diff/selected-snippet rows range)
                     :turns   []}
             shown  (if (seq text) text "Explain these lines")]
         {:state   (-> st
-                      (dissoc :web/diff-sel :web/diff-intent)
+                      (diff-state/clear-selection)
                       (update :web/diff-asks (fnil conj [])
                               (update ask :turns conj {:question shown :sub-id sub-id})))
          :effects [(ask-turn-effect st ask text sub-id)]}))))
@@ -654,18 +657,23 @@
     (when-let [ask (and (seq question) (find-ask st ask-id))]
       (let [sub-id (thread-sub-id (:kind ask))]
         {:state   (update-ask st ask-id #(-> %
-                                             (dissoc :collapsed?)
+                                             (dissoc :collapsed? :draft)
                                              (update :turns conj {:question question
                                                                   :sub-id sub-id})))
          :effects [(ask-turn-effect st ask question sub-id)]}))))
+
+(defn- diff-ask-draft
+  "A thread's reply as typed, kept with the thread like the composer's draft."
+  [st {:keys [ask-id text]}]
+  {:state (update-ask st ask-id #(assoc % :draft text))})
 
 (defn- diff-ask-collapse-toggle [st {:keys [ask-id]}]
   {:state (update-ask st ask-id #(update % :collapsed? not))})
 
 (defn- diff-compose-submit
-  "The selection composer's send: a thread of the :web/diff-intent kind."
+  "The selection composer's send: a thread of the kind its switch is on."
   [st ev]
-  (diff-thread-start st ev (:web/diff-intent st :ask)))
+  (diff-thread-start st ev (or (diff-state/intent st) :ask)))
 
 (defn- diff-ask-close
   "Drop a question thread: abort its running sub-agents, dismiss the rest."
@@ -693,7 +701,7 @@
   [st {:keys [layout]}]
   {:state   (-> st
                 (assoc :web/diff-layout layout)
-                (dissoc :web/diff-sel :web/diff-intent))
+                (diff-state/clear-all-selections))
    :effects [(user-state/set-effect :diff-layout layout)]})
 
 
@@ -1400,10 +1408,12 @@
           :diff/show-all         diff-show-all
           :diff/toggle-all       diff-toggle-all
           :diff/intent           diff-intent
+          :diff/draft            diff-draft
           :diff/compose-submit   diff-compose-submit
           :diff/ask-submit       diff-ask-submit
           :diff/ask-close        diff-ask-close
           :diff/ask-follow-up    diff-ask-follow-up
+          :diff/ask-draft        diff-ask-draft
           :diff/ask-collapse-toggle diff-ask-collapse-toggle
           :diff/explain          diff-explain
           :diff/modify-submit    diff-modify-submit
@@ -3082,7 +3092,6 @@
                             :run (fn [st dispatch! _]
                                    (let [room-id (when-not (new-chat-view? st)
                                                    (:id (state/active-room st)))]
-                                     (dispatch! {:type :diff/clear-selection})
                                      (dispatch! (if room-id
                                                   {:type :ui/buffer-switch :room-id room-id :buffer-id :chat}
                                                   {:type :pending/buffer-switch :buffer-id :chat}))))})
@@ -3096,7 +3105,7 @@
   ;; The diff selection pill's actions (xi.web.views/diff-sel-pill): only
   ;; while lines are selected and its composer is closed, else the key falls
   ;; through (Enter / m / e stay free otherwise).
-  (let [pill? (fn [st] (and (:web/diff-sel st) (not (:web/diff-intent st))))]
+  (let [pill? (fn [st] (and (diff-state/sel st) (not (diff-state/intent st))))]
     (keymap/register-action! {:id :diff/ask-selection :when pill?
                               :event {:type :diff/intent :intent :ask}})
     (keymap/register-action! {:id :diff/modify-selection :when pill?
