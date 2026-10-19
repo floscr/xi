@@ -440,53 +440,158 @@ body {
 /* Above the floating sidebar drawer and the popup menus (999/1000). */
 .appearance-overlay { z-index: 1100; }
 
-.appearance-dialog h3 {
-  font-size: var(--font-md);
-  font-weight: 600;
-}
-
-/* A fixed height, so switching panes or folding a section doesn't resize it */
+/* A fixed height, so switching panes or folding a section doesn't resize it.
+   No panel padding: the rail runs edge to edge; the pane pads itself.
+   Surfaces: --appearance-rail-bg / --appearance-pane-bg (set per mode next
+   to --chat-bg) — a rail a shade darker than the pane in both modes, the
+   pane white in light mode. */
 .appearance-dialog {
   max-width: 46rem;
   height: min(85vh, 46rem);
+  padding: 0;
+  gap: 0;
+  background: var(--appearance-pane-bg);
 }
 
-/* side menu | pane; the menu turns into top tabs when narrow */
+/* rail | pane; the rail turns into a top strip when narrow */
 .appearance-layout {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 9rem minmax(0, 1fr);
-  gap: var(--size-5);
+  grid-template-columns: 11rem minmax(0, 1fr);
 }
 
-.appearance-nav { align-self: start; }
-
-/* a pane's sub-menu entry (Chat › Tool blocks): no icon, its label under
-   the parent's label; one more tab when narrow */
-.appearance-nav .appearance-nav-sub { font-size: var(--font-sm); }
-@media (min-width: 641px) {
-  .appearance-nav .appearance-nav-sub { padding-left: var(--size-8); }
+/* The rail: a shade darker than the panel, the menu under a small title. */
+.appearance-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: var(--size-4) 0 var(--size-3);
+  background: var(--appearance-rail-bg);
+  border-right: var(--border-0);
 }
 
-/* the menu's stock active/hover background is the panel's own */
-.appearance-nav .sidebar-menu-item-active,
-.appearance-nav .sidebar-menu-item:hover {
-  background: var(--bg-2);
+.appearance-rail-title {
+  margin: 0 var(--size-4) var(--size-2);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-2);
+}
+
+.appearance-nav { gap: 0; }
+
+/* Flat items, no background: the active one is marked by a short accent
+   line on the left and its count tinted. */
+/* The focus ring is drawn inside the item: the rail's items run to the
+   panel's clipped edge. */
+.appearance-nav .sidebar-menu-item {
+  position: relative;
+  padding: var(--size-2) var(--size-4);
+  border-radius: 0;
+  background: transparent;
+  outline-offset: -2px;
+}
+
+.appearance-nav .sidebar-menu-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: var(--size-2);
+  bottom: var(--size-2);
+  width: 2px;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.appearance-nav .sidebar-menu-item:hover { color: var(--fg-0); }
+.appearance-nav .sidebar-menu-item-active::before { background: var(--accent); }
+
+.appearance-nav .sidebar-menu-item-active .sidebar-menu-item-badge {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+/* a pane's sub-menu entry (Chat › Tool blocks): its label under the parent's */
+.appearance-nav .appearance-nav-sub { padding-left: var(--size-6); }
+
+/* The pane: its drill-down bar, the body, an open theme draft's footer. */
+.appearance-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.appearance-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: var(--size-12);
+  padding: 0 var(--size-2);
+  border-bottom: var(--border-0);
+}
+
+.appearance-bar-side {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  min-width: 0;
+}
+
+.appearance-bar-side--end { justify-content: flex-end; }
+
+.appearance-bar-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.appearance-bar .appearance-bar-back {
+  padding-left: var(--size-1);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.appearance-body {
+  flex: 1;
+  min-height: 0;
+  padding: var(--size-4) var(--size-5) var(--size-5);
+}
+
+.appearance-draft-footer {
+  padding: var(--size-3) var(--size-5);
+  border-top: var(--border-0);
 }
 
 @media (max-width: 640px) {
   .appearance-layout {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
-    gap: var(--size-3);
   }
+  .appearance-rail {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--size-2);
+    padding: var(--size-1) var(--size-2);
+    border-right: 0;
+    border-bottom: var(--border-0);
+  }
+  .appearance-rail-title { display: none; }
   .appearance-nav { flex-direction: row; }
-  .appearance-nav > li { flex: 1; }
-  .appearance-nav .sidebar-menu-item { justify-content: center; }
+  .appearance-nav .sidebar-menu-item { padding: var(--size-2) var(--size-3); }
+  .appearance-nav .sidebar-menu-item::before {
+    top: auto;
+    bottom: 0;
+    left: var(--size-3);
+    right: var(--size-3);
+    width: auto;
+    height: 2px;
+  }
+  .appearance-nav .appearance-nav-sub { padding-left: var(--size-3); }
+  .appearance-body { padding: var(--size-3) var(--size-4) var(--size-4); }
 }
-
-.appearance-body { min-height: 0; }
 
 .appearance-pane {
   display: flex;
@@ -555,53 +660,74 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono);
   font-size: var(--font-sm);
   color: var(--fg-2);
 }
 
+/* Groups of rows: a label over a card of hairline-separated rows, each a
+   switch. The list scrolls as one (the pane body already scrolls, so the
+   list just flows). */
 .appearance-tool-list {
-  max-height: 22rem;
-  overflow-y: auto;
-  border: var(--border-0);
-  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
 }
 
 .appearance-tool-section {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: var(--size-1) var(--size-3);
-  background: var(--bg-1);
-  border-bottom: var(--border-0);
+  padding: var(--size-3) var(--size-1) var(--size-1);
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   color: var(--fg-2);
 }
+
+.appearance-tool-section:first-child { padding-top: 0; }
 
 .appearance-tool-item {
   display: flex;
   align-items: center;
   gap: var(--size-2);
   width: 100%;
-  padding: var(--size-2) var(--size-3);
+  min-height: var(--size-10);
+  padding: var(--size-1) var(--size-3);
   border: 0;
-  border-bottom: var(--border-0);
-  background: none;
-  color: var(--fg-1);
+  border-top: var(--border-subtle);
+  background: var(--bg-0);
+  color: var(--fg-0);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.appearance-tool-item:last-child { border-bottom: 0; }
-.appearance-tool-item:hover { background: var(--bg-1); }
-.appearance-tool-check {
-  display: inline-flex;
+/* the card's corners: the first and last row after a section label */
+.appearance-tool-section + .appearance-tool-item {
+  border-top: 0;
+  border-top-left-radius: var(--radius-md);
+  border-top-right-radius: var(--radius-md);
+}
+
+.appearance-tool-item:last-child,
+.appearance-tool-item:has(+ .appearance-tool-section) {
+  border-bottom-left-radius: var(--radius-md);
+  border-bottom-right-radius: var(--radius-md);
+}
+
+/* the command palette's selected row */
+.appearance-tool-item:hover { background: var(--bg-2); }
+
+.appearance-tool-item .appearance-tool-switch {
   margin-left: auto;
-  color: var(--accent);
+  width: 1.875rem;
+  height: 1.125rem;
+}
+
+.appearance-tool-item .appearance-tool-switch .switch-thumb {
+  width: calc(1.125rem - 4px);
+  height: calc(1.125rem - 4px);
+}
+
+.appearance-tool-item .switch-track--checked .switch-thumb {
+  transform: translateX(calc(1.875rem - 1.125rem));
 }
 
 .appearance-tool-name {
@@ -632,6 +758,11 @@ body {
   margin-left: var(--size-1);
   color: var(--fg-2);
   font-variant-numeric: tabular-nums;
+}
+
+.chip-active .appearance-tool-filter-count {
+  color: inherit;
+  opacity: 0.7;
 }
 
 .appearance-tool-empty {
@@ -3646,6 +3777,8 @@ code a:hover,
   --sidebar-bg: var(--theme-sidebar-light, #f6f6f9);
   --sidebar-card-bg: var(--theme-bg-light, #fff);
   --chat-bg: var(--theme-bg-light, #fff);
+  --appearance-rail-bg: var(--bg-1);
+  --appearance-pane-bg: var(--chat-bg);
   --bg-0: var(--theme-bg-0-light, var(--gray-50));
   --bg-1: var(--theme-bg-1-light, var(--gray-100));
   --bg-2: var(--theme-bg-2-light, var(--gray-200));
@@ -3667,6 +3800,8 @@ code a:hover,
   --sidebar-bg: var(--theme-sidebar-dark, var(--bg-0));
   --sidebar-card-bg: var(--bg-1);
   --chat-bg: var(--theme-bg-dark, var(--bg-0));
+  --appearance-rail-bg: var(--bg-0);
+  --appearance-pane-bg: var(--bg-1);
   --bg-0: var(--theme-bg-0-dark, var(--gray-950));
   --bg-1: var(--theme-bg-1-dark, var(--gray-900));
   --bg-2: var(--theme-bg-2-dark, var(--gray-800));
@@ -3689,6 +3824,8 @@ code a:hover,
     --sidebar-bg: var(--theme-sidebar-dark, var(--bg-0));
     --sidebar-card-bg: var(--bg-1);
     --chat-bg: var(--theme-bg-dark, var(--bg-0));
+    --appearance-rail-bg: var(--bg-0);
+    --appearance-pane-bg: var(--bg-1);
     --bg-0: var(--theme-bg-0-dark, var(--gray-950));
     --bg-1: var(--theme-bg-1-dark, var(--gray-900));
     --bg-2: var(--theme-bg-2-dark, var(--gray-800));

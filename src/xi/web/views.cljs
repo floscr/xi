@@ -6750,7 +6750,7 @@
      [:div {:class ["appearance-row-text"]}
       [:div {:class ["appearance-row-label"]} (tool-exceptions-title app)]
       [:div {:class ["form-hint"]}
-       (str "Checked tools start " (if open? "collapsed" "open")
+       (str "Switched-on tools start " (if open? "collapsed" "open")
             "; the others follow “Tool blocks: " (if open? "Open" "Collapsed") "”.")]]
      (form/form-input
       {:value (or query "")
@@ -6780,7 +6780,8 @@
                    [:button {:type "button"
                              :class ["appearance-tool-item"]
                              :replicant/key id
-                             :aria-pressed (str on?)
+                             :role "switch"
+                             :aria-checked (str on?)
                              :title key
                              :on {:click (fn [_]
                                            (dispatch! {:type :appearance/set
@@ -6788,8 +6789,11 @@
                                                        :value (appearance/toggle-tool listed key)}))}}
                     [:span {:class ["appearance-tool-name"]} label]
                     [:span {:class ["appearance-tool-hint"]} hint]
-                    [:span {:class ["appearance-tool-check"]}
-                     (when on? (icon/icon {:icon-name :check :size :sm}))]])))
+                    ;; the switch's track only (ui.switch wraps a label +
+                    ;; input, which can't nest in the row's button)
+                    [:span {:class (cond-> ["switch-track" "appearance-tool-switch"]
+                                     on? (conj "switch-track--checked"))}
+                     [:span {:class ["switch-thumb"]}]]])))
               sections)
              [[:div {:class ["appearance-tool-empty"] :replicant/key "empty"}
                (cond
@@ -7153,51 +7157,61 @@
       (appearance-choice dispatch! :tool-args (:tool-args app)
                          [[:summary "Summary"] [:all "All"]]))]))
 
-(defn- appearance-footer
-  "An open theme draft's Delete / Cancel / Save; otherwise the Chat pane's
-   Reset and Done."
-  [state dispatch! tab]
-  (let [themes (:web/themes state)
-        draft  (:web/theme-draft state)]
-    (if draft
-      (dialog/dialog-footer {}
-        (when-let [original (:original draft)]
-          (button/button {:variant :ghost :size :sm
-                          :on-click (fn [_] (dispatch! {:type :themes/delete :name original}))}
-            "Delete"))
-        [:span {:class ["flex-1"]}]
+(defn- theme-draft-footer
+  "An open theme draft's Delete / Cancel / Save under the Theme pane."
+  [state dispatch!]
+  (when-let [draft (:web/theme-draft state)]
+    (dialog/dialog-footer {:class "appearance-draft-footer"}
+      (when-let [original (:original draft)]
         (button/button {:variant :ghost :size :sm
-                        :on-click (fn [_] (dispatch! {:type :themes/draft-cancel}))}
-          "Cancel")
-        (button/button {:variant :primary :size :sm
-                        :disabled (not (ctheme/draft-savable? themes draft))
-                        :on-click (fn [_] (dispatch! {:type :themes/save}))}
-          "Save theme"))
-      (dialog/dialog-footer {}
-        (when (#{:chat :chat-tools} tab)
-          (button/button
-           {:variant :ghost :size :sm
-            :disabled (not (appearance/overridden? (:web/appearance state)))
-            :on-click (fn [_] (dispatch! {:type :appearance/reset}))}
-           "Reset to defaults"))
-        [:span {:class ["flex-1"]}]
-        (button/button
-         {:variant :primary :size :sm
-          :on-click (fn [_] (dispatch! {:type :appearance/done}))}
-         "Done")))))
+                        :on-click (fn [_] (dispatch! {:type :themes/delete :name original}))}
+          "Delete"))
+      [:span {:class ["flex-1"]}]
+      (button/button {:variant :ghost :size :sm
+                      :on-click (fn [_] (dispatch! {:type :themes/draft-cancel}))}
+        "Cancel")
+      (button/button {:variant :primary :size :sm
+                      :disabled (not (ctheme/draft-savable? (:web/themes state) draft))
+                      :on-click (fn [_] (dispatch! {:type :themes/save}))}
+        "Save theme"))))
 
 (def ^:private appearance-tabs
-  "[id icon label parent]: a tab with a parent is its sub-menu entry."
-  [[:theme :layers "Theme"]
-   [:chat :list "Chat"]
-   [:chat-tools nil "Tool blocks" :chat]])
+  "[id label parent]: a tab with a parent is its sub-menu entry, and its
+   bar drills back to the parent."
+  [[:theme "Theme"]
+   [:chat "Chat"]
+   [:chat-tools "Tool blocks" :chat]])
+
+(defn- appearance-tab-label [id]
+  (some (fn [[tab label]] (when (= tab id) label)) appearance-tabs))
+
+(defn- appearance-bar
+  "The pane's drill-down bar: a back link to the parent pane on a sub-pane,
+   the pane's name and Close."
+  [dispatch! tab close!]
+  (let [parent (some (fn [[id _ parent]] (when (= id tab) parent)) appearance-tabs)]
+    [:header {:class ["appearance-bar"]}
+     [:span {:class ["appearance-bar-side"]}
+      (when parent
+        (button/button
+         {:variant :ghost :size :sm
+          :class "appearance-bar-back"
+          :icon-left :chevron-left
+          :on-click (fn [_] (dispatch! {:type :appearance/tab :tab parent}))}
+         (appearance-tab-label parent)))]
+     [:span {:class ["appearance-bar-title"]} (appearance-tab-label tab)]
+     [:span {:class ["appearance-bar-side" "appearance-bar-side--end"]}
+      [:button {:class ["icon-btn" "icon-btn--sm"]
+                :title "Close"
+                :on {:click (fn [_] (close!))}}
+       (icon/icon {:icon-name :x :size :md})]]]))
 
 (defn- appearance-dialog
-  "The Appearance settings dialog: a side menu (top tabs when narrow) over
-   the Theme pane (mode, color themes and their editor) and the Chat pane
-   (this browser's overrides, :web/appearance, xi.web.appearance, over
-   xi.config/appearance; Reset drops them) with its Tool blocks sub-pane.
-   :web/appearance-tab is the pane."
+  "The Appearance settings dialog: a dark rail (the menu; a top strip when
+   narrow) beside the pane under its drill-down bar (appearance-bar). Panes:
+   Theme (mode, color themes and their editor) and Chat (this browser's
+   overrides, :web/appearance, xi.web.appearance, over xi.config/appearance)
+   with its Tool blocks sub-pane. :web/appearance-tab is the pane."
   [state dispatch!]
   (when (:web/appearance-open? state)
     (let [tab    (or (:web/appearance-tab state) :theme)
@@ -7207,31 +7221,28 @@
         :class "appearance-overlay"
         :attrs {:replicant/key "appearance-dialog"}}
        (dialog/dialog-panel {:class "appearance-dialog"}
-         (dialog/dialog-header {}
-           [:h3 "Appearance"]
-           [:button {:class ["icon-btn" "icon-btn--sm"]
-                     :title "Close"
-                     :on {:click (fn [_] (close!))}}
-            (icon/icon {:icon-name :x :size :md})])
          [:div {:class ["appearance-layout"]}
-          (apply sidebar/sidebar-menu {:class "appearance-nav"}
-                 (for [[id icon-name label parent] appearance-tabs
-                       :let [n (when (= :chat-tools id)
-                                 (count (:tool-blocks-except (appearance/effective-in state))))]]
-                   (sidebar/sidebar-menu-item
-                    {:active (= tab id)
-                     :icon-name icon-name
-                     :badge (when (and n (pos? n)) n)
-                     :class (when parent "appearance-nav-sub")
-                     :attrs {:replicant/key id}
-                     :on-click (fn [_] (dispatch! {:type :appearance/tab :tab id}))}
-                    label)))
-          (dialog/dialog-body {:class "appearance-body"}
-            (case tab
-              :chat       (appearance-chat-pane state dispatch!)
-              :chat-tools (appearance-tools-pane state dispatch!)
-              (appearance-theme-pane state dispatch!)))]
-         (appearance-footer state dispatch! tab))))))
+          [:aside {:class ["appearance-rail"]}
+           [:h3 {:class ["appearance-rail-title"]} "Appearance"]
+           (apply sidebar/sidebar-menu {:class "appearance-nav"}
+                  (for [[id label parent] appearance-tabs
+                        :let [n (when (= :chat-tools id)
+                                  (count (:tool-blocks-except (appearance/effective-in state))))]]
+                    (sidebar/sidebar-menu-item
+                     {:active (= tab id)
+                      :badge (when (and n (pos? n)) n)
+                      :class (when parent "appearance-nav-sub")
+                      :attrs {:replicant/key id}
+                      :on-click (fn [_] (dispatch! {:type :appearance/tab :tab id}))}
+                     label)))]
+          [:div {:class ["appearance-main"]}
+           (appearance-bar dispatch! tab close!)
+           (dialog/dialog-body {:class "appearance-body"}
+             (case tab
+               :chat       (appearance-chat-pane state dispatch!)
+               :chat-tools (appearance-tools-pane state dispatch!)
+               (appearance-theme-pane state dispatch!)))
+           (theme-draft-footer state dispatch!)]])))))
 
 (def ^:private suggestion-style-label
   {:short "short" :descriptive "descriptive" :topic "topic"})

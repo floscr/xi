@@ -1409,13 +1409,6 @@
                                        (update :state dissoc :web/appearance-open?
                                                :web/appearance-tool-query
                                                :web/appearance-tool-filter)))
-          ;; Done saves it; a draft Save refuses (name taken or invalid) keeps
-          ;; the dialog open on the editor instead of losing the edits
-          :appearance/done       (fn [st ev]
-                                   (if (:web/theme-draft st)
-                                     (some-> (themes-save st ev)
-                                             (update :state dissoc :web/appearance-open?))
-                                     {:state (dissoc st :web/appearance-open?)}))
           :keys/show             (fn [st _] {:state (assoc st :web/keys-open? true)})
           :keys/close            (fn [st _] {:state (dissoc st :web/keys-open?)})
           :appearance/set        (fn [st {:keys [key value]}]

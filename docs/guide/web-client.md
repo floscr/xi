@@ -344,20 +344,21 @@ These keys belong to a control and are not in the keymap:
 ## Appearance
 
 The gear in the sidebar footer (or "Appearance" in the chat menu and the
-command palette) opens the appearance dialog. Its side menu (tabs at the
-top on a narrow screen) has three panes. **Theme** holds light, dark or
+command palette) opens the appearance dialog. Its side menu (a strip at
+the top on a narrow screen) has three panes; a sub-pane's top bar drills
+back to its parent. **Theme** holds light, dark or
 system mode and the [color themes](#color-themes). **Chat** holds whether
 tool and thinking blocks start open or collapsed, its **Tool blocks**
 sub-pane the tools that start the other way (a searchable list of every
-tool, the checked ones first, then built-in tools, Xi's extensions, each of
-your [extensions](extensions.md) and each MCP server; chips above it show
-only the checked tools or one of those sources),
+tool with a switch each, the switched-on ones first, then built-in tools,
+Xi's extensions, each of your [extensions](extensions.md) and each MCP
+server; chips above it show only the switched-on tools or one of those
+sources),
 **tool arguments** (what
 a tool row shows next to the tool name: a per-tool summary such as the
 command, the path or the pattern, or every argument as `key=value`), and
 **super collapsed** (a run of two or more collapsed tool and thinking rows
 shows as one summary line with a step count instead of its header rows).
-"Reset to defaults" there drops the Chat settings.
 
 ### Color themes
 
