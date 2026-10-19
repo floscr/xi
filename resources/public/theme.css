@@ -3067,6 +3067,13 @@ a.btn-link {
      into the visible band above it. Defaults match the old centered look. */
   top: var(--command-top, 12vh);
   max-height: var(--command-max-h, 60vh);
+  /* Size by content alone. The UA's modal-dialog `bottom: 0` + `height:
+     fit-content` tie the height to the room between `top` and the viewport
+     bottom; with the iOS keyboard up (or a stale visualViewport.offsetTop after
+     it closes) that room nearly vanishes and Safari collapses the list to its
+     padding, hiding real matches. max-height still bounds it. */
+  bottom: auto;
+  height: auto;
   margin-inline: auto;
   margin-top: 0;
   padding: 0;
