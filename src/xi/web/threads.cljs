@@ -74,8 +74,8 @@
        "pre, code, .md-diff, .post--user, .thread-card, .bubble-menu, .ask-hover"))
 
 (def ^:private long-press-skip
-  "A long-press also asks on a tool or thinking header (summary), but not on
-   a file path in it (its file menu, xi.web.core)."
+  "A long-press also asks on a tool or thinking header (summary), unless the
+   row names a file: its file menu (xi.web.core) offers Ask itself."
   (str "a, input, textarea, select, img, pre, code, .md-diff, .post--user, "
        ".thread-card, .bubble-menu, .file-path"))
 

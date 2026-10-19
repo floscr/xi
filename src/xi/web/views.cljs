@@ -553,16 +553,16 @@
                                       :on-click (select true)}
                                      "Code"))))
 
-(defn- file-path-span
-  "A file path shown in a tool block. `.file-path` + data-file-path: a
-   right-click, or a touch long-press (data-long-press, the ui runtime),
-   opens the file menu (file-path-menu) through the delegated listener in
-   xi.web.core; a tap keeps the block's own action (toggle, Ask)."
-  [path shown & [class]]
-  [:span {:class (cond-> ["file-path"] class (conj class))
-          :data-file-path path
-          :data-long-press "true"}
-   shown])
+(defn- file-row-attrs
+  "Attributes making a tool block's row (its header, a diff bar) the trigger
+   of the file menu for `path`: `.file-path` + data-file-path, opened on
+   right-click or touch long-press (data-long-press, the ui runtime) by the
+   delegated listener in xi.web.core (file-path-menu); a tap keeps the row's
+   own action (toggle)."
+  [attrs path]
+  (-> attrs
+      (update :class conj "file-path")
+      (assoc :data-file-path path :data-long-press "true")))
 
 (defn- tool-diff-view
   "An edit/write tool's diff for `path`: the rendered markdown diff with a
@@ -576,8 +576,8 @@
     (if-not rendered
       (edit-diff-code grammar lines attrs)
       [:div (merge {:class ["md-diff-wrap"]} attrs)
-       [:div {:class ["md-diff-bar"]}
-        (file-path-span path path "md-diff-path")
+       [:div (file-row-attrs {:class ["md-diff-bar"]} path)
+        [:span {:class ["md-diff-path"]} path]
         (md-diff-toggle dispatch! k code?)]
        (if code?
          (edit-diff-code grammar lines nil)
@@ -875,6 +875,7 @@
                     (or diff (get-in permission [:dialog :diff])))
         denied?   (and (some? resolved-permission) (not (:value resolved-permission)))
         has-content? (boolean (or clj-code preview (seq text) ext-view permission imgs))
+        file-path (when (not= :all tool-args) (tool-file-path name arguments))
         label     (if clj?
                     name
                     (str name (when (seq summary)
@@ -888,13 +889,17 @@
                 :open (and has-content? (details-open? open-choice collapsed?))}
       ;; Nothing to expand yet (a running call without output): the header
       ;; stays shut until content arrives.
+      ;; A file tool's whole header row opens the file menu; under the :all
+      ;; appearance the row shows every argument instead.
       [:summary (cond-> {:class (cond-> ["tool-call-toggle"]
                                   bash? (conj "tool-call-toggle--wrap")
                                   (not has-content?) (conj "tool-call-toggle--static"))}
                   (not has-content?)
                   (assoc :on {:click (fn [^js e] (.preventDefault e))})
                   (and has-content? toggle!)
-                  (assoc :on {:click toggle!}))
+                  (assoc :on {:click toggle!})
+                  file-path
+                  (file-row-attrs file-path))
        [:span {:class (cond-> ["tool-call-toggle-icon"]
                         running? (conj "tool-call-toggle-icon--running")
                         (and (not running?) (not has-content?)) (conj "tool-call-toggle-icon--empty"))}
@@ -903,13 +908,7 @@
           (icon/icon {:icon-name :chevron-right :size :sm}))]
        [:span {:class (cond-> ["tool-call-toggle-label"] bash? (conj "tool-call-toggle-label--wrap"))}
         [:span {:class ["tool-call-action"]} name]
-        ;; A file tool's path in the header opens the file menu; under the
-        ;; :all appearance the header shows every argument instead.
-        (let [rest  (subs label (count name))
-              fpath (when (not= :all tool-args) (tool-file-path name arguments))]
-          (if (and fpath (seq (str/trim rest)))
-            (list " " (file-path-span fpath (str/triml rest)))
-            rest))]
+        (subs label (count name))]
        (when clj-preview
          [:span {:class ["clj-head-preview"]} clj-preview])
        ;; No clock while the call waits on its ask; the allow restamps :started-at.
@@ -3480,19 +3479,27 @@
        [:span "Delete"]]]]))
 
 (defn- file-path-menu
-  "Floating menu for a right-clicked / long-pressed file path in a tool block
-   (file-path-span): the file header's entries (file-menu-items) and, on an
-   edit result, View diff (xi.diff/tool-diff->unified, no server round-trip).
-   Opened by the delegated listener in xi.web.core like code-copy-menu."
-  [dispatch! state room-id {:keys [path diff-path diff-text x y]}]
+  "Floating menu for a right-clicked / long-pressed row of a tool block
+   naming a file (file-row-attrs): the file header's entries
+   (file-menu-items), View diff on an edit result (xi.diff/tool-diff->unified,
+   no server round-trip) and Ask about this (the long-press that opens it
+   would otherwise ask, xi.web.threads). Opened by the delegated listener in
+   xi.web.core like code-copy-menu."
+  [dispatch! state room-id {:keys [path diff-path diff-text x y ask-index ask-sub]}]
   (let [close!  (fn [] (dispatch! {:type :code/menu-close}))
         unified (some->> diff-text (diff/tool-diff->unified diff-path))
-        extra   (when unified
-                  [{:label    "View diff"
-                    :icon     :code
-                    :on-click #(dispatch! {:type :ui/diff-open :room-id room-id
-                                           :title (str "Diff: " (last (str/split diff-path #"/")))
-                                           :text unified :engine :git})}])]
+        extra   (cond-> []
+                  unified
+                  (conj {:label    "View diff"
+                         :icon     :code
+                         :on-click #(dispatch! {:type :ui/diff-open :room-id room-id
+                                                :title (str "Diff: " (last (str/split diff-path #"/")))
+                                                :text unified :engine :git})})
+                  (and room-id (or ask-index ask-sub))
+                  (conj {:label    "Ask about this"
+                         :icon     :zap
+                         :on-click #(dispatch! {:type :thread/compose-open :room-id room-id
+                                                :index ask-index :sub-id ask-sub})}))]
     [:div {:class ["bubble-menu-backdrop"]
            :on {:click (fn [_] (close!))}}
      (into [:div {:class ["bubble-menu"]

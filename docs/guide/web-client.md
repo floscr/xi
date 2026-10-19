@@ -103,9 +103,10 @@ projects** in the sidebar opens the project list (`/projects`).
   them open.
 - **Review changes.** An edit shows a diff where it happened. Right-click (or
   long-press) a code block to copy it, open the file, or open the diff as a
-  buffer (below). Right-click (or long-press) the file path in a tool block's
-  header, or above a rendered Markdown diff, to open the file, copy its path,
-  or open the diff. In a diff buffer, right-click a file's header to open that
+  buffer (below). Right-click (or long-press) the header row of a tool block
+  that names a file, or the bar above a rendered Markdown diff, to open the
+  file, copy its path, open the diff, or ask about the block. In a diff
+  buffer, right-click a file's header to open that
   file or copy its path.
 - **Read Markdown changes as Markdown.** A diff of a Markdown file (an edit,
   a permission ask, the diff buffer, Git status) is shown rendered: changed

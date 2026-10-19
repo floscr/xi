@@ -2608,9 +2608,9 @@
   "Delegated document listeners: right-click or tap on a code block, inline
    code, or a rendered markdown diff opens the floating Copy button
    (:web/code-menu). Skipped inside user bubbles and inline editors. A
-   right-click or touch long-press (data-long-press) on a file path of a tool
-   block (views/file-path-span) opens its file menu (views/file-path-menu)
-   instead; a tap keeps the block's own action."
+   right-click or touch long-press (data-long-press) on a row of a tool block
+   naming a file (views/file-row-attrs) opens its file menu
+   (views/file-path-menu) instead; a tap keeps the row's own action."
   []
   (when-not @code-copy-attached?
     (reset! code-copy-attached? true)
@@ -2623,11 +2623,15 @@
           open-file! (fn [^js e ^js node]
                        (when-let [d @dispatch-ref]
                          (let [path (.getAttribute node "data-file-path")
-                               ;; the edit result (around a diff bar's path, under a
-                               ;; header's) carries the raw diff for View diff
+                               attr (fn [a] (some-> node (.closest (str "[" a "]")) (.getAttribute a)))
+                               ;; the edit result (around a diff bar, under the
+                               ;; header) carries the raw diff for View diff
                                holder (or (.closest node "[data-diff-path]")
                                           (some-> (.closest node ".tool-call-block")
-                                                  (.querySelector ":scope > [data-diff-path]")))]
+                                                  (.querySelector ":scope > [data-diff-path]")))
+                               ;; the chat block around it (views/with-ask-ref)
+                               ask-index (some-> (attr "data-ask-index") parse-long)
+                               ask-sub   (attr "data-ask-sub")]
                            (when (seq path)
                              (d (cond-> {:type :code/menu-open
                                          :file? true
@@ -2635,7 +2639,9 @@
                                          :x (.-clientX e)
                                          :y (.-clientY e)}
                                   holder (assoc :diff-path (.getAttribute holder "data-diff-path")
-                                                :diff-text (.getAttribute holder "data-diff-text"))))
+                                                :diff-text (.getAttribute holder "data-diff-text"))
+                                  ask-index (assoc :ask-index ask-index)
+                                  ask-sub   (assoc :ask-sub ask-sub)))
                              true))))
           open!     (fn [^js e ^js node]
                       (when-let [d @dispatch-ref]
