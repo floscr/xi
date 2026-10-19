@@ -10,6 +10,8 @@
    (the interactive viewer); :difft output is ANSI structural text."
   (:require [clojure.string :as str]
             [xi.core.state :as state]
+            [xi.diff :as diff]
+            [xi.diff.difft :as difft-rows]
             [xi.ext.diff.difft :as difft]
             [xi.ext.diff.git :as git]
             [xi.ext.diff.handlers :as handlers]
@@ -22,17 +24,19 @@
    nil → session diff; anything else is passed to git diff directly. A leading
    `difft` token selects difftastic as the renderer (structural side-by-side)
    instead of git's unified diff; the remaining tokens are the source method.
-   An optional `:N` suffix on the token (e.g. `difft:120`) sets difftastic's
-   wrap width — the web client measures it from its viewport so the output
-   fills the browser width."
+   An optional suffix on the token sets difftastic's output: `difft:120` its
+   wrap width (ANSI text), `difft:json` rows for the web viewer
+   (xi.diff.difft)."
   [_st {:keys [room-id args client-id]}]
-  (let [[engine cols method]
-        (if-let [[_ cols rest] (re-matches #"difft(?::(\d+))?(?:\s+(.*))?" (or args ""))]
-          [:difft (some-> cols js/parseInt) (some-> rest str/trim not-empty)]
-          [:git nil args])]
+  (let [[engine opt method]
+        (if-let [[_ opt rest] (re-matches #"difft(?::(\d+|json))?(?:\s+(.*))?" (or args ""))]
+          [:difft opt (some-> rest str/trim not-empty)]
+          [:git nil args])
+        json? (= "json" opt)]
     {:effects [[:diff/load (cond-> {:room-id room-id :args method :engine engine}
-                             client-id (assoc :client-id client-id)
-                             cols      (assoc :cols cols))]]}))
+                             client-id         (assoc :client-id client-id)
+                             json?             (assoc :format :json)
+                             (and opt (not json?)) (assoc :cols (js/parseInt opt)))]]}))
 
 (defn- cmd-commits
   "List this session's commits and let the user pick one to view its diff.
@@ -58,26 +62,42 @@
 
 ;; ── Effect (impure) ───────────────────────────────────────────────────────────
 
+(defn- decode-record [{:keys [old new] :as rec}]
+  (let [utf8 #(.toString (js/Buffer.from % "base64") "utf-8")]
+    (assoc rec :old (utf8 old) :new (utf8 new))))
+
+(defn- difft-json-rows
+  "The json hook's records (xi.ext.diff.difft) → the viewer's rows, so only
+   the shown lines go over the wire, not both sides of every file."
+  [text]
+  (difft-rows/rows (map decode-record (difft-rows/split-records text))))
+
 (defn- diff-load-fx
-  "Resolve a /diff source to diff text and open it. Binds the renderer +
-   width for the whole run so the git helpers route through difftastic when
-   requested."
-  [{:keys [dispatch! state]} {:keys [room-id args engine cols client-id]}]
+  "Resolve a /diff source to diff text and open it. Binds the renderer,
+   format and width for the whole run so the git helpers route through
+   difftastic when requested. difftastic's :json format opens as :rows."
+  [{:keys [dispatch! state]} {:keys [room-id args engine cols client-id format]}]
   (binding [difft/*diff-engine* (or engine :git)
+            difft/*diff-format* (if (= :json format) :json :ansi)
             difft/*diff-width*  (when (= engine :difft) cols)]
     (let [room (state/get-room state room-id)
           cwd (or (:cwd room) (.cwd js/process))
+          json? (and (= :difft engine) (= :json format))
           open! (fn [title text & [extra]]
-                  (if (str/blank? text)
-                    (dispatch! {:type :ui/status :room-id room-id :text "No changes."})
-                    ;; :client-id rides along so only the client that ran
-                    ;; /diff switches to the buffer (every client gets it).
-                    ;; :source keys the buffer (xi.buffers/diff-id); `extra`
-                    ;; carries commit metadata for single-commit diffs.
-                    (dispatch! (merge {:type :ui/diff-open :room-id room-id :client-id client-id
-                                       :source args
-                                       :title title :text text :engine difft/*diff-engine*}
-                                      extra))))
+                  (let [rows (when json? (difft-json-rows text))]
+                    (if (if json? (empty? rows) (str/blank? text))
+                      (dispatch! {:type :ui/status :room-id room-id :text "No changes."})
+                      ;; :client-id rides along so only the client that ran
+                      ;; /diff switches to the buffer (every client gets it).
+                      ;; :source keys the buffer (xi.buffers/diff-id); `extra`
+                      ;; carries commit metadata for single-commit diffs.
+                      (dispatch! (merge {:type :ui/diff-open :room-id room-id :client-id client-id
+                                         :source args
+                                         :title title :engine difft/*diff-engine*}
+                                        (if json?
+                                          {:rows rows :text (diff/rows->text rows)}
+                                          {:text text})
+                                        extra)))))
           run! (fn [title git-args]
                  (let [{:keys [ok err]} (git/git-diff-out cwd git-args)]
                    (if err

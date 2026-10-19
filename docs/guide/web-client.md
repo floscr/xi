@@ -108,6 +108,18 @@ projects** in the sidebar opens the project list (`/projects`).
   file, copy its path, open the diff, or ask about the block. In a diff
   buffer, right-click a file's header to open that
   file or copy its path.
+- **Diff buffer.** The bar above a diff picks its source, its renderer
+  (**git**, or **difftastic** for structural changes: what changed within a
+  line is highlighted, the code's own colors are dimmed) and its layout:
+  **Stacked** (old above new) or **Split** (side by side). The layout is
+  remembered; until you pick one, git diffs open stacked and difftastic ones
+  split. Difftastic needs `difft` on the server's `PATH`.
+- **Work on diff lines.** Tap a line in a diff buffer, then a second one to
+  select the range. **Ask** a question about it, **Explain** it, or
+  **Modify** it (describe the change). Each runs a
+  [sub-agent](builtin-tools.md#sub-agents) whose answer shows under the
+  lines, where you can reply or close it. A Modify edits the files, asking
+  for permission like any sub-agent; reopen the diff to see its change.
 - **Read Markdown changes as Markdown.** A diff of a Markdown file (an edit,
   a permission ask, the diff buffer, Git status) is shown rendered: changed
   paragraphs, list items, and code blocks get a red (removed) or green

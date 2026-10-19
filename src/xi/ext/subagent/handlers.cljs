@@ -196,28 +196,43 @@
        (str/join "\n\n")))
 
 ;; ── Inline sub-agents ─────────────────────────────────────────────────────────
-;; A tool block's Explain (`explain-call`) and the question sub-agents (the
-;; diff viewer's Ask, threads on blocks) are told by their id prefix.
+;; A tool block's Explain (`explain-call`), the question sub-agents (the
+;; diff viewer's Ask and Explain, threads on blocks) and the diff viewer's
+;; Modify are told by their id prefix.
 
 (def ^:private explain-prefix "explain-")
 
 (def ^:private ask-prefix "ask-")
 
+(def ^:private modify-prefix "modify-")
+
 (defn ask-sub-id []
   (gen-id "ask"))
+
+(defn modify-sub-id
+  "Id of a diff Modify sub-agent: inline like an Ask, but it edits files."
+  []
+  (gen-id "modify"))
 
 (defn explain-sub-id
   "Sub-agent id of the explanation for tool call `call-id` — one per call."
   [call-id]
   (str explain-prefix call-id))
 
-(defn inline-sub?
-  "A sub-agent whose answer renders where it was asked (a tool block's
-   Explain, the diff viewer's Ask) instead of in the Sub-agents panel."
+(defn- read-only-sub?
+  "An inline sub-agent told to only read (Explain, Ask)."
   [sub-id]
   (and (string? sub-id)
        (or (str/starts-with? sub-id explain-prefix)
            (str/starts-with? sub-id ask-prefix))))
+
+(defn inline-sub?
+  "A sub-agent whose answer renders where it was asked (a tool block's
+   Explain, the diff viewer's Ask / Modify) instead of in the Sub-agents
+   panel."
+  [sub-id]
+  (or (read-only-sub? sub-id)
+      (and (string? sub-id) (str/starts-with? sub-id modify-prefix))))
 
 ;; ── State handlers (pure) ─────────────────────────────────────────────────────
 
@@ -225,8 +240,8 @@
   "The :subagent/start effect of a turn of `child` in `room`: the provider
    settings come from the room's agent, the system from child-system with
    the child's spawn options (:system, :parent-context?). Its label names
-   its permission asks; inline children (`inline-sub?`, read-only by their
-   prompt) run :unattended?, denying them."
+   its permission asks; read-only inline children (Explain, Ask) run
+   :unattended?, denying them, while a Modify asks like any sub-agent."
   [room child prompt images]
   [:subagent/start
    (cond-> {:room-id    (:id room)
@@ -244,7 +259,7 @@
                                 set
                                 (conj parent-history-tool))}
      (seq images)              (assoc :images images)
-     (inline-sub? (:id child)) (assoc :unattended? true))])
+     (read-only-sub? (:id child)) (assoc :unattended? true))])
 
 (defn spawn
   "Append a sub-agent entry and kick off its turn. The child runs a FRESH
@@ -480,6 +495,17 @@
                                           (inline-sub? (:id a)))))
                                   as)))}))
 
+(defn- earlier-turns
+  "The `earlier` ([{:question :answer}]) turns of a diff thread for its next
+   prompt, so a follow-up reads in context."
+  [earlier]
+  (when (seq earlier)
+    (str "## Earlier in this thread\n"
+         (str/join "\n\n" (map (fn [{q :question a :answer}]
+                                 (str "**Q:** " q "\n\n**A:** " a))
+                               earlier))
+         "\n\n")))
+
 (defn ask-prompt
   "The diff Ask sub-agent's prompt. `earlier` ([{:question :answer}]) is the
    thread so far about the same lines, so a follow-up reads in context."
@@ -487,17 +513,45 @@
   (str "The user is reading the diff of this session's changes and asks about "
        "the selected lines.\n\n"
        "```diff\n" snippet "\n```\n\n"
-       (when (seq earlier)
-         (str "## Earlier in this thread\n"
-              (str/join "\n\n" (map (fn [{q :question a :answer}]
-                                      (str "**Q:** " q "\n\n**A:** " a))
-                                    earlier))
-              "\n\n"))
+       (earlier-turns earlier)
        "## Question\n" question "\n\n"
        "Answer the question directly, in concise markdown. Read files in the "
        "working directory or the parent conversation (`" parent-history-tool
        "`) when the snippet doesn't say enough. Use read-only tools only: "
        "don't edit files or run anything with side effects."))
+
+(defn diff-thread-prompt
+  "The prompt of a turn in a diff viewer thread of `kind` about `snippet`:
+   :ask a question (ask-prompt), :explain the lines (`text` an optional focus;
+   follow-ups are questions), :modify a change to make in the files (`text`
+   the instruction). `earlier` as in ask-prompt."
+  [kind text snippet earlier]
+  (case kind
+    :modify
+    (str "The user selected these lines in the diff viewer and wants them changed.\n\n"
+         "```diff\n" snippet "\n```\n\n"
+         (earlier-turns earlier)
+         "## Change\n" text "\n\n"
+         "Make this change in the working-tree files: `+` and context lines are "
+         "the current code, `-` lines are already gone. Read the files first, "
+         "edit only what the change needs, then reply with a short summary of "
+         "what you changed.")
+
+    :explain
+    (if (seq earlier)
+      (ask-prompt text snippet earlier)
+      (str "The user is reading the diff of this session's changes and wants "
+           "the selected lines explained.\n\n"
+           "```diff\n" snippet "\n```\n\n"
+           (when-let [focus (not-empty (some-> text str/trim))]
+             (str "## Focus\n" focus "\n\n"))
+           "Explain in plain language, in concise markdown, what these changes "
+           "do and why. Read files in the working directory or the parent "
+           "conversation (`" parent-history-tool "`) when the snippet doesn't "
+           "say enough. Use read-only tools only: don't edit files or run "
+           "anything with side effects."))
+
+    (ask-prompt text snippet earlier)))
 
 (defn ask-suggestions
   "One-tap questions for a diff selection whose lines have `types`

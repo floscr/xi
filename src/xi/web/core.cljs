@@ -576,46 +576,12 @@
                    (set (range n))))})
 
 (defn- active-diff-rows
+  "The active diff buffer's rows as the viewer shows them (its layout), so
+   :web/diff-sel indices pick the same lines."
   [st room-id]
   (let [active (get-in st [:rooms room-id :ui :active-buffer])]
-    (some-> (get-in st [:rooms room-id :ui :buffers active :text])
-            diff/parse-diff-text
-            diff/diff-rows)))
-
-(defn- selected-diff-snippet
-  [st room-id]
-  (let [rows  (active-diff-rows st room-id)
-        range (diff/selection-range (:web/diff-sel st))]
-    (when (and rows range)
-      (diff/selected-snippet rows range))))
-
-(defn- diff-submit
-  "Submit a prompt built from the selected diff region into the room, switch
-   back to the chat view, and clear the selection."
-  [st room-id prompt]
-  {:state   (dissoc st :web/diff-sel :web/diff-intent)
-   :effects [[:ws/send {:type :input/submit :room-id room-id :text prompt}]
-             [:app/dispatch {:type :ui/buffer-switch :room-id room-id
-                             :buffer-id :chat}]]})
-
-(defn- diff-explain
-  "Explain the selected lines in the chat; `text`, if any, says what to focus on."
-  [st {:keys [room-id text]}]
-  (when-let [snippet (selected-diff-snippet st room-id)]
-    (diff-submit st room-id
-                 (str "Explain the following changes from our session "
-                      "in plain language — what they do and why"
-                      (when-let [focus (not-empty (some-> text str/trim))]
-                        (str ". In particular: " focus))
-                      ":\n\n```diff\n" snippet "\n```"))))
-
-(defn- diff-modify-submit [st {:keys [room-id text]}]
-  (let [instr (some-> text str/trim)]
-    (when (and (seq instr))
-      (when-let [snippet (selected-diff-snippet st room-id)]
-        (diff-submit st room-id
-                     (str instr "\n\nApply this to the following code from the diff:\n\n"
-                          "```diff\n" snippet "\n```"))))))
+    (some-> (get-in st [:rooms room-id :ui :buffers active])
+            (diff/buffer-rows (:web/diff-layout st)))))
 
 (defn- find-ask [st ask-id]
   (some #(when (= ask-id (:id %)) %) (:web/diff-asks st)))
@@ -623,46 +589,70 @@
 (defn- update-ask [st ask-id f]
   (update st :web/diff-asks (fn [asks] (mapv #(if (= ask-id (:id %)) (f %) %) asks))))
 
+(def ^:private thread-labels
+  {:ask "Ask" :explain "Explain" :modify "Modify"})
+
+(defn- thread-sub-id
+  "A Modify edits files, so its sub-agent isn't run read-only (xi.ext.subagent.handlers)."
+  [kind]
+  (if (= :modify kind) (sa/modify-sub-id) (sa/ask-sub-id)))
+
 (defn- ask-turn-effect
-  "Spawn the sub-agent answering `question` in `ask`'s thread; the answered
-   turns before it go into its prompt."
-  [st {:keys [room-id snippet turns]} question sub-id]
-  (let [earlier (keep (fn [{q :question sid :sub-id}]
+  "Spawn the sub-agent of a turn of `ask`'s thread (its :kind: :ask :explain
+   :modify) for `text`; the answered turns before it go into its prompt."
+  [st {:keys [room-id snippet turns kind]} text sub-id]
+  (let [kind    (or kind :ask)
+        earlier (keep (fn [{q :question sid :sub-id}]
                         (when-let [a (:result (sa/find-child st room-id sid))]
                           {:question q :answer a}))
                       turns)]
     [:ws/send {:type    :subagent/spawn
                :room-id room-id
                :sub-id  sub-id
-               :task    (str "Ask: " question)
-               :prompt  (sa/ask-prompt question snippet earlier)}]))
+               :task    (str (thread-labels kind) ": " (if (seq text) text "the selected lines"))
+               :prompt  (sa/diff-thread-prompt kind text snippet earlier)}]))
 
-(defn- diff-ask-submit
-  "Start a question thread about the selected diff lines: it keeps their
-   snippet and renders after the last of them (xi.web.views/diff-ask-card),
-   independent of later selections, until closed."
-  [st {:keys [room-id text]}]
-  (let [question (some-> text str/trim)
+(defn- diff-thread-start
+  "Start a sub-agent thread of `kind` (:ask a question, :explain the lines,
+   :modify them) about the selected diff lines: it keeps their snippet and
+   renders after the last of them (xi.web.views/diff-ask-card), independent
+   of later selections, until closed. Only Explain goes without `text`."
+  [st {:keys [room-id text]} kind]
+  (let [text     (or (some-> text str/trim) "")
         range    (diff/selection-range (:web/diff-sel st))
         rows     (when range (active-diff-rows st room-id))
         last-row (some #(when (= (second range) (:sel-idx %)) %) rows)]
-    (when (and (seq question) last-row)
-      (let [sub-id (sa/ask-sub-id)
+    (when (and last-row (or (seq text) (= :explain kind)))
+      (let [sub-id (thread-sub-id kind)
             ask    {:id      sub-id
                     :room-id room-id
+                    :kind    kind
                     :anchor  (diff/line-key last-row)
                     :snippet (diff/selected-snippet rows range)
-                    :turns   []}]
+                    :turns   []}
+            shown  (if (seq text) text "Explain these lines")]
         {:state   (-> st
                       (dissoc :web/diff-sel :web/diff-intent)
                       (update :web/diff-asks (fnil conj [])
-                              (update ask :turns conj {:question question :sub-id sub-id})))
-         :effects [(ask-turn-effect st ask question sub-id)]}))))
+                              (update ask :turns conj {:question shown :sub-id sub-id})))
+         :effects [(ask-turn-effect st ask text sub-id)]}))))
+
+(defn- diff-ask-submit [st ev]
+  (diff-thread-start st ev :ask))
+
+(defn- diff-explain
+  "Explain the selected lines in a sub-agent thread; `text`, if any, says
+   what to focus on."
+  [st ev]
+  (diff-thread-start st ev :explain))
+
+(defn- diff-modify-submit [st ev]
+  (diff-thread-start st ev :modify))
 
 (defn- diff-ask-follow-up [st {:keys [ask-id text]}]
   (let [question (some-> text str/trim)]
     (when-let [ask (and (seq question) (find-ask st ask-id))]
-      (let [sub-id (sa/ask-sub-id)]
+      (let [sub-id (thread-sub-id (:kind ask))]
         {:state   (update-ask st ask-id #(-> %
                                              (dissoc :collapsed?)
                                              (update :turns conj {:question question
@@ -673,12 +663,9 @@
   {:state (update-ask st ask-id #(update % :collapsed? not))})
 
 (defn- diff-compose-submit
-  "The selection composer's send: its text goes where :web/diff-intent says."
+  "The selection composer's send: a thread of the :web/diff-intent kind."
   [st ev]
-  (case (:web/diff-intent st :ask)
-    :ask     (diff-ask-submit st ev)
-    :explain (diff-explain st ev)
-    :modify  (diff-modify-submit st ev)))
+  (diff-thread-start st ev (:web/diff-intent st :ask)))
 
 (defn- diff-ask-close
   "Drop a question thread: abort its running sub-agents, dismiss the rest."
@@ -693,61 +680,21 @@
                                                 :subagent/dismiss)
                                      :room-id room-id :sub-id sub-id}]))}))
 
-;; ── difftastic column width (measured from the viewport) ─────────────────────
-
-(defonce ^{:private true
-           :doc "Offscreen <pre.diff-difft> for reading the difft pane's resolved font
-                 before any difft buffer has mounted."}
-  mono-probe
-  (atom nil))
-
-(defn- mono-font-string
-  []
-  (let [^js p (or @mono-probe
-                  (let [el (.createElement js/document "pre")
-                        st (.-style el)]
-                    (set! (.-className el) "diff-difft")
-                    (set! (.-position st) "absolute")
-                    (set! (.-visibility st) "hidden")
-                    (set! (.-left st) "-9999px")
-                    (set! (.-top st) "0")
-                    (.appendChild js/document.body el)
-                    (reset! mono-probe el)
-                    el))
-        cs (js/getComputedStyle p)]
-    (str (.-fontSize cs) " " (.-fontFamily cs))))
-
-(def ^:private diff-scrollbar-px
-  16)
-
-(defn- diff-content-px
-  []
-  (let [^js tab (.querySelector js/document ".diff-tab")
-        ^js bar (.querySelector js/document ".diff-method-bar")]
-    (if tab
-      (let [pad (if bar (js/parseFloat (.-paddingLeft (js/getComputedStyle bar))) 0)]
-        (max 0 (- (.-clientWidth tab) (* 2 pad) diff-scrollbar-px)))
-      (.-innerWidth js/window))))
-
-(defn- measure-diff-cols
-  []
-  (let [ctx      (.getContext (js/document.createElement "canvas") "2d")
-        _        (set! (.-font ctx) (mono-font-string))
-        char-px  (/ (.-width (.measureText ctx "0000000000")) 10)
-        px       (diff-content-px)]
-    (if (and (pos? char-px) (pos? px))
-      (max 40 (js/Math.floor (/ px char-px)))
-      120)))
-
 (defn- diff-reopen
-  "Re-run /diff for the chosen source + renderer. difftastic goes through
-   :diff/measure-cols, which re-issues the command as `difft:<cols>` for the
-   viewport width."
+  "Re-run /diff for the chosen source + renderer. difftastic is asked for
+   rows (`difft:json`, xi.diff.difft), which the viewer lays out itself."
   [_st {:keys [room-id method engine]}]
-  (if (= engine :difft)
-    {:effects [[:diff/measure-cols {:room-id room-id :method method}]]}
-    {:effects [[:ws/send {:type :input/submit :room-id room-id
-                          :text (str "/diff " method)}]]}))
+  {:effects [[:ws/send {:type :input/submit :room-id room-id
+                        :text (str "/diff " (when (= engine :difft) "difft:json ") method)}]]})
+
+(defn- diff-layout
+  "Show diffs side by side (:split) or old above new (:stacked); persisted
+   per user. Drops the selection: its indices belong to the old layout."
+  [st {:keys [layout]}]
+  {:state   (-> st
+                (assoc :web/diff-layout layout)
+                (dissoc :web/diff-sel :web/diff-intent))
+   :effects [(user-state/set-effect :diff-layout layout)]})
 
 
 (defn- projects-web-list-result [st {:keys [dirs dirty]}]
@@ -1446,6 +1393,7 @@
           :skill-form/escape     skill-form-escape
           :skill-form/submit     skill-form-submit
           :diff/reopen           diff-reopen
+          :diff/layout           diff-layout
           :diff/select-line      diff-select-line
           :diff/clear-selection  diff-clear-selection
           :diff/toggle-file      diff-toggle-file
@@ -1973,10 +1921,6 @@
    (fn [_ _]
      (when-let [^js cmd (aget js/window "__uiCommand")]
        (.close cmd "cmdk")))
-   :diff/measure-cols
-   (fn [{:keys [dispatch!]} {:keys [room-id method]}]
-     (dispatch! {:type :input/submit :room-id room-id
-                 :text (str "/diff difft:" (measure-diff-cols) " " method)}))
    :session/content-search-debounce
   (let [timer (atom nil)]
     (fn [{:keys [dispatch!]} payload]

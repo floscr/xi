@@ -290,6 +290,7 @@ Never sent over the wire:
 | `:web/sidebar-groups` | extension sidebar groups (`:sidebar-groups`), stored at init; evaluated by `sidebar/extension-groups` |
 | `:web/session-menu-items` | extension entries of every session card's context menu, stored at init |
 | `:web/dashboard-hidden`, `:web/dashboard-customize?` | dashboard card ids the user switched off (per-user state `:dashboard-hidden`), and the Customize panel open |
+| `:web/diff-layout` | the diff viewer's `:stacked` / `:split` layout (per-user state `:diff-layout`); unset, `xi.diff/default-layout` per renderer |
 | `:web/home-cwd` | the dashboard composer's picked project (`""`: none; unset: the most recent) |
 | `:user-ext/ui` | per-extension browser-only UI state (`:bind` inputs) |
 | `:user-ext/state` | per-extension slice a user extension's server half pushed to this user (`:user-ext/push`), reduced by the web half's `:handlers` |

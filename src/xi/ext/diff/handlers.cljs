@@ -13,20 +13,23 @@
    argument: nil = the session diff, `git`, `staged`, `commit:<sha>`, …), so
    re-running a source — or re-rendering it with the other engine — replaces
    that buffer in place while other sources stay open. :engine records the
-   renderer; only :git diffs are unified and get :diff? true (the interactive
-   viewer). :difft output is ANSI structural text shown as a plain buffer."
-  [st {:keys [room-id title text engine commit source] :as ev}]
+   renderer; only :git diffs are unified and get :diff? true (the TUI's
+   interactive viewer). :difft output is ANSI structural text shown as a
+   plain buffer, or :rows (xi.diff.difft) for the web viewer, :text then
+   their unified text."
+  [st {:keys [room-id title text engine commit source rows] :as ev}]
   (when (state/get-room st room-id)
     (let [engine (or engine :git)
           id     (buffers/diff-id source)]
       {:state (-> st
                   (update-in [:rooms room-id] buffers/install id
-                             {:kind :diff :title title :text text :engine engine
-                              :source source
-                              :diff? (= engine :git)
-                              ;; commit metadata for single-commit diffs; nil
-                              ;; for every other source.
-                              :commit commit}
+                             (cond-> {:kind :diff :title title :text text :engine engine
+                                      :source source
+                                      :diff? (= engine :git)
+                                      ;; commit metadata for single-commit diffs; nil
+                                      ;; for every other source.
+                                      :commit commit}
+                               rows (assoc :rows rows))
                              (:event/ts ev))
                   (cond-> (buffers/switch-here? st ev)
                     (assoc-in [:rooms room-id :ui :active-buffer] id)))})))

@@ -101,8 +101,8 @@
   {:state (update-in st [:web/cr :composing?] not)})
 
 (defn- send-fx
-  "Submit a prompt into the room and switch to the chat (mirrors
-   diff-submit): the agent's answer lands in the conversation."
+  "Submit a prompt into the room and switch to the chat: the agent's
+   answer lands in the conversation."
   [st prompt]
   (let [rid (:active-room st)]
     [[:ws/send {:type :input/submit :room-id rid :text prompt}]

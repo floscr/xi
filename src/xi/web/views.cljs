@@ -2194,9 +2194,23 @@
 (def ^:private diff-text-cache
   (js/WeakMap.))
 
-(defn- diff-text-code [grammar line]
+(defn- diff-text-code
+  "A diff line's (or :split side's) :text as [:code …]: grammar tokens, cut at
+   its change :spans (xi.diff/mark-spans) into .diff-span pieces. Every piece
+   is its own span, so .diff-view--quiet-syntax can dim all but the changes."
+  [grammar {:keys [text spans] :as line}]
   (or (.get diff-text-cache line)
-      (let [result (tokens->code (hl/merge-adjacent (hl/tokenize grammar (or (:text line) ""))))]
+      (let [text   (or text "")
+            tokens (if grammar
+                     (hl/merge-adjacent (hl/tokenize grammar text))
+                     [{:value text}])
+            result (into [:code]
+                         (map (fn [{:keys [type value changed?]}]
+                                (into [:span {:class (cond-> []
+                                                       (theme/token-class type) (conj (theme/token-class type))
+                                                       changed? (conj "diff-span"))}]
+                                      (md/linkify value))))
+                         (diff/mark-spans tokens spans))]
         (.set diff-text-cache line result)
         result)))
 
@@ -2214,15 +2228,48 @@
         (reset! diff-rows-memo [text rows])
         rows))))
 
+(def ^:private buffer-rows-memo
+  (atom nil))
+
+(defn- diff-buffer-rows
+  "diff/buffer-rows, memoized on the last buffer content + layout like
+   diff-rows-for-text."
+  [{:keys [rows text] :as buffer} layout]
+  (let [[k memo] @buffer-rows-memo
+        k'       [(or rows text) layout]]
+    (if (and memo (= k k'))
+      memo
+      (let [rows (diff/buffer-rows buffer layout)]
+        (reset! buffer-rows-memo [k' rows])
+        rows))))
+
+(defn- diff-split-side
+  "Gutter + code cell of one side of a :split line (`kind` :del old, :add
+   new): tinted when the side changed, a faint marker in a changed row whose
+   side kept its text, a hatched gap when the side has no line."
+  [kind {:keys [n changed? spans] :as side} change-row? code]
+  (let [state (cond (nil? side) "empty"
+                    changed?    (name kind)
+                    change-row? "moved"
+                    :else       "context")]
+    [[:span {:class ["diff-ln" (str "diff-ln--" state)] :data-ln (str n)}]
+     [:span {:class ["diff-text" "diff-side" (str "diff-side--" state)
+                     (when (seq spans) "diff-side--spans")]}
+      code]]))
+
 (defn- diff-line-view
-  "One selectable diff line; tapping dispatches :diff/select-line. `highlight?`
-   / `reviewed?` are the review canvas's marks."
+  "One selectable diff line, unified or :split (xi.diff layouts); tapping
+   dispatches :diff/select-line. `highlight?` / `reviewed?` are the review
+   canvas's marks."
   ([dispatch! grammar selected? line sel-idx row-key]
    (diff-line-view dispatch! grammar selected? line sel-idx row-key false false))
   ([dispatch! grammar selected? line sel-idx row-key highlight?]
    (diff-line-view dispatch! grammar selected? line sel-idx row-key highlight? false))
-  ([dispatch! grammar selected? {:keys [type text old-line new-line] :as line} sel-idx row-key highlight? reviewed?]
-  (let [cls (cond-> ["diff-line"]
+  ([dispatch! grammar selected? {:keys [type old-line new-line lhs rhs] :as line} sel-idx row-key highlight? reviewed?]
+  (let [split? (= type :split)
+        cls (cond-> ["diff-line"]
+              split?            (conj "diff-line--split")
+              (seq (:spans line)) (conj "diff-line--spans")
               (= type :add)     (conj "diff-line--add")
               (= type :delete)  (conj "diff-line--del")
               (= type :meta)    (conj "diff-line--meta")
@@ -2230,24 +2277,31 @@
               reviewed?         (conj "diff-line--reviewed")
               highlight?        (conj "diff-line--highlight")
               selected?         (conj "diff-line--selected"))
-        old-nr (case type
-                 (:delete :context) (str old-line)
-                 "")
-        new-nr (case type
-                 (:add :context) (str new-line)
-                 "")
-        sign   (case type :add "+" :delete "-" " ")]
-    [:div (cond-> {:class cls :replicant/key row-key}
-            (#{:add :context} type) (assoc :data-file-line new-line)
-            sel-idx (assoc :on {:click (fn [_] (dispatch! {:type :diff/select-line
-                                                           :idx sel-idx}))}))
-     [:span {:class ["diff-ln"] :data-ln old-nr}]
-     [:span {:class ["diff-ln"] :data-ln new-nr}]
-     [:span {:class ["diff-sign"] :data-sign sign}]
-     [:span {:class ["diff-text"]}
-      (if grammar
-        (diff-text-code grammar line)
-        (or text ""))]])))
+        code   (fn [l] (if (or grammar (seq (:spans l)))
+                         (diff-text-code grammar l)
+                         (or (:text l) "")))
+        file-line (cond split?                  (:n rhs)
+                        (#{:add :context} type) new-line)]
+    (into
+     [:div (cond-> {:class cls :replicant/key row-key}
+             file-line (assoc :data-file-line file-line)
+             sel-idx (assoc :on {:click (fn [_] (dispatch! {:type :diff/select-line
+                                                            :idx sel-idx}))}))]
+     (if split?
+       (let [moved? (diff/split-change? line)]
+         (concat (diff-split-side :del lhs moved? (some-> lhs code))
+                 (diff-split-side :add rhs moved? (some-> rhs code))))
+       (let [old-nr (case type
+                      (:delete :context) (str old-line)
+                      "")
+             new-nr (case type
+                      (:add :context) (str new-line)
+                      "")
+             sign   (case type :add "+" :delete "-" " ")]
+         [[:span {:class ["diff-ln"] :data-ln old-nr}]
+          [:span {:class ["diff-ln"] :data-ln new-nr}]
+          [:span {:class ["diff-sign"] :data-sign sign}]
+          [:span {:class ["diff-text"]} (code line)]]))))))
 
 (def ^:private diff-groups-cache
   (js/WeakMap.))
@@ -2447,7 +2501,7 @@
                            hl?       (boolean (and highlight sel-idx (highlight sel-idx)))
                            rev?      (boolean (and reviewed sel-idx (reviewed sel-idx)))
                            suffix    (when line-suffix (line-suffix sel-idx))
-                           cards     (when (seq after) (seq (get after (diff/line-key r))))
+                           cards     (when (seq after) (seq (mapcat after (diff/line-keys r))))
                            line-el   (diff-line-view dispatch! (grammar-for (:filename r))
                                                      selected? line sel-idx (str "l" k) hl? rev?)]
                        (if (or suffix cards)
@@ -2516,7 +2570,7 @@
 (def ^:private diff-intents
   "The composer's switch: what its text does (xi.web.core diff-compose-submit)."
   [{:intent :ask     :label "Ask"     :placeholder "Ask about these lines…"}
-   {:intent :explain :label "Explain" :placeholder "Explain in the chat — what to focus on (optional)…"}
+   {:intent :explain :label "Explain" :placeholder "What to focus on (optional)…"}
    {:intent :modify  :label "Modify"  :placeholder "Describe the change to make…"}])
 
 (defn- enter-submits
@@ -2586,7 +2640,7 @@
   "Floating actions for a diff selection, a frosted capsule anchored to its
    last line without taking layout space (position-sel-toolbar!), so extending
    the range never shifts the diff. Ask and Modify open the inline composer;
-   Explain sends straight to the chat. Each shows its :buffer/diff key
+   Explain starts its sub-agent thread right away. Each shows its :buffer/diff key
    (xi.keys :diff/*-selection)."
   [dispatch! state room-id file]
   (let [item (fn [{:keys [label action variant on-click]}]
@@ -2724,11 +2778,12 @@
                          (icon/icon {:icon-name :arrow-up :size :sm}))])])))
 
 (defn- diff-ask-card
-  "A diff Ask thread (xi.web.core diff-ask-submit) attached after the lines it
-   asks about (`child-of`: sub-id → child)."
-  [dispatch! room-id {:keys [id turns collapsed?]} child-of]
+  "A diff Ask / Explain / Modify thread (xi.web.core diff-thread-start)
+   attached after the lines it is about (`child-of`: sub-id → child)."
+  [dispatch! room-id {:keys [id turns collapsed? kind]} child-of]
   (thread-card dispatch! room-id
                {:key        (str "ask-" id)
+                :label      ({:explain "Explain" :modify "Modify"} kind)
                 :turns      turns
                 :children   (mapv (comp child-of :sub-id) turns)
                 :collapsed? collapsed?
@@ -2761,11 +2816,26 @@
       (when (str/starts-with? (or title "") "Upstream") "git-upstream")
       "session-edits"))
 
+(def ^:private diff-layouts
+  [{:layout :stacked :label "Stacked" :title "Old above new"}
+   {:layout :split   :label "Split"   :title "Old and new side by side"}])
+
+(defn- diff-layout-toggle [dispatch! layout]
+  (into (button-group/button-group {:variant :boxed :class "diff-layout-toggle"
+                                    :attrs {:aria-label "Diff layout"}})
+        (for [{l :layout :keys [label title]} diff-layouts]
+          (button-group/button-group-item
+           {:active (= l layout)
+            :attrs {:aria-pressed (str (= l layout)) :title title}
+            :on-click (fn [_] (dispatch! {:type :diff/layout :layout l}))}
+           label))))
+
 (defn- diff-method-bar
-  "Selects switching the diff source and renderer, each firing :diff/reopen.
-   The commit in view appears as a dynamic option plus a \"Pick a commit…\"
-   entry opening the commits palette page."
-  [dispatch! room-id diff-buffer engine collapse-opts]
+  "Selects switching the diff source and renderer, each firing :diff/reopen,
+   and the layout toggle (:diff/layout). The commit in view appears as a
+   dynamic option plus a \"Pick a commit…\" entry opening the commits palette
+   page."
+  [dispatch! room-id diff-buffer engine {:keys [layout] :as collapse-opts}]
   (let [commit  (:commit diff-buffer)
         engine  (or engine :git)
         method  (cond
@@ -2792,6 +2862,8 @@
        :on-change (fn [v]
                     (dispatch! {:type :diff/reopen :room-id room-id
                                 :method method :engine (keyword v)}))})
+     (when layout
+       (diff-layout-toggle dispatch! layout))
      (when (seq filenames)
        (let [label (if all-collapsed? "Expand all files" "Collapse all files")]
          (button/button
@@ -2876,25 +2948,27 @@
             (filter #(= room-id (:room-id %)) (:web/diff-asks state)))))
 
 (defn- diff-tab-view
-  "The diff buffer as the active tab: git diffs get the interactive viewer,
-   difftastic diffs read-only ANSI-colored text."
+  "The diff buffer as the active tab: the interactive viewer over its rows in
+   the chosen layout — git's unified text or difftastic's :rows (with dimmed
+   syntax under its change spans). A difft buffer without rows (`/diff difft`
+   typed by hand) is its read-only ANSI text."
   [dispatch! state room-id diff-buffer]
   (let [{sel :web/diff-sel collapsed :web/diff-collapsed
          expanded :web/diff-expanded md-code :web/md-diff-code} state
         engine (or (:engine diff-buffer) :git)
-        git?   (not= engine :difft)
-        rows   (when git? (diff-rows-for-text (:text diff-buffer)))
-        filenames (when git?
-                    (into [] (comp (filter #(= :file (:row %))) (map :filename)) rows))
+        ansi?  (and (= engine :difft) (nil? (:rows diff-buffer)))
+        layout (or (:web/diff-layout state) (diff/default-layout engine))
+        rows   (when-not ansi? (diff-buffer-rows diff-buffer layout))
+        filenames (into [] (comp (filter #(= :file (:row %))) (map :filename)) rows)
         collapsed (or collapsed #{})]
-    [:div {:class ["diff-tab"]}
+    [:div {:class ["diff-tab" (when (= engine :difft) "diff-tab--difft")]}
      (diff-method-bar dispatch! room-id diff-buffer engine
-                      (when (seq filenames)
-                        {:filenames filenames
-                         :all-collapsed? (every? collapsed filenames)}))
+                      {:filenames filenames
+                       :all-collapsed? (every? collapsed filenames)
+                       :layout (when-not ansi? layout)})
      (when-let [c (:commit diff-buffer)]
        (commit-info-header c))
-     (if (= engine :difft)
+     (if ansi?
        (into [:pre {:class ["diff-difft"]}] (difft-spans (:text diff-buffer)))
        (let [range (diff/selection-range sel)
              pill  (when (and range (not (:web/diff-intent state)))

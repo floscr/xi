@@ -46,8 +46,55 @@
                                first diff/line-key))
         ;; foo.txt gains a line: every :sel-idx in bar.txt shifts by one
         grown  (str/replace sample "+added line\n" "+added line\n+another\n")]
-    (is (= ["bar.txt" :add nil 10] (key-of sample)))
+    (is (= ["bar.txt" :new 10] (key-of sample)))
     (is (= (key-of sample) (key-of grown)))))
+
+;; ── as-layout ──
+
+(deftest as-layout-split-pairs-runs
+  (let [rows  (diff/as-layout (diff/diff-rows (diff/parse-diff-text sample)) :split)
+        lines (mapv :line (filter #(= :line (:row %)) rows))]
+    (is (= [:split] (distinct (map :type lines))))
+    (is (= [[1 1] [2 2] [nil 3] [3 4] [10 10]]
+           (mapv (juxt (comp :n :lhs) (comp :n :rhs)) lines))
+        "context once, -old/+new paired, the extra add alone on the right")
+    (is (= [0 1 2 3 4] (keep :sel-idx rows)))
+    (is (= [false true true false true] (mapv diff/split-change? lines)))))
+
+(deftest as-layout-round-trips
+  (let [rows (diff/diff-rows (diff/parse-diff-text sample))]
+    (is (= rows (diff/as-layout (diff/as-layout rows :split) :stacked))
+        "split then stacked gives the unified rows back")))
+
+(deftest line-key-matches-across-layouts
+  (let [rows     (diff/diff-rows (diff/parse-diff-text sample))
+        stacked  (set (keep #(when (= :line (:row %)) (diff/line-key %)) rows))
+        split    (set (mapcat #(when (= :line (:row %)) (diff/line-keys %))
+                              (diff/as-layout rows :split)))]
+    (is (every? split stacked) "every stacked line's key names a split row")))
+
+(deftest selected-snippet-of-split-rows
+  (let [rows (diff/as-layout (diff/diff-rows (diff/parse-diff-text sample)) :split)]
+    (is (= (str "foo.txt\n"
+                " line one\n"
+                "-old line\n"
+                "+new line\n"
+                "+added line")
+           (diff/selected-snippet rows [0 2])))))
+
+;; ── mark-spans ──
+
+(deftest mark-spans-splits-tokens-at-span-edges
+  (let [toks [{:type :kw :value "(defn"} {:value " "} {:type :sym :value "foo"}]]
+    (is (= toks (diff/mark-spans toks nil)))
+    (is (= [{:type :kw :value "("} {:type :kw :value "def" :changed? true}
+            {:type :kw :value "n"} {:value " "}
+            {:type :sym :value "f" :changed? true} {:type :sym :value "oo"}]
+           (diff/mark-spans toks [[1 4] [6 7]])))
+    (is (= [{:type :kw :value "(defn" :changed? true} {:value " " :changed? true}
+            {:type :sym :value "fo" :changed? true} {:type :sym :value "o"}]
+           (diff/mark-spans toks [[0 8]]))
+        "a span across tokens")))
 
 ;; ── selection-range ──
 

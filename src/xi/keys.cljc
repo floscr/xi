@@ -223,8 +223,8 @@
    :diff/prev-file          {:label "Previous file"}
    ;; web
    :diff/ask-selection      {:label "Ask a sub-agent about the selected lines" :surface #{:web}}
-   :diff/modify-selection   {:label "Modify the selected lines" :surface #{:web}}
-   :diff/explain-selection  {:label "Explain the selected lines in the chat" :surface #{:web}}
+   :diff/modify-selection   {:label "Have a sub-agent modify the selected lines" :surface #{:web}}
+   :diff/explain-selection  {:label "Have a sub-agent explain the selected lines" :surface #{:web}}
    :sidebar/toggle          {:label "Toggle the sidebar" :surface #{:web}}
    :session/jump-attention  {:label "Jump to the chat that needs you" :surface #{:web}}
    :session/next            {:label "Next sidebar item" :surface #{:web}}

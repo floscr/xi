@@ -21,7 +21,9 @@
   (is (= [[:diff/load {:room-id "r" :args "staged" :engine :difft}]]
          (:effects (diff-cmd (room) {:room-id "r" :args "difft staged"}))))
   (is (= [[:diff/load {:room-id "r" :args "staged" :engine :difft :cols 120}]]
-         (:effects (diff-cmd (room) {:room-id "r" :args "difft:120 staged"})))))
+         (:effects (diff-cmd (room) {:room-id "r" :args "difft:120 staged"}))))
+  (is (= [[:diff/load {:room-id "r" :args "staged" :engine :difft :format :json}]]
+         (:effects (diff-cmd (room) {:room-id "r" :args "difft:json staged"})))))
 
 (deftest diff-open-installs-buffer
   (let [{:keys [state]} (diff-open (room)

@@ -119,8 +119,8 @@ offers that choice.
 | --- | --- | --- | --- |
 | `Esc` | Close this view, back to the chat | `:buffer/close` | web |
 | `Enter` | Ask a sub-agent about the selected lines | `:diff/ask-selection` | web |
-| `m` | Modify the selected lines | `:diff/modify-selection` | web |
-| `e` | Explain the selected lines in the chat | `:diff/explain-selection` | web |
+| `m` | Have a sub-agent modify the selected lines | `:diff/modify-selection` | web |
+| `e` | Have a sub-agent explain the selected lines | `:diff/explain-selection` | web |
 | `v` | Open the file under the cursor in $EDITOR | `:diff/edit` | terminal |
 | `Tab` | Fold / unfold the file under the cursor | `:diff/fold` | terminal |
 

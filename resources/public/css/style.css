@@ -5780,6 +5780,72 @@ code a:hover,
   padding-right: var(--size-2);
 }
 
+/* ---- Split rows (xi.diff :split lines): old | new, long lines wrap ---- */
+.diff-line--split {
+  display: grid;
+  grid-template-columns: 4ch minmax(0, 1fr) 4ch minmax(0, 1fr);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff-line--split .diff-text { padding-left: var(--size-1); }
+.diff-line--split > .diff-ln:nth-child(3) { border-left: 1px solid var(--border-0); }
+
+.diff-side--del,
+.diff-ln--del {
+  background: var(--diff-del-bg, color-mix(in srgb, var(--danger) 12%, transparent));
+}
+
+.diff-side--add,
+.diff-ln--add {
+  background: var(--diff-add-bg, color-mix(in srgb, var(--hl-string) 12%, transparent));
+}
+
+/* the side without a line in a changed row */
+.diff-side--empty,
+.diff-ln--empty {
+  background: repeating-linear-gradient(135deg, transparent 0 5px,
+              color-mix(in srgb, var(--fg-2) 10%, transparent) 5px 6px);
+}
+
+/* a side that kept its text in a changed row (difftastic: only layout moved) */
+.diff-side--moved {
+  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--fg-2) 35%, transparent);
+}
+
+.diff-line--selected.diff-line--split > * {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* changed ranges inside a line (difftastic's spans): the line's tint steps
+   back so the spans lead */
+.diff-line--spans.diff-line--del,
+.diff-side--del.diff-side--spans {
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+}
+.diff-line--spans.diff-line--add,
+.diff-side--add.diff-side--spans {
+  background: color-mix(in srgb, var(--hl-string) 7%, transparent);
+}
+.diff-line--selected.diff-line--spans,
+.diff-line--selected .diff-side--spans {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.diff-span { border-radius: 2px; }
+.diff-line--del .diff-span,
+.diff-side--del .diff-span {
+  background: color-mix(in srgb, var(--danger) 32%, transparent);
+}
+.diff-line--add .diff-span,
+.diff-side--add .diff-span {
+  background: color-mix(in srgb, var(--hl-string) 32%, transparent);
+}
+
+/* difftastic: syntax colors stay, dimmed, so its change spans lead */
+.diff-tab--difft .diff-text code > span:not(.diff-span) { opacity: 0.7; }
+
+.diff-layout-toggle { flex-shrink: 0; }
+
 /* ---- Diff selection toolbar (anchored to the bottom of the range) ----
    Anchors the actions toolbar to the bottom of the selected range. Surface
    styling comes from the clj-ui .toolbar pill (actions) or .popover-content

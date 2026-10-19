@@ -103,6 +103,26 @@
     (is (str/includes? p "## Earlier in this thread\n**Q:** Why?\n\n**A:** Dead code.\n\n**Q:** Safe?"))
     (is (str/includes? p "## Question\nAnd this?"))))
 
+(deftest diff-modify-sub-agents-may-edit
+  (let [start (fn [sub-id]
+                (-> (h/spawn (room-state) {:room-id "r1" :sub-id sub-id :task "t"})
+                    :effects first second))]
+    (is (h/inline-sub? (h/modify-sub-id)) "renders in its diff thread")
+    (is (:unattended? (start (h/ask-sub-id))) "Ask only reads: its asks are denied")
+    (is (not (:unattended? (start (h/modify-sub-id)))) "Modify asks for its edits")))
+
+(deftest diff-thread-prompts-by-kind
+  (let [p (h/diff-thread-prompt :modify "rename foo" "+(foo)" nil)]
+    (is (str/includes? p "## Change\nrename foo"))
+    (is (str/includes? p "Make this change in the working-tree files")))
+  (let [p (h/diff-thread-prompt :explain "" "+(foo)" nil)]
+    (is (str/includes? p "wants the selected lines explained"))
+    (is (not (str/includes? p "## Focus")) "no focus given"))
+  (is (str/includes? (h/diff-thread-prompt :explain "perf" "+(foo)" nil) "## Focus\nperf"))
+  (is (str/includes? (h/diff-thread-prompt :explain "Why?" "+(foo)" [{:question "q" :answer "a"}])
+                     "## Question\nWhy?")
+      "follow-ups are questions"))
+
 (deftest ask-suggestions-follow-the-selected-line-types
   (is (= "Why was this removed?" (first (h/ask-suggestions [:delete :context :delete]))))
   (is (= "Why was this added?" (first (h/ask-suggestions [:add]))))

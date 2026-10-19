@@ -129,11 +129,170 @@
               (swap! rows conj {:row :line :filename filename :line l :sel-idx idx}))))))
     @rows))
 
+;; ── Layouts ───────────────────────────────────────────────────────────────────
+;; A consumer hands the viewer rows in either line shape: unified (:add /
+;; :delete / :context / :meta with one :text, from diff-rows) or :split, an old
+;; and a new side ({:n :text :changed? :spans}, either nil), from
+;; xi.diff.difft. :spans ([[start end] …], string indices) mark the changed
+;; ranges of a line. as-layout converts so either view mode shows either source.
+
+(defn- line-row? [r]
+  (= :line (:row r)))
+
+(defn split-change?
+  "A :split line that is a change (not context): a side changed or missing,
+   or the two differ in what difftastic counts as layout only."
+  [{:keys [lhs rhs]}]
+  (boolean (or (nil? lhs) (nil? rhs) (:changed? lhs) (:changed? rhs)
+               (not= (:text lhs) (:text rhs)))))
+
+(defn- side [n text spans]
+  (cond-> {:n n :text text :changed? true}
+    (seq spans) (assoc :spans spans)))
+
+(defn- pair-run
+  "A run of deleted and added unified lines as :split rows, paired in order."
+  [filename dels adds]
+  (for [i (range (max (count dels) (count adds)))
+        :let [d (get dels i) a (get adds i)]]
+    {:row :line :filename filename
+     :line {:type :split
+            :lhs  (when d (side (:old-line d) (:text d) (:spans d)))
+            :rhs  (when a (side (:new-line a) (:text a) (:spans a)))}}))
+
+(defn- context->split [{{:keys [text old-line new-line]} :line :as r}]
+  (assoc r :line {:type :split
+                  :lhs  {:n old-line :text text}
+                  :rhs  {:n new-line :text text}}))
+
+(defn- unified->split [rows]
+  (loop [rs (seq rows) fname nil dels [] adds [] out []]
+    (let [flush #(into % (pair-run fname dels adds))]
+      (if-let [r (first rs)]
+        (case (when (line-row? r) (get-in r [:line :type]))
+          :delete  (if (seq adds)
+                     (recur (next rs) (:filename r) [(:line r)] [] (flush out))
+                     (recur (next rs) (:filename r) (conj dels (:line r)) adds out))
+          :add     (recur (next rs) (:filename r) dels (conj adds (:line r)) out)
+          :context (recur (next rs) nil [] [] (conj (flush out) (context->split r)))
+          (recur (next rs) nil [] [] (conj (flush out) r)))
+        (flush out)))))
+
+(defn- side-row [r type side]
+  (when side
+    {:row :line :filename (:filename r)
+     :line (cond-> {:type type :text (:text side)}
+             (= :delete type) (assoc :old-line (:n side))
+             (= :add type)    (assoc :new-line (:n side))
+             (seq (:spans side)) (assoc :spans (:spans side)))}))
+
+(defn- split->unified
+  "Stack :split rows: each run of changed rows as its old lines, then its new
+   ones; context rows become one :context line."
+  [rows]
+  (loop [rs (seq rows) run [] out []]
+    (let [flush #(-> %
+                     (into (keep (fn [r] (side-row r :delete (get-in r [:line :lhs])))) run)
+                     (into (keep (fn [r] (side-row r :add (get-in r [:line :rhs])))) run))]
+      (if-let [r (first rs)]
+        (let [l (:line r)]
+          (cond
+            (not (and (line-row? r) (= :split (:type l))))
+            (recur (next rs) [] (conj (flush out) r))
+
+            (split-change? l)
+            (recur (next rs) (conj run r) out)
+
+            :else
+            (recur (next rs) []
+                   (conj (flush out)
+                         {:row :line :filename (:filename r)
+                          :line {:type :context :text (get-in l [:lhs :text])
+                                 :old-line (get-in l [:lhs :n])
+                                 :new-line (get-in l [:rhs :n])}}))))
+        (flush out)))))
+
+(defn- number-rows
+  "Assign :sel-idx 0..n to the selectable (non-meta) line rows, like diff-rows."
+  [rows]
+  (let [n (volatile! -1)]
+    (mapv (fn [r]
+            (assoc r :sel-idx (when (and (line-row? r) (not= :meta (get-in r [:line :type])))
+                                (vswap! n inc))))
+          rows)))
+
+(defn as-layout
+  "`rows` (either line shape) in `layout`: :split (side by side) or :stacked
+   (unified, old above new), with :sel-idx renumbered."
+  [rows layout]
+  (number-rows (if (= :split layout) (unified->split rows) (split->unified rows))))
+
+(defn default-layout
+  "The layout a renderer's diff opens in until the user picks one."
+  [engine]
+  (if (= :difft engine) :split :stacked))
+
+(defn buffer-rows
+  "A :diff buffer's rows in `layout` (nil → default-layout): its :rows when a
+   consumer parsed it server-side (xi.diff.difft), else its unified :text."
+  [{:keys [rows text engine]} layout]
+  (as-layout (or rows (diff-rows (parse-diff-text text)))
+             (or layout (default-layout engine))))
+
+(defn rows->text
+  "Unified diff text of `rows` (either line shape), for a client that shows a
+   rows buffer as text (the TUI)."
+  [rows]
+  (->> (as-layout rows :stacked)
+       (map (fn [{:keys [row filename header line]}]
+              (case row
+                :file (str "diff --git a/" filename " b/" filename)
+                :hunk header
+                :line (str (case (:type line) :add "+" :delete "-" :meta "" " ") (:text line)))))
+       (str/join "\n")))
+
+(defn mark-spans
+  "Split `tokens` ({:value str …}, a line's text in order) at the edges of
+   `spans` ([[start end] …], sorted, disjoint) and flag the pieces inside
+   one :changed? true."
+  [tokens spans]
+  (loop [ts (seq tokens) pos 0 sp (seq spans) out []]
+    (if-let [{:keys [value] :as t} (first ts)]
+      (let [end   (+ pos (count value))
+            [s e] (first sp)]
+        (cond
+          (or (nil? s) (<= end s)) (recur (next ts) end sp (conj out t))
+          (<= e pos)               (recur ts pos (next sp) out)
+          :else
+          (let [a      (max 0 (- s pos))
+                b      (min (count value) (- e pos))
+                out    (cond-> out
+                         (pos? a) (conj (assoc t :value (subs value 0 a)))
+                         :always  (conj (assoc t :value (subs value a b) :changed? true)))
+                after  (subs value b)]
+            (if (seq after)
+              (recur (cons (assoc t :value after) (next ts)) (+ pos b) (next sp) out)
+              (recur (next ts) end sp out)))))
+      out)))
+
+(defn line-keys
+  "Every line-key a row answers to: a :split row to both of its sides, so
+   something anchored in one layout finds its line in the other."
+  [{:keys [filename line]}]
+  (let [{:keys [type old-line new-line lhs rhs]} line]
+    (case type
+      :split  (cond-> []
+                rhs (conj [filename :new (:n rhs)])
+                lhs (conj [filename :old (:n lhs)]))
+      :delete [[filename :old old-line]]
+      [[filename :new new-line]])))
+
 (defn line-key
   "Identity of a diff line row that survives a reload of the same diff (its
-   :sel-idx shifts when lines above it change)."
-  [{:keys [filename line]}]
-  [filename (:type line) (:old-line line) (:new-line line)])
+   :sel-idx shifts when lines above it change) and a layout switch: the file
+   and the new line it shows, else the old one."
+  [row]
+  (first (line-keys row)))
 
 (defn selection-range
   "Normalize a {:anchor :head} selection into [lo hi] inclusive, or nil."
@@ -146,9 +305,9 @@
    inclusive [lo hi] selection range. Groups consecutive lines by file and
    prefixes +/-/space signs so an LLM can read it as a diff fragment."
   [rows [lo hi]]
-  (let [sel (filter (fn [{:keys [row sel-idx]}]
-                      (and (= :line row) sel-idx (<= lo sel-idx hi)))
-                    rows)
+  (let [sel (split->unified (filter (fn [{:keys [row sel-idx]}]
+                                      (and (= :line row) sel-idx (<= lo sel-idx hi)))
+                                    rows))
         by-file (partition-by :filename sel)]
     (->> by-file
          (map (fn [group]

@@ -39,7 +39,7 @@ message. `/help` lists everything that is available in the current setup.
 
 | Command | Does |
 | --- | --- |
-| `/diff` | Show what this chat changed. `/diff staged`, `/diff unstaged`, `/diff <ref>` show git diffs |
+| `/diff` | Show what this chat changed. `/diff staged`, `/diff unstaged`, `/diff <ref>` show git diffs; `/diff difft <source>` renders one with difftastic |
 | `/commit` | Stage and commit with the agent's help |
 | `/worktree` | Move the chat into a fresh git worktree; `merge`, `list`, `remove` |
 | `/buffers` | Switch between the chat, the log and the chat's open buffers (diffs, files, the system prompt); the last entry closes them all |

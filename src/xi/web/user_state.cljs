@@ -47,6 +47,9 @@
    :dashboard-hidden  {:path :web/dashboard-hidden :default #{}
                        :coerce set
                        :fx   (fn [_] [])}
+   ;; the diff viewer's layout; nil → per renderer (xi.diff/default-layout)
+   :diff-layout       {:path :web/diff-layout :default nil
+                       :fx   (fn [_] [])}
    :preferred-model   {:path :web/preferred-model :default nil
                        :fx   (fn [v] [[:cache/preferred-model {:model v}]])}
    :recent-commands   {:path :web/command-usage :default []

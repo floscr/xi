@@ -23,18 +23,22 @@
 
 (defn git-diff-out
   "Like git-out, but for diff-producing invocations: when *diff-engine* is
-   :difft the diff is rendered by difftastic (ANSI structural output) via
-   GIT_EXTERNAL_DIFF instead of git's native unified diff."
-  [cwd args]
-  (if (= difft/*diff-engine* :difft)
-    (try
-      (let [proc (js/Bun.spawnSync (into-array (cons "git" args))
-                                   #js {:cwd cwd :env (difft/difft-env)})]
-        (if (zero? (.-exitCode proc))
-          {:ok (.toString (.-stdout proc) "utf-8")}
-          {:err (str/trim (.toString (.-stderr proc) "utf-8"))}))
-      (catch :default e {:err (str e)}))
-    (git-out cwd args)))
+   :difft the diff is rendered by difftastic via GIT_EXTERNAL_DIFF (forced
+   with --ext-diff, which `git show` needs) instead of git's native unified
+   diff. `prefix` (see path-prefix) is for difftastic's :json records, whose
+   paths git's --src-prefix doesn't reach."
+  ([cwd args] (git-diff-out cwd args nil))
+  ([cwd args prefix]
+   (if (= difft/*diff-engine* :difft)
+     (try
+       (let [[sub & more] args
+             proc (js/Bun.spawnSync (into-array (list* "git" sub "--ext-diff" more))
+                                    #js {:cwd cwd :env (difft/difft-env prefix)})]
+         (if (zero? (.-exitCode proc))
+           {:ok (.toString (.-stdout proc) "utf-8")}
+           {:err (str/trim (.toString (.-stderr proc) "utf-8"))}))
+       (catch :default e {:err (str e)}))
+     (git-out cwd args))))
 
 (defn- prefix-args
   "git diff flags that put `prefix` (see path-prefix) in front of every path
@@ -50,7 +54,7 @@
   ([cwd f] (no-index-diff cwd f nil))
   ([cwd f prefix]
    (let [opts (cond-> #js {:cwd cwd}
-                (= difft/*diff-engine* :difft) (doto (aset "env" (difft/difft-env))))
+                (= difft/*diff-engine* :difft) (doto (aset "env" (difft/difft-env prefix))))
          p (js/Bun.spawnSync
             (into-array (concat ["git" "diff" "--no-index"] (prefix-args prefix)
                                 ["--" "/dev/null" f]))
@@ -97,7 +101,8 @@
          tracked-diff   (when (seq tracked)
                           (:ok (git-diff-out cwd (concat (if base ["diff" base] ["diff"])
                                                          (prefix-args prefix)
-                                                         ["--"] tracked))))
+                                                         ["--"] tracked)
+                                             prefix)))
          untracked-diff (when (seq untracked)
                           (str/join "\n" (map #(no-index-diff cwd % prefix) untracked)))]
      (->> [tracked-diff untracked-diff]
