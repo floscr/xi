@@ -1135,6 +1135,18 @@
                      (re-find #"^\s*[\(\[] [\)\]]" line) "block-action-unpicked")}
        line])]])
 
+(defn- bubble-menu-opener
+  "DOM-event handler opening the user bubble's menu (bubble-menu) for the
+   history entry at `idx`, at the pointer."
+  [dispatch! idx entry]
+  (fn [^js e]
+    (dispatch! {:type :bubble/menu-open
+                :index idx
+                :text (:text entry)
+                :images (:images entry)
+                :x (.-clientX e)
+                :y (.-clientY e)})))
+
 (defn- entry->post [dispatch! entry]
   (case (:kind entry)
     :user
@@ -1171,10 +1183,18 @@
             {:variant :primary :size :sm
              :on-click (fn [_] (dispatch! {:type :bubble/edit-save}))}
             "Save")]]]
-        ;; Skill/command-generated prompts collapse to a one-line bubble.
+        ;; Skill/command-generated prompts collapse to a one-line bubble. A tap
+        ;; toggles it, so the bubble menu opens on right-click or a touch
+        ;; long-press (data-long-press, the ui runtime) only.
         (:collapsed-label entry)
-        [:div {:class ["post" "post--user" "post--user-collapsed"
-                       (when (:sender entry) "post--badged")]}
+        [:div (cond-> {:class ["post" "post--user" "post--user-collapsed"
+                               (when (:sender entry) "post--badged")]}
+                idx (assoc :data-history-index idx
+                           :data-long-press "true"
+                           :on (let [open! (bubble-menu-opener dispatch! idx entry)]
+                                 {:contextmenu (fn [^js e]
+                                                 (.preventDefault e)
+                                                 (open! e))})))
          [:details {:class ["post-body" "user-collapse"]}
           [:summary {:class ["user-collapse-summary"]}
            [:span {:class ["tool-call-toggle-icon"]}
@@ -1190,13 +1210,7 @@
                                (when (:sender entry) "post--badged")]}
                 idx (assoc :data-history-index idx)
                 idx (assoc :on (block-context-menu-on
-                                (fn [^js e]
-                                  (dispatch! {:type :bubble/menu-open
-                                              :index idx
-                                              :text (:text entry)
-                                              :images (:images entry)
-                                              :x (.-clientX e)
-                                              :y (.-clientY e)})))))
+                                (bubble-menu-opener dispatch! idx entry))))
          [:div {:class ["post-body"]}
           (if-let [imgs (seq (:images entry))]
             [:div {:class ["user-images"]}

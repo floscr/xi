@@ -139,6 +139,32 @@
               [false false "\n(cp a b)"]]
              (views/code-block-segments text nil [[10 20]]))))))
 
+;; ── user bubble menu (Edit / Retry / Delete …) ──────────────────────────────
+
+(deftest collapsed-user-bubble-opens-the-bubble-menu
+  (let [entry->post @#'views/entry->post
+        opened      (atom nil)
+        dispatch!   (fn [ev] (reset! opened ev))
+        fake-event  #js {:preventDefault (fn []) :clientX 3 :clientY 4}
+        attrs       (fn [entry] (second (entry->post dispatch! entry)))]
+    (testing "a skill/command prompt carries its index and a long-press/right-click menu"
+      (let [a (attrs {:kind :user :history-index 7 :collapsed-label "Skill: grill-me"
+                      :text "Interview the user"})]
+        (is (= 7 (:data-history-index a)))
+        (is (= "true" (:data-long-press a)))
+        (is (nil? (get-in a [:on :click])) "a tap keeps toggling the summary")
+        ((get-in a [:on :contextmenu]) fake-event)
+        (is (= {:type :bubble/menu-open :index 7 :text "Interview the user" :images nil
+                :x 3 :y 4}
+               @opened))))
+    (testing "a plain prompt opens the same menu"
+      (let [a (attrs {:kind :user :history-index 2 :text "hi"})]
+        (is (= 2 (:data-history-index a)))
+        ((get-in a [:on :contextmenu]) fake-event)
+        (is (= 2 (:index @opened)))))
+    (testing "without a history index there is no menu"
+      (is (nil? (:on (attrs {:kind :user :collapsed-label "/commit" :text "x"})))))))
+
 ;; ── error-retry-target (Retry on an error card) ─────────────────────────────
 
 (deftest error-retry-target-finds-the-unanswered-user-message
