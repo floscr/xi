@@ -6420,7 +6420,19 @@
                           {:icon :layers
                            :value (str "window " label)
                            :on-click (fn [_] (dispatch! ev))}
-                          label)))))}]
+                          label)))
+                     (let [[undos redos] (wlayout/history state)]
+                       (concat
+                        (when (pos? undos)
+                          [(cmd/command-item
+                            {:icon :arrow-left :value "window undo layout change"
+                             :on-click (fn [_] (dispatch! {:type :layout/undo}))}
+                            "Undo window change")])
+                        (when (pos? redos)
+                          [(cmd/command-item
+                            {:icon :arrow-right :value "window redo layout change"
+                             :on-click (fn [_] (dispatch! {:type :layout/redo}))}
+                            "Redo window change")])))))}]
          (keep (fn [{:keys [items] :as g}]
                  (when (seq items) (assoc g :items (vec items)))))
          vec)))

@@ -138,7 +138,11 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   cached in `xi/layouts`); the server's copy lands in
   `:web/layouts-remote` and `:layout/seed` adopts only sessions this browser
   has no layout for, never the chat on screen, so two devices never fight
-  over one chat's windows. Narrow screens (`:web/wide?` false): the focused
+  over one chat's windows. History (winner mode): `:web/layout-history
+  {session-id {:undo :redo}}`, page-local; `apply-layout` pushes the
+  layout it replaces when the shape (sans focus and timestamp) changed, a
+  new change clears redo, `:layout/undo` / `:layout/redo` swap the whole
+  layout back pruned of views the room lost. Narrow screens (`:web/wide?` false): the focused
   main pane alone, a sidebar a drawer open while its pane has focus (the
   right-edge swipe toggles it, `install-right-edge-swipe!`). DOM scoping:
   the chat's timeline is `.timeline:not(.timeline--sub)` (`chat-timeline`;
@@ -322,6 +326,7 @@ Never sent over the wire:
 | `:web/pending-buffer` | `{:session-id :buffer-id}` a sidebar / palette buffer row asked to open, applied on `:room/joined` |
 | `:web/session-views` | session id → the buffer (or `:chat`) this client left it on, set on navigating away and restored on `:room/joined` (`xi.web.router/restore-view`) |
 | `:web/layouts`, `:web/layouts-remote` | session id → window layout of the chats split into panes (`xi.layout`, `xi.web.layout`; cached in `xi/layouts`), and the server's per-user copy that only seeds missing sessions |
+| `:web/layout-history` | session id → `{:undo [layout …] :redo […]}`, the window changes `:layout/undo` / `:layout/redo` step through (page-local, 50 deep) |
 | `:web/terminals-gone` | term ids the server answered `:terminal/gone` for (it restarted); cleared by the buffer coming back without an exit (`xi.ext.terminal.web`) |
 | `:web/sidebar-buffers-open` | session ids whose buffer rows are unfolded; this browser's own, cached in localStorage (`xi/sidebar-buffers-open`) |
 | `:web/connected?` | transport status |

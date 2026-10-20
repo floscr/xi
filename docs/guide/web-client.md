@@ -250,10 +250,15 @@ them at most.
   ([Appearance](#appearance)), a finished sub-agent opens there on its
   own, without taking focus, and the chat shows a marker row instead of
   the answer post.
+- **Undo.** Every change of the arrangement or the sizes can be taken back
+  (`:layout/undo`, the palette's "Undo window change") and redone
+  (`:layout/redo`), like Emacs' winner mode: the last fifty changes of the
+  chat, for as long as the page is open. Moving focus is not a change.
 - **Per chat, per user.** The arrangement and sizes belong to the chat: a
   split chat comes back split, on every device of yours (the last fifty
   chats you arranged). Another user of the same chat has their own.
-  **Back to one window** (⋮ menu, palette, `:layout/reset`) clears it.
+  **Back to one window** (⋮ menu, palette, `:layout/reset`) clears it;
+  undo brings it back.
 
 ## Terminals
 

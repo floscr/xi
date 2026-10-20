@@ -276,6 +276,8 @@ the navigation ones fit together.
 | `:layout/shrink-height` | Make the window shorter | web |
 | `:layout/balance` | Equal sizes for the windows side by side | web |
 | `:layout/reset` | Back to the single chat window | web |
+| `:layout/undo` | Undo the last window change | web |
+| `:layout/redo` | Redo the undone window change | web |
 
 <!-- /gen:keys-unbound -->
 
@@ -350,7 +352,9 @@ itself, `"<"`):
                              ["space" "w" "l"] :layout/focus-right
                              ["space" "w" "H"] :layout/dock-left
                              ["space" "w" "L"] :layout/dock-right
-                             ["space" "w" "u"] :layout/undock
+                             ["space" "w" "u"] :layout/undo
+                             ["space" "w" "ctrl+r"] :layout/redo
+                             ["space" "w" "U"] :layout/undock
                              ["space" "w" "r"] :layout/swap
                              ["space" "w" "<"] :layout/shrink-width
                              ["space" "w" ">"] :layout/grow-width

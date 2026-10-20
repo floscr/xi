@@ -293,6 +293,8 @@
    :layout/shrink-height    {:label "Make the window shorter" :surface #{:web}}
    :layout/balance          {:label "Equal sizes for the windows side by side" :surface #{:web}}
    :layout/reset            {:label "Back to the single chat window" :surface #{:web}}
+   :layout/undo             {:label "Undo the last window change" :surface #{:web}}
+   :layout/redo             {:label "Redo the undone window change" :surface #{:web}}
    ;; tui
    :prompt/toggle           {:label "System prompt: full / overview" :surface #{:tui}}
    :pager/down              {:label "Cursor down" :surface #{:tui}}

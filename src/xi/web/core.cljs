@@ -2986,7 +2986,9 @@
     (act :layout/grow-height   windows? {:type :layout/grow :axis :height :sign 1})
     (act :layout/shrink-height windows? {:type :layout/grow :axis :height :sign -1})
     (act :layout/balance     windows? {:type :layout/balance})
-    (act :layout/reset       windows? {:type :layout/reset})))
+    (act :layout/reset       windows? {:type :layout/reset})
+    (act :layout/undo        (fn [st] (pos? (first (wlayout/history st)))) {:type :layout/undo})
+    (act :layout/redo        (fn [st] (pos? (second (wlayout/history st)))) {:type :layout/redo})))
 
 (defn- install-actions!
   "Register the web client's keyboard actions (xi.web.keymap) behind the

@@ -93,19 +93,74 @@
     (layout/toggle-side l side true)
     l))
 
+;; ── History (winner-mode) ────────────────────────────────────────────────────
+;; `:web/layout-history {session-id {:undo [layout …] :redo [layout …]}}`,
+;; this page's own: every change of the arrangement or the sizes pushes the
+;; layout it replaced, a focus change does not; a new change drops the redo
+;; stack. Undo / redo swap the whole layout back, focus included.
+
+(def history-max 50)
+
+(defn- shape
+  "What history compares: the layout without its focus and timestamp."
+  [l]
+  (dissoc l :focus :at))
+
+(defn- record
+  "Push `before` for session `key` when `after` differs in shape."
+  [st key before after]
+  (if (= (shape before) (shape after))
+    st
+    (update-in st [:web/layout-history key]
+               (fn [{:keys [undo]}]
+                 {:undo (vec (take-last history-max (conj (vec undo) before)))
+                  :redo []}))))
+
+(defn history
+  "[undo-count redo-count] of the chat on screen."
+  [st]
+  (let [{:keys [undo redo]} (get-in st [:web/layout-history (:key (room-ctx st))])]
+    [(count undo) (count redo)]))
+
+(defn- install
+  "Put layout `l` in place for the chat on screen (`key`, `path`): stored,
+   stamped, its focused view the room's active buffer."
+  [st ev key path l]
+  (let [l   (assoc l :at (or (:event/ts ev) (js/Date.now)))
+        st' (-> st
+                (assoc-in [:web/layouts key] l)
+                (assoc-in (conj path :ui :active-buffer) (layout/focused-view l)))]
+    {:state st' :effects (persist-effects st')}))
+
 (defn- apply-layout
   "Store `(apply f layout args)` for the chat on screen and put its focused
-   view in the room's active buffer. nil when nothing changed."
+   view in the room's active buffer, recording the previous layout for
+   undo. nil when nothing changed."
   [st ev f & args]
   (when-let [{:keys [key room path]} (room-ctx st)]
     (let [l  (current st)
           l' (open-focused-side (apply f l args))]
       (when (not= l l')
-        (let [l'  (assoc l' :at (or (:event/ts ev) (js/Date.now)))
-              st' (-> st
-                      (assoc-in [:web/layouts key] l')
-                      (assoc-in (conj path :ui :active-buffer) (layout/focused-view l')))]
-          {:state st' :effects (persist-effects st')})))))
+        (install (record st key l l') ev key path l')))))
+
+(defn- step-history
+  "Undo (`from` :undo, `to` :redo) or redo the chat on screen's layout: the
+   current one moves to the other stack, the popped one comes back pruned of
+   views the room no longer has."
+  [st ev from to]
+  (when-let [{:keys [key room path]} (room-ctx st)]
+    (let [h (get-in st [:web/layout-history key])]
+      (when-let [popped (peek (vec (get h from)))]
+        (let [cur (current st)
+              l   (layout/prune popped #(view-open? room %))]
+          (-> (assoc-in st [:web/layout-history key]
+                        (-> h
+                            (assoc from (pop (vec (get h from))))
+                            (update to #(conj (vec %) cur))))
+              (install ev key path l)))))))
+
+(defn- undo [st ev] (step-history st ev :undo :redo))
+(defn- redo [st ev] (step-history st ev :redo :undo))
 
 (defn- focused-id [st] (:id (layout/focused (current st))))
 
@@ -195,13 +250,14 @@
                             l)))))
 
 (defn- reset
-  "Back to the single chat pane."
+  "Back to the single chat pane (undo brings the layout back)."
   [st ev]
   (when-let [{:keys [key path]} (room-ctx st)]
-    (when (get-in st [:web/layouts key])
-      (let [st' (-> st
-                    (update :web/layouts dissoc key)
-                    (assoc-in (conj path :ui :active-buffer) buffers/chat))]
+    (when-let [l (get-in st [:web/layouts key])]
+      (let [single (layout/single buffers/chat)
+            st'    (-> (record st key l single)
+                       (update :web/layouts dissoc key)
+                       (assoc-in (conj path :ui :active-buffer) buffers/chat))]
         {:state st' :effects (persist-effects st')}))))
 
 (defn- sync-view
@@ -255,6 +311,8 @@
    :layout/set-view    set-view
    :layout/open-view   open-view
    :layout/reset       reset
+   :layout/undo        undo
+   :layout/redo        redo
    :layout/sync-view   sync-view
    :layout/prune       prune
    :layout/seed        seed})

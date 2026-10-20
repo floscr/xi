@@ -145,6 +145,37 @@
         (is (= [:chat "file:a"] (mapv :view (layout/panes (get-in st2 [:web/layouts "s9"])))))
         (is (not (contains? (:web/layouts st2) "bad")))))))
 
+(deftest undo-and-redo
+  (let [st1 (run st {:type :layout/split :dir :row})
+        st2 (run st1 {:type :layout/set-view :pane-id "p2" :view "diff:git"})
+        st3 (run st2 {:type :layout/focus :pane-id "p1"})]
+    (is (= [2 0] (wlayout/history st3)) "split and set-view record, focus does not")
+    (is (nil? ((:layout/undo wlayout/handlers) st {:type :layout/undo})) "nothing to undo")
+    (let [u1 (run st3 {:type :layout/undo})]
+      (is (= [:chat :empty] (mapv :view (layout/panes (wlayout/stored u1)))))
+      (is (= "p2" (:focus (wlayout/stored u1))) "the focus of that time comes back")
+      (is (= :empty (active u1)))
+      (is (= [1 1] (wlayout/history u1)))
+      (let [u2 (run u1 {:type :layout/undo})]
+        (is (= [:chat] (mapv :view (layout/panes (wlayout/stored u2)))))
+        (is (= :chat (active u2)))
+        (is (= [0 2] (wlayout/history u2)))
+        (let [r1 (run u2 {:type :layout/redo})]
+          (is (= [:chat :empty] (mapv :view (layout/panes (wlayout/stored r1)))))
+          (is (= [1 1] (wlayout/history r1)))))
+      (testing "a new change drops the redo stack"
+        (let [n (run u1 {:type :layout/split :dir :col})]
+          (is (= [2 0] (wlayout/history n))))))
+    (testing "reset is undoable"
+      (let [r (run st3 {:type :layout/reset})]
+        (is (nil? (wlayout/stored r)))
+        (is (= [:chat "diff:git"] (mapv :view (layout/panes (wlayout/stored (run r {:type :layout/undo}))))))))
+    (testing "undo prunes views the room lost meanwhile"
+      (let [gone (-> st3
+                     (run {:type :layout/close-pane :pane-id "p2"})
+                     (update-in [:rooms "r1" :ui :buffers] dissoc "diff:git"))]
+        (is (= [:chat] (mapv :view (layout/panes (wlayout/stored (run gone {:type :layout/undo}))))))))))
+
 (deftest restore-on-join
   (let [st' (run st {:type :layout/split :dir :row})
         st' (run st' {:type :layout/set-view :pane-id "p2" :view "diff:git"})
