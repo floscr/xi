@@ -219,14 +219,13 @@ A chat shows one view at a time until you split it. **Split window right**
 or **Split window down** (the ⋮ menu, the palette's Windows group, or a
 window's own bar) divides the view in two; the new window asks what to
 show: the chat, a buffer, a sub-agent, a file or the git status. Every
-window has a bar with its view pill (the same list as the top bar's,
-for that window), split buttons, two buttons that move it into the left or
-right **sidebar**, and ×. Up to eight windows; the chat appears in one of
-them at most.
+window has a bar with its view pill (the top bar's list, for that window;
+the top bar's own pill goes away while the chat is split), split buttons,
+two buttons that move it into the left or right **sidebar**, and ×. Up to
+eight windows; the chat appears in one of them at most.
 
 - **Focus.** The window you last clicked is the focused one (an accent
-  outline). The top bar's pill, the URL, the sidebar's tinted row and the
-  keys all follow it: a buffer opened from anywhere (the sidebar, the
+  outline). The URL, the sidebar's tinted row and the keys all follow it: a buffer opened from anywhere (the sidebar, the
   palette, a file link) shows in the focused window, or focuses the window
   already showing it. `Esc` in a diff or file window puts the chat there.
 - **Resizing.** Drag the seam between two windows. Each seam is a keyboard

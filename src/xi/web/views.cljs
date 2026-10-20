@@ -4883,7 +4883,8 @@
   (let [{:keys [room history resuming? dkey buffers active-buf sub-agents has-tabs?
                 drop-zone? file-drag?]
          :as ctx} (chat-ctx state dispatch!)
-        windows  (when room (wlayout/stored state))]
+        windows  (when room (wlayout/stored state))
+        split?   (and windows (not (layout/default? windows)))]
     [:div (cond-> {:class ["container" "chat-drop-zone"] :replicant/key "chat"}
             drop-zone? (assoc :on (file-drop-attrs dispatch! dkey file-drag?)))
      (file-drop-overlay dispatch! file-drag?)
@@ -4896,12 +4897,13 @@
       (offline-badge state)
       (yolo-chip dispatch! room)
       (process-chip dispatch! room)
-      (when has-tabs?
+      ;; each window carries its own pill (pane-header) once the chat is split
+      (when (and has-tabs? (not split?))
         (buffer-menu dispatch! (:id room) active-buf buffers sub-agents
                      (let [viewers (buffers/viewers room)]
                        (fn [id] (sb/room-people state (get viewers id))))))
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
-     (if (and windows (not (layout/default? windows)))
+     (if split?
        (layout-view state dispatch! ctx windows)
        (pane-view state dispatch! ctx nil nil active-buf))
      ;; outside the panes: code blocks in file buffers open it too
