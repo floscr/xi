@@ -2518,13 +2518,6 @@ body {
   padding-bottom: var(--size-2);
 }
 
-/* The iPhone keyboard's accessory bar (↑ ↓ ✓) floats over the bottom of the
-   visual viewport instead of docking onto the keyboard, so #app, pinned to
-   that viewport's height, would end under it and hide the composer. */
-.iphone.keyboard-open #app {
-  padding-bottom: 60px;
-}
-
 /* Touch devices: the compose-row icon buttons (attach, send, queue, abort,
    spinner-abort) are visually 28px (20px icon + 4px padding) — well under
    the ~44px recommended touch target, which made the send button need

@@ -3231,19 +3231,29 @@
         (when-not (zero? delta)
           (set! (.-scrollTop timeline) (+ prev-top delta)))))))
 
+(defonce ^:private viewport-settle-timers (atom []))
+
+(defn- resync-viewport-when-settled!
+  "Re-run sync-viewport-height! once the iOS keyboard has finished animating.
+   The visual viewport's height can still change after its last resize event
+   (iOS 26's floating accessory bar), leaving the composer under the bar."
+  []
+  (run! js/clearTimeout @viewport-settle-timers)
+  (reset! viewport-settle-timers
+          (mapv #(js/setTimeout sync-viewport-height! %) [350 800 1500])))
+
 (defn- install-viewport-tracking!
   "Run sync-viewport-height! on viewport changes, and re-sync zoom, height
    and the drawer paint whenever a standalone PWA resumes from the
    background (iOS restores a stale scale and height until then)."
   [state]
-  ;; .iphone: style.css reserves room for the floating keyboard accessory bar
-  (.toggle (.-classList js/document.documentElement) "iphone"
-           (boolean (re-find #"iPhone" (.-userAgent js/navigator))))
   (sync-viewport-height!)
   (if js/window.visualViewport
-    (do (.addEventListener js/window.visualViewport "resize" (fn [_] (sync-viewport-height!)))
+    (do (.addEventListener js/window.visualViewport "resize"
+                           (fn [_] (sync-viewport-height!) (resync-viewport-when-settled!)))
         (.addEventListener js/window.visualViewport "scroll" (fn [_] (sync-viewport-height!))))
     (.addEventListener js/window "resize" (fn [_] (sync-viewport-height!))))
+  (.addEventListener js/document "focusin" (fn [_] (resync-viewport-when-settled!)))
   (let [on-resume (fn []
                     (reset-zoom!)
                     (sync-viewport-height!)
