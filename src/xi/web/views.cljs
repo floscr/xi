@@ -4408,7 +4408,7 @@
 
 (defn- chat-body
   "The chat itself: the timeline, its overlays and the compose dock."
-  [state dispatch! {:keys [sid room history busy? new? model ready? pa? dkey nav-ctx]}]
+  [state dispatch! {:keys [sid room history busy? new? model ready? pa? dkey nav-ctx sub-agents]}]
        (list
         [:div {:class ["timeline"
                        (when-not pa? "timeline--float-footer")]}
