@@ -81,6 +81,28 @@
   [state]
   (or (:web/keymap state) default-keymap))
 
+(defn palette-hotkey
+  "The command palette's own open key, as the ui.command dialog's hotkey
+   spec (`mod+k`, mod = Ctrl or Cmd): the first single modifier chord the
+   `:global` layer binds to :palette/open, else `mod+k`. The runtime owns
+   that key everywhere, text fields included, and takes it before the
+   keymap sees it, so binding :palette/open in `:global` moves the palette
+   off Ctrl+K and frees Ctrl+K for the keymap."
+  [state]
+  (or (some (fn [[k a]]
+              (when (and (= :palette/open a) (not (str/includes? k " ")))
+                (let [parts (str/split k #"\+")
+                      ;; "ctrl++" splits to ["ctrl" "" ""]: the key is "+"
+                      parts (if (str/ends-with? k "+") (conj (vec (remove empty? parts)) "+") parts)
+                      mods  (set (butlast parts))]
+                  (when (some mods ["ctrl" "meta" "mod" "alt"])
+                    (str/join "+" (concat (when (some mods ["ctrl" "meta" "mod"]) ["mod"])
+                                          (when (mods "alt") ["alt"])
+                                          (when (mods "shift") ["shift"])
+                                          [(last parts)]))))))
+            (:global (keymap state)))
+      "mod+k"))
+
 (def handlers
   "`:keys/config` — the operator's config.edn `:keys`, sent by the server on
    connect; recomputes the effective keymap."

@@ -6655,7 +6655,7 @@
         projects-page? (= :projects (:kind palette-page))
         new-chat-page? (= :new-chat (:kind palette-page))
         names-only?  (boolean (get-in state [:web/palette-search :names-only?]))
-        dialog-attrs {:id "cmdk" :hotkey "mod+k"
+        dialog-attrs {:id "cmdk" :hotkey (keymap/palette-hotkey state)
                       ;; Hold Alt → key badges on the first rows, Alt+key picks one.
                       :quick-nav palette-quick-keys
                       :placeholder (cond

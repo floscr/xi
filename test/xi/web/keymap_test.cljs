@@ -1,5 +1,6 @@
 (ns xi.web.keymap-test
   (:require [cljs.test :refer [deftest is testing]]
+            [xi.keys :as keys]
             [xi.web.keymap :as keymap]))
 
 (deftest event-actions
@@ -56,3 +57,21 @@
       (is (= [] @sent))))
   (keymap/unregister-action! :palette/open)
   (keymap/unregister-action! :themes/pick))
+
+;; ── palette-hotkey (the command palette's own key) ───────────────────────────
+
+(defn- with-user-keys [user]
+  {:web/keymap (keys/effective-keymap {:surface :web :user user})})
+
+(deftest palette-hotkey-follows-a-global-binding
+  (testing "the built-in key without a binding"
+    (is (= "mod+k" (keymap/palette-hotkey {}))))
+  (testing "a :global modifier chord becomes the dialog's hotkey"
+    (is (= "mod+x" (keymap/palette-hotkey (with-user-keys {:global {"ctrl+x" :palette/open}}))))
+    (is (= "mod+x" (keymap/palette-hotkey (with-user-keys {:global {"meta+x" :palette/open}}))))
+    (is (= "alt+p" (keymap/palette-hotkey (with-user-keys {:global {"alt+p" :palette/open}}))))
+    (is (= "mod+shift+p" (keymap/palette-hotkey (with-user-keys {:global {"ctrl+shift+p" :palette/open}})))))
+  (testing "sequences, bare keys and other layers keep the built-in key"
+    (is (= "mod+k" (keymap/palette-hotkey (with-user-keys {:global {"g p" :palette/open}}))))
+    (is (= "mod+k" (keymap/palette-hotkey (with-user-keys {:global {"p" :palette/open}}))))
+    (is (= "mod+k" (keymap/palette-hotkey (with-user-keys {:mode/navigate {"ctrl+x" :palette/open}}))))))

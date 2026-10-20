@@ -394,7 +394,7 @@ These keys belong to a control and are not in the keymap:
 
 | Key | Does |
 | --- | --- |
-| `Ctrl/Cmd+k` | Command palette |
+| `Ctrl/Cmd+k` | Command palette. Binding `:palette/open` to a modifier chord in `:global` (`"ctrl+x"`) makes that the palette's key instead, in text fields too, and frees `Ctrl+k` |
 | `Tab` (in the message box) | Expand the snippet word before the cursor: `c` becomes `continue`, `rec` becomes `in a recent change`. Anywhere else Tab moves focus as usual. |
 | `Ctrl+Enter` (on one of your messages) | Go back to before it and edit it |
 | `↑`/`↓`, `Alt+k`/`Alt+j` or `Ctrl+p`/`Ctrl+n` (in the `/` command list) | Move through the matching commands; `Enter` or `Tab` runs the selected one |
