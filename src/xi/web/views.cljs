@@ -4960,7 +4960,6 @@
           (spinner) [:span "Updating…"]])]
       (offline-badge state)
       (yolo-chip dispatch! room)
-      (process-chip dispatch! room)
       ;; each window carries its own pill (pane-header) once the chat is split
       (when (and has-tabs? (not split?))
         (buffer-menu dispatch! (:id room) active-buf buffers sub-agents
