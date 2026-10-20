@@ -3207,23 +3207,56 @@
                 "M12 10.941c2.333 -3.308 .167 -7.823 -1 -8.941c0 3.395 -2.235 5.299 -3.667 6.706c-1.43 1.408 -2.333 3.294 -2.333 5.588c0 3.704 3.134 6.706 7 6.706c3.866 0 7 -3.002 7 -6.706c0 -1.712 -1.232 -4.403 -2.333 -5.588c-2.084 3.353 -3.257 3.353 -4.667 2.235")}]])
 
 (defn- yolo-chip
-  "Chat header chip while the room's yolo mode is on (xi.ext.yolo); a click
-   runs /yolo off."
+  "Chat header chip while the room's yolo mode is on (xi.ext.yolo): just the
+   flame, outlined for yolo and filled for relentless; a click runs /yolo off."
   [dispatch! room]
-  (when-let [[flame label title]
+  (when-let [[flame title]
              (case (get-in room [:ext :yolo :level])
                :sane       [(flame-icon false ["yolo-chip-flame"])
-                            "Yolo"
                             "Yolo mode: tool calls run without asking, except risky ones."]
                :relentless [(flame-icon true ["yolo-chip-flame" "yolo-chip-flame--relentless"])
-                            "Relentless"
                             "Relentless yolo mode: every tool call runs without asking."]
                nil)]
-    (chip/chip {:attrs    {:class ["yolo-chip"]
-                           :title (str title " Click to turn it off.")}
-                :on-click (fn [_] (dispatch-command! dispatch! (:id room) "yolo off"))}
-      flame
-      label)))
+    (let [title (str title " Click to turn it off.")]
+      (chip/chip {:attrs    {:class      ["yolo-chip"]
+                             :title      title
+                             :aria-label title}
+                  :on-click (fn [_] (dispatch-command! dispatch! (:id room) "yolo off"))}
+        flame))))
+
+(defn- process-chip
+  "Chat header chip while the room tracks background processes
+   (xi.ext.process-manager, started by clj's process/start): the count, and a
+   popover listing them; picking one opens its live log buffer."
+  [dispatch! room]
+  (when-let [procs (seq (get-in room [:ext :process-manager :processes]))]
+    (let [menu-id "process-menu"
+          n       (count procs)
+          title   (str n (if (= 1 n) " background process" " background processes")
+                       " — view a log")]
+      (list
+       (chip/chip {:class "process-chip"
+                   :attrs (merge {:title title :aria-label title
+                                  :replicant/key "process-chip"}
+                                 (popover/trigger-attrs menu-id))}
+         (icon/icon {:icon-name :terminal :size :sm})
+         [:span (str n)])
+       (popover/popover-content
+        {:id    menu-id
+         :side  :bottom
+         :align :end
+         :class "sidebar-more-menu buffer-menu"
+         :attrs {:replicant/key "process-menu"}}
+        (for [{:keys [pid command]} procs]
+          [:button {:class ["sidebar-more-item" "buffer-menu-item"]
+                    :replicant/key (str "proc-" pid)
+                    :title command
+                    :on {:click (fn [^js e]
+                                  (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover))
+                                  (dispatch! {:type :process-manager/open-log
+                                              :room-id (:id room) :pid pid}))}}
+           (icon/icon {:icon-name :terminal :size :sm})
+           [:span {:class ["buffer-menu-title"]} (str "$ " command)]]))))))
 
 (defn shorten-path
   [path]
@@ -5000,6 +5033,7 @@
           (spinner) [:span "Updating…"]])]
       (offline-badge state)
       (yolo-chip dispatch! room)
+      (process-chip dispatch! room)
       ;; each window carries its own pill (pane-header) once the chat is split
       (when (and has-tabs? (not split?))
         (buffer-menu dispatch! (:id room) active-buf buffers sub-agents

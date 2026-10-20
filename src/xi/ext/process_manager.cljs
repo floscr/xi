@@ -7,22 +7,21 @@
    deregister here via :ext.process-manager/register / :deregister events, so
    this extension only keeps the room-scoped registry: it drives /ps, /kill,
    the /processes picker, room keep-alive (see room-manager), and kills
-   whatever is still running when the room closes.
+   whatever is still running when the room closes. The web client's process
+   chip opens a process's log as a `:process-log` buffer that follows the
+   file while the process runs (xi.ext.process-manager.web).
 
-   State is room-scoped:
+   State is room-scoped (xi.ext.process-manager.registry):
      {:processes [{:pid N :command str :started ms-timestamp :logfile str}]}"
   (:require [clojure.string :as str]
-            [xi.core.state :as state]
-            [xi.ext.clj-process :as proc]))
+            [xi.ext.clj-process :as proc]
+            [xi.ext.process-manager.registry :as reg]))
 
-(def ^:private ext-id :process-manager)
+(def ^:private ext-id reg/ext-id)
+
+(def ^:private get-processes reg/get-processes)
 
 ;; ── Helpers ──────────────────────────────────────────────────────────────────
-
-(defn- get-processes
-  "Tracked processes for a room."
-  [state room-id]
-  (or (:processes (state/room-ext state room-id ext-id)) []))
 
 (defn- kill-pid!
   "SIGTERM a process group by PID (the spawn is detached, so the pid is its
@@ -83,20 +82,6 @@
       (some #(when (= n (:pid %)) %) procs))))
 
 ;; ── Handlers ─────────────────────────────────────────────────────────────────
-
-(defn- register-process
-  "Add a tracked process to room state."
-  [st {:keys [room-id process]}]
-  (when (state/get-room st room-id)
-    {:state (update-in st [:rooms room-id :ext ext-id :processes]
-                       (fnil conj []) process)}))
-
-(defn- deregister-process
-  "Remove a tracked process (by PID) from room state."
-  [st {:keys [room-id pid]}]
-  (when (state/get-room st room-id)
-    {:state (update-in st [:rooms room-id :ext ext-id :processes]
-                       (fn [ps] (vec (remove #(= pid (:pid %)) ps))))}))
 
 (defn- on-room-close
   "Kill all tracked processes when a room is destroyed."
@@ -183,13 +168,79 @@
                                     (str "Killed PID " pid (when command (str " — " command)))
                                     (str "PID " pid " already dead — removed from list"))}))}))
 
+;; ── Log buffer ────────────────────────────────────────────────────────────────
+;; A followed log is re-read on a timer and re-installed via :ui/buffer-set
+;; (broadcast + mirrored like any buffer) whenever its tail or status changed.
+;; The timer stops once the process exited or the buffer (or room) is gone.
+
+(def ^:private log-lines 500)
+(def ^:private follow-interval-ms 1500)
+
+;; [room-id pid] → interval handle
+(defonce ^:private followers (atom {}))
+
+(defn- unfollow! [k]
+  (when-let [t (get @followers k)]
+    (js/clearInterval t)
+    (swap! followers dissoc k)))
+
+(defn- log-snapshot
+  "The log's tail and the process's status. The `.exit` sidecar decides
+   first: a child the clj worker hasn't reaped yet still answers kill 0."
+  [{:keys [pid logfile]}]
+  (let [exit (proc/read-exit-code (proc/exit-file-of logfile))]
+    {:text     (proc/tail-file logfile log-lines)
+     :running? (and (nil? exit) (proc/pid-alive? pid))
+     :exit     exit}))
+
+(defn- open-log
+  "A client asked to view a tracked process's log. Only registry entries
+   resolve, so a client can't name an arbitrary file."
+  [st {:keys [room-id pid client-id]}]
+  (when-let [p (reg/find-process st room-id pid)]
+    {:effects [[:process-manager/follow-log
+                (cond-> {:room-id room-id :process p}
+                  client-id (assoc :client-id client-id))]]}))
+
+(defn- follow-log-fx
+  [{:keys [dispatch! get-state]} {:keys [room-id process client-id]}]
+  (let [{:keys [pid command logfile]} process
+        id    (reg/log-buffer-id pid)
+        k     [room-id pid]
+        seen  (atom nil)
+        push! (fn []
+                (let [snap (log-snapshot process)]
+                  (when (not= snap @seen)
+                    (reset! seen snap)
+                    (dispatch! {:type :ui/buffer-set :room-id room-id :buffer-id id
+                                :buffer (merge {:kind :process-log :title (str "$ " command)
+                                                :pid pid :command command :logfile logfile}
+                                               snap)}))
+                  snap))]
+    (unfollow! k)
+    (push!)
+    (dispatch! (cond-> {:type :ui/buffer-switch :room-id room-id :buffer-id id}
+                 client-id (assoc :client-id client-id)))
+    (when (:running? @seen)
+      (swap! followers assoc k
+             (js/setInterval
+              (fn []
+                (when (or (nil? (get-in (get-state) [:rooms room-id :ui :buffers id]))
+                          (not (:running? (push!))))
+                  (unfollow! k)))
+              follow-interval-ms)))))
+
 (def extension
   {:id               ext-id
    :init             {:room {:processes []}}
-   :handlers         {:ext.process-manager/register       register-process
-                      :ext.process-manager/deregister     deregister-process
+   :handlers         {:ext.process-manager/register       reg/register-process
+                      :ext.process-manager/deregister     reg/deregister-process
                       :ext.process-manager/kill-selected  kill-selected
+                      :process-manager/open-log           open-log
                       :room/close                         on-room-close}
+   :fx               {:process-manager/follow-log follow-log-fx}
+   ;; a client→server request, not room state
+   :no-broadcast     #{:process-manager/open-log}
    :commands         [{:name "processes" :description "Pick a tracked process to kill" :handler cmd-processes}
                       {:name "ps"        :description "List tracked background processes" :handler cmd-ps}
                       {:name "kill"      :description "Kill a tracked process by index or PID" :handler cmd-kill}]})

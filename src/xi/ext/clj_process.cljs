@@ -135,6 +135,11 @@
   (str (or (aget js/process.env "TMPDIR") (os/tmpdir) "/tmp")
        "/xi-proc-" (.now js/Date) "-" (rand-int 1000000) ".log"))
 
+(defn exit-file-of
+  "The `.exit` sidecar next to a process's log, holding its exit code."
+  [logfile]
+  (str logfile ".exit"))
+
 (defn tail-file
   "Last `n` non-blank lines of a file (sync; reads at most the trailing 64KB).
    \"\" when the file is missing or empty. Also used by the process-manager
@@ -154,9 +159,10 @@
            (str/join "\n")))
     (catch :default _ "")))
 
-(defn- read-exit-code
+(defn read-exit-code
   "Exit code from the `.exit` sidecar, or nil while the process runs (or if
-   it was killed before the sidecar was written)."
+   it was killed before the sidecar was written). Also read by the
+   process-manager's log buffer."
   [exit-file]
   (try (parse-long (str/trim (fs/readFileSync exit-file "utf8")))
        (catch :default _ nil)))
@@ -209,7 +215,7 @@
   (require-approved! opts cmd)
   (let [cmd'      (str/trimr (str/replace (str cmd) #"\s*&\s*$" ""))
         logfile   (new-log-path)
-        exit-file (str logfile ".exit")
+        exit-file (exit-file-of logfile)
         child     (spawn-detached! cmd' (or dir (:cwd @opts)) logfile exit-file env)
         pid       (.-pid child)
         started   (.now js/Date)

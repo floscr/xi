@@ -56,6 +56,7 @@
         [xi.ext.diff.web :as diff-web]
         [xi.ext.file-view.web :as file-view-web]
         [xi.ext.home.web :as home-web]
+        [xi.ext.process-manager.web :as process-manager-web]
         [xi.ext.subagent.web :as subagent-web]
         [xi.ext.terminal.web :as terminal-web]
         [xi.ext.usage.web :as usage-web]
@@ -212,6 +213,9 @@
       ;; draws agent blocks after their tool call (xi.ext.blocks)
       blocks-web/extension
       subagent-web/extension
+      ;; the room's background processes (chat header chip) and their
+      ;; live :process-log buffers (xi.ext.process-manager)
+      process-manager-web/extension
       ;; mirrors the /yolo flag and its status line (xi.ext.yolo)
       yolo-web/extension
       ;; the dashboard's Active / Recent chats / Projects cards

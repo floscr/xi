@@ -206,17 +206,16 @@ body {
   color: var(--fg-1);
 }
 
-/* The yolo chip (xi.web.views/yolo-chip) is one more bordered header chip:
-   the icon-btn's height, border and radius. Theme colours only — an accent
-   tint disappears on a tinted theme; the flame is the colour cue. */
+/* The yolo chip (xi.web.views/yolo-chip) is one more square icon chip,
+   sized like the icon-btn. Theme colours only — an accent tint disappears on
+   a tinted theme; the flame is the colour cue. */
 .topbar--chat .yolo-chip {
+  width: var(--size-10);
   height: var(--size-10);
-  padding: 0 var(--size-3) 0 var(--size-2);
-  gap: var(--size-1);
+  padding: 0;
+  justify-content: center;
   border: var(--border-0);
   border-radius: var(--radius-md);
-  font-size: var(--font-sm);
-  font-weight: 600;
   color: var(--fg-1);
 }
 
@@ -226,6 +225,18 @@ body {
 
 .yolo-chip-flame--relentless {
   color: var(--danger);
+}
+
+/* Background processes (xi.web.views/process-chip): icon + count, as tall as
+   the yolo chip. */
+.topbar--chat .process-chip {
+  height: var(--size-10);
+  padding: 0 var(--size-2);
+  gap: var(--size-1);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  color: var(--fg-1);
+  font-variant-numeric: tabular-nums;
 }
 
 /* The active tab segment stays a touch more opaque so it reads as selected. */
@@ -6248,6 +6259,24 @@ code a:hover,
   line-height: 1.5;
   white-space: pre;
   color: var(--fg-0);
+}
+
+/* A process's live log (xi.ext.process-manager.web): status, command, pid. */
+.process-log-command {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-size: var(--font-xs);
+  color: var(--fg-0);
+}
+
+.process-log-meta {
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+  color: var(--fg-2);
 }
 
 /* Markdown files: rendered as formatted HTML instead of source. The scroll

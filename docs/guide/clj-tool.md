@@ -110,7 +110,9 @@ A dev server or a long build runs in the background:
 ```
 
 `/ps` lists a chat's processes and `/kill` stops one. A chat with a running
-process is kept open.
+process is kept open. In the web client the chat header shows a `>_ N` chip
+while processes run; pick one to open its log, which follows the output
+live, also while the agent is busy.
 
 ## Reference
 
