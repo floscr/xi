@@ -1,5 +1,6 @@
 (ns xi.web.views-test
   (:require [cljs.test :refer [deftest is testing]]
+            [xi.layout :as layout]
             [xi.web.block-menu :as block-menu]
             [xi.web.timeline-posts :as timeline-posts]
             [xi.web.views :as views]))
@@ -309,3 +310,37 @@
       (is (true? (open? (assoc in-pane :web/appearance {:tool-blocks :open}) "sv-0")))
       (is (true? (open? (assoc in-pane :web/block-open {"s" {"sa-sub1-0" true}}) "sv-0"))
           "the same block toggled in the card is open here too"))))
+
+
+;; ── windows: every layout node keyed by role ─────────────────────────────────
+
+(defn- node-keys
+  "The :replicant/key of every node in a hiccup tree."
+  [hiccup]
+  (into #{}
+        (keep (fn [x] (when (and (vector? x) (map? (second x)))
+                        (:replicant/key (second x)))))
+        (tree-seq #(or (vector? %) (seq? %)) seq hiccup)))
+
+(deftest layout-nodes-keyed-by-role
+  ;; The ui.panels runtime leaves inline sizes and a controller on panel
+  ;; nodes; a key per role keeps Replicant from morphing a panel into a
+  ;; pane header or a sidebar panel into the main fill (stale widths).
+  (let [layout-view @#'views/layout-view
+        room   {:id "r1" :session {:id "s"} :ui {:buffers {}}}
+        state  {:web/route {:session-id "s"} :active-room "r1" :web/wide? true
+                :rooms {"r1" room}}
+        ctx    {:room room :buffers {} :sub-agents []}
+        split  (layout/split (layout/single :empty) "p1" :row :empty)
+        keys-of (fn [l] (node-keys (layout-view state (fn [_]) ctx l)))]
+    (testing "a split: the group, a sized slot, the fill and both panes"
+      (let [ks (keys-of split)]
+        (is (every? ks ["main" "split-row-p1" "slot-p1" "fill-p2" "pane-p1" "pane-p2"]))
+        (is (not (ks "slot-p2")) "the fill is keyed apart from the sized slots")))
+    (testing "docked: the sidebar panel, no split"
+      (let [ks (keys-of (layout/dock split "p1" :left))]
+        (is (every? ks ["side-left" "pane-p1" "main" "pane-p2"]))
+        (is (not-any? #(re-find #"^(split|slot|fill)-" %) ks))))
+    (testing "a pane keeps its key while its role changes"
+      (let [ks (keys-of (layout/split split "p1" :col :empty))]
+        (is (every? ks ["split-row-p1" "slot-p1" "split-col-p1" "fill-p3" "pane-p3"]))))))

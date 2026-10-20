@@ -4839,6 +4839,11 @@
         :else
         (chat-body state dispatch! ctx)))))
 
+;; Every layout node is keyed so Replicant never morphs one role's DOM node
+;; into another's (a sized panel into a pane header, a sidebar panel into the
+;; main fill): the ui.panels runtime writes inline sizes, data-edge/bare and a
+;; controller expando onto panel nodes, and those outlive a positional reuse —
+;; a window then keeps a stale width and overlaps its neighbour.
 (defn- pane-frame
   "One window: header + its view. `data-pane-id` / `data-pane-focused` are
    what xi.web.core's pointer listener and scroller lookup read."
@@ -4848,16 +4853,24 @@
                    (when focused? "pane--focused")
                    (when (= :chat view) "pane--chat")
                    (when side "pane--side")]
+           :replicant/key (str "pane-" id)
            :data-pane-id id
            :data-pane-focused (when focused? "true")}
      (pane-header dispatch! state ctx layout pane side)
      [:div {:class ["pane-body"]}
       (pane-view state dispatch! ctx layout id view)]]))
 
+(defn- first-pane-id
+  "The id of a subtree's first pane: a split's children and the split itself
+   are keyed by it, so a window keeps its DOM while its siblings come and go."
+  [node]
+  (if (layout/pane? node) (:id node) (recur (first (:children node)))))
+
 (defn- layout-node
   "The main tree: a split is a ui.panels group (`data-split-path`), its
    children sized panels but the last, which fills; xi.web.core turns the
-   runtime's resize events back into :layout/resize."
+   runtime's resize events back into :layout/resize. Sized slots and the fill
+   are keyed apart: a window changing role gets a fresh panel node."
   [state dispatch! ctx layout node path]
   (if (layout/pane? node)
     (pane-frame state dispatch! ctx layout node nil)
@@ -4866,17 +4879,22 @@
       (apply panels/group
              {:orientation (if (= :row dir) :horizontal :vertical)
               :class "pane-split"
-              :attrs {:data-split-path (str/join "." path)}}
+              :attrs {:data-split-path (str/join "." path)
+                      :replicant/key (str "split-" (name dir) "-" (first-pane-id node))}}
              (mapcat (fn [i child]
-                       (let [sub (layout-node state dispatch! ctx layout child (conj path i))]
+                       (let [sub (layout-node state dispatch! ctx layout child (conj path i))
+                             k   (first-pane-id child)]
                          (if (< i (dec n))
                            [(panels/panel {:size (str (* 100 (nth sizes i)) "%")
                                            :min-size 120
                                            :class "pane-slot"
-                                           :attrs {:data-split-index i}}
+                                           :attrs {:data-split-index i
+                                                   :replicant/key (str "slot-" k)}}
                                           sub)
                             (panels/separator {:label "Resize windows"})]
-                           [(panels/panel {:class "pane-slot pane-slot--fill"} sub)])))
+                           [(panels/panel {:class "pane-slot pane-slot--fill"
+                                           :attrs {:replicant/key (str "fill-" k)}}
+                                          sub)])))
                      (range) children)))))
 
 (defn- side-slot
@@ -4886,7 +4904,8 @@
     (panels/panel {:size size :min-size layout/side-min :max-size layout/side-max
                    :collapsible true :collapsed (not open?)
                    :class (str "pane-side pane-side--" (name side))
-                   :attrs {:data-side (name side)}}
+                   :attrs {:data-side (name side)
+                           :replicant/key (str "side-" (name side))}}
                   (pane-frame state dispatch! ctx layout pane side))))
 
 (defn- layout-view
@@ -4902,7 +4921,7 @@
         {:orientation :horizontal :class "pane-root"}
         (side-slot state dispatch! ctx layout :left)
         (when (:left layout) (panels/separator {:label "Resize left sidebar"}))
-        (panels/panel {:class "pane-root-main"}
+        (panels/panel {:class "pane-root-main" :attrs {:replicant/key "main"}}
                       (layout-node state dispatch! ctx layout (:main layout) []))
         (when (:right layout) (panels/separator {:label "Resize right sidebar"}))
         (side-slot state dispatch! ctx layout :right))]

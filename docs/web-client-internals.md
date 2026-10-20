@@ -129,7 +129,13 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   pane) and `:layout/prune` when a pane's view closed. `:room/joined`
   restores a session's layout over the remembered single view
   (`wlayout/restore`). Rendering: a split is a `ui.panels` group
-  (`data-split-path`), its children sized panels but the last (fill); the
+  (`data-split-path`), its children sized panels but the last (fill). Every
+  node carries a `:replicant/key` by role and first pane id (`pane-p1`,
+  `slot-p1`, `fill-p2`, `split-row-p1`, `side-left`, `main`): the panels
+  runtime writes inline sizes, `data-edge` / `data-bare` and a controller
+  expando onto panel nodes, and a positional Replicant reuse (a sidebar
+  panel morphed into the main fill, a slot into a pane header) kept them,
+  so a window overflowed its slot. The
   runtime's `ui-panels-resize` / `ui-panels-collapse` CustomEvents are
   delegated in `xi.web.core/attach-pane-listeners!` into `:layout/resize`
   / `:layout/resize-side` / `:layout/toggle-side`, and a pointer down in a
