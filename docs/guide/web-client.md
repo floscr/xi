@@ -73,7 +73,9 @@ projects** in the sidebar opens the project list (`/projects`).
   [sub-agents](builtin-tools.md#sub-agents), they appear as a post right
   where that happened, one folded row each like a collapsed run of tool
   calls: its status, label, step count with the latest tool, and running
-  time. Open a row for its output, or stop it. The post scrolls away with
+  time. Open a row for its output, or stop it; its tool and thinking
+  blocks start open or collapsed like the chat's own
+  ([Appearance](#appearance)). The post scrolls away with
   the conversation. When a sub-agent finishes, its answer appears as a post
   where the conversation was by then, with buttons to open it as a chat of
   its own, keep it as a session or dismiss it (or, with **Sub-agent

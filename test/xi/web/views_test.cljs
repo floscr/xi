@@ -258,3 +258,54 @@
                                         [{:name "a" :description "A"} {:name "b"}]))]
         (is (= [{:name "a" :description "A"}] (:skills ctx)))
         (is (= #{"a" "b" "gone"} (:skill-names ctx)))))))
+
+;; ── code menu: Split lines ──────────────────────────────────────────────────
+
+(deftest code-lines-test
+  (testing "non-blank lines, trimmed"
+    (is (= ["hey re:deploy-pi" "ssh -t pi sudo reboot"]
+           (views/code-lines "hey re:deploy-pi\n\n  ssh -t pi sudo reboot  \n"))))
+  (testing "nil and blank text have no lines"
+    (is (= [] (views/code-lines nil)))
+    (is (= [] (views/code-lines " \n\t")))))
+
+
+;; ── sub-agent rows follow the chat's block rules ─────────────────────────────
+
+(defn- post-details-open
+  "The :open of the <details> inside the post keyed `k` of a chat-view render."
+  [hiccup k]
+  (let [nodes #(tree-seq (fn [x] (or (vector? x) (seq? x))) seq %)]
+    (some (fn [x]
+            (when (and (vector? x) (map? (second x)) (= k (:replicant/key (second x))))
+              (some (fn [y] (when (and (vector? y) (= :details (first y)) (map? (second y)))
+                              [(:open (second y))]))
+                    (nodes x))))
+          (nodes hiccup))))
+
+(deftest subagent-rows-follow-the-block-rules
+  (let [chat-view @#'views/chat-view
+        child     {:id "sub1" :anchor 2 :status :done :expanded? true :label "worker"
+                   :history [{:kind :tool-call :id "st1" :tool "Read" :status :done
+                              :arguments {:file_path "a.txt"} :result "x"}]}
+        state     {:web/route {:session-id "s"}
+                   :active-room "r1"
+                   :rooms {"r1" {:id "r1" :session {:id "s"}
+                                 :history [{:kind :user :text "go"} {:kind :text :text "ok"}]
+                                 :ext {:subagents {:agents [child]}}}}}
+        in-pane   (assoc-in state [:rooms "r1" :ui :active-buffer] "sub1")
+        open?     (fn [st k] (first (post-details-open (chat-view st (fn [_])) k)))]
+    (testing "the card in the chat"
+      (is (= [false] (post-details-open (chat-view state (fn [_])) "sae-0"))
+          "tool blocks start collapsed by default")
+      (is (true? (open? (assoc state :web/appearance {:tool-blocks :open}) "sae-0"))
+          "the Tool blocks setting opens them")
+      (is (true? (open? (assoc state :web/appearance {:tool-blocks-except ["read"]}) "sae-0"))
+          "a tool switched on in the Tool blocks list starts the other way")
+      (is (true? (open? (assoc state :web/block-open {"s" {"sa-sub1-0" true}}) "sae-0"))
+          "the user's toggle is remembered under the session"))
+    (testing "the sub-agent in a window"
+      (is (= [false] (post-details-open (chat-view in-pane (fn [_])) "sv-0")))
+      (is (true? (open? (assoc in-pane :web/appearance {:tool-blocks :open}) "sv-0")))
+      (is (true? (open? (assoc in-pane :web/block-open {"s" {"sa-sub1-0" true}}) "sv-0"))
+          "the same block toggled in the card is open here too"))))

@@ -3971,19 +3971,65 @@
                                         :sub-id  (not-empty (.-askSub ds))})))}}
    (icon/icon {:icon-name :zap :size :sm})])
 
+(defn- subagent-block-ctx
+  "What a sub-agent's rows need to follow the chat's block rules, from the
+   app `state` for `room`: the effective appearance, the session's
+   remembered open / closed blocks (:web/block-open) and the key they file
+   under (the chat's `sid`, else the room id, as in chat-body)."
+  [state room sid]
+  (let [session-key (or sid (:id room))]
+    {:room-id     (:id room)
+     :cwd         (or (:cwd room) (get-in state [:web/pending-room :cwd]))
+     :app         (appearance/effective-in state)
+     :session-key session-key
+     :block-open  (get-in state [:web/block-open session-key])}))
+
+(defn- subagent-items
+  "A sub-agent's history as viewer items ({:key :node :group? :collapsed?
+   :info}, what group-viewer-items folds) under the same block rules as the
+   chat's own timeline: a tool or thinking row starts open or collapsed per
+   the appearance (appearance/block-collapsed?), shows its arguments per
+   :tool-args, and the user's toggle is remembered in the session's
+   :web/block-open under `sa-<sub-id>-<i>` (remember-open). `ctx` is a
+   subagent-block-ctx; with `ask?` each row can be asked about (with-ask-ref)."
+  [dispatch! {:keys [room-id cwd app session-key block-open]} prefix ask?
+   {:keys [id history]}]
+  (keep-indexed
+   (fn [i entry]
+     (let [block?     (contains? #{:tool-call :thinking} (:kind entry))
+           k          (when block? (str "sa-" id "-" i))
+           collapsed? (and block? (appearance/block-collapsed? app entry))
+           key        (str prefix i)]
+       (when-let [post (entry->post
+                        dispatch!
+                        (cond-> (assoc entry :room-id room-id :cwd cwd
+                                       :tool-args (:tool-args app))
+                          block? (assoc :grouped? true
+                                        :collapsed? collapsed?
+                                        :open-choice (get block-open k)
+                                        :toggle! (remember-open dispatch! session-key k))))]
+         {:key        key
+          :group?     block?
+          :collapsed? collapsed?
+          :info       (when block? (block-info entry cwd (:tool-args app)))
+          :node       (with-post-key key (cond-> post
+                                           ask? (with-ask-ref {:sub-id id :index i})))})))
+   history))
+
 (defn- subagent-child
   "One sub-agent as a viewer super-group (<details>, the summary row of a
    folded tool run): status, label, its step count with the newest tool,
    duration and actions. Children start shut (opt-in `:expanded?`, so N
    streaming agents don't re-render on every delta); open, the history lists
-   as viewer rows — text as posts, tool and thinking blocks as collapsed
-   headers. `ctx` is {:cwd :tool-args} for the block summaries."
-  [dispatch! room-id {:keys [cwd tool-args]}
+   as viewer rows (subagent-items) — text as posts, tool and thinking blocks
+   as headers that open or stay shut per the appearance. `ctx` is a
+   subagent-block-ctx."
+  [dispatch! {:keys [room-id cwd app] :as ctx}
    {:keys [id label task status history expanded?] :as child}]
   (let [open?  (boolean expanded?)
         status (or status :running)
         {n :count :keys [latest error-count]}
-        (viewer-group/summarize (keep #(block-info % cwd tool-args) history))]
+        (viewer-group/summarize (keep #(block-info % cwd (:tool-args app)) history))]
     [:details {:class ["viewer-tool-group" "viewer-tool-group--super"
                        "subagent-card" (str "subagent-card--" (name status))]
                :replicant/key id
@@ -4021,18 +4067,7 @@
         (if (seq history)
           ;; Posts sit directly in the rows box so the group's hairline
           ;; dividers (.post + .post) apply.
-          (map-indexed
-           (fn [i e]
-             (with-post-key
-              (str "sae-" i)
-              (with-ask-ref
-               (entry->post
-                dispatch!
-                (cond-> (assoc e :room-id room-id :cwd cwd :tool-args tool-args)
-                  (#{:tool-call :thinking} (:kind e))
-                  (assoc :grouped? true :collapsed? true)))
-               {:sub-id id :index i})))
-           history)
+          (map :node (subagent-items dispatch! ctx "sae-" true child))
           [:div {:class ["subagent-empty"]}
            (cond (= :running status) "No output yet."
                  (:session-id child) "Its work is in its own session: open it as a chat."
@@ -4041,7 +4076,7 @@
 (defn- subagents-post
   "The sub-agents spawned at one point of the conversation (`anchor`, the
    children's :anchor), as a timeline post: a card per child
-   (subagent-child, `ctx` is its {:cwd :tool-args}), which carries its own
+   (subagent-child, `ctx` its subagent-block-ctx), which carries its own
    status and actions, followed by the question threads on it or its blocks
    (`threads-of`: sub-id → thread cards); several get a head with the
    count, how many still run and × for the finished ones. Scrolls away with
@@ -4050,7 +4085,7 @@
   (let [n        (count agents)
         running  (count (filter #(= :running (:status %)) agents))
         finished (remove #(= :running (:status %)) agents)
-        cards    (mapcat (fn [c] (cons (subagent-child dispatch! room-id ctx c)
+        cards    (mapcat (fn [c] (cons (subagent-child dispatch! ctx c)
                                        (threads-of (:id c))))
                          agents)]
     [:div {:class ["post" "post--assistant" "post--subagents"]
@@ -4171,37 +4206,6 @@
       [:span {:class ["subagent-marker-open"]}
        "Open" (icon/icon {:icon-name :arrow-right :size :sm})]]]))
 
-(defn- subagent-view
-  "A sub-agent in place of the chat, opened from its sidebar or buffer-menu
-   row: its task and history as a read-only timeline under a header with its
-   status and actions. Its id stands in the room's :active-buffer though it
-   names no buffer (xi.web.router/buffer-open-event)."
-  [dispatch! room {:keys [id label task status history session-id] :as child}]
-  (let [room-id (:id room)
-        status  (or status :running)
-        post    (fn [k entry]
-                  (with-post-key k (entry->post dispatch! (assoc entry :room-id room-id
-                                                                 :cwd (:cwd room)))))]
-    [:div {:class ["file-tab" "subagent-view"] :replicant/key (str "subagent-view-" id)}
-     [:div {:class ["file-tab-header"]}
-      [:span {:class ["subagent-status" (str "subagent-status--" (name status))]}
-       (when (= :running status) (spinner))
-       (get subagent-status-label status (name status))]
-      [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
-      (when-let [d (subagent-duration child)]
-        [:span {:class ["subagent-card-dur"]} d])
-      (subagent-actions dispatch! room-id child)]
-     ;; --sub: never the chat's timeline for xi.web.core's scroll follow
-     [:div {:class ["timeline" "timeline--sub"]}
-      [:div {:class ["timeline-content"]}
-       (when (seq task) (post "sv-task" {:kind :user :text task}))
-       (map-indexed (fn [i e] (post (str "sv-" i) e)) history)
-       (when (empty? history)
-         [:div {:class ["subagent-empty"] :replicant/key "sv-empty"}
-          (cond session-id            "Promoted to its own session: open it as a chat."
-                (= :running status)   "No output yet."
-                :else                 "No output.")])
-       (subagent-reply dispatch! room-id child (str "subagent-view-reply-" id))]]]))
 
 (defn- quick-replies-row
   "One-tap reply chips for the last assistant response (xi.quick-replies); a
@@ -4306,6 +4310,45 @@
              (map :node run)])])
        (map :node run)))
    (partition-by :group? items)))
+
+(defn- subagent-view
+  "A sub-agent in place of the chat, opened from its sidebar or buffer-menu
+   row: its task and history as a read-only timeline under a header with its
+   status and actions. The rows follow the chat's block rules (subagent-items,
+   folded like the timeline by group-viewer-items). Its id stands in the
+   room's :active-buffer though it names no buffer
+   (xi.web.router/buffer-open-event)."
+  [state dispatch! room {:keys [id label task status history session-id] :as child}]
+  (let [room-id (:id room)
+        status  (or status :running)
+        ctx     (subagent-block-ctx state room (get-in room [:session :id]))
+        post    (fn [k entry]
+                  (with-post-key k (entry->post dispatch! (assoc entry :room-id room-id
+                                                                 :cwd (:cwd ctx)))))]
+    [:div {:class ["file-tab" "subagent-view"] :replicant/key (str "subagent-view-" id)}
+     [:div {:class ["file-tab-header"]}
+      [:span {:class ["subagent-status" (str "subagent-status--" (name status))]}
+       (when (= :running status) (spinner))
+       (get subagent-status-label status (name status))]
+      [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
+      (when-let [d (subagent-duration child)]
+        [:span {:class ["subagent-card-dur"]} d])
+      (subagent-actions dispatch! room-id child)]
+     ;; --sub: never the chat's timeline for xi.web.core's scroll follow
+     [:div {:class ["timeline" "timeline--sub"]}
+      [:div {:class ["timeline-content"]}
+       (when (seq task) (post "sv-task" {:kind :user :text task}))
+       (group-viewer-items
+        {:super?     (:super-collapsed? (:app ctx))
+         :block-open (:block-open ctx)
+         :toggle-fn  (fn [k] (remember-open dispatch! (:session-key ctx) k))}
+        (subagent-items dispatch! ctx "sv-" false child))
+       (when (empty? history)
+         [:div {:class ["subagent-empty"] :replicant/key "sv-empty"}
+          (cond session-id            "Promoted to its own session: open it as a chat."
+                (= :running status)   "No output yet."
+                :else                 "No output.")])
+       (subagent-reply dispatch! room-id child (str "subagent-view-reply-" id))]]]))
 
 (defn- viewed-room
   "The active room only when its session id matches the route: mid-switch
@@ -4491,8 +4534,7 @@
                      by-spawn  (group-by #(sa-threads/anchor-of entries %) sub-agents)
                      by-end    (group-by #(sa-threads/ended-anchor-of entries %)
                                          (filter :ended-anchor sub-agents))
-                     sa-ctx    {:cwd (or (:cwd room) (get-in state [:web/pending-room :cwd]))
-                                :tool-args (:tool-args app)}
+                     sa-ctx    (subagent-block-ctx state room sid)
                      ;; Question threads on blocks follow their block: a room
                      ;; entry's in the timeline, a sub-agent's under its card.
                      compose   (let [c (:web/thread-compose state)]
@@ -4789,7 +4831,7 @@
         (text-tab-view view buffer)
 
         sub
-        (subagent-view dispatch! room sub)
+        (subagent-view state dispatch! room sub)
 
         (and layout (= :empty view))
         (empty-pane dispatch! ctx layout pane-id)
