@@ -50,16 +50,19 @@
 (defn- no-index-diff
   "Synthesize a diff for a single untracked file via diff --no-index. stdout
    is read regardless of exit code — --no-index exits 1 on diffs. Honors
-   *diff-engine* so untracked files render with the chosen renderer too."
+   *diff-engine* so untracked files render with the chosen renderer too.
+   \"\" when git can't run, e.g. in a directory that no longer exists."
   ([cwd f] (no-index-diff cwd f nil))
   ([cwd f prefix]
-   (let [opts (cond-> #js {:cwd cwd}
-                (= difft/*diff-engine* :difft) (doto (aset "env" (difft/difft-env prefix))))
-         p (js/Bun.spawnSync
-            (into-array (concat ["git" "diff" "--no-index"] (prefix-args prefix)
-                                ["--" "/dev/null" f]))
-            opts)]
-     (.toString (.-stdout p) "utf-8"))))
+   (try
+     (let [opts (cond-> #js {:cwd cwd}
+                  (= difft/*diff-engine* :difft) (doto (aset "env" (difft/difft-env prefix))))
+           p (js/Bun.spawnSync
+              (into-array (concat ["git" "diff" "--no-index"] (prefix-args prefix)
+                                  ["--" "/dev/null" f]))
+              opts)]
+       (.toString (.-stdout p) "utf-8"))
+     (catch :default _ ""))))
 
 (defn- untracked-diff
   "Synthesize a unified diff for all untracked files in cwd."
@@ -109,11 +112,20 @@
           (remove str/blank?)
           (str/join "\n")))))
 
+(defn- existing-dir
+  "The nearest directory of `file` that still exists — git can't run in a
+   directory the session deleted or moved away."
+  [file]
+  (loop [dir (.dirname node-path file)]
+    (if (or (fs/existsSync dir) (= dir (.dirname node-path dir)))
+      dir
+      (recur (.dirname node-path dir)))))
+
 (defn- file-git-root
   "Absolute toplevel of the work tree containing `file` (an absolute path),
    or nil when the file lies outside any git repo."
   [file]
-  (some-> (:ok (git-out (.dirname node-path file) ["rev-parse" "--show-toplevel"]))
+  (some-> (:ok (git-out (existing-dir file) ["rev-parse" "--show-toplevel"]))
           str/trim not-empty))
 
 (defn- realpath [p]
