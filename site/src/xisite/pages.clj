@@ -103,6 +103,13 @@ read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
   "xi join --user alice            # this terminal acts as alice
 xi clients user iPhone bob      # pin a paired phone to bob")
 
+(def ^:private durable-sample
+  "xi server
+# mid-turn: the server dies, a deploy restarts it, the machine reboots
+
+xi server
+[ws] continuing the chat cut off by the restart: Fix the flaky login test")
+
 (defn- code [lang source]
   (md/code-block-hiccup lang source))
 
@@ -388,6 +395,19 @@ xi clients user iPhone bob      # pin a paired phone to bob")
       [:div.phones
        (phone "desk" "list" "The web client's session list on a phone, following a running session")
        (phone "desk" "phone" "A chat in the web client on a phone, replaying a recorded session")]]]
+
+    [:section.feature.alt {:id "durable"}
+     [:div.wrap.split.reverse
+      [:div.feature-text
+       [:p.eyebrow "Durability"]
+       [:h2 "Durable by default."]
+       [:p "Chats live on the server, not in a tab or a terminal. A crash, a deploy or a reboot does not end a turn: when the server is back, every chat it cut off continues where it stopped. Nothing to turn on."]
+       (feature-list
+        [["Runs unattended." "Close the laptop and the task finishes. The result waits in the chat list."]
+         ["Survives restarts." "A chat cut off mid-turn continues on its own, whether or not anyone has it open."]
+         ["Queued prompts follow." "Messages queued behind the interrupted turn are sent after it, in order."]])
+       [:p [:a {:href "/docs/server/#chats-keep-running"} "Chats keep running →"]]]
+      [:div.feature-code (code "sh" durable-sample)]]]
 
     [:section.feature.theming {:id "theming"}
      [:div.wrap.split
