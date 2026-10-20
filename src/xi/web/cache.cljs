@@ -373,6 +373,19 @@
 (defn save-sidebar-collapsed! [groups]
   (store-set! sidebar-collapsed-key (vec groups)))
 
+;; ── Window layouts ────────────────────────────────────────────────────────────
+;; {session-id layout} of the chats split into windows (xi.web.layout); the
+;; per-user store's instant cache, like the appearance.
+
+(def ^:private layouts-key "xi/layouts")
+
+(defn load-layouts [] (or (store-get layouts-key) {}))
+
+(defn save-layouts! [layouts]
+  (if (seq layouts)
+    (store-set! layouts-key layouts)
+    (store-remove! layouts-key)))
+
 ;; ── Unfolded buffer lists in the sidebar ───────────────────────────────────────
 ;; This browser's own (not per user): which session cards show their buffer
 ;; rows (xi.web.views/session-buffer-rows).
@@ -455,6 +468,8 @@
                         :web/model-list-at (:at models)
                         :web/sidebar-collapsed (load-sidebar-collapsed)
                         :web/sidebar-buffers-open (load-sidebar-buffers-open)
+                        ;; The chats split into windows (xi.web.layout).
+                        :web/layouts (load-layouts)
                         ;; The appearance overrides (xi.web.appearance).
                         :web/appearance (load-appearance)
                         ;; The custom color themes (xi.web.theme).

@@ -271,6 +271,28 @@
    :dialog/close            {:label "Close the open dialog" :surface #{:web}}
    :terminal/leave          {:label "Leave the terminal, keys go back to Xi" :surface #{:web}}
    :terminal/focus          {:label "Type in the terminal" :surface #{:web}}
+   ;; windows (xi.web.layout): no default keys
+   :layout/split-right      {:label "Split the window, new one to the right" :surface #{:web}}
+   :layout/split-down       {:label "Split the window, new one below" :surface #{:web}}
+   :layout/close-pane       {:label "Close the window" :surface #{:web}}
+   :layout/only             {:label "Keep only this window" :surface #{:web}}
+   :layout/focus-next       {:label "Focus the next window" :surface #{:web}}
+   :layout/focus-left       {:label "Focus the window to the left" :surface #{:web}}
+   :layout/focus-right      {:label "Focus the window to the right" :surface #{:web}}
+   :layout/focus-up         {:label "Focus the window above" :surface #{:web}}
+   :layout/focus-down       {:label "Focus the window below" :surface #{:web}}
+   :layout/swap             {:label "Swap the window with its neighbour" :surface #{:web}}
+   :layout/dock-left        {:label "Move the window into the left sidebar" :surface #{:web}}
+   :layout/dock-right       {:label "Move the window into the right sidebar" :surface #{:web}}
+   :layout/undock           {:label "Move the sidebar window back into the main area" :surface #{:web}}
+   :layout/toggle-left      {:label "Show / hide the left sidebar" :surface #{:web}}
+   :layout/toggle-right     {:label "Show / hide the right sidebar" :surface #{:web}}
+   :layout/grow-width       {:label "Widen the window" :surface #{:web}}
+   :layout/shrink-width     {:label "Narrow the window" :surface #{:web}}
+   :layout/grow-height      {:label "Make the window taller" :surface #{:web}}
+   :layout/shrink-height    {:label "Make the window shorter" :surface #{:web}}
+   :layout/balance          {:label "Equal sizes for the windows side by side" :surface #{:web}}
+   :layout/reset            {:label "Back to the single chat window" :surface #{:web}}
    ;; tui
    :prompt/toggle           {:label "System prompt: full / overview" :surface #{:tui}}
    :pager/down              {:label "Cursor down" :surface #{:tui}}

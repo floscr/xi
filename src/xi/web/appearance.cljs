@@ -34,12 +34,16 @@
                        command, the path, the pattern) or every argument
                        as `k=v`
      :terminal-hints?  show the tooltips a terminal program sends (OSC
-                       7475, xi.web.terminal)"
+                       7475, xi.web.terminal)
+     :subagent-answers :inline | :pane — a finished sub-agent's answer as a
+                       post in the chat, or in a window at the right with a
+                       one-line marker in the chat (xi.web.layout)"
   {:super-collapsed? true
    :tool-blocks      :collapsed
    :tool-blocks-except []
    :tool-args        :summary
-   :terminal-hints?  true})
+   :terminal-hints?  true
+   :subagent-answers :inline})
 
 (def choices
   "Allowed values per setting; anything else is ignored by `normalize`
@@ -48,7 +52,8 @@
   {:super-collapsed? #{true false}
    :tool-blocks      #{:open :collapsed}
    :tool-args        #{:summary :all}
-   :terminal-hints?  #{true false}})
+   :terminal-hints?  #{true false}
+   :subagent-answers #{:inline :pane}})
 
 (def max-tool-names 64)
 

@@ -50,6 +50,11 @@
    ;; the diff viewer's layout; nil → per renderer (xi.diff/default-layout)
    :diff-layout       {:path :web/diff-layout :default nil
                        :fx   (fn [_] [])}
+   ;; the chats split into windows, {session-id layout}: the server's copy
+   ;; only seeds sessions this browser has no layout for (xi.web.layout/seed),
+   ;; so it is kept apart from the live :web/layouts
+   :layouts           {:path :web/layouts-remote :default {}
+                       :fx   (fn [v] [[:app/dispatch {:type :layout/seed :layouts v}]])}
    :preferred-model   {:path :web/preferred-model :default nil
                        :fx   (fn [v] [[:cache/preferred-model {:model v}]])}
    :recent-commands   {:path :web/command-usage :default []

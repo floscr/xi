@@ -255,6 +255,27 @@ the navigation ones fit together.
 | `:scroll/up` | Scroll up | web |
 | `:scroll/half-down` | Scroll half a page down | web |
 | `:scroll/half-up` | Scroll half a page up | web |
+| `:layout/split-right` | Split the window, new one to the right | web |
+| `:layout/split-down` | Split the window, new one below | web |
+| `:layout/close-pane` | Close the window | web |
+| `:layout/only` | Keep only this window | web |
+| `:layout/focus-next` | Focus the next window | web |
+| `:layout/focus-left` | Focus the window to the left | web |
+| `:layout/focus-right` | Focus the window to the right | web |
+| `:layout/focus-up` | Focus the window above | web |
+| `:layout/focus-down` | Focus the window below | web |
+| `:layout/swap` | Swap the window with its neighbour | web |
+| `:layout/dock-left` | Move the window into the left sidebar | web |
+| `:layout/dock-right` | Move the window into the right sidebar | web |
+| `:layout/undock` | Move the sidebar window back into the main area | web |
+| `:layout/toggle-left` | Show / hide the left sidebar | web |
+| `:layout/toggle-right` | Show / hide the right sidebar | web |
+| `:layout/grow-width` | Widen the window | web |
+| `:layout/shrink-width` | Narrow the window | web |
+| `:layout/grow-height` | Make the window taller | web |
+| `:layout/shrink-height` | Make the window shorter | web |
+| `:layout/balance` | Equal sizes for the windows side by side | web |
+| `:layout/reset` | Back to the single chat window | web |
 
 <!-- /gen:keys-unbound -->
 
@@ -310,6 +331,39 @@ nothing outside a chat.
                              ["space" "c" "x"]  :chat/delete
                              ["space" "c" "h"]  :chat/hide}}}
 ```
+
+### Windows
+
+The [window](web-client.md#windows) actions have no default keys. Doom
+Emacs' `SPC w` map, as leader keys (a bare shifted character is written as
+itself, `"<"`):
+
+```clojure title="~/.config/xi/config.edn"
+:keys {:web {:mode/navigate {["space" "w" "v"] :layout/split-right
+                             ["space" "w" "s"] :layout/split-down
+                             ["space" "w" "d"] :layout/close-pane
+                             ["space" "w" "o"] :layout/only
+                             ["space" "w" "w"] :layout/focus-next
+                             ["space" "w" "h"] :layout/focus-left
+                             ["space" "w" "j"] :layout/focus-down
+                             ["space" "w" "k"] :layout/focus-up
+                             ["space" "w" "l"] :layout/focus-right
+                             ["space" "w" "H"] :layout/dock-left
+                             ["space" "w" "L"] :layout/dock-right
+                             ["space" "w" "u"] :layout/undock
+                             ["space" "w" "r"] :layout/swap
+                             ["space" "w" "<"] :layout/shrink-width
+                             ["space" "w" ">"] :layout/grow-width
+                             ["space" "w" "-"] :layout/shrink-height
+                             ["space" "w" "+"] :layout/grow-height
+                             ["space" "w" "="] :layout/balance
+                             ["space" "w" "["] :layout/toggle-left
+                             ["space" "w" "]"] :layout/toggle-right
+                             ["space" "w" "q"] :layout/reset}}}
+```
+
+A resize key moves the focused window by one step; for a continuous
+resize, Tab onto the seam between two windows and hold an arrow key.
 
 ### Opening blocks
 

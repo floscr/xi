@@ -62,6 +62,7 @@ mode); there is no switch for that.
 | `:tool-blocks-except` | `[]` | Tool names that start the other way from `:tool-blocks`: with `:collapsed` the tools that stay open (exclude list), with `:open` the only ones that collapse (include list). Case-insensitive, without the Claude provider's `mcp__xi-tools__` prefix; an MCP server's tool keeps its `mcp__<server>__` part, e.g. `["edit" "mcp__chrome__take_screenshot"]`. Set per user in the Appearance dialog's Chat › Tool blocks pane. |
 | `:tool-args` | `:summary` | What a tool call's header shows next to the tool name: `:summary` (a per-tool one-liner: the command, the path, the pattern) or `:all` (every argument as `k=v`, values cut at 80 characters). |
 | `:terminal-hints?` | `true` | Show the tooltips a terminal program sends (OSC 7475, e.g. nvim's diagnostics). The command palette's **Hide / Show terminal tooltips** toggles it. |
+| `:subagent-answers` | `:inline` | `:inline`: a finished sub-agent's answer is a post in the chat; `:pane`: it opens in a window at the right and the chat keeps a marker row (`xi.web.layout`). |
 
 ## Feature flags
 

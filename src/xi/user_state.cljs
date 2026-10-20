@@ -27,7 +27,8 @@
    so they reach a client as the lobby's `:read` and `:dismissed?` flags. An
    extension's entry may also hold `:session-flags`, which the lobby turns into
    more flags the same way (see `session-flags`)."
-  (:require [clojure.string :as str]))
+  (:require [clojure.string :as str]
+            [xi.layout :as layout]))
 
 (def reserved-flags
   "Session flags an extension may not set: the lobby and the sidebar compute
@@ -165,6 +166,8 @@
                                      (every? keyword? v)))}
    ;; the diff viewer's layout (xi.diff/as-layout); unset → per renderer
    :diff-layout      {:valid? #{:split :stacked}}
+   ;; the chats split into windows, {session-id layout} (xi.layout)
+   :layouts          {:valid? layout/valid-store?}
    ;; the model a new chat starts with
    :preferred-model  {:valid? (fn [v] (and (string? v) (<= 1 (count v) 200)))}
    ;; most-recent-first command / skill names for the quick bar and palette

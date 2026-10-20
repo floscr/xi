@@ -112,6 +112,40 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   members into `{buffer-id [user …]}` — on the room for the buffer menu, as
   `:viewers` on the lobby room summaries for the sidebar rows. Avatars via
   `sidebar/room-people`, so a single-user server shows none.
+- **Windows** (`xi.layout`, cljc, pure; `xi.web.layout`, the state around
+  it; `views/layout-view`): the chat page split into panes. A layout is a
+  tree of `:split` nodes (`:dir :row` / `:col`, `:sizes` fractions) with
+  `:pane` leaves holding a *view id* (`:chat`, a buffer id, a sub-agent id,
+  `:empty` for a pane waiting for a pick), one dockable sidebar per side
+  (`:left` / `:right` `{:pane :size px :open?}`) and `:focus`. Every op ends
+  in `simplify`, so one arrangement has one shape. `:web/layouts
+  {session-id layout}` holds only split sessions; an unsplit one shows the
+  implicit single pane of its `:active-buffer`. **Invariant: the focused
+  pane's view is the room's `[:ui :active-buffer]`**, so the keymap layers,
+  the URL (`view-sync`), the title, presence and the diff-state slots keep
+  working unchanged: the `:layout/*` handlers write both, and
+  `wlayout/tap` dispatches `:layout/sync-view` when something else moved the
+  active buffer (focus the pane showing it, else show it in the focused
+  pane) and `:layout/prune` when a pane's view closed. `:room/joined`
+  restores a session's layout over the remembered single view
+  (`wlayout/restore`). Rendering: a split is a `ui.panels` group
+  (`data-split-path`), its children sized panels but the last (fill); the
+  runtime's `ui-panels-resize` / `ui-panels-collapse` CustomEvents are
+  delegated in `xi.web.core/attach-pane-listeners!` into `:layout/resize`
+  / `:layout/resize-side` / `:layout/toggle-side`, and a pointer down in a
+  `[data-pane-id]` focuses it. Per-user persistence rides on user-state
+  `:layouts` (trimmed to the 50 most recently changed, `layout/trim-store`,
+  cached in `xi/layouts`); the server's copy lands in
+  `:web/layouts-remote` and `:layout/seed` adopts only sessions this browser
+  has no layout for, never the chat on screen, so two devices never fight
+  over one chat's windows. Narrow screens (`:web/wide?` false): the focused
+  main pane alone, a sidebar a drawer open while its pane has focus (the
+  right-edge swipe toggles it, `install-right-edge-swipe!`). DOM scoping:
+  the chat's timeline is `.timeline:not(.timeline--sub)` (`chat-timeline`;
+  a sub-agent pane's shares the class), and `active-scroller` looks inside
+  `.pane--focused` first. Appearance `:subagent-answers :pane` swaps a
+  finished sub-agent's result post for a marker row and the web half of the
+  subagent extension opens it in the right sidebar on `:subagent/turn-end`.
 - **Terminals** (`xi.web.terminal`): a `:terminal` buffer mounts an xterm.js
   instance (vendored, loaded by `<script>` on first use) on its host div,
   keyed by term id. I/O bypasses the app: `onData` / `onResize` go out
@@ -287,6 +321,7 @@ Never sent over the wire:
 | `:web/pending-submit` | message stashed until `:room/joined` |
 | `:web/pending-buffer` | `{:session-id :buffer-id}` a sidebar / palette buffer row asked to open, applied on `:room/joined` |
 | `:web/session-views` | session id → the buffer (or `:chat`) this client left it on, set on navigating away and restored on `:room/joined` (`xi.web.router/restore-view`) |
+| `:web/layouts`, `:web/layouts-remote` | session id → window layout of the chats split into panes (`xi.layout`, `xi.web.layout`; cached in `xi/layouts`), and the server's per-user copy that only seeds missing sessions |
 | `:web/terminals-gone` | term ids the server answered `:terminal/gone` for (it restarted); cleared by the buffer coming back without an exit (`xi.ext.terminal.web`) |
 | `:web/sidebar-buffers-open` | session ids whose buffer rows are unfolded; this browser's own, cached in localStorage (`xi/sidebar-buffers-open`) |
 | `:web/connected?` | transport status |
@@ -307,6 +342,7 @@ Never sent over the wire:
 src/xi/web/
   core.cljs        entry: assembly, Replicant render, auto-scroll, listeners
   views.cljs       pure views: home, chat, compose, lightbox, error cards
+  layout.cljs      windows: :layout/* handlers, the sync tap, restore, seed (model: xi.layout)
   router.cljs      route parsing, :route/navigate, join pacing, History API effect
   dashboard.cljs   home dashboard: card registry, visible-cards, grid + card frame
   title.cljs       document.title from the route (pure)

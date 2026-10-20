@@ -9,7 +9,9 @@
    The turn itself only ever runs server-side, so the :subagent/start effect
    the spawn handler emits is a no-op here."
   (:require [xi.ext.subagent.handlers :as h]
-            [xi.ext.subagent.threads :as threads]))
+            [xi.ext.subagent.threads :as threads]
+            [xi.web.appearance :as appearance]
+            [xi.web.layout :as wlayout]))
 
 (def ^:private ext-id h/ext-id)
 
@@ -54,6 +56,21 @@
         gone?              (assoc-in [:state :rooms room-id :ui :active-buffer] :chat)
         (not (:remote? ev)) (assoc :effects [[:ws/send ev]])))))
 
+(defn- turn-end
+  "The shared turn-end, plus: with answers set to open in a window
+   (appearance :subagent-answers :pane), a finished background child of the
+   chat on screen shows in the right sidebar (xi.web.layout) without taking
+   focus; the chat keeps a marker row (xi.web.views/subagent-marker-post)."
+  [st {:keys [room-id sub-id] :as ev}]
+  (when-let [res ((:subagent/turn-end h/handlers) st ev)]
+    (let [st' (or (:state res) st)]
+      (cond-> res
+        (and (= :pane (:subagent-answers (appearance/effective-in st')))
+             (not (h/inline-sub? sub-id))
+             (= room-id (:id (:room (wlayout/room-ctx st')))))
+        (update :effects (fnil conj [])
+                [:app/dispatch {:type :layout/open-view :view sub-id :where :right}])))))
+
 (defn- reply
   "A reply to a finished sub-agent runs server-side: send the user's, apply
    the server's echo (which every client of the room gets)."
@@ -88,6 +105,7 @@
                       (when-not (:remote? ev)
                         {:effects [[:ws/send ev]]}))
                     :subagent/dismiss dismiss
+                    :subagent/turn-end turn-end
                     :subagent/reply reply
                     ;; A sidebar row's button (xi.web.views/session-buffer-rows):
                     ;; roomless, by session — the server finds the live room

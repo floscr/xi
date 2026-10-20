@@ -36,7 +36,8 @@
     (testing "effective-in reads both layers from state"
       (is (= {:super-collapsed? true
               :tool-blocks :collapsed :tool-blocks-except []
-              :tool-args :all :terminal-hints? true}
+              :tool-args :all :terminal-hints? true
+              :subagent-answers :inline}
              (appearance/effective-in {:web/appearance-config configured
                                        :web/appearance {:tool-blocks :collapsed}}))))))
 

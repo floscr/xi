@@ -51,6 +51,8 @@
             [xi.web.tour :as tour]
             [xi.web.embed :as embed]
             [xi.web.user-ext :as user-ext]
+            [xi.layout :as layout]
+            [xi.web.layout :as wlayout]
             [xi.session.sidebar :as sidebar]
             [xi.web.sidebar-nav :as sidebar-nav]
             [xi.web.views :as views]))
@@ -78,6 +80,13 @@
 (defn- forward
   [_st ev]
   {:effects [[:ws/send (dissoc ev :event/id :event/ts)]]})
+
+;; The chat's timeline, never a sub-agent pane's (xi.web.views/subagent-view
+;; shares the class for its look): the scroll follow, the message jumps and
+;; the keyboard-height fix all act on this one.
+(def ^:private timeline-sel ".timeline:not(.timeline--sub)")
+
+(defn- chat-timeline [] (.querySelector js/document timeline-sel))
 
 (defn- room-new-cwd
   "cwd for a fresh chat: the current chat's, else the viewed project's, else
@@ -259,9 +268,12 @@
 
 (defn room-joined-from-cache
   "room-joined*, shown on the view this client last had the session on
-   (router/restore-view) instead of the transport's chat."
+   (router/restore-view) instead of the transport's chat; a session with
+   windows comes back on its layout (xi.web.layout/restore)."
   [st {:keys [room-id] :as ev}]
-  (update (room-joined* st ev) :state #(router/restore-view st % room-id)))
+  (update (room-joined* st ev) :state
+          #(-> (router/restore-view st % room-id)
+               (wlayout/restore room-id))))
 
 (defn- room-left-web
   "The transport's :room/left, plus navigating home when the viewed room was
@@ -1127,6 +1139,7 @@
 (defn- web-handlers [routes]
   (merge (router/handlers routes)
          user-state/handlers
+         wlayout/handlers
          prefetch/handlers
          keymap/handlers
          themes-handlers
@@ -1960,7 +1973,7 @@
    (fn [_ {:keys [history-index]}]
      (reset! auto-scroll? false)
      ;; The node may only exist after :web/timeline-window grows: poll a few frames.
-     (let [sel (str ".timeline .post--user[data-history-index=\"" history-index "\"]")]
+     (let [sel (str timeline-sel " .post--user[data-history-index=\"" history-index "\"]")]
        (letfn [(try-scroll [n]
                  (if-let [node (.querySelector js/document sel)]
                    (do
@@ -1978,7 +1991,7 @@
      (answer-nav/clear-mark!)
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
-     (when-let [timeline (.querySelector js/document ".timeline")]
+     (when-let [timeline (chat-timeline)]
        (set! (.-scrollTop timeline) (.-scrollHeight timeline))))
   ;; Unfreezing the render window re-tightens it on the next render, which
   ;; shifts scrollHeight after this fires, so the snap is re-asserted over a
@@ -1989,7 +2002,7 @@
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
      (letfn [(snap [n]
-               (when-let [timeline (.querySelector js/document ".timeline")]
+               (when-let [timeline (chat-timeline)]
                  (set! (.-scrollTop timeline) (.-scrollHeight timeline))
                  (when (and (pos? n)
                             (> (- (.-scrollHeight timeline)
@@ -2007,7 +2020,7 @@
      (doseq [el (array-seq (.querySelectorAll js/document ".post--nav-target"))]
        (.remove (.-classList el) "post--nav-target"))
      (letfn [(snap [n]
-               (when-let [timeline (.querySelector js/document ".timeline")]
+               (when-let [timeline (chat-timeline)]
                  (set! (.-scrollTop timeline) 0)
                  (when (pos? n)
                    (js/requestAnimationFrame #(snap (dec n))))))]
@@ -2035,6 +2048,7 @@
    :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
    :cache/model-list (fn [_ {:keys [models at]}] (cache/save-model-list! models at))
    :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
+   :cache/layouts (fn [_ {:keys [layouts]}] (cache/save-layouts! layouts))
    :cache/sidebar-buffers-open (fn [_ {:keys [session-ids]}] (cache/save-sidebar-buffers-open! session-ids))
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    :cache/themes (fn [_ {:keys [themes]}] (cache/save-themes! themes))
@@ -2311,7 +2325,7 @@
 
 (defn- scroll-to-bottom! []
   (when (and @auto-scroll? (not (user-scrolling?)))
-    (when-let [timeline (.querySelector js/document ".timeline")]
+    (when-let [timeline (chat-timeline)]
       (let [target (- (.-scrollHeight timeline) (.-clientHeight timeline))
             delta  (- target (.-scrollTop timeline))]
         (if (and @smooth-scroll-armed?
@@ -2352,11 +2366,18 @@
   [".keys-body" ".diff-view" ".prompt-tab-body" ".file-tab-md" ".file-tab-code"
    ".timeline" ".home"])
 
-(defn- active-scroller []
-  (some (fn [sel]
-          (when-let [el (.querySelector js/document sel)]
-            (when (> (.-scrollHeight el) (+ (.-clientHeight el) 2)) el)))
-        scroller-selectors))
+(defn- active-scroller
+  "The scroller the keys act on: inside the focused pane when the chat is
+   split into windows (xi.web.views/layout-view), else the first on the page."
+  []
+  (let [^js root (or (.querySelector js/document ".pane--focused") js/document)
+        pick     (fn [^js root]
+                   (some (fn [sel]
+                           (when-let [el (.querySelector root sel)]
+                             (when (> (.-scrollHeight el) (+ (.-clientHeight el) 2)) el)))
+                         scroller-selectors))]
+    (or (pick root)
+        (when-not (identical? root js/document) (pick js/document)))))
 
 ;; Key scrolls (j / k, half pages, hunk / file jumps) ease toward their target
 ;; with a rAF loop; each press adds to the pending target so a held key keeps
@@ -2433,7 +2454,7 @@
 (defn- scroll-to-top! [dispatch!]
   (let [el (active-scroller)]
     (if (or (nil? el) (.contains (.-classList el) "timeline"))
-      (when (.querySelector js/document ".timeline")
+      (when (chat-timeline)
         (dispatch! {:type :timeline/scroll-to-top}))
       (animate-scroll-to! el 0))))
 
@@ -2498,7 +2519,7 @@
                            load-earlier-settle-ms))))
 
 (defn- attach-scroll-listener! []
-  (when-let [timeline (.querySelector js/document ".timeline")]
+  (when-let [timeline (chat-timeline)]
     (follow-switched-session!)
     (when-not (identical? timeline @tracked-timeline)
       (reset! tracked-timeline timeline)
@@ -2912,7 +2933,7 @@
    permission, else the newest running one with output, else the newest tool,
    thinking or super-group block."
   []
-  (when-let [content (.querySelector js/document ".timeline .timeline-content")]
+  (when-let [content (some-> (chat-timeline) (.querySelector ".timeline-content"))]
     (let [newest (fn [sel]
                    (->> (array-seq (.querySelectorAll content sel))
                         (filter expandable-block?)
@@ -2939,6 +2960,34 @@
   (when (= :chat (get-in st [:web/route :page]))
     (get-in st [:web/route :session-id])))
 
+(defn- install-layout-actions!
+  "The window actions (xi.web.layout): only on a joined chat; the ones that
+   need a sidebar or more than one pane fall through otherwise."
+  []
+  (let [chat?    (fn [st] (some? (wlayout/room-ctx st)))
+        windows? (fn [st] (boolean (wlayout/windows? st)))
+        side?    (fn [side] (fn [st] (some? (some-> (wlayout/current st) (layout/side-pane side)))))
+        act      (fn [id when-fn ev] (keymap/register-action! {:id id :when when-fn :event ev}))]
+    (act :layout/split-right chat? {:type :layout/split :dir :row})
+    (act :layout/split-down  chat? {:type :layout/split :dir :col})
+    (act :layout/close-pane  windows? {:type :layout/close-pane})
+    (act :layout/only        windows? {:type :layout/only})
+    (act :layout/focus-next  windows? {:type :layout/focus-next})
+    (doseq [dir [:left :right :up :down]]
+      (act (keyword "layout" (str "focus-" (name dir))) windows? {:type :layout/focus-dir :dir dir}))
+    (act :layout/swap        windows? {:type :layout/swap})
+    (act :layout/dock-left   chat? {:type :layout/dock :side :left})
+    (act :layout/dock-right  chat? {:type :layout/dock :side :right})
+    (act :layout/undock      (fn [st] (some? (wlayout/focused-side st))) {:type :layout/undock})
+    (act :layout/toggle-left  (side? :left)  {:type :layout/toggle-side :side :left})
+    (act :layout/toggle-right (side? :right) {:type :layout/toggle-side :side :right})
+    (act :layout/grow-width    windows? {:type :layout/grow :axis :width  :sign 1})
+    (act :layout/shrink-width  windows? {:type :layout/grow :axis :width  :sign -1})
+    (act :layout/grow-height   windows? {:type :layout/grow :axis :height :sign 1})
+    (act :layout/shrink-height windows? {:type :layout/grow :axis :height :sign -1})
+    (act :layout/balance     windows? {:type :layout/balance})
+    (act :layout/reset       windows? {:type :layout/reset})))
+
 (defn- install-actions!
   "Register the web client's keyboard actions (xi.web.keymap) behind the
    action ids the keymap binds (xi.keys/defaults, config.edn :keys). `:when`
@@ -2946,6 +2995,7 @@
    that just dispatch declare the :event so palette rows can show the key.
    Transient layers: :permission-pending and :agent-busy."
   []
+  (install-layout-actions!)
   (keymap/register-layer! {:id :permission-pending
                            :when (fn [st] (some? (permission-answer st :yes)))})
   (keymap/register-layer! {:id :agent-busy
@@ -3161,7 +3211,7 @@
         root     js/document.documentElement
         style    (.-style root)
         kb-open? (> (- layout-h visual-h) 100)
-        timeline (.querySelector js/document ".timeline")
+        timeline (chat-timeline)
         prev-h   (some-> timeline .-clientHeight)
         prev-top (some-> timeline .-scrollTop)]
     (.toggle (.-classList root) "keyboard-open" kb-open?)
@@ -3277,6 +3327,110 @@
                     (<= (.-pageX t) 20))
            (.preventDefault e))))
      #js {:passive false})))
+
+(defn- install-right-edge-swipe!
+  "Narrow screens: a swipe from the right edge opens the right window
+   sidebar's drawer, a swipe right while it is open closes it
+   (xi.web.layout/toggle-side). Same gating as the left-edge swipe."
+  [state dispatch!]
+  (let [thresh-px 60
+        start     (atom nil)]
+    (.addEventListener
+     js/document "touchstart"
+     (fn [e]
+       (let [t (aget (.-touches e) 0)]
+         (reset! start (when (and t (= 1 (.-length (.-touches e))))
+                         {:x (.-clientX t) :y (.-clientY t) :dx 0 :dy 0
+                          :scroll? (scrollable-x? (.-target e))}))))
+     #js {:passive true})
+    (.addEventListener
+     js/document "touchmove"
+     (fn [e]
+       (when-let [{:keys [x y] :as s} @start]
+         (when-let [t (aget (.-touches e) 0)]
+           (reset! start (assoc s :dx (- (.-clientX t) x) :dy (- (.-clientY t) y))))))
+     #js {:passive true})
+    (.addEventListener js/document "touchcancel" (fn [_] (reset! start nil)) #js {:passive true})
+    (.addEventListener
+     js/document "touchend"
+     (fn [_]
+       (when-let [{:keys [x dx dy scroll?]} @start]
+         (reset! start nil)
+         (let [st    @state
+               width (or (.-innerWidth js/window) 0)
+               zone  (- width (min 100 (* 0.2 width)))
+               open? (wlayout/drawer-open? st :right)
+               has?  (some? (some-> (wlayout/current st) (layout/side-pane :right)))]
+           (when (and has? (not (:web/wide? st)) (not scroll?) (not (selecting-text?))
+                      (> (js/Math.abs dx) (js/Math.abs dy)))
+             (cond
+               (and (not open?) (>= x zone) (<= dx (- thresh-px)))
+               (dispatch! {:type :layout/toggle-side :side :right})
+
+               (and open? (>= dx thresh-px))
+               (dispatch! {:type :layout/toggle-side :side :right}))))))
+     #js {:passive true})))
+
+(defonce ^:private pane-listeners-attached? (atom false))
+
+(defn- attach-pane-listeners!
+  "Delegated listeners of the window layout (xi.web.views/layout-view): a
+   pointer down inside a pane focuses it; the ui-panels runtime's
+   `ui-panels-resize` on a sized panel updates the split it belongs to
+   (`data-split-path` on the group, `data-split-index` on the panels; the
+   fill panel takes the rest) or the sidebar's width (`data-side`)."
+  [dispatch!]
+  (when-not @pane-listeners-attached?
+    (reset! pane-listeners-attached? true)
+    (.addEventListener
+     js/document "pointerdown"
+     (fn [^js e]
+       (when-let [^js pane (some-> (.-target e) (.closest "[data-pane-id]"))]
+         (when-not (.hasAttribute pane "data-pane-focused")
+           (dispatch! {:type :layout/focus :pane-id (.getAttribute pane "data-pane-id")}))))
+     true)
+    (.addEventListener
+     js/document "ui-panels-resize"
+     (fn [^js e]
+       (let [^js panel (.-target e)
+             pct       (fn [^js el]
+                         (let [s (.getAttribute el "data-size")]
+                           (when (and s (str/ends-with? s "%"))
+                             (/ (js/parseFloat s) 100))))]
+         (cond
+           (.hasAttribute panel "data-side")
+           (dispatch! {:type :layout/resize-side
+                       :side (keyword (.getAttribute panel "data-side"))
+                       :px   (.. e -detail -pixels)})
+
+           (.hasAttribute panel "data-split-index")
+           (when-let [^js group (.closest panel "[data-split-path]")]
+             (let [path   (->> (str/split (.getAttribute group "data-split-path") #"\.")
+                               (remove str/blank?)
+                               (mapv js/parseInt))
+                   sized  (array-seq (.querySelectorAll group ":scope > [data-split-index]"))
+                   fracs  (into {} (map (fn [^js el]
+                                          [(js/parseInt (.getAttribute el "data-split-index"))
+                                           (if (identical? el panel)
+                                             (/ (js/parseFloat (.. e -detail -size)) 100)
+                                             (pct el))]))
+                                sized)
+                   n      (inc (count fracs))
+                   rest   (max 0.02 (- 1 (reduce + 0 (vals fracs))))
+                   sizes  (mapv #(get fracs % rest) (range n))]
+               (when (every? number? sizes)
+                 (dispatch! {:type :layout/resize :path path :sizes sizes})))))))
+     true)
+    ;; a sidebar dragged shut (or open) past its minimum
+    (.addEventListener
+     js/document "ui-panels-collapse"
+     (fn [^js e]
+       (let [^js panel (.-target e)]
+         (when (.hasAttribute panel "data-side")
+           (dispatch! {:type :layout/toggle-side
+                       :side  (keyword (.getAttribute panel "data-side"))
+                       :open? (not (.. e -detail -collapsed))}))))
+     true)))
 
 (defn- install-palette-touch-guard!
   "While the command palette is open, a drag that its list cannot consume
@@ -3464,6 +3618,7 @@
     (add-tap! (pending-submit-tap dispatch!))
     (add-tap! (pending-buffer-tap dispatch!))
     (add-tap! (view-sync-tap dispatch!))
+    (add-tap! (wlayout/tap dispatch!))
     (add-tap! (prefetch/tap dispatch!))
     (add-tap! (buffer-presence-tap dispatch!))
     (add-tap! (buffer-access-tap dispatch!))
@@ -3489,6 +3644,8 @@
       (.addEventListener mql "change"
                          (fn [e] (dispatch! {:type :web/set-wide :wide? (.-matches e)}))))
     (install-sidebar-swipe! state dispatch!)
+    (install-right-edge-swipe! state dispatch!)
+    (attach-pane-listeners! dispatch!)
     (install-palette-touch-guard!)
     (when (some? (.getItem js/localStorage "xi/debug-palette-scroll"))
       (install-palette-scroll-debug!))

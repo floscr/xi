@@ -74,7 +74,7 @@
    from the top of the view. `scroll-to!` (fn [view el y]) eases the view
    until el's top sits at viewport y. True when there was one."
   [dir scroll-to!]
-  (when-let [^js view (.querySelector js/document ".timeline")]
+  (when-let [^js view (.querySelector js/document ".timeline:not(.timeline--sub)")]
     (let [blocks  (vec (array-seq (.querySelectorAll view ".agent-block")))
           landing (landing-y view)
           current (some-> js/document.activeElement (.closest ".agent-block"))

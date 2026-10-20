@@ -76,7 +76,10 @@ projects** in the sidebar opens the project list (`/projects`).
   time. Open a row for its output, or stop it. The post scrolls away with
   the conversation. When a sub-agent finishes, its answer appears as a post
   where the conversation was by then, with buttons to open it as a chat of
-  its own, keep it as a session or dismiss it. A finished sub-agent is saved
+  its own, keep it as a session or dismiss it (or, with **Sub-agent
+  answers** set to "In a window" in [Appearance](#appearance), in a
+  [window](#windows) at the right, and the chat keeps a one-line marker
+  that opens it). A finished sub-agent is saved
   as a session of its own, hidden from your chats and deleted with the chat.
   The chat keeps the link, so its posts and Open as chat work after a
   restart. **Keep as session** lists it with your other chats; so does the
@@ -209,6 +212,48 @@ refreshes it in place.
 - **How long they live.** Buffers survive leaving the chat and coming back,
   on any device, as long as the server runs. They are not saved to disk: a
   server restart starts with none.
+
+## Windows
+
+A chat shows one view at a time until you split it. **Split window right**
+or **Split window down** (the ⋮ menu, the palette's Windows group, or a
+window's own bar) divides the view in two; the new window asks what to
+show: the chat, a buffer, a sub-agent, a file or the git status. Every
+window has a bar with its view pill (the same list as the top bar's,
+for that window), split buttons, two buttons that move it into the left or
+right **sidebar**, and ×. Up to eight windows; the chat appears in one of
+them at most.
+
+- **Focus.** The window you last clicked is the focused one (an accent
+  outline). The top bar's pill, the URL, the sidebar's tinted row and the
+  keys all follow it: a buffer opened from anywhere (the sidebar, the
+  palette, a file link) shows in the focused window, or focuses the window
+  already showing it. `Esc` in a diff or file window puts the chat there.
+- **Resizing.** Drag the seam between two windows. Each seam is a keyboard
+  control too: Tab onto it, then the arrow keys resize (Shift for bigger
+  steps), Home / End go to the ends, and a double-click or Enter resets. The
+  `:layout/grow-*` / `:layout/shrink-*` actions resize the focused window
+  by a step without the mouse, `:layout/balance` makes the windows of a
+  split equal ([keys](keyboard.md#windows)).
+- **Sidebars.** A window moved into a sidebar keeps its width across the
+  chat's splits and can be hidden and shown (`:layout/toggle-left` /
+  `:layout/toggle-right`, or drag the seam shut). One window per side;
+  moving another one there swaps them. Its bar's first button moves it
+  back into the main area.
+- **On a phone** (and any window under 1024px wide), the main area shows
+  the focused window alone; its pill switches what it shows. A sidebar is a
+  drawer over the chat: open it with its toggle action, from a sub-agent's
+  "Show in a window", or by swiping in from the right edge; tap the dimmed
+  chat, swipe right or toggle again to close it.
+- **Sub-agents.** "Show in a window" on a sub-agent row or answer puts it
+  in the right sidebar. With **Sub-agent answers** set to "In a window"
+  ([Appearance](#appearance)), a finished sub-agent opens there on its
+  own, without taking focus, and the chat shows a marker row instead of
+  the answer post.
+- **Per chat, per user.** The arrangement and sizes belong to the chat: a
+  split chat comes back split, on every device of yours (the last fifty
+  chats you arranged). Another user of the same chat has their own.
+  **Back to one window** (⋮ menu, palette, `:layout/reset`) clears it.
 
 ## Terminals
 
@@ -370,7 +415,9 @@ sources),
 a tool row shows next to the tool name: a per-tool summary such as the
 command, the path or the pattern, or every argument as `key=value`), and
 **super collapsed** (a run of two or more collapsed tool and thinking rows
-shows as one summary line with a step count instead of its header rows).
+shows as one summary line with a step count instead of its header rows) and
+**sub-agent answers** (a finished sub-agent's answer as a post in the chat,
+or in a [window](#windows) at the right).
 
 ### Color themes
 

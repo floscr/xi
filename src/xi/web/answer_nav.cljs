@@ -118,7 +118,7 @@
   (js/requestAnimationFrame #(js/requestAnimationFrame f)))
 
 (defn- jump-in! [dir running? scroll-to! loads ref-el]
-  (when-let [^js view (.querySelector js/document ".timeline")]
+  (when-let [^js view (.querySelector js/document ".timeline:not(.timeline--sub)")]
     (let [posts   (answers view running?)
           landing (landing-y view)
           ref     (reference-y view dir landing ref-el)]

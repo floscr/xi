@@ -20,6 +20,8 @@
             [xi.web.diff-state :as diff-state]
             [xi.fuzzy :as fuzzy]
             [xi.keys :as xkeys]
+            [xi.layout :as layout]
+            [xi.web.layout :as wlayout]
             [xi.palette :as palette]
             [xi.session.sidebar :as sb :refer [format-relative-time session-status
                                                active-first orphan-rooms
@@ -55,6 +57,7 @@
             [ui.sidebar :as sidebar]
             [ui.command :as cmd]
             [ui.context-menu :as context-menu]
+            [ui.panels :as panels]
             [ui.popover :as popover]
             [ui.select :as select]
             [ui.color-picker :as color-picker]
@@ -3125,6 +3128,29 @@
     :prompt   :terminal
     (or (buffer-views/icon kind) :list)))
 
+(defn- pane-icon
+  "The window glyphs the clj-ui-framework icon set lacks, Lucide style:
+   :split-right, :split-down, :dock-left, :dock-right, :undock, :only."
+  [kind]
+  [:svg {:class ["icon" "icon-sm"]
+         :xmlns "http://www.w3.org/2000/svg"
+         :viewBox "0 0 24 24"
+         :fill "none"
+         :stroke "currentColor"
+         :stroke-width "2"
+         :stroke-linecap "round"
+         :stroke-linejoin "round"
+         :aria-hidden "true"}
+   [:rect {:x 3 :y 3 :width 18 :height 18 :rx 2}]
+   (case kind
+     :split-right [:path {:d "M12 3v18"}]
+     :split-down  [:path {:d "M3 12h18"}]
+     :dock-left   [:path {:d "M9 3v18"}]
+     :dock-right  [:path {:d "M15 3v18"}]
+     :undock      [:path {:d "M15 3v18M12 9l-3 3 3 3"}]
+     :only        [:path {:d "M8 8h8v8H8z"}]
+     nil)])
+
 (defn- messages-icon
   "Tabler's messages, the sub-agent icon, which the clj-ui-framework icon set lacks."
   ([] (messages-icon nil))
@@ -3262,12 +3288,17 @@
    naming the view in front, opening a popover listing the chat, every buffer
    (× closes it for everyone), the sub-agents (`sub-agents`, read-only views)
    and \"Close all\". Switching stays client-local; a virtual new chat keeps
-   its buffers on the pending room."
-  [dispatch! room-id active-buffer buffers sub-agents people-of]
-  (let [switch! (fn [buffer-id]
-                  (dispatch! (if room-id
-                               {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}
-                               {:type :pending/buffer-switch :buffer-id buffer-id})))
+   its buffers on the pending room. A window's header reuses it with `opts`:
+   `:switch!` (fn [view]) for its own pane, `:menu-id` (one popover per
+   pane), `:class` on the pill."
+  ([dispatch! room-id active-buffer buffers sub-agents people-of]
+   (buffer-menu dispatch! room-id active-buffer buffers sub-agents people-of nil))
+  ([dispatch! room-id active-buffer buffers sub-agents people-of opts]
+  (let [switch! (or (:switch! opts)
+                    (fn [buffer-id]
+                      (dispatch! (if room-id
+                                   {:type :ui/buffer-switch :room-id room-id :buffer-id buffer-id}
+                                   {:type :pending/buffer-switch :buffer-id buffer-id}))))
         close!  (fn [buffer-id]
                   (dispatch! (if room-id
                                (if buffer-id
@@ -3282,9 +3313,10 @@
         kind    (cond active (buffers/kind active-buffer active)
                       sub    :subagent)
         label   (cond active (buffers/label active-buffer active)
-                      sub    (or (:label sub) "Sub-agent")
+                      sub    (or (:label sub) (:task sub) "Sub-agent")
+                      (= :empty active-buffer) "Pick a view"
                       :else  "Chat")
-        menu-id "buffer-menu"
+        menu-id (or (:menu-id opts) "buffer-menu")
         item    (fn [{:keys [id icon title active? people on-click on-close key]}]
                   [:button {:class ["sidebar-more-item" "buffer-menu-item"
                                     (when active? "buffer-menu-item--active")]
@@ -3303,9 +3335,9 @@
                                            (on-close))}}
                       (icon/icon {:icon-name :x :size :sm})])])]
     (list
-     [:button (merge {:class ["tab-pill" "buffer-menu-trigger"]
+     [:button (merge {:class ["tab-pill" "buffer-menu-trigger" (:class opts)]
                       :title "Switch view"
-                      :replicant/key "buffer-menu-trigger"}
+                      :replicant/key (str menu-id "-trigger")}
                      (popover/trigger-attrs menu-id))
       (when kind (buffer-kind-icon kind))
       [:span {:class ["buffer-menu-label"]} label]
@@ -3313,9 +3345,9 @@
      (popover/popover-content
       {:id    menu-id
        :side  :bottom
-       :align :center
+       :align (if (:switch! opts) :start :center)
        :class "sidebar-more-menu buffer-menu"
-       :attrs {:replicant/key "buffer-menu"}}
+       :attrs {:replicant/key menu-id}}
       (item {:id "chat" :icon (message-circle-icon) :title "Chat"
              :active? (not (or active sub)) :people (people-of :chat)
              :on-click #(switch! :chat)})
@@ -3338,7 +3370,7 @@
          [:div {:class ["overflow-menu-divider"] :replicant/key "buffer-menu-divider"}]
          (item {:id "close-all" :icon :x
                 :title (str "Close all buffers (" (count buffers) ")")
-                :on-click #(close! nil)})))))))
+                :on-click #(close! nil)}))))))))
 
 (defn overflow-menu
   "Three-dots overflow menu of every topbar (:web/overflow-menu?). `git-ctx`
@@ -3409,6 +3441,31 @@
                                  (dispatch! {:type :appearance/open}))}}
           (icon/icon {:icon-name :settings :size :sm})
           [:span "Appearance"]]
+         ;; Windows (xi.web.layout): on a joined chat
+         (when (wlayout/room-ctx state)
+           (list
+            [:div {:class ["overflow-menu-divider"] :replicant/key "overflow-windows-divider"}]
+            (for [[k label dir] [["split-right" "Split window right" :row]
+                                 ["split-down" "Split window down" :col]]]
+              [:button {:class ["overflow-menu-item"]
+                        :replicant/key k
+                        :data-key-action (str "layout/" k)
+                        :on {:click (fn [e]
+                                      (.stopPropagation e)
+                                      (dispatch! {:type :overflow/close})
+                                      (dispatch! {:type :layout/split :dir dir}))}}
+               (pane-icon (keyword k))
+               [:span label]])
+            (when (wlayout/windows? state)
+              [:button {:class ["overflow-menu-item"]
+                        :replicant/key "layout-reset"
+                        :data-key-action "layout/reset"
+                        :on {:click (fn [e]
+                                      (.stopPropagation e)
+                                      (dispatch! {:type :overflow/close})
+                                      (dispatch! {:type :layout/reset}))}}
+               (pane-icon :only)
+               [:span "Back to one window"]])))
          ;; Extension nav items: :mode-scoped ones only in the matching git-ctx
          ;; mode, with the ctx keys merged into their event.
          (when (seq ext-items)
@@ -3744,10 +3801,16 @@
                                       (dispatch! ev))}}
                (if text? title icon)])]
     (if (= :running status)
-      (list (btn "subagent-stop" "Stop sub-agent"
+      (list (btn "subagent-window" "Show in a window"
+                 {:type :layout/open-view :view id :where :right :focus? true}
+                 (pane-icon :dock-right))
+            (btn "subagent-stop" "Stop sub-agent"
                  {:type :subagent/abort :room-id room-id :sub-id id}
                  (icon/icon {:icon-name :circle-x :size :sm})))
-      (list (btn "subagent-open" "Open as chat"
+      (list (btn "subagent-window" "Show in a window"
+                 {:type :layout/open-view :view id :where :right :focus? true}
+                 (pane-icon :dock-right))
+            (btn "subagent-open" "Open as chat"
                  (if session-id
                    {:type :route/navigate :page :chat :session-id session-id}
                    {:type :subagent/promote :room-id room-id :sub-id id})
@@ -4086,6 +4149,28 @@
       [:div {:class ["subagent-result-foot"]}
        (subagent-actions dispatch! room-id child {:text? true})]]]))
 
+(defn- subagent-marker-post
+  "What stands in for a finished sub-agent's answer when answers open in a
+   window (appearance :subagent-answers :pane): one row with its status,
+   label and duration; a click shows it in the right sidebar."
+  [dispatch! _room-id {:keys [id label task status] :as child}]
+  (let [status (or status :done)]
+    [:div {:class ["post" "post--assistant" "post--subagent-marker"]
+           :replicant/key (str "sar-" id)
+           :data-ask-sub id}
+     [:button {:class ["subagent-marker"]
+               :title "Show the answer in a window"
+               :on {:click (fn [_] (dispatch! {:type :layout/open-view :view id
+                                               :where :right :focus? true}))}}
+      (if (= :running status) (spinner) (messages-icon))
+      [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
+      (when-let [d (subagent-duration child)]
+        [:span {:class ["subagent-card-dur"]} d])
+      [:span {:class ["subagent-status" (str "subagent-status--" (name status))]}
+       (get subagent-status-label status (name status))]
+      [:span {:class ["subagent-marker-open"]}
+       "Open" (icon/icon {:icon-name :arrow-right :size :sm})]]]))
+
 (defn- subagent-view
   "A sub-agent in place of the chat, opened from its sidebar or buffer-menu
    row: its task and history as a read-only timeline under a header with its
@@ -4106,7 +4191,8 @@
       (when-let [d (subagent-duration child)]
         [:span {:class ["subagent-card-dur"]} d])
       (subagent-actions dispatch! room-id child)]
-     [:div {:class ["timeline"]}
+     ;; --sub: never the chat's timeline for xi.web.core's scroll follow
+     [:div {:class ["timeline" "timeline--sub"]}
       [:div {:class ["timeline-content"]}
        (when (seq task) (post "sv-task" {:kind :user :text task}))
        (map-indexed (fn [i e] (post (str "sv-" i) e)) history)
@@ -4276,7 +4362,10 @@
         (remove nil?)
         (flatten-children children)))
 
-(defn- chat-view [state dispatch!]
+(defn- chat-ctx
+  "What every part of the chat page reads: the room in view, its history,
+   buffers and sub-agents, the composer's draft key, the file-drop state."
+  [state dispatch!]
   (let [sid     (get-in state [:web/route :session-id])
         room    (viewed-room state sid)
         {:keys [history cached resuming? loading?]} (chat-history state room sid)
@@ -4311,47 +4400,15 @@
                                   (some #(= (:dialog-id deny-reason) (:id %))
                                         (get-in room [:ui :dialogs])))))
         file-drag? (and drop-zone? (:web/file-drag? state))]
-    [:div (cond-> {:class ["container" "chat-drop-zone"] :replicant/key "chat"}
-            drop-zone? (assoc :on (file-drop-attrs dispatch! dkey file-drag?)))
-     (file-drop-overlay dispatch! file-drag?)
-     [:div {:class ["topbar" "topbar--chat"]}
-      (menu-button dispatch!)
-      [:div {:class ["topbar-title"]}
-       (when (and resuming? (seq history))
-         [:span {:class ["topbar-updating"]}
-          (spinner) [:span "Updating…"]])]
-      (offline-badge state)
-      (yolo-chip dispatch! room)
-      (when has-tabs?
-        (buffer-menu dispatch! (:id room) active-buf buffers sub-agents
-                     (let [viewers (buffers/viewers room)]
-                       (fn [id] (sb/room-people state (get viewers id))))))
-      (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
-     (case buffer-kind
-       :diff
-       (diff-tab-view dispatch! state (:id room) active-buffer)
+    {:sid sid :room room :history history :cached cached :resuming? resuming?
+     :loading? loading? :busy? busy? :new? new? :model model :ready? ready?
+     :pa? pa? :dkey dkey :buffers buffers :active-buf active-buf
+     :sub-agents sub-agents :has-tabs? has-tabs? :nav-ctx nav-ctx
+     :drop-zone? drop-zone? :file-drag? file-drag?}))
 
-       :file
-       (file-tab-view dispatch! state active-buffer)
-
-       :terminal
-       (terminal/view dispatch! state room active-buf active-buffer
-                      (contains? (:web/terminals-gone state) (:term-id active-buffer)))
-
-       :prompt
-       (prompt-tab-view dispatch! room (or (:web/prompt-expanded state) #{}))
-
-       (cond
-         (and active-buffer (buffer-views/view buffer-kind))
-         ((buffer-views/view buffer-kind) state dispatch! room active-buf active-buffer)
-
-         (and active-buffer (string? (:text active-buffer)))
-         (text-tab-view active-buf active-buffer)
-
-         sub-view
-         (subagent-view dispatch! room sub-view)
-
-         :else
+(defn- chat-body
+  "The chat itself: the timeline, its overlays and the compose dock."
+  [state dispatch! {:keys [sid room history busy? new? model ready? pa? dkey nav-ctx]}]
        (list
         [:div {:class ["timeline"
                        (when-not pa? "timeline--float-footer")]}
@@ -4464,7 +4521,9 @@
                                       :node (subagents-post dispatch! (:id room) sa-ctx p as
                                                             threads-of)}])
                                   (map (fn [c] {:key (str "sar-" (:id c)) :group? false
-                                                :node (subagent-result-post dispatch! (:id room) c)})
+                                                :node (if (= :pane (:subagent-answers app))
+                                                        (subagent-marker-post dispatch! (:id room) c)
+                                                        (subagent-result-post dispatch! (:id room) c))})
                                        (get by-end p))))
                      ;; Extension posts (xi.web.timeline-posts), e.g. agent
                      ;; blocks after their tool call, which they stand in for.
@@ -4636,8 +4695,216 @@
                           nav-ctx
                           (:web/scrolled-up? state)
                           (false? (:web/connected? state))
-                          (slash-ctx state))))])))
-     ;; outside the case: code blocks in file buffers open it too
+                          (slash-ctx state))))]))
+
+;; ── Windows (xi.layout, xi.web.layout) ───────────────────────────────────────
+
+(defn- pane-button [title on-click child]
+  [:button {:class ["icon-btn" "icon-btn--sm" "pane-btn"]
+            :title title
+            :on {:click (fn [^js e] (.stopPropagation e) (on-click))}}
+   child])
+
+(defn- pane-header
+  "A window's bar: its view pill (buffer-menu, switching this pane), then
+   split / dock / close; a sidebar pane offers undock instead of the splits."
+  [dispatch! state {:keys [room buffers sub-agents]} layout {:keys [id view]} side]
+  (let [room-id  (:id room)
+        viewers  (buffers/viewers room)
+        people   (fn [v] (sb/room-people state (get viewers v)))
+        ev!      (fn [ev] (dispatch! (assoc ev :pane-id id)))
+        several? (> (count (layout/main-panes layout)) 1)]
+    [:div {:class ["pane-header"]}
+     (buffer-menu dispatch! room-id view buffers sub-agents people
+                  {:menu-id (str "pane-menu-" id)
+                   :class   "pane-pill"
+                   :switch! (fn [v] (ev! {:type :layout/set-view :view v}))})
+     [:span {:class ["pane-header-spacer"]}]
+     (if side
+       (pane-button "Back into the main area"
+                    #(dispatch! {:type :layout/undock :side side}) (pane-icon :undock))
+       (list
+        (pane-button "Split right" #(ev! {:type :layout/split :dir :row}) (pane-icon :split-right))
+        (pane-button "Split down" #(ev! {:type :layout/split :dir :col}) (pane-icon :split-down))
+        (when several?
+          (pane-button "Keep only this window" #(ev! {:type :layout/only}) (pane-icon :only)))
+        (pane-button "Into the left sidebar" #(ev! {:type :layout/dock :side :left}) (pane-icon :dock-left))
+        (pane-button "Into the right sidebar" #(ev! {:type :layout/dock :side :right}) (pane-icon :dock-right))))
+     (pane-button "Close window" #(ev! {:type :layout/close-pane})
+                  (icon/icon {:icon-name :x :size :sm}))]))
+
+(defn- empty-pane
+  "A window without a view yet: pick one. The chat (unless shown already),
+   the room's buffers and sub-agents, then a file or the git status."
+  [dispatch! {:keys [room buffers sub-agents]} layout pane-id]
+  (let [pick! (fn [v] (dispatch! {:type :layout/set-view :pane-id pane-id :view v}))
+        item  (fn [k icon title on-click]
+                [:button {:class ["sidebar-more-item" "pane-pick-item"]
+                          :replicant/key k
+                          :on {:click (fn [_] (on-click))}}
+                 (if (keyword? icon) (icon/icon {:icon-name icon :size :sm}) icon)
+                 [:span {:class ["buffer-menu-title"]} title]])]
+    [:div {:class ["pane-empty"]}
+     [:div {:class ["pane-empty-title"]} "Show here"]
+     [:div {:class ["pane-pick"]}
+      (when-not (layout/pane-of-view layout :chat)
+        (item "chat" (message-circle-icon) "Chat" #(pick! :chat)))
+      (for [[id buf] (buffers/ordered buffers)]
+        (item (str id) (buffer-kind-icon (buffers/kind id buf)) (buffers/label id buf) #(pick! id)))
+      (for [{:keys [id label task]} sub-agents]
+        (item id (messages-icon) (or label task "Sub-agent") #(pick! id)))
+      [:div {:class ["overflow-menu-divider"] :replicant/key "pick-divider"}]
+      (item "find" :search "Find a file…" #(dispatch! {:type :palette/open-file-finder}))
+      (item "git" :code "Git status"
+            #(dispatch! {:type :diff/reopen :room-id (:id room) :method "git" :engine :git}))
+      (item "close" :x "Close this window" #(dispatch! {:type :layout/close-pane :pane-id pane-id}))]]))
+
+
+(defn- pane-view
+  "The view `view` names (a buffer id, a sub-agent id, :chat, :empty) for a
+   window, or the whole page below the topbar when the chat is not split."
+  [state dispatch! {:keys [room buffers sub-agents] :as ctx} layout pane-id view]
+  (let [buffer (get buffers view)
+        kind   (when buffer (buffers/kind view buffer))
+        sub    (when-not buffer (some #(when (= view (:id %)) %) sub-agents))]
+    (case kind
+      :diff
+      (diff-tab-view dispatch! state (:id room) buffer)
+
+      :file
+      (file-tab-view dispatch! state buffer)
+
+      :terminal
+      (terminal/view dispatch! state room view buffer
+                     (contains? (:web/terminals-gone state) (:term-id buffer)))
+
+      :prompt
+      (prompt-tab-view dispatch! room (or (:web/prompt-expanded state) #{}))
+
+      (cond
+        (and buffer (buffer-views/view kind))
+        ((buffer-views/view kind) state dispatch! room view buffer)
+
+        (and buffer (string? (:text buffer)))
+        (text-tab-view view buffer)
+
+        sub
+        (subagent-view dispatch! room sub)
+
+        (and layout (= :empty view))
+        (empty-pane dispatch! ctx layout pane-id)
+
+        :else
+        (chat-body state dispatch! ctx)))))
+
+(defn- pane-frame
+  "One window: header + its view. `data-pane-id` / `data-pane-focused` are
+   what xi.web.core's pointer listener and scroller lookup read."
+  [state dispatch! ctx layout {:keys [id view] :as pane} side]
+  (let [focused? (= id (:focus layout))]
+    [:div {:class ["pane"
+                   (when focused? "pane--focused")
+                   (when (= :chat view) "pane--chat")
+                   (when side "pane--side")]
+           :data-pane-id id
+           :data-pane-focused (when focused? "true")}
+     (pane-header dispatch! state ctx layout pane side)
+     [:div {:class ["pane-body"]}
+      (pane-view state dispatch! ctx layout id view)]]))
+
+(defn- layout-node
+  "The main tree: a split is a ui.panels group (`data-split-path`), its
+   children sized panels but the last, which fills; xi.web.core turns the
+   runtime's resize events back into :layout/resize."
+  [state dispatch! ctx layout node path]
+  (if (layout/pane? node)
+    (pane-frame state dispatch! ctx layout node nil)
+    (let [{:keys [dir children sizes]} node
+          n (count children)]
+      (apply panels/group
+             {:orientation (if (= :row dir) :horizontal :vertical)
+              :class "pane-split"
+              :attrs {:data-split-path (str/join "." path)}}
+             (mapcat (fn [i child]
+                       (let [sub (layout-node state dispatch! ctx layout child (conj path i))]
+                         (if (< i (dec n))
+                           [(panels/panel {:size (str (* 100 (nth sizes i)) "%")
+                                           :min-size 120
+                                           :class "pane-slot"
+                                           :attrs {:data-split-index i}}
+                                          sub)
+                            (panels/separator {:label "Resize windows"})]
+                           [(panels/panel {:class "pane-slot pane-slot--fill"} sub)])))
+                     (range) children)))))
+
+(defn- side-slot
+  "A docked sidebar on a wide screen: a collapsible sized panel."
+  [state dispatch! ctx layout side]
+  (when-let [{:keys [pane size open?]} (get layout side)]
+    (panels/panel {:size size :min-size layout/side-min :max-size layout/side-max
+                   :collapsible true :collapsed (not open?)
+                   :class (str "pane-side pane-side--" (name side))
+                   :attrs {:data-side (name side)}}
+                  (pane-frame state dispatch! ctx layout pane side))))
+
+(defn- layout-view
+  "The chat page split into windows (xi.web.layout). Wide: sidebars dock
+   beside the main tree. Narrow: the focused main pane alone, a sidebar a
+   drawer over it while its pane has focus (scrim tap hands focus back)."
+  [state dispatch! ctx layout]
+  (let [focused (layout/focused layout)
+        side    (layout/side-of layout (:id focused))]
+    (if (:web/wide? state)
+      [:div {:class ["pane-layout"]}
+       (panels/group
+        {:orientation :horizontal :class "pane-root"}
+        (side-slot state dispatch! ctx layout :left)
+        (when (:left layout) (panels/separator {:label "Resize left sidebar"}))
+        (panels/panel {:class "pane-root-main"}
+                      (layout-node state dispatch! ctx layout (:main layout) []))
+        (when (:right layout) (panels/separator {:label "Resize right sidebar"}))
+        (side-slot state dispatch! ctx layout :right))]
+      (let [main-pane (if side (first (layout/main-panes layout)) focused)]
+        [:div {:class ["pane-layout" "pane-layout--narrow"]}
+         (pane-frame state dispatch! ctx layout main-pane nil)
+         (for [s layout/sides
+               :when (get layout s)
+               :let [open? (= s side)]]
+           (list
+            [:div {:class ["pane-drawer-scrim" (when open? "pane-drawer-scrim--open")]
+                   :replicant/key (str "scrim-" (name s))
+                   :on {:click (fn [_] (dispatch! {:type :layout/toggle-side :side s}))}}]
+            [:div {:class ["pane-drawer" (str "pane-drawer--" (name s)) (when open? "pane-drawer--open")]
+                   :replicant/key (str "drawer-" (name s))}
+             (pane-frame state dispatch! ctx layout (get-in layout [s :pane]) s)]))]))))
+
+
+(defn- chat-view [state dispatch!]
+  (let [{:keys [room history resuming? dkey buffers active-buf sub-agents has-tabs?
+                drop-zone? file-drag?]
+         :as ctx} (chat-ctx state dispatch!)
+        windows  (when room (wlayout/stored state))]
+    [:div (cond-> {:class ["container" "chat-drop-zone"] :replicant/key "chat"}
+            drop-zone? (assoc :on (file-drop-attrs dispatch! dkey file-drag?)))
+     (file-drop-overlay dispatch! file-drag?)
+     [:div {:class ["topbar" "topbar--chat"]}
+      (menu-button dispatch!)
+      [:div {:class ["topbar-title"]}
+       (when (and resuming? (seq history))
+         [:span {:class ["topbar-updating"]}
+          (spinner) [:span "Updating…"]])]
+      (offline-badge state)
+      (yolo-chip dispatch! room)
+      (process-chip dispatch! room)
+      (when has-tabs?
+        (buffer-menu dispatch! (:id room) active-buf buffers sub-agents
+                     (let [viewers (buffers/viewers room)]
+                       (fn [id] (sb/room-people state (get viewers id))))))
+      (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
+     (if (and windows (not (layout/default? windows)))
+       (layout-view state dispatch! ctx windows)
+       (pane-view state dispatch! ctx nil nil active-buf))
+     ;; outside the panes: code blocks in file buffers open it too
      (when-let [menu (:web/code-menu state)]
        (if (:file? menu)
          (file-path-menu dispatch! state (:id room) menu)
@@ -6129,7 +6396,31 @@
                        {:icon :x
                         :value "close all buffers of every session kill"
                         :on-click (fn [_] (dispatch! {:type :sessions/buffers-close-all}))}
-                       (str "Close buffers of all sessions (" all-open ")"))]))}]
+                       (str "Close buffers of all sessions (" all-open ")"))]))}
+          ;; Windows (xi.web.layout)
+          {:heading "Windows"
+           :items (when (wlayout/room-ctx state)
+                    (concat
+                     (for [[k label dir] [["split-right" "Split window right" :row]
+                                          ["split-down" "Split window down" :col]]]
+                       (with-leading-icon
+                         (cmd/command-item
+                          {:value (str "window " label)
+                           :on-click (fn [_] (dispatch! {:type :layout/split :dir dir}))}
+                          label)
+                         (assoc-in (pane-icon (keyword k)) [1 :class] ["icon" "icon-sm" "command-item-icon"])))
+                     (when (wlayout/windows? state)
+                       (for [[label ev] [["Close window" {:type :layout/close-pane}]
+                                         ["Keep only this window" {:type :layout/only}]
+                                         ["Move window into the left sidebar" {:type :layout/dock :side :left}]
+                                         ["Move window into the right sidebar" {:type :layout/dock :side :right}]
+                                         ["Equal window sizes" {:type :layout/balance}]
+                                         ["Back to one window" {:type :layout/reset}]]]
+                         (cmd/command-item
+                          {:icon :layers
+                           :value (str "window " label)
+                           :on-click (fn [_] (dispatch! ev))}
+                          label)))))}]
          (keep (fn [{:keys [items] :as g}]
                  (when (seq items) (assoc g :items (vec items)))))
          vec)))
@@ -7291,7 +7582,12 @@
       "Tool arguments"
       "Next to the tool name: a per-tool summary (the command, the path, the pattern) or every argument"
       (appearance-choice dispatch! :tool-args (:tool-args app)
-                         [[:summary "Summary"] [:all "All"]]))]))
+                         [[:summary "Summary"] [:all "All"]]))
+     (appearance-row
+      "Sub-agent answers"
+      "A finished sub-agent's answer as a post in the chat, or in a window at the right (the chat keeps a one-line marker)"
+      (appearance-choice dispatch! :subagent-answers (:subagent-answers app)
+                         [[:inline "In the chat"] [:pane "In a window"]]))]))
 
 (defn- theme-draft-footer
   "An open theme draft's Delete / Cancel / Save under the Theme pane."

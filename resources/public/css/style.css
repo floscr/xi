@@ -7577,3 +7577,167 @@ code a:hover,
 .ab-align-start { align-items: flex-start; text-align: start; }
 .ab-align-center { align-items: center; justify-content: center; text-align: center; }
 .ab-align-end { align-items: flex-end; justify-content: flex-end; text-align: end; }
+
+/* ── Windows (xi.layout / xi.web.layout; xi.web.views/layout-view) ───────────
+   The chat page split into panes: a ui.panels tree in the main area, one
+   dockable sidebar per side. Each pane is a flex column (header + body) so
+   the chat's timeline + compose dock, a diff tab or a terminal fill it. */
+.pane-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+.pane-root { height: 100%; }
+.pane-root-main { min-width: 0; }
+.pane-root-main,
+.pane-slot--fill { display: flex; }
+/* a panel's content box fills it, so the pane inside can too */
+.ui-panels-content > .pane,
+.ui-panels-content > .ui-panels-group,
+.ui-panels-fill > .pane,
+.ui-panels-fill > .ui-panels-group {
+  width: 100%;
+  height: 100%;
+}
+.ui-panels-content { display: flex; }
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  background: var(--bg-0);
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: outline-color var(--duration-fast) var(--ease-standard);
+}
+.pane--focused {
+  outline-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.pane-body > .timeline { flex: 1; }
+
+.pane-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--size-1) var(--size-2);
+  border-bottom: var(--border-0);
+  background: var(--bg-1);
+  min-height: 2.25rem;
+}
+.pane--focused > .pane-header {
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-1));
+}
+.pane-header-spacer { flex: 1; }
+.pane-header .pane-pill {
+  position: static;
+  transform: none;
+  margin: 0;
+  max-width: min(60%, 24rem);
+}
+.pane-btn { color: var(--fg-3); }
+.pane-btn:hover { color: var(--fg-0); }
+.pane--side > .pane-header .pane-pill { max-width: 70%; }
+
+/* the pick list of a window without a view */
+.pane-empty {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--size-4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pane-empty-title {
+  color: var(--fg-3);
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: var(--size-2);
+}
+.pane-pick {
+  width: min(100%, 22rem);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pane-pick-item { min-width: 0; }
+
+/* sidebars: the ui.panels seam line doubles as the border */
+.pane-side > .ui-panels-content { background: var(--bg-0); }
+
+/* narrow: the focused main pane alone; a sidebar is a drawer over it,
+   like the app sidebar's, open while its pane has focus */
+.pane-layout--narrow { overflow: hidden; }
+.pane-layout--narrow > .pane { flex: 1; }
+.pane-drawer-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-standard) var(--ease-standard);
+}
+.pane-drawer-scrim--open { opacity: 1; pointer-events: auto; }
+.pane-drawer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  z-index: 50;
+  width: min(88%, 480px);
+  display: flex;
+  background: var(--bg-0);
+  transform: translateX(100%);
+  transition: transform var(--duration-standard) var(--ease-standard);
+}
+.pane-drawer--open {
+  transform: translateX(0);
+  box-shadow: var(--shadow-floating);
+}
+.pane-drawer > .pane { outline: none; }
+@media (prefers-reduced-motion: reduce) {
+  .pane-drawer, .pane-drawer-scrim { transition: none; }
+}
+
+/* a finished sub-agent's marker row (appearance: answers in a window) */
+.post--subagent-marker { padding: var(--size-1) 0; }
+.subagent-marker {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  width: 100%;
+  padding: var(--size-2) var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-1));
+  color: var(--fg-1);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.subagent-marker:hover { background: color-mix(in srgb, var(--accent) 14%, var(--bg-1)); }
+.subagent-marker .subagent-card-label { flex: 1; }
+.subagent-marker-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--accent);
+  font-size: var(--font-xs);
+}
+.subagent-window { color: var(--fg-3); }
+.subagent-window:hover { color: var(--accent, var(--fg-0)); }
