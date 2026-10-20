@@ -260,6 +260,17 @@
         (is (= [{:name "a" :description "A"}] (:skills ctx)))
         (is (= #{"a" "b" "gone"} (:skill-names ctx)))))))
 
+;; ── code menu: Split lines ──────────────────────────────────────────────────
+
+(deftest code-lines-test
+  (testing "non-blank lines, trimmed"
+    (is (= ["hey re:deploy-pi" "ssh -t pi sudo reboot"]
+           (views/code-lines "hey re:deploy-pi\n\n  ssh -t pi sudo reboot  \n"))))
+  (testing "nil and blank text have no lines"
+    (is (= [] (views/code-lines nil)))
+    (is (= [] (views/code-lines " \n\t")))))
+
+
 ;; ── sub-agent rows follow the chat's block rules ─────────────────────────────
 
 (defn- post-details-open

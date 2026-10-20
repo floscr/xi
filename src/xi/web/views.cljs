@@ -3675,6 +3675,33 @@
        (icon/icon {:icon-name :trash :size :sm})
        [:span "Delete"]]]]))
 
+(defn code-lines
+  "The non-blank lines of `text`, trimmed: what the code menu's Split lines
+   view offers to copy one by one."
+  [text]
+  (into [] (comp (map str/trim) (remove str/blank?)) (str/split-lines (or text ""))))
+
+(defn- code-lines-menu
+  "The code menu's Split lines view: one entry per line, a tap copies it."
+  [dispatch! close! lines x y]
+  (into [:div {:class ["bubble-menu" "code-lines-menu"]
+               :replicant/key "lines"
+               :style {:top (str y "px") :left (str x "px")}
+               :replicant/on-mount clamp-bubble-menu!
+               :on {:click (fn [e] (.stopPropagation e))}}]
+        (map-indexed
+         (fn [i line]
+           [:button {:replicant/key i
+                     :class ["bubble-menu-item" "code-lines-menu-item"]
+                     :title line
+                     :on {:click (fn [e]
+                                   (.stopPropagation e)
+                                   (close!)
+                                   (copy! dispatch! line))}}
+            (icon/icon {:icon-name :copy :size :sm})
+            [:code line]]))
+        lines))
+
 (defn- file-path-menu
   "Floating menu for a right-clicked / long-pressed row of a tool block
    naming a file (file-row-attrs): the file header's entries
@@ -3714,63 +3741,76 @@
            (file-menu-items dispatch! state path {:extra extra}))]))
 
 (defn- code-copy-menu
-  "Floating menu for a tapped code block: Copy, View file (when the block
+  "Floating menu for a tapped code block: Copy, Split lines (a multi-line
+   block: lists its lines to copy one by one), View file (when the block
    belongs to a tool call naming a file), and View diff (an edit result or
    permission preview, converted by xi.diff/tool-diff->unified; no server
    round-trip), then the extensions' entries (xi.web.block-menu). The tap is
    detected by a delegated listener in xi.web.core."
-  [dispatch! state room-id {:keys [text path diff-path diff-text x y ask-index ask-sub] :as menu}]
-  (let [close! (fn [] (dispatch! {:type :code/menu-close}))]
+  [dispatch! state room-id {:keys [text path diff-path diff-text x y ask-index ask-sub split?] :as menu}]
+  (let [close! (fn [] (dispatch! {:type :code/menu-close}))
+        lines  (code-lines text)]
     [:div {:class ["bubble-menu-backdrop"]
            :on {:click (fn [_] (close!))}}
-     [:div {:class ["bubble-menu"]
-            :style {:top (str y "px") :left (str x "px")}
-            :replicant/on-mount clamp-bubble-menu!
-            :on {:click (fn [e] (.stopPropagation e))}}
-      [:button {:class ["bubble-menu-item"]
-                :on {:click (fn [e]
-                              (.stopPropagation e)
-                              (close!)
-                              (copy! dispatch! text))}}
-       (icon/icon {:icon-name :copy :size :sm})
-       [:span "Copy"]]
-      ;; the code sits in a chat block: ask a sub-agent about that block
-      (when (and room-id (or ask-index ask-sub))
+     ;; distinct keys: the swapped-in view mounts fresh and re-clamps
+     (if split?
+       (code-lines-menu dispatch! close! lines x y)
+       [:div {:class ["bubble-menu"]
+              :replicant/key "main"
+              :style {:top (str y "px") :left (str x "px")}
+              :replicant/on-mount clamp-bubble-menu!
+              :on {:click (fn [e] (.stopPropagation e))}}
         [:button {:class ["bubble-menu-item"]
                   :on {:click (fn [e]
                                 (.stopPropagation e)
                                 (close!)
-                                (dispatch! {:type :thread/compose-open :room-id room-id
-                                            :index ask-index :sub-id ask-sub}))}}
-         (icon/icon {:icon-name :zap :size :sm})
-         [:span "Ask about this"]])
-      (when path
-        [:button {:class ["bubble-menu-item"]
-                  :on {:click (fn [e]
-                                (.stopPropagation e)
-                                (close!)
-                                (dispatch! {:type :file/open :path path}))}}
-         (icon/icon {:icon-name :file-text :size :sm})
-         [:span "View file"]])
-      (when-let [unified (some->> diff-text (diff/tool-diff->unified diff-path))]
-        [:button {:class ["bubble-menu-item"]
-                  :on {:click (fn [e]
-                                (.stopPropagation e)
-                                (close!)
-                                (dispatch! {:type :ui/diff-open :room-id room-id
-                                            :title (str "Diff: " (last (str/split diff-path #"/")))
-                                            :text unified :engine :git}))}}
-         (icon/icon {:icon-name :code :size :sm})
-         [:span "View diff"]])
-      (for [{:keys [label icon event]}
-            (block-menu/items (select-keys menu [:text :path :line :lang :diff-path]) state)]
-        [:button {:class ["bubble-menu-item"]
-                  :on {:click (fn [e]
-                                (.stopPropagation e)
-                                (close!)
-                                (dispatch! event))}}
-         (icon/icon {:icon-name (or icon :chevron-right) :size :sm})
-         [:span label]])]]))
+                                (copy! dispatch! text))}}
+         (icon/icon {:icon-name :copy :size :sm})
+         [:span "Copy"]]
+        (when (> (count lines) 1)
+          [:button {:class ["bubble-menu-item"]
+                    :on {:click (fn [e]
+                                  (.stopPropagation e)
+                                  (dispatch! {:type :code/menu-split}))}}
+           (icon/icon {:icon-name :list :size :sm})
+           [:span "Split lines"]])
+        ;; the code sits in a chat block: ask a sub-agent about that block
+        (when (and room-id (or ask-index ask-sub))
+          [:button {:class ["bubble-menu-item"]
+                    :on {:click (fn [e]
+                                  (.stopPropagation e)
+                                  (close!)
+                                  (dispatch! {:type :thread/compose-open :room-id room-id
+                                              :index ask-index :sub-id ask-sub}))}}
+           (icon/icon {:icon-name :zap :size :sm})
+           [:span "Ask about this"]])
+        (when path
+          [:button {:class ["bubble-menu-item"]
+                    :on {:click (fn [e]
+                                  (.stopPropagation e)
+                                  (close!)
+                                  (dispatch! {:type :file/open :path path}))}}
+           (icon/icon {:icon-name :file-text :size :sm})
+           [:span "View file"]])
+        (when-let [unified (some->> diff-text (diff/tool-diff->unified diff-path))]
+          [:button {:class ["bubble-menu-item"]
+                    :on {:click (fn [e]
+                                  (.stopPropagation e)
+                                  (close!)
+                                  (dispatch! {:type :ui/diff-open :room-id room-id
+                                              :title (str "Diff: " (last (str/split diff-path #"/")))
+                                              :text unified :engine :git}))}}
+           (icon/icon {:icon-name :code :size :sm})
+           [:span "View diff"]])
+        (for [{:keys [label icon event]}
+              (block-menu/items (select-keys menu [:text :path :line :lang :diff-path]) state)]
+          [:button {:class ["bubble-menu-item"]
+                    :on {:click (fn [e]
+                                  (.stopPropagation e)
+                                  (close!)
+                                  (dispatch! event))}}
+           (icon/icon {:icon-name (or icon :chevron-right) :size :sm})
+           [:span label]])])]))
 
 
 (defn- block-info

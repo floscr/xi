@@ -1633,6 +1633,26 @@ body {
   background: var(--red-bg, rgba(239, 68, 68, 0.1));
 }
 
+/* Code menu → Split lines: one copy entry per line */
+.code-lines-menu {
+  max-width: min(36rem, calc(100vw - var(--size-4)));
+  max-height: min(24rem, 70vh);
+  overflow-y: auto;
+}
+
+.code-lines-menu-item {
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.code-lines-menu-item code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
 /* ── Inline bubble edit ──────────────────────────────────────── */
 
 .post--editing {

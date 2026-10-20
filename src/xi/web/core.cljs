@@ -1232,6 +1232,9 @@
                                                                      :file? file?
                                                                      :x x :y y})})
           :code/menu-close       (fn [st _] {:state (dissoc st :web/code-menu)})
+          :code/menu-split       (fn [st _]
+                                   (when (:web/code-menu st)
+                                     {:state (assoc-in st [:web/code-menu :split?] true)}))
           :bubble/edit-start     (fn [st {:keys [index text images]}]
                                    {:state (-> st
                                                (dissoc :web/bubble-menu)
