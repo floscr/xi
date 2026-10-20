@@ -479,10 +479,13 @@
           (when-not remote?
             (status st room-id (str "Unknown command: /" name))))))))
 
-(defn- ui-status [st {:keys [room-id text action]}]
+(defn- ui-status
+  "Appends a :status entry; the banner keys (ns doc) ride along when given."
+  [st {:keys [room-id text] :as ev}]
   (when (state/get-room st room-id)
-    {:state (append-history st room-id (cond-> (status-entry text)
-                                         action (assoc :action action)))}))
+    {:state (append-history st room-id
+                            (merge (status-entry text)
+                                   (select-keys ev [:title :detail :tone :icon :rows :action])))}))
 
 (defn- ui-status-action-expire
   "Drop the :action whose :id is `action-id` from the room's status lines —

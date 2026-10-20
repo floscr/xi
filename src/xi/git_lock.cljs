@@ -245,7 +245,8 @@
    :on-acquire (fn [top fresh?]
                  (when fresh?
                    (when-let [s (staged-summary (staged-files top))]
-                     (str "⚠ index already had staged files no running room owns" s
-                          " — they will be part of this room's next commit"))))
+                     {:text (str "index already had staged files no running room owns" s
+                                 " — they will be part of this room's next commit")
+                      :tone :warning})))
    :wait-ms    wait-ms
    :hint       "commit or unstage there, or run /release"})

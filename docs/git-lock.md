@@ -72,8 +72,8 @@ Your own terminal git is not covered.
   edited by another room this session. The agent must stage its own paths
   explicitly.
 - If the index already had staged files that no running room owns (you staged
-  by hand, or an idle holder left them), the room taking the hold gets a `⚠`
-  status line: those files will be part of its next commit.
+  by hand, or an idle holder left them), the room taking the hold gets a
+  warning status line: those files will be part of its next commit.
 
 ## The lease
 

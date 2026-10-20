@@ -1117,7 +1117,10 @@
                   (:label action)))]
     [:div {:class (cond-> ["post" "post--assistant" "post--status"]
                     (not title) (conj "post--status-slim"))}
-     (apply alert/alert {:variant tone :title title :icon-name (or icon :info)
+     (apply alert/alert {:variant tone :title title
+                         ;; no :tone → neutral banner with the info icon; with
+                         ;; a tone the alert's variant picks its own icon
+                         :icon-name (or icon (when-not tone :info))
                          :class "status-alert" :attrs {:role "status"}}
             (remove nil? (if title [detail rows button] [text button])))]))
 

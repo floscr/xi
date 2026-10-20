@@ -22,7 +22,8 @@
                   held call and at turn end
      :refuse      (fn [ops ctx] → msg|nil) — hook: refuse outright, no wait
      :detail      (fn [key] → str|nil) — appended to wait/timeout messages
-     :on-acquire  (fn [key fresh?] → str|nil) — status line after acquiring
+     :on-acquire  (fn [key fresh?] → str|{:text …}|nil) — status line after
+                  acquiring; a map adds banner keys (:tone, :icon, …)
      :wait-ms     (fn [] → ms) — give up waiting after this
      :hint        what the user can do about a stuck holder
 
@@ -65,11 +66,14 @@
 (defonce ^:private held (atom {}))
 
 (defn- status!
-  ([dispatch! room-id text] (status! dispatch! room-id text nil))
-  ([dispatch! room-id text action]
-   (when (and dispatch! (seq text))
-     (dispatch! (cond-> {:type :ui/status :room-id room-id :text text}
-                  action (assoc :action action))))))
+  "Posts a status line: `status` is the text, or a map of :text plus the
+   banner keys (:tone, :icon, … — xi.commands ns doc)."
+  ([dispatch! room-id status] (status! dispatch! room-id status nil))
+  ([dispatch! room-id status action]
+   (let [m (if (map? status) status {:text status})]
+     (when (and dispatch! (seq (:text m)))
+       (dispatch! (cond-> (assoc m :type :ui/status :room-id room-id)
+                    action (assoc :action action)))))))
 
 (defn- secs [ms] (js/Math.round (/ ms 1000)))
 

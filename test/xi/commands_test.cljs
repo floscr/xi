@@ -710,3 +710,10 @@
     (let [st (apply-events st {:type :ui/status-action-expire :room-id "r" :action-id "a1"})]
       (is (not-any? :action (history st)))
       (is (= ["waiting" "other"] (map :text (take-last 2 (history st))))))))
+
+(deftest ui-status-carries-banner-keys
+  (let [st (apply-events (with-room)
+                         {:type :ui/status :room-id "r" :text "staged" :tone :warning
+                          :bogus 1})]
+    (is (= {:kind :status :text "staged" :tone :warning}
+           (last (history st))))))
