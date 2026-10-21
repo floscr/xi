@@ -84,6 +84,7 @@
             [xi.server.ws :as ws]
             [xi.session :as session]
             [xi.session.recent :as recent]
+            [xi.session.recorder :as recorder]
             [xi.subagent :as subagent]
             [xi.system-prompt :as system-prompt]
             [xi.tools.registry :as registry]
@@ -96,11 +97,13 @@
 
 (def providers
   "Provider id → provider map from the xi.config/providers vector, in picker
-   order. With XI_FAKE_LLM (e2e tests) the scripted fake is the only provider,
-   registered as :anthropic so no turn reaches a real model."
+   order. Every provider's chats get a transcript: those that keep none
+   themselves are recorded (xi.session.recorder). With XI_FAKE_LLM (e2e
+   tests) the scripted fake is the only provider, registered as :anthropic
+   so no turn reaches a real model."
   (if (fake/script-path)
     {:anthropic (fake/provider :anthropic)}
-    (into {} (map (juxt :id identity)) config/providers)))
+    (into {} (map (juxt :id recorder/with-transcripts)) config/providers)))
 
 ;; ── Extensions (per mode) ─────────────────────────────────────────────────────
 ;; Declared in xi.config, instantiated and composed here into the seams the

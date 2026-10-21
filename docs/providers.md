@@ -13,7 +13,8 @@ conversation edits to the data the provider keeps:
 (`xi.session.claude-store`, shared by Claude and the fake provider; design in
 `tasks/session-store.md`). Which providers load is the
 `providers` vector in `src/xi/config.cljc`; `xi.cli` derives the id →
-provider lookup from it. Routing: an explicit `:provider` on the room's
+provider lookup from it, wrapping every provider without a `:store` in
+`xi.session.recorder` (below), so every provider's chats have a transcript. Routing: an explicit `:provider` on the room's
 agent wins, else `xi.util/provider-for-model` picks by model-name prefix
 (shared with the browser build). In-flight turn handles live in the
 `agent/create-fx` closure; `:agent/abort` → `:provider/abort` → `abort!`.
@@ -85,6 +86,20 @@ the top-level `instructions` field, `include: ["reasoning.encrypted_content"]`,
 responses=experimental`, `originator: codex_cli_rs`. SSE only, no WebSocket
 transport; no per-model effort clamping. The `openai/` prefix is stripped
 before the request.
+
+## Transcripts for sessionless providers
+
+Ollama, Codex and OpenCode keep no conversation server-side. `xi.cli` wraps
+each provider without a `:store` in `xi.session.recorder/with-transcripts`:
+every main turn is recorded from the provider's callbacks (text, tool
+calls, results, errors) into a Claude CLI-format transcript under
+`~/.claude/projects/` (a sub-agent's `CLAUDE_CONFIG_DIR` wins, as for the
+CLI), and its id is reported as the provider session id. Saving, the
+sidebar, resume, interrupted-turn detection and `/tree` rewinds
+(`xi.session.claude-store`) then work as for Claude. The prompt is written
+when the turn starts and the rest when it ends; side turns are not
+recorded. The model's context still comes from the replayed room history,
+which a resume rebuilds from the transcript.
 
 ## Side turns
 
