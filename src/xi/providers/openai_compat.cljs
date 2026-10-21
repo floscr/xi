@@ -166,10 +166,16 @@
                        :signal abort-signal})
         (.then
          (fn [^js response]
-           (when-not (.-ok response)
-             (throw (js/Error. (str label " API error: " (.-status response)
-                                    " " (.-statusText response)))))
-           (read-sse-stream (.-body response) state on-text on-thinking)))
+           (if (.-ok response)
+             (read-sse-stream (.-body response) state on-text on-thinking)
+             ;; The body names what the API rejected; the status alone doesn't.
+             (-> (.text response)
+                 (.catch (fn [_] ""))
+                 (.then (fn [body]
+                          (throw (js/Error. (str label " API error: " (.-status response)
+                                                 " " (.-statusText response)
+                                                 (when (seq body)
+                                                   (str " — " (subs body 0 (min 500 (count body))))))))))))))
         (.catch
          (fn [err]
            (throw (js/Error. (str label " request failed: " (.-message err)))))))))
