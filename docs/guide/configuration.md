@@ -132,6 +132,7 @@ drop one setting while keeping the rest.
 | `~/.config/xi/ext/task-trust.edn` | Trusted project file hashes (`bb.edn`, `package.json`, `deno.json`). Written by Xi. |
 | `~/.config/xi/ext/mcp-trust.edn` | Trusted MCP server fingerprints. Written by Xi. |
 | `~/.config/xi/client-key`, `clients.edn` | Your own device key and the paired devices, each with an optional user assignment. See [Server mode](server.md#pairing). |
+| `~/.config/xi/opencode-go.json` | The OpenCode Go sign-in (`/login opencode`). See [Models](models.md#opencode-go). |
 | `~/.config/xi/tls/` | Certificate and key for [HTTPS](https.md). |
 | `~/.config/xi/sessions/`, `personal-agent/` | Saved chats. See [Sessions](sessions.md). |
 | `~/.config/xi/state/users/<user>.edn` | One user's web client choices (theme, custom color themes, appearance, collapsed groups, preferred model, recent commands and skills) and the data extensions keep about them. Written by Xi; see [The web client](web-client.md#what-follows-you) and [Users and their state](extensions-reference.md#users-and-their-state). |
@@ -160,6 +161,7 @@ Settings that belong to the machine rather than to you:
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | The Ollama endpoint. |
 | `OLLAMA_API_KEY` | — | An [ollama.com](https://ollama.com/settings/keys) key; shows the Ollama Cloud credits on the web client's [usage page](web-client.md#usage). |
 | `OPENCODE_API_KEY`, `OPENCODE_ZEN_API_KEY` | — | The OpenCode Zen key. See [Models](models.md). |
+| `OPENCODE_GO_API_KEY` | the Zen key | The OpenCode Go key, when it differs from the Zen key. See [Models](models.md#opencode-go). |
 | `CODEX_HOME` | `~/.codex` | Where the Codex CLI keeps its login. |
 | `XI_CLAUDE_CLI_PATH` | bundled | Another Claude CLI executable for the Claude provider. |
 

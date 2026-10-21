@@ -1,9 +1,10 @@
 (ns xi.providers.zen
-  "OpenCode Zen provider — a curated multi-model AI gateway.
+  "OpenCode provider — the Zen pay-as-you-go gateway and the OpenCode Go
+   subscription gateway.
 
-   Zen serves models across several wire formats behind one gateway
-   (https://opencode.ai/zen/v1). This provider dispatches each turn to the
-   right adapter based on the model's wire-format (see xi.providers.zen.models):
+   Both serve models across several wire formats behind one base URL each
+   (see xi.providers.zen.models for the gateways and the table). This provider
+   dispatches each turn to the adapter for the model's wire format:
 
      :chat      OpenAI Chat Completions  — via xi.providers.openai-compat
                 (DeepSeek, GLM, Kimi, MiniMax, big-pickle, all *-free models)
@@ -13,83 +14,155 @@
                 (GPT, Grok, Muse)
      :gemini    Google generateContent   — not yet implemented (Gemini)
 
-   Auth: OPENCODE_API_KEY / OPENCODE_ZEN_API_KEY, else OpenCode's own
-   ~/.local/share/opencode/auth.json (see xi.providers.zen.auth). The free
-   chat-completions models work without a key.
+   Auth per gateway: xi.providers.zen.auth — Go prefers the Console sign-in
+   (xi.providers.zen.login; `/login opencode`, `xi login opencode`, both
+   through this provider's :login map). The free chat-completions models work
+   without a credential.
+
+   Every request identifies Xi in `User-Agent` and carries the room id as
+   `x-opencode-session`: Go asks both of coding agents and uses the session
+   for routing and prompt caching.
 
    Interface: (stream-messages opts) → {:promise :abort!}."
   (:require [xi.providers.openai-compat :as oai]
             [xi.providers.zen.anthropic :as anthropic]
             [xi.providers.zen.auth :as auth]
+            [xi.providers.zen.login :as login]
             [xi.providers.zen.models :as models]
             [xi.providers.zen.responses :as responses]))
 
-(defn- unsupported
-  "Return a turn handle that reports an unsupported wire format instead of
-   crashing — the :responses (GPT) and :gemini surfaces land in a follow-up."
-  [wire opts]
-  (let [msg (str "OpenCode Zen model uses the " (name wire)
-                 " API surface, which Xi doesn't support yet. "
-                 "Supported now: chat-completions (DeepSeek, GLM, Kimi, "
-                 "MiniMax, big-pickle, *-free), Anthropic (Claude, Qwen), "
-                 "and OpenAI Responses (GPT, Grok, Muse).")]
-    {:promise (js/Promise.resolve
-               (do (when-let [f (:on-error opts)]
-                     (f {:type "error" :message msg}))
-                   {:content [] :stop-reason "error"
-                    :usage {:input_tokens 0 :output_tokens 0}
-                    :model (:model opts) :done true}))
-     :abort!  (fn [] nil)}))
+;; Go rejects generic SDK / HTTP-library user agents.
+(def ^:private user-agent "xi-agent")
 
-(defn- bearer-headers []
-  (if-let [k (auth/api-key)]
-    {"Authorization" (str "Bearer " k)}
-    {}))
+(def ^:private not-signed-in
+  "OpenCode Go needs a sign-in: run /login opencode (or `xi login opencode`), or set OPENCODE_GO_API_KEY.")
 
-(defn stream-messages
-  "Run one Zen turn, dispatching to the adapter for the model's wire format."
-  [opts]
-  (let [wire (models/wire-format (:model opts))
-        ;; Send the bare model id (drop any `opencode/` prefix) to the API.
-        opts (assoc opts :model (models/strip-prefix (:model opts)))]
+(defn- unsupported-message [wire]
+  (str "OpenCode model uses the " (name wire)
+       " API surface, which Xi doesn't support yet. "
+       "Supported now: chat-completions (DeepSeek, GLM, Kimi, "
+       "MiniMax, big-pickle, *-free), Anthropic (Claude, Qwen), "
+       "and OpenAI Responses (GPT, Grok, Muse)."))
+
+(defn- failed
+  "The result of a turn that never reached the model: `msg` goes to :on-error
+   and the turn ends with stop-reason \"error\"."
+  [msg opts]
+  (when-let [f (:on-error opts)]
+    (f {:type "error" :message msg}))
+  {:content [] :stop-reason "error"
+   :usage {:input_tokens 0 :output_tokens 0}
+   :model (:model opts) :done true})
+
+(defn- aborted [opts]
+  {:content [] :stop-reason "aborted"
+   :usage {:input_tokens 0 :output_tokens 0}
+   :model (:model opts) :aborted true :done true})
+
+(defn client-headers
+  "`User-Agent`, `x-opencode-session` (the room id) and, for a sign-in scoped
+   to a Console organization, `x-org-id`."
+  [opts credential]
+  (cond-> {"User-Agent" user-agent}
+    (:room-id opts)      (assoc "x-opencode-session" (str (:room-id opts)))
+    (:org-id credential) (assoc "x-org-id" (:org-id credential))))
+
+(defn- dispatch-turn
+  "Start the adapter for `wire` on `gateway` with `credential`
+   ({:token :org-id} or nil) → {:promise :abort!}."
+  [gateway wire credential opts]
+  (let [token   (:token credential)
+        headers (client-headers opts credential)
+        bearer  (when token {"Authorization" (str "Bearer " token)})
+        base    (models/base-url gateway wire)]
     (case wire
       :chat
       (oai/stream-messages
-       {:base-url  models/base-url
+       {:base-url  base
         :chat-path "/chat/completions"
-        :headers   (bearer-headers)
-        :label     "Zen"}
+        :headers   (merge headers bearer)
+        :label     (get models/labels gateway)}
        opts)
 
       :messages
       (anthropic/stream-messages
-       {:api-key  (auth/api-key)
-        :base-url models/base-url}
+       {:api-key  token
+        :base-url base
+        ;; The adapter sends the token as x-api-key; a sign-in token is
+        ;; also accepted as a bearer, so send both.
+        :headers  (merge headers bearer)}
        opts)
 
       :responses
       (responses/stream-messages
-       {:api-key  (auth/api-key)
-        :base-url models/base-url}
+       {:api-key  token
+        :base-url base
+        :headers  headers}
        opts)
 
       ;; :gemini — follow-up
-      (unsupported wire opts))))
+      {:promise (js/Promise.resolve (failed (unsupported-message wire) opts))
+       :abort!  (fn [] nil)})))
 
-(defn list-models!
-  "Promise of OpenCode Zen model ids, each prefixed with `opencode/` so the
-   picker routes them to the Zen provider. Empty on error (best-effort)."
-  []
-  (-> (js/fetch (str models/base-url "/models")
+(defn stream-messages
+  "Run one OpenCode turn: resolve the gateway's credential (refreshing a
+   sign-in), then dispatch to the adapter for the model's wire format."
+  [opts]
+  (let [model    (:model opts)
+        gateway  (models/gateway model)
+        wire     (models/wire-format model)
+        ;; Send the bare model id (drop the gateway prefix) to the API.
+        opts     (assoc opts :model (models/strip-prefix model))
+        !inner   (atom nil)
+        !aborted (atom false)
+        promise  (-> (auth/credential gateway)
+                     (.then (fn [credential]
+                              (cond
+                                @!aborted
+                                (aborted opts)
+
+                                (and (= :go gateway) (nil? credential))
+                                (failed not-signed-in opts)
+
+                                :else
+                                (let [h (dispatch-turn gateway wire credential opts)]
+                                  (reset! !inner h)
+                                  (:promise h)))))
+                     (.catch (fn [err]
+                               (failed (str (get models/labels gateway) ": " (.-message err)) opts))))]
+    {:promise promise
+     :abort!  (fn []
+                (reset! !aborted true)
+                (when-let [h @!inner] ((:abort! h))))}))
+
+(defn- list-gateway-models!
+  "Promise of `gateway`'s model ids, each with the gateway's prefix so the
+   picker routes them here. Empty on error (best-effort)."
+  [gateway]
+  (-> (js/fetch (models/models-url gateway)
                 #js {:signal (js/AbortSignal.timeout 4000)})
       (.then (fn [^js res] (.json res)))
       (.then (fn [^js data]
                (->> (js->clj (.-data data) :keywordize-keys true)
                     (keep :id)
-                    (mapv (fn [id] (str "opencode/" id))))))
+                    (mapv (fn [id] (str (models/prefix gateway) id))))))
       (.catch (fn [_err] []))))
 
+(defn list-models!
+  "Promise of the Zen ids (`opencode/…`) followed by the Go ids
+   (`opencode-go/…`)."
+  []
+  (-> (js/Promise.all #js [(list-gateway-models! :zen)
+                           (list-gateway-models! :go)])
+      (.then (fn [[zen go]] (into zen go)))))
+
 (def provider
+  ;; Sessionless: xi.cli records its transcripts (xi.session.recorder).
   {:id :zen
    :start-turn! stream-messages
-   :list-models! list-models!})
+   :list-models! list-models!
+   ;; `/login opencode` (xi.fx) and `xi login opencode` (xi.cli).
+   :login {:name    "opencode"
+           :label   "OpenCode Go"
+           :login!  login/login!
+           :logout! login/logout!}})

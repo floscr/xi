@@ -137,14 +137,16 @@
         (contains? #{"sonnet" "opus" "haiku"} model))))
 
 (defn zen-model?
-  "Returns true if model string names an OpenCode Zen model — the explicit
-   `opencode/` prefix routes to Zen regardless of the bare id. (Bare Zen ids
-   like `claude-opus-4-8` overlap with Claude and are intentionally NOT matched
-   here; prefix with `opencode/` to force the Zen gateway.)"
+  "Returns true if model string names an OpenCode model — the explicit
+   `opencode/` (Zen) or `opencode-go/` (OpenCode Go) prefix routes to the
+   OpenCode provider regardless of the bare id. (Bare Zen ids like
+   `claude-opus-4-8` overlap with Claude and are intentionally NOT matched
+   here; prefix them to force the gateway.)"
   [model]
   (boolean
    (when (string? model)
-     (str/starts-with? model "opencode/"))))
+     (or (str/starts-with? model "opencode/")
+         (str/starts-with? model "opencode-go/")))))
 
 (defn openai-model?
   "True when `model` names an OpenAI ChatGPT-subscription (Codex) model — the
@@ -155,9 +157,9 @@
      (str/starts-with? model "openai/"))))
 
 (defn provider-for-model
-  "Route a model id to a provider keyword: Zen (`opencode/…`) and OpenAI Codex
-   (`openai/…`) prefixes win, then Claude, else the OpenAI-compatible Ollama
-   path."
+  "Route a model id to a provider keyword: OpenCode (`opencode/…`,
+   `opencode-go/…`) and OpenAI Codex (`openai/…`) prefixes win, then Claude,
+   else the OpenAI-compatible Ollama path."
   [model]
   (cond
     (zen-model? model)    :zen

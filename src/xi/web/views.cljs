@@ -1099,7 +1099,7 @@
   "A :status history entry as a ui.alert. Plain entries are a slim neutral
    banner of :text; entries with a :title (shape in the xi.commands ns doc) show
    :tone, :icon, :detail and :rows, :text being the TUI's rendering. An
-   :action adds a button running its slash command."
+   :action adds a button running its slash command, or opening its :url."
   [dispatch! {:keys [text title detail rows tone icon action room-id]}]
   (let [rows   (when (seq rows)
                  (into [:span {:class ["status-alert-rows"]}]
@@ -1109,12 +1109,17 @@
                                     [:span {:class (cls "status-alert-row-text")} text]])))
                        rows))
         button (when (and action room-id)
-                 (button/button
-                  {:variant :secondary :size :sm :class "status-alert-action"
-                   :on-click (fn [_] (dispatch! (cond-> {:type :web/command :room-id room-id
-                                                         :name (:command action)}
-                                                  (:args action) (assoc :args (:args action)))))}
-                  (:label action)))]
+                 (if-let [url (:url action)]
+                   (button/button
+                    {:variant :secondary :size :sm :class "status-alert-action"
+                     :href url :attrs {:target "_blank" :rel "noopener"}}
+                    (:label action))
+                   (button/button
+                    {:variant :secondary :size :sm :class "status-alert-action"
+                     :on-click (fn [_] (dispatch! (cond-> {:type :web/command :room-id room-id
+                                                           :name (:command action)}
+                                                    (:args action) (assoc :args (:args action)))))}
+                    (:label action))))]
     [:div {:class (cond-> ["post" "post--assistant" "post--status"]
                     (not title) (conj "post--status-slim"))}
      (apply alert/alert {:variant tone :title title

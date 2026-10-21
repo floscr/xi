@@ -98,7 +98,9 @@
   (testing "opencode/ prefix routes to Zen"
     (is (util/zen-model? "opencode/big-pickle"))
     (is (util/zen-model? "opencode/claude-opus-4-8"))
-    (is (util/zen-model? "opencode/gpt-5.5"))))
+    (is (util/zen-model? "opencode/gpt-5.5")))
+  (testing "opencode-go/ prefix routes to the same provider"
+    (is (util/zen-model? "opencode-go/deepseek-v4.1-flash"))))
 
 (deftest zen-model-non-zen
   (testing "bare ids and other providers are not Zen"
@@ -124,6 +126,9 @@
   (testing "opencode/ wins over an overlapping claude bare id"
     (is (= :zen (util/provider-for-model "opencode/claude-opus-4-8")))
     (is (= :zen (util/provider-for-model "opencode/big-pickle"))))
+  (testing "opencode-go/ routes to the OpenCode provider too"
+    (is (= :zen (util/provider-for-model "opencode-go/deepseek-v4.1-flash")))
+    (is (= :zen (util/provider-for-model "opencode-go/claude-haiku-5-5"))))
   (testing "openai/ prefix routes to the Codex provider"
     (is (= :openai (util/provider-for-model "openai/gpt-5.1-codex")))
     (is (= :openai (util/provider-for-model "openai/gpt-5-codex"))))

@@ -218,7 +218,7 @@
   "One Messages request. Returns promise of
    {:text str :tool-calls [{:id :name :arguments}] :usage {...}}."
   [messages system anthropic-tools
-   {:keys [model api-key base-url on-text on-thinking abort-signal]}]
+   {:keys [model api-key base-url headers on-text on-thinking abort-signal]}]
   (let [!text (atom "")
         state (atom {:tool-blocks {} :usage nil :stop-reason nil})
         on-text* (fn [t] (swap! !text str t) (when on-text (on-text t)))
@@ -230,9 +230,10 @@
                (seq anthropic-tools) (assoc :tools (clj->js (cache-last-tool anthropic-tools))))]
     (-> (js/fetch (str base-url "/messages")
                   #js {:method "POST"
-                       :headers #js {"Content-Type" "application/json"
-                                     "x-api-key" api-key
-                                     "anthropic-version" "2023-06-01"}
+                       :headers (clj->js (merge headers
+                                                {"Content-Type" "application/json"
+                                                 "x-api-key" api-key
+                                                 "anthropic-version" "2023-06-01"}))
                        :body (js/JSON.stringify (clj->js body))
                        :signal abort-signal})
         (.then
@@ -264,8 +265,9 @@
 
 (defn stream-messages
   "Run a full agent turn against the Zen Anthropic Messages surface.
-   `config` = {:api-key :base-url}. Returns {:promise :abort!}."
-  [{:keys [api-key base-url]} opts]
+   `config` = {:api-key :base-url :headers}; `:headers` are extra request
+   headers (client identity, session). Returns {:promise :abort!}."
+  [{:keys [api-key base-url headers]} opts]
   (let [callbacks (select-keys opts [:on-text :on-thinking :on-tool-start
                                      :on-tool-args :on-tool-result :on-error])
         cwd (or (:cwd opts) (.cwd js/process))
@@ -312,6 +314,7 @@
                                         {:model model
                                          :api-key api-key
                                          :base-url base-url
+                                         :headers headers
                                          :on-text (:on-text callbacks)
                                          :on-thinking (:on-thinking callbacks)
                                          :abort-signal (.-signal abort-controller)})

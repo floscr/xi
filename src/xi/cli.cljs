@@ -211,6 +211,10 @@ USAGE
                              pairing codes over ssh on a headless server.
                              `user` assigns a paired device to a user id (`-`
                              clears it); applies on its next connection.
+  xi login <provider>        Sign in to a provider's subscription. `opencode`
+                             (OpenCode Go) prints a link and a code to enter,
+                             then waits for the approval.
+  xi logout <provider>       Forget that sign-in.
   xi help                    Show this help (also --help, -h).
 
 FLAGS
@@ -278,6 +282,8 @@ See docs/guide/command-line.md for the full reference.")
           ("prompt" "-p")  (recur (next args) (assoc opts :command :prompt))
           "sessions"       (recur (next args) (assoc opts :command :sessions))
           "clients"        (recur (next args) (assoc opts :command :clients))
+          "login"          (recur (next args) (assoc opts :command :login))
+          "logout"         (recur (next args) (assoc opts :command :logout))
           ("help" "--help" "-h") (recur (next args) (assoc opts :command :help))
           "--json"         (recur (next args) (assoc opts :json? true))
           "--all"          (recur (next args) (assoc opts :all? true))
@@ -311,6 +317,9 @@ See docs/guide/command-line.md for the full reference.")
                    (and (= :clients (:command opts))
                         (not (.startsWith arg "--")))
                    (update opts :clients-args (fnil conj []) arg)
+                   (and (#{:login :logout} (:command opts))
+                        (not (.startsWith arg "--")))
+                   (update opts :auth-args (fnil conj []) arg)
                    ;; An unknown flag fails loudly: a removed restriction flag must not
                    ;; silently yield a full coding agent.
                    (.startsWith arg "--")
@@ -1169,6 +1178,47 @@ See docs/guide/command-line.md for the full reference.")
             "usage: xi clients [list|pending|approve <code>|revoke <key-prefix|name>|user <key-prefix|name> <user-id|->]"))
     (js/process.exit 0)))
 
+(defn- login-of
+  "The :login map of the provider whose sign-in is called `name`."
+  [name]
+  (some #(when (= name (get-in % [:login :name])) (:login %)) (vals providers)))
+
+(defn- unknown-login! [cmd name]
+  (.write js/process.stderr
+          (str "xi " cmd ": unknown provider " (pr-str name) ". Available: "
+               (str/join ", " (sort (keep #(get-in % [:login :name]) (vals providers))))
+               "\n"))
+  (js/process.exit 2))
+
+(defn- run-login!
+  "Sign in to a provider's subscription from the shell: print the page to
+   open and the code, wait for the approval, exit 0 once the tokens are
+   stored."
+  [{:keys [auth-args]}]
+  (let [[name] auth-args]
+    (if-let [login (login-of name)]
+      (-> ((:login! login)
+           {:on-prompt (fn [{:keys [url user-code]}]
+                         (println (str "Open " url))
+                         (println (str "and enter the code: " user-code))
+                         (println "Waiting for the approval…"))})
+          (.then (fn [{:keys [email]}]
+                   (println (str "Signed in to " (:label login)
+                                 (when email (str " as " email)) "."))
+                   (js/process.exit 0)))
+          (.catch (fn [err]
+                    (.write js/process.stderr (str "xi login: " (.-message err) "\n"))
+                    (js/process.exit 1))))
+      (unknown-login! "login" name))))
+
+(defn- run-logout! [{:keys [auth-args]}]
+  (let [[name] auth-args]
+    (if-let [login (login-of name)]
+      (do ((:logout! login))
+          (println (str "Signed out of " (:label login) "."))
+          (js/process.exit 0))
+      (unknown-login! "logout" name))))
+
 (defn- silence-worker-console!
   "Drop a worker's console: the TUI's stdout interception never sees it, so
    anything it logs (the shadow-cljs devtools client in dev builds) paints over
@@ -1198,5 +1248,7 @@ See docs/guide/command-line.md for the full reference.")
         :prompt     (run-prompt! opts)
         :sessions   (run-sessions! opts)
         :clients    (run-clients! opts)
+        :login      (run-login! opts)
+        :logout     (run-logout! opts)
         :join       (start-client! (assoc opts :target "latest"))
         :create     (start-client! (assoc opts :target "new"))))))

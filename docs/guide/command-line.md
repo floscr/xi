@@ -15,6 +15,8 @@ version of this page.
 | `xi prompt <text>` (`xi -p`) | Send one message, print the answer, exit. Reads stdin when `<text>` is omitted. See [One-shot prompts](prompt.md). |
 | `xi sessions` | List saved chats as tab-separated lines. `--all` lists every chat, `--limit N` caps it, `--json` prints JSON. |
 | `xi clients [action]` | Manage paired devices: `list` (default), `pending`, `approve <code>`, `revoke <prefix-or-name>`, `user <prefix-or-name> <user-id>` (`-` clears). See [Server mode](server.md#pairing) and [Users](server.md#users). |
+| `xi login <provider>` | Sign in to a provider's subscription; `opencode` is OpenCode Go. Prints a link and a code, waits for the approval. See [Models](models.md#opencode-go). |
+| `xi logout <provider>` | Forget that sign-in. |
 | `xi help` | This, shorter. Also `--help` and `-h`. |
 
 For `join` and `create`, `url` is `host:port` (`ws://` is added) or a full

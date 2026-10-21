@@ -351,6 +351,48 @@
           (dispatch! {:type :ui/menu-populate :room-id room-id :id :model
                       :menu {:prompt "model> " :items items}})))))
 
+   ;; `/login <name>`: the subscription sign-in of the provider whose :login
+   ;; map is called `name` (xi.providers.zen: "opencode"). The page to open
+   ;; and the code arrive as a status banner with a link button, which goes
+   ;; once the Console approves or the flow fails.
+   :provider/login
+   (fn [{:keys [dispatch!]} {:keys [room-id provider]}]
+     (let [status!   (fn [m] (dispatch! (assoc m :type :ui/status :room-id room-id)))
+           logins    (keep :login (vals providers))
+           login     (some #(when (= provider (:name %)) %) logins)
+           action-id (str (random-uuid))
+           expire!   #(dispatch! {:type :ui/status-action-expire :room-id room-id
+                                  :action-id action-id})]
+       (if-not login
+         (status! {:text (str "No sign-in for \"" provider "\". Available: "
+                             (str/join ", " (sort (map :name logins))))})
+         (-> ((:login! login)
+              {:on-prompt
+               (fn [{:keys [url user-code]}]
+                 (status! {:title  (str "Sign in to " (:label login))
+                           :text   (str "Sign in to " (:label login) ": open " url
+                                        " and enter the code " user-code ". Waiting for the approval…")
+                           :detail (str "Open the sign-in page and enter the code " user-code
+                                        ". Waiting for the approval…")
+                           :tone   :info
+                           :action {:id action-id :label "Open sign-in page" :url url}}))})
+             (.then (fn [{:keys [email]}]
+                      (expire!)
+                      (status! {:text (str "Signed in to " (:label login)
+                                           (when email (str " as " email)) ".")})))
+             (.catch (fn [err]
+                       (expire!)
+                       (status! {:text (str (:label login) " sign-in failed: " (.-message err))})))))))
+
+   :provider/logout
+   (fn [{:keys [dispatch!]} {:keys [room-id provider]}]
+     (let [login (some #(when (= provider (:name %)) %) (keep :login (vals providers)))]
+       (dispatch! {:type :ui/status :room-id room-id
+                   :text (if login
+                           (do ((:logout! login))
+                               (str "Signed out of " (:label login) "."))
+                           (str "No sign-in for \"" provider "\"."))})))
+
    ;; The model a user's new chats start with: kept in their own state
    ;; (xi.user-state :preferred-model), the same key the web client syncs.
    :model/persist-preferred

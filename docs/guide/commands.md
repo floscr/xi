@@ -13,6 +13,7 @@ message. `/help` lists everything that is available in the current setup.
 | `/cd <dir>` | Change the working directory of this chat |
 | `/project` | Pick one of your [projects](projects.md) (also `Alt+p`) |
 | `/model [name]` | Show or switch the [model](models.md) |
+| `/login opencode`, `/logout opencode` | Sign in to OpenCode Go with your OpenCode account, or forget the sign-in; see [Models](models.md#opencode-go) |
 | `/fork` | Continue the conversation in a new chat, keeping this one as it is |
 | `/tree` | Go back to an earlier point of the chat and continue from there |
 | `/truncate` | Summarise the conversation so far to make room for more |

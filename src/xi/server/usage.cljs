@@ -155,13 +155,16 @@
                              vector))))))))
 
 (defn- fetch-opencode [_]
-  (when-let [key (zen-auth/api-key)]
-    (-> (fetch-json "https://opencode.ai/zen/go/v1/usage"
-                    {"Authorization" (str "Bearer " key)})
-        (.then (fn [response]
-                 (when response
-                   (some-> (usage/opencode-reading {:response response :now (js/Date.now)})
-                           vector)))))))
+  (-> (zen-auth/credential :go)
+      (.then (fn [{:keys [token]}]
+               (when token
+                 (-> (fetch-json "https://opencode.ai/zen/go/v1/usage"
+                                 {"Authorization" (str "Bearer " token)})
+                     (.then (fn [response]
+                              (when response
+                                (some-> (usage/opencode-reading {:response response :now (js/Date.now)})
+                                        vector))))))))
+      (.catch (fn [_] nil))))
 
 (def builtin-sources
   [{:id :claude   :fetch fetch-claude}

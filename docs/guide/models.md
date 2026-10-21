@@ -1,8 +1,8 @@
 # Models
 
 Claude through the Claude Agent SDK is the default. Xi can also run local
-models through Ollama, the models of OpenCode Zen, and GPT models on a
-ChatGPT subscription. Pick one with `/model` or `--model`.
+models through Ollama, the models of OpenCode Zen and OpenCode Go, and GPT
+models on a ChatGPT subscription. Pick one with `/model` or `--model`.
 
 ## Claude (default)
 
@@ -37,6 +37,42 @@ without a key. Gemini models are not supported yet and say so.
 
 The free models may keep prompts during their free period; do not send
 confidential material through them.
+
+## OpenCode Go
+
+[OpenCode Go](https://opencode.ai/docs/go) is OpenCode's subscription with
+monthly usage for open coding models. Any id prefixed with `opencode-go/`
+goes there:
+
+```text
+/model opencode-go/deepseek-v4.1-flash
+/model opencode-go/kimi-k3
+```
+
+```sh
+xi prompt --model opencode-go/deepseek-v4.1-flash "Reply with exactly: OK"
+```
+
+Sign in with your OpenCode account, the way the OpenCode CLI does:
+
+```text
+/login opencode
+```
+
+```sh
+xi login opencode                             # the same, from the shell
+```
+
+Xi shows a link and a code. Open the link, enter the code, and the chat
+reports the sign-in. The tokens are kept in `~/.config/xi/opencode-go.json`
+and refreshed as needed. `/logout opencode` (or `xi logout opencode`)
+forgets them.
+
+Without a sign-in, a key is read from `OPENCODE_GO_API_KEY`, the
+`opencode-go` entry of `~/.local/share/opencode/auth.json`, or else the Zen
+key above. `/model` lists the live ids after the Zen ones. Each request
+carries the chat's id as the session header Go asks coding agents for. The
+web client's [usage page](web-client.md#usage) shows the plan's windows.
 
 ## OpenAI Codex (ChatGPT subscription)
 

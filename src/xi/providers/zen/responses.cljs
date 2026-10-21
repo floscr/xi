@@ -19,7 +19,7 @@
 (defn- build-request
   "Build a Zen `/responses` request. The system prompt is sent as a
    `developer`-role item prepended to the input."
-  [{:keys [api-key base-url]}
+  [{:keys [api-key base-url headers]}
    {:keys [model input system tools reasoning-effort]}]
   (let [input* (into (if system
                        [{:role "developer" :content system}]
@@ -35,13 +35,15 @@
                (seq tools) (assoc :tools tools))]
     (js/Promise.resolve
      {:url (str base-url "/responses")
-      :headers {"Content-Type" "application/json"
-                "Authorization" (str "Bearer " api-key)}
+      :headers (merge headers
+                      {"Content-Type" "application/json"
+                       "Authorization" (str "Bearer " api-key)})
       :body body})))
 
 (defn stream-messages
   "Run a full agent turn against the Zen OpenAI-Responses surface.
-   `config` = {:api-key :base-url}. Returns {:promise :abort!}."
+   `config` = {:api-key :base-url :headers}; `:headers` are extra request
+   headers (client identity, session). Returns {:promise :abort!}."
   [config opts]
   (responses/stream-messages
    {:provider-label "Zen (responses)"

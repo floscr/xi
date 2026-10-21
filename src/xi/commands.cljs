@@ -21,7 +21,7 @@
    variant), :icon and :rows [{:label :text :tone}] for a richer one there, :text
    staying the full plain rendering. An :action {:id :label :command :args}
    (from :ui/status, until :ui/status-action-expire drops it) is a web button
-   that runs that slash command."
+   that runs that slash command; with :url instead it opens that page."
   (:require [clojure.string :as str]
             [xi.buffers :as buffers]
             [xi.core.state :as state]
@@ -212,6 +212,19 @@
                   has-session? (conj [:session/sync {:room-id room-id}]))})
     {:effects [[:models/fetch {:room-id room-id}]]}))
 
+(defn- cmd-login
+  "`/login <provider>` — the provider's subscription sign-in (xi.fx
+   :provider/login; the provider map's :login)."
+  [st {:keys [room-id args]}]
+  (if (seq args)
+    {:effects [[:provider/login {:room-id room-id :provider args}]]}
+    (status st room-id "Usage: /login <provider> — e.g. /login opencode")))
+
+(defn- cmd-logout [st {:keys [room-id args]}]
+  (if (seq args)
+    {:effects [[:provider/logout {:room-id room-id :provider args}]]}
+    (status st room-id "Usage: /logout <provider> — e.g. /logout opencode")))
+
 (defn- cmd-resume [st {:keys [room-id args]}]
   (cond
     (nil? args)
@@ -380,6 +393,8 @@
   "Built-in commands. Each :handler is (fn [state {:keys [room-id args]}])."
   [{:name "help"     :description "Show available commands"            :handler cmd-help}
    {:name "model"    :description "Show or set model"                  :handler cmd-model}
+   {:name "login"    :description "Sign in to a provider's subscription (/login opencode)" :handler cmd-login}
+   {:name "logout"   :description "Forget a provider sign-in (/logout opencode)" :handler cmd-logout}
    {:name "resume"   :description "Resume a previous session"          :handler cmd-resume}
    {:name "sessions" :description "List previous sessions"             :handler cmd-sessions}
    {:name "new"      :description "Start a new session"                :handler cmd-new}
