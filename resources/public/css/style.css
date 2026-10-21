@@ -1498,8 +1498,8 @@ body {
 .post--user .post-body {
   background-color: var(--accent-600);
   color: #fff;
-  border-radius: var(--radius-lg);
-  padding: var(--size-3) var(--size-4);
+  border-radius: var(--radius-surface);
+  padding: var(--size-3) var(--size-5);
   max-width: 85%;
 }
 
@@ -2741,9 +2741,83 @@ body {
   object-fit: contain;
 }
 
-/* ---- PDF / file attachment chips ---- */
-.compose-attachment-chip,
-.user-attachment-chip {
+/* A prompt's attachments: right-aligned above its bubble, outside it. */
+.user-attachments {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--size-2);
+  max-width: 85%;
+  margin-bottom: var(--size-2);
+  position: relative;
+}
+
+.user-attachments:last-child { margin-bottom: 0; }
+
+.user-attachments .user-image {
+  max-width: min(340px, 100%);
+  max-height: 260px;
+  border-radius: var(--radius-lg);
+  object-fit: cover;
+}
+
+.user-attachment-card {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  max-width: min(280px, 100%);
+  padding: var(--size-2) var(--size-4) var(--size-2) var(--size-2);
+  border-radius: var(--radius-lg);
+  border: var(--border-0);
+  background: var(--bg-1);
+}
+
+.user-attachment-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.user-attachment-card--pdf .user-attachment-icon {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+}
+
+.user-attachment-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.user-attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-attachment-meta {
+  color: var(--fg-2);
+  font-size: var(--font-size-sm, 0.875rem);
+}
+
+/* The sender badge of an attachments-only prompt (no bubble to hang on). */
+.user-attachments-badge {
+  position: relative;
+  width: 0;
+  height: 0;
+  align-self: flex-end;
+  margin-top: calc(-1 * var(--size-2));
+}
+
+/* ---- Compose attachment chips ---- */
+.compose-attachment-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--size-2);
@@ -2755,8 +2829,7 @@ body {
   background: var(--surface-2, rgba(0, 0, 0, 0.04));
 }
 
-.compose-attachment-name,
-.user-attachment-name {
+.compose-attachment-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -1154,6 +1154,51 @@
                 :x (.-clientX e)
                 :y (.-clientY e)})))
 
+(defn- attachment-meta
+  "`PDF · 2.4 MB` for a file attachment: its extension (else the media
+   subtype) and the decoded size of its base64 `data`."
+  [{:keys [data media-type name]}]
+  (let [ext   (or (second (re-find #"\.([A-Za-z0-9]{1,8})$" (or name "")))
+                  (some-> media-type (str/split #"/") second))
+        bytes (when (string? data)
+                (- (* 3 (quot (count data) 4))
+                   (count (re-find #"=+$" data))))
+        size  (when bytes
+                (cond
+                  (< bytes 1024)    (str bytes " B")
+                  (< bytes 1048576) (str (js/Math.round (/ bytes 1024)) " KB")
+                  :else             (str (.toFixed (/ bytes 1048576) 1) " MB")))]
+    (str/join " · " (remove str/blank? [(some-> ext str/upper-case) size]))))
+
+(defn- user-attachments
+  "A prompt's images and file cards, stacked right-aligned above its bubble."
+  [dispatch! entry]
+  (if-let [atts (seq (:images entry))]
+    [:div {:class ["user-attachments"]}
+     (map-indexed
+      (fn [i {:keys [data media-type name] :as att}]
+        (if (str/starts-with? (or media-type "") "image/")
+          (let [src (str "data:" media-type ";base64," data)]
+            [:img {:replicant/key i
+                   :class ["user-image" "lightbox-thumb"]
+                   :src src
+                   :alt (or name "attached image")
+                   :on {:click (fn [^js e]
+                                 (.stopPropagation e)
+                                 (dispatch! {:type :lightbox/open :src src}))}}])
+          [:div {:replicant/key i
+                 :class ["user-attachment-card"
+                         (when (= media-type "application/pdf") "user-attachment-card--pdf")]}
+           [:span {:class ["user-attachment-icon"]}
+            (icon/icon {:icon-name :file-text :size :md})]
+           [:span {:class ["user-attachment-text"]}
+            [:span {:class ["user-attachment-name"]} (or name "file")]
+            [:span {:class ["user-attachment-meta"]} (attachment-meta att)]]]))
+      atts)]
+    (when-let [n (:image-count entry)]
+      (when (pos? n)
+        [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))]))))
+
 (defn- entry->post [dispatch! entry]
   (case (:kind entry)
     :user
@@ -1218,33 +1263,18 @@
                 idx (assoc :data-history-index idx)
                 idx (assoc :on (block-context-menu-on
                                 (bubble-menu-opener dispatch! idx entry))))
-         [:div {:class ["post-body"]}
-          (if-let [imgs (seq (:images entry))]
-            [:div {:class ["user-images"]}
-             (map-indexed
-              (fn [i {:keys [data media-type name]}]
-                (if-not (str/starts-with? (or media-type "") "image/")
-                  [:div {:replicant/key i :class ["user-attachment-chip"]}
-                   (icon/icon {:icon-name :file-text :size :md})
-                   [:span {:class ["user-attachment-name"]} (or name "file")]]
-                  (let [src (str "data:" media-type ";base64," data)]
-                    [:img {:replicant/key i
-                           :class ["user-image" "lightbox-thumb"]
-                           :src src
-                           :alt "attached"
-                           :on {:click (fn [^js e]
-                                         (.stopPropagation e)
-                                         (dispatch! {:type :lightbox/open :src src}))}}])))
-              imgs)]
-            (when-let [n (:image-count entry)]
-              (when (pos? n)
-                [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))
-          (when (seq (:text entry))
+         (user-attachments dispatch! entry)
+         ;; An attachments-only prompt has no bubble; its badge hangs off the
+         ;; attachments instead.
+         (if (seq (:text entry))
+           [:div {:class ["post-body"]}
             [:div {:class ["post-content"]}
              (if-let [action (blocks/parse-action-message (:text entry))]
                (block-action-card action)
-               (render-md (:text entry) {:hard-breaks? true}))])
-          (post-badge entry)]]))
+               (render-md (:text entry) {:hard-breaks? true}))]
+            (post-badge entry)]
+           (when (:sender entry)
+             [:div {:class ["user-attachments-badge"]} (post-badge entry)]))]))
 
     :text
     [:div {:class ["post" "post--assistant"]}
