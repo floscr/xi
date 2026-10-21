@@ -2736,7 +2736,6 @@ body {
 .user-image {
   max-width: 200px;
   max-height: 200px;
-  border-radius: var(--radius-md);
   border: var(--border-0);
   object-fit: contain;
 }
