@@ -366,18 +366,14 @@
                  :reload       (run "reload")))))
 
 (defn- full-command-list
-  "The curated palette commands followed by every other assembly command (the
-   TUI shows all; the web sticks to the curated set)."
-  [cmd-list]
-  (let [curated-names (into #{} (map :name) palette/palette-commands)]
-    (into (vec palette/palette-commands)
-          (comp (remove (comp curated-names :name))
-                (map #(select-keys % [:name :description])))
-          cmd-list)))
+  "The commands the TUI lists, featured first: the published ones
+   (xi.commands/listed), `cmd-list` (the assembly's own) until they arrive."
+  [state cmd-list]
+  (palette/order-commands (commands/listed state :tui cmd-list)))
 
 (defn- commands-menu
   "Slash-commands menu (Ctrl+/ and '/' on an empty editor): full-command-list as a flat menu."
-  [room-id cmd-list]
+  [state room-id cmd-list]
   {:id :commands
    :prompt "/"
    :freeform true
@@ -385,7 +381,7 @@
                   {:label (str "/" name)
                    :description description
                    :event (palette-action-event room-id [:command name])})
-                (palette/expand-commands (full-command-list cmd-list)))})
+                (palette/expand-commands (full-command-list state cmd-list)))})
 
 ;; Commands/actions whose selection opens a sub-picker: in the palette they
 ;; drill in-place (push a frame, keep the palette open) instead of closing.
@@ -424,7 +420,7 @@
                                (cond-> {:label (str "/" name) :description description}
                                  (palette-drill-commands name) (assoc :drill evt)
                                  (not (palette-drill-commands name)) (assoc :event evt))))
-                           (palette/expand-commands (full-command-list cmd-list)))]
+                           (palette/expand-commands (full-command-list state cmd-list)))]
     {:id :palette
      :prompt "palette> "
      :items (vec (concat (when (seq chat-items) (cons (heading "Chats") chat-items))
@@ -1010,8 +1006,8 @@
    opts:
      :ring         event ring buffer (feeds the logs buffer)
      :on-exit      (fn []) — flush hooks before process exit (quit/reload)
-     :commands     command list for the menus (built-ins + ext commands;
-                   merged after the curated palette entries)
+     :commands     the assembly's command vector: the menus' list until the
+                   state has the published one (:commands/changed)
      :prompt-badge (fn [state] → str) — extra prompt badge (ext indicators)
      :keybindings  ext keybindings ([{:key :event :when}]) wired into the
                    editor; :event dispatched with the active :room-id"
@@ -1079,7 +1075,7 @@
           :on-commands (fn []
                          (when-let [room (current-room)]
                            (dispatch! {:type :ui/menu-open :room-id (:id room)
-                                       :menu (commands-menu (:id room) commands)})))
+                                       :menu (commands-menu (get-state) (:id room) commands)})))
           :on-key (editor-key-hook runner get-state)
           :on-git (fn [] (tui/run-external! ["ngit"] {}))
           :on-paste-image

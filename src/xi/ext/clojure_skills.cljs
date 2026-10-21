@@ -264,6 +264,8 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
    :commands      [{:name "skill"
                     :description "List or load on-demand skills"
                     :handler skill-command
+                    ;; the list is a terminal menu; the web has /skills and /<skill>
+                    :surfaces #{:tui}
                     :subcommands [{:name "list" :description "List available skills"}
                                   {:name "load" :description "Load a skill and auto-post it"}]}]
    :handlers        {:skill/web-list skill-web-list

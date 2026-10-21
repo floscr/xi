@@ -127,6 +127,8 @@
    :commands     [{:name        "yolo"
                    :description "Toggle yolo mode (run tool calls without asking)"
                    :handler     yolo-command
+                   ;; Flipping the flag mid-turn is the point: the next ask runs instead.
+                   :while-busy? true
                    :subcommands [{:name "sane"       :description "Run tool calls without asking, except risky ones"}
                                  {:name "relentless" :description "Run every tool call without asking"}
                                  {:name "off"        :description "Ask again"}]}]

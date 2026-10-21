@@ -217,16 +217,29 @@ Extensions compose into the assembly as data — see
 
 Slash commands are data composed at assembly: `xi.commands/built-in-commands`
 plus every extension's `:commands`, merged by `xi.cli` (built-ins win on a
-name clash). `parse-input` routes editor text: `/name args` becomes
-`:command/run {:name :args}`, anything else `:prompt/submit`.
-`make-command-run` closes over the merged vector and calls the command's
-handler with `{:room-id :args :commands :images}` (`:images`: attachments
-sent with the command line, unprocessed; `/subagent` runs them through
-`:image/process` with an `:event` to hand them on); `all-commands` feeds TUI
-completion and `/help`. A command handler is an ordinary pure handler; I/O
-goes through effects. In client mode commands are forwarded like any event,
-except `/quit` and `/reload`, which `ws-transport` handles locally. The user
-list is in the guide ([commands](guide/commands.md)).
+name clash, the first command claiming a name or alias wins). `parse-input`
+routes editor text: `/name args` becomes `:command/run {:name :args}`,
+anything else `:prompt/submit`. `make-command-run` closes over the merged
+vector and calls the command's handler with `{:room-id :args :commands
+:images}` (`:images`: attachments sent with the command line, unprocessed;
+`/subagent` runs them through `:image/process` with an `:event` to hand them
+on). A command handler is an ordinary pure handler; I/O goes through
+effects. In client mode commands are forwarded like any event, except
+`/quit` and `/reload`, which `ws-transport` handles locally. The user list is
+in the guide ([commands](guide/commands.md)).
+
+What the surfaces *list* comes from the same maps. Each carries its display
+metadata (`:aliases :subcommands :takes-args? :while-busy? :surfaces`);
+`xi.commands/specs` strips the handlers. `xi.cli/publish-commands!`
+dispatches `:commands/changed {:commands specs}` at start and on every
+extension recomposition (`xi.ext.manager/watch!`: `/ext`, `/mcp`, a
+user-extension reload); its reducer puts them at the state's `:commands`. The
+WS server sends that event to each client on admit and to every authed
+client when it changes (a server-only type, so clients can't spoof it);
+clients mirror it with the same reducer. The TUI menus and the web's `/`
+suggestions and palette read `xi.commands/listed` (filtered by `:surfaces`,
+featured first via `xi.palette/order-commands`); the web caches the list for
+its offline paint.
 
 ## Session tools
 

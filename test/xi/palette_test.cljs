@@ -13,3 +13,10 @@
   (testing "a pending (not-yet-created) web chat can still change its model"
     (is (= [:new-chat :change-model :keys :reload]
            (keys-of (palette/actions false true))))))
+
+(deftest order-commands-test
+  (testing "featured first in their order, the rest as registered"
+    (is (= ["help" "new" "diff" "gtd" "swap"]
+           (mapv :name (palette/order-commands
+                        [{:name "gtd"} {:name "diff"} {:name "swap"}
+                         {:name "new"} {:name "help"}]))))))

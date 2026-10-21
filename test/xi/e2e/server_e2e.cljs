@@ -1,12 +1,14 @@
 (ns xi.e2e.server-e2e
   "`xi server --headless` end to end over its WebSocket and HTTP API: pairing,
    a streamed turn with its title side turn, abort, the prompt queue,
-   reconnecting, the saved chat after a restart, and a restart continuing a
-   turn it cut off (queue included) with nobody watching."
+   reconnecting, the saved chat after a restart, a restart continuing a
+   turn it cut off (queue included) with nobody watching, and the command
+   list every client gets."
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.e2e.harness :as h :refer [of-type]]
-            [xi.e2e.profiles :as profiles]))
+            [xi.e2e.profiles :as profiles]
+            ["node:fs" :as fs]))
 
 (def ^:private script
   {:rules [{:when {:prompt "hello"} :reply [{:text "hello "} {:text "over ws"}]}
@@ -49,6 +51,48 @@
     (->> (h/files-under dir)
          (filter #(str/ends-with? % ".json"))
          (map #(h/slurp (h/home-path env ".config" "xi" "sessions" %))))))
+
+(defn- hello-extension
+  "A user extension adding a no-op command per name."
+  [& names]
+  (str "(ns hello)\n(def extension {:id :hello :commands ["
+       (str/join " " (map #(str "{:name \"" % "\" :description \"From hello.cljs\""
+                                " :handler (fn [_ _] nil)}")
+                          names))
+       "]})\n"))
+
+(defn- command-names [ev] (set (map :name (:commands ev))))
+
+(deftest every-client-gets-the-live-command-list
+  (async done
+    (with-server! (merge profiles/minimal
+                         {".config/xi/config.edn"
+                          (pr-str {:type :xi/config :version 1 :extensions ["hello.cljs"]})
+                          ".config/xi/extensions/hello.cljs" (hello-extension "hello")})
+      done
+      (fn [env server]
+        (-> (h/connect! server)
+            (.then
+             (fn [client]
+               (-> (h/await-event client (of-type :commands/changed))
+                   (.then
+                    (fn [ev]
+                      (testing "on connect, before joining a room: built-ins and both kinds of extension"
+                        (is (every? (command-names ev) ["help" "diff" "hello"]))
+                        (is (not-any? :handler (:commands ev))))
+                      (fs/writeFileSync (h/home-path env ".config" "xi" "extensions" "hello.cljs")
+                                        (hello-extension "hello" "bye"))
+                      (join! env client)))
+                   (.then
+                    (fn [room-id]
+                      ((:send! client) {:type :command/run :room-id room-id
+                                        :name "ext" :args "reload"})
+                      (h/await-event client #(and (= :commands/changed (:type %))
+                                                  (contains? (command-names %) "bye")))))
+                   (.then
+                    (fn [ev]
+                      (is (contains? (command-names ev) "hello")
+                          "a live /ext reload reaches the connected client")))))))))))
 
 (deftest pairing-and-the-http-api
   (async done

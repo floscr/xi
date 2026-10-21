@@ -66,8 +66,13 @@ message. `/help` lists everything that is available in the current setup.
 ## Commands from extensions
 
 An extension adds a command with a `:commands` entry; it then shows up in
-`/help` and in the terminal's completion like a built-in one. See
+`/help`, in the terminal's completion and in the web client's `/` list and
+palette like a built-in one, also right after `/ext reload`. See
 [Tutorial: a command and a key](extension-tutorial-command.md).
 
-In the terminal, the names complete as you type. Built-in commands win over
-an extension's command of the same name.
+Built-in commands win over an extension's command of the same name.
+
+The web client does not list the commands that open a terminal menu or view
+(`/resume`, `/sessions`, `/tree`, `/buffers`, `/project`, `/skill`,
+`/processes`, `/subagents`, `/reload`, `/quit`); it has its own pages for
+them.

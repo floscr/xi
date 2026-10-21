@@ -13,10 +13,10 @@
    them per turn). Server and standalone assemblies also read reducer
    :handlers, :fx, command dispatch, the system prompt and room :init through
    `live-view`, so those follow the composition too. Still captured once at
-   assembly: :event-hooks, :keybindings, :taps and :routes, and a TUI
-   client's command completion list (a joined TUI keeps the commands it
-   mirrored on join). MCP extensions only ever contribute tools, so they are
-   covered completely.
+   assembly: :event-hooks, :keybindings, :taps and :routes. The command list
+   clients show follows through `watch!` (xi.cli publishes it as
+   :commands/changed). MCP extensions only ever contribute tools, so they
+   are covered completely.
 
    Lifecycle hooks on an extension map (both optional):
      :on-enable  (fn [])  — called when the extension becomes enabled
@@ -73,6 +73,13 @@
         (if (and hit (identical? (first hit) c))
           (second hit)
           (second (reset! cache [c (build c)])))))))
+
+(defn watch!
+  "Call (f composed) after every recomposition (register!/enable!/disable!/
+   unregister!, so also a user-extension reload). `key` names the watch, as
+   in add-watch."
+  [{:keys [composed]} key f]
+  (add-watch composed key (fn [_ _ _ new] (f new))))
 
 (defn ext-list
   "Snapshot of the registry in registration order:

@@ -241,6 +241,7 @@
    :fx               {:process-manager/follow-log follow-log-fx}
    ;; a client→server request, not room state
    :no-broadcast     #{:process-manager/open-log}
-   :commands         [{:name "processes" :description "Pick a tracked process to kill" :handler cmd-processes}
+   :commands         [{:name "processes" :description "Pick a tracked process to kill" :handler cmd-processes
+                       :surfaces #{:tui}}
                       {:name "ps"        :description "List tracked background processes" :handler cmd-ps}
                       {:name "kill"      :description "Kill a tracked process by index or PID" :handler cmd-kill}]})

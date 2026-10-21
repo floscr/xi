@@ -363,6 +363,19 @@ See docs/guide/command-line.md for the full reference.")
     (user-ext/set-enabled-override!
      (fn [] (or (:extensions (profile/load (:id prof))) #{})))))
 
+(defn- publish-commands!
+  "Keep the app's :commands (what the TUI and the web list) in step with the
+   live extension set: published now and after every change of it."
+  [mgr dispatch!]
+  (let [sent     (atom nil)
+        publish! (fn [composed]
+                   (let [specs (commands/specs (commands/all-commands (:commands composed)))]
+                     (when (not= specs @sent)
+                       (reset! sent specs)
+                       (dispatch! {:type :commands/changed :commands specs}))))]
+    (publish! (manager/composed mgr))
+    (manager/watch! mgr ::commands publish!)))
+
 (defn- make-handlers
   "Base pure handler map shared by every mode; `extra-commands` are extension
    commands joining the built-ins."
@@ -466,7 +479,8 @@ See docs/guide/command-line.md for the full reference.")
                              :jsonl-writer  jsonl-writer})
         {:keys [dispatch!]} app
         _ (user-ext/start! app {:ask! (:ask! dialogs)})
-        _ (ext-persist/install! app mgr)]
+        _ (ext-persist/install! app mgr)
+        _ (publish-commands! mgr dispatch!)]
     (when jsonl-writer
       (js/process.on "exit" (fn [] ((:flush! jsonl-writer)))))
     (dispatch! (users/loaded-event (own-user opts)))
@@ -961,6 +975,7 @@ See docs/guide/command-line.md for the full reference.")
                              :ring ring})
         _ (user-ext/start! app {:ask! (:ask! dialogs)})
         _ (ext-persist/install! app mgr)
+        _ (publish-commands! mgr (:dispatch! app))
         ;; Rooms the server provisions itself act for its own user.
         _ ((:dispatch! app) (users/loaded-event (own-user opts)))
         {actual-port :port} ((:start! server) app {:port port :host host :no-pairing? no-pairing?})]

@@ -35,7 +35,8 @@ provider effects, and TUI.
    :tool-definitions [{:name :description :input_schema}]  ; :resolve (fn [] → keys), merged in per turn
    :tool-registry    {name (fn [args ctx] → result|Promise)} ; ctx: {:cwd :client-pid :dispatch! :get-state :room-id :confirm!}
    :remove-tools     #{tool-name}      ; builtin tools to hide from the model
-   :commands         [{:name :description :handler}]
+   :commands         [{:name :description :handler   ; see xi.commands for the listing keys:
+                       :aliases :subcommands :takes-args? :while-busy? :surfaces}]
    :system-prompt    str | (fn [cwd] → str|nil)
    :keybindings      [{:key "alt+r" :event {...} :when (fn [state])
                        :id :my-ext/do :label "Do it" :layer :global}]

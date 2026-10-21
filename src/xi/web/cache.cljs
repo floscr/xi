@@ -17,7 +17,8 @@
      xi/room-lru         [sid …] most-recent-first, caps the room snapshots
      xi/watched          {session-id response-count-when-last-seen}
      xi/models           {:models [id …] :at ms} the model picker's last list
-                         (xi.web.models)"
+                         (xi.web.models)
+     xi/commands         the server's last command specs (:commands/changed)"
   (:require [clojure.string :as str]
             [cognitect.transit :as transit]
             [xi.core.state :as state]
@@ -315,6 +316,19 @@
 (defn save-command-counts! [counts]
   (store-set! command-counts-key counts))
 
+;; ── Command list ──────────────────────────────────────────────────────────────
+;; The server's command specs (xi.commands/specs), so the '/' suggestions and
+;; the palettes list every command before the WS connects.
+
+(def ^:private commands-key "xi/commands")
+
+(defn load-commands []
+  (let [v (store-get commands-key)]
+    (when (and (vector? v) (every? (comp string? :name) v)) v)))
+
+(defn save-commands! [commands]
+  (store-set! commands-key (vec commands)))
+
 ;; ── Recently-used skills (skills palette page) ───────────────────────────────
 
 (def ^:private recent-skills-key "xi/recent-skills")
@@ -462,6 +476,7 @@
                         :web/recent-commands (load-recent-commands)
                         :web/command-usage (load-recent-commands)
                         :web/command-counts (load-command-counts)
+                        :commands (load-commands)
                         :web/recent-skills (load-recent-skills)
                         :web/preferred-model (load-preferred-model)
                         :web/model-list (:models models)
@@ -496,8 +511,10 @@
 
 (defn persist-tap
   "App tap mirroring the lobby + active room into the cache on `persist-on`
-   events, tool-result checkpoints rate-limited."
+   events, tool-result checkpoints rate-limited, and the command list."
   [event state]
+  (when (and (= :commands/changed (:type event)) (:commands state))
+    (save-commands! (:commands state)))
   (when (persist-on (:type event))
     (when (or (not= :agent/tool-result (:type event))
               (let [now (js/Date.now)]

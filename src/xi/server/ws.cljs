@@ -120,7 +120,7 @@
    register as another identity)."
   #{:user/loaded :user/ui-set :user/ext-set :room/presence
     :client/connect :client/disconnect :server/started
-    :session/name-suggested})
+    :session/name-suggested :commands/changed})
 
 (def ^:private pre-join-types
   "Event types a client may send before joining a room."
@@ -740,6 +740,8 @@
                  (send-event! cid {:type :user-state/state :user user
                                    :state (user-state/client-view (user-store/load-state user))})
                  (send-event! cid {:type :keys/config :keys (user-config/keys-config)})
+                 (when-let [cmds (:commands @state)]
+                   (send-event! cid {:type :commands/changed :commands cmds}))
                  (send! cid (lobby-payload @state agent-id (:model server-opts) user))))
              resolve-pending!
              (fn [code approved?]
@@ -1103,6 +1105,10 @@
             (when (= :prompt/submit (:type event))
               (when-let [sid (get-in st [:rooms (:room-id event) :session :id])]
                 (user-store/undismiss! (core-state/event-user st event) sid)))
+            ;; The command list (xi.cli/publish-commands!) is every
+            ;; client's, joined to a room or not.
+            (when (= :commands/changed (:type event))
+              (notify-authed! {:type :commands/changed :commands (:commands event)}))
             (when (lobby-relevant (:type event))
               (schedule-lobby-broadcast!))))
 

@@ -1,5 +1,6 @@
 (ns xi.web.views-test
   (:require [cljs.test :refer [deftest is testing]]
+            [xi.commands :as commands]
             [xi.layout :as layout]
             [xi.web.block-menu :as block-menu]
             [xi.web.timeline-posts :as timeline-posts]
@@ -72,24 +73,53 @@
       (is (= [nil nil nil]
              (f [(group "a" 500) (group "b" 500) (group "c" 10)] #{"b"} #{"a"} 10))))))
 
-;; ── command-while-busy? ──────────────────────────────────────────────────────
+;; ── the web's command list ───────────────────────────────────────────────────
+
+(def ^:private published
+  "What a server publishes (:commands/changed): built-ins + extension commands."
+  (commands/specs
+   (commands/all-commands
+    [{:name "diff" :description "Show diffs" :while-busy? true :handler identity
+      :subcommands [{:name "staged"} {:name "session-commits"}]}
+     {:name "commits" :description "Terminal commit menu" :surfaces #{:tui} :handler identity}
+     {:name "yolo" :description "Toggle yolo" :while-busy? true :handler identity
+      :subcommands [{:name "sane"} {:name "relentless"} {:name "off"}]}
+     {:name "gtd" :description "A user extension's command" :handler identity}])))
+
+(def ^:private cmds (views/web-commands {:commands published}))
+
+(deftest web-commands-test
+  (let [names (mapv :name cmds)]
+    (testing "every published command, featured first"
+      (is (= ["help" "model" "new"] (take 3 names)))
+      (is (some #{"gtd"} names)))
+    (testing "terminal-only ones are left out"
+      (is (not-any? #{"quit" "tree" "resume"} names)))
+    (testing "a web page shadows a command of its name"
+      (is (= ["List commits made this session"]
+             (keep #(when (= "commits" (:name %)) (:description %)) cmds))))
+    (testing "before the server's list: the built-ins and the web pages"
+      (let [fallback (set (map :name (views/web-commands {})))]
+        (is (contains? fallback "help"))
+        (is (contains? fallback "files"))
+        (is (not (contains? fallback "gtd")))))))
 
 (deftest command-while-busy
   (testing "non-interrupting read-only commands"
-    (is (true? (views/command-while-busy? "/diff")))
-    (is (true? (views/command-while-busy? "/help")))
-    (is (true? (views/command-while-busy? "/debug"))))
+    (is (true? (views/command-while-busy? cmds "/diff")))
+    (is (true? (views/command-while-busy? cmds "/help")))
+    (is (true? (views/command-while-busy? cmds "/debug"))))
   (testing "subcommands inherit the parent's flag"
-    (is (true? (views/command-while-busy? "/diff staged")))
-    (is (true? (views/command-while-busy? "  /diff session-commits  "))))
+    (is (true? (views/command-while-busy? cmds "/diff staged")))
+    (is (true? (views/command-while-busy? cmds "  /diff session-commits  "))))
   (testing "session-mutating commands are not while-busy"
-    (is (false? (boolean (views/command-while-busy? "/new"))))
-    (is (false? (boolean (views/command-while-busy? "/clear"))))
-    (is (false? (boolean (views/command-while-busy? "/truncate")))))
+    (is (false? (boolean (views/command-while-busy? cmds "/new"))))
+    (is (false? (boolean (views/command-while-busy? cmds "/clear"))))
+    (is (false? (boolean (views/command-while-busy? cmds "/truncate")))))
   (testing "plain prompts and unknown commands"
-    (is (false? (boolean (views/command-while-busy? "hello world"))))
-    (is (false? (boolean (views/command-while-busy? "/bogus"))))
-    (is (false? (boolean (views/command-while-busy? nil))))))
+    (is (false? (boolean (views/command-while-busy? cmds "hello world"))))
+    (is (false? (boolean (views/command-while-busy? cmds "/bogus"))))
+    (is (false? (boolean (views/command-while-busy? cmds nil))))))
 
 ;; ── format-elapsed (run timer / sub-agent duration) ─────────────────────────
 
@@ -213,13 +243,14 @@
 ;; ── slash-command suggestions ────────────────────────────────────────────────
 
 (deftest command-usage-name
-  (is (= "yolo sane" (views/command-usage-name "yolo" "sane")))
-  (is (= "yolo" (views/command-usage-name "yolo" nil)))
-  (is (= "yolo" (views/command-usage-name "yolo" "nonsense"))))
+  (is (= "yolo sane" (views/command-usage-name cmds "yolo" "sane")))
+  (is (= "yolo" (views/command-usage-name cmds "yolo" nil)))
+  (is (= "yolo" (views/command-usage-name cmds "yolo" "nonsense"))))
 
 (deftest match-commands-ordering
   (let [names   (fn [q usage counts]
-                  (mapv :name (views/match-commands q {:usage usage :counts counts})))
+                  (mapv :name (views/match-commands q {:usage usage :counts counts
+                                                       :commands cmds})))
         base    (fn [n] (first (.split n " ")))
         default (names "" [] {})
         [a b]   [(base (last default)) (base (nth default (quot (count default) 2)))]]
@@ -251,14 +282,18 @@
              (:name (first (match "" {:counts {"skill:design-directions" 3}}))))))))
 
 (deftest slash-ctx-skills
-  (let [state {:web/recent-skills ["a" "gone"]}]
+  (let [state {:web/recent-skills ["alpha" "gone"]}]
     (testing "before the skill list arrives: recent names only"
-      (is (= [{:name "a"} {:name "gone"}] (:skills (views/slash-ctx state)))))
+      (is (= [{:name "alpha"} {:name "gone"}] (:skills (views/slash-ctx state)))))
     (testing "with it: described, deleted ones dropped, every skill runnable"
       (let [ctx (views/slash-ctx (assoc state :web/skill-list
-                                        [{:name "a" :description "A"} {:name "b"}]))]
-        (is (= [{:name "a" :description "A"}] (:skills ctx)))
-        (is (= #{"a" "b" "gone"} (:skill-names ctx)))))))
+                                        [{:name "alpha" :description "A"} {:name "beta"}]))]
+        (is (= [{:name "alpha" :description "A"}] (:skills ctx)))
+        (is (= #{"alpha" "beta" "gone"} (:skill-names ctx)))))
+    (testing "a command (or alias) of the same name wins over a skill"
+      (let [names (:skill-names (views/slash-ctx {:web/recent-skills ["help" "a"]}))]
+        (is (not (contains? names "help")))
+        (is (not (contains? names "a")))))))
 
 ;; ── code menu: Split lines ──────────────────────────────────────────────────
 

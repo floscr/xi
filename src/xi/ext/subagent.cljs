@@ -507,7 +507,11 @@
                        :session/subagent-upgrade}
    :commands         [{:name "subagents"
                        :description "View this room's background sub-agents"
-                       :handler cmd-subagents}
+                       :handler cmd-subagents
+                       ;; the web shows its sub-agents panel regardless
+                       :surfaces #{:tui}}
+                      ;; Starts a background turn of its own; the running one goes on.
                       {:name "subagent" :aliases ["sa"]
                        :description "Run a task in a background sub-agent (/subagent <task>)"
-                       :handler cmd-subagent}]})
+                       :handler cmd-subagent
+                       :while-busy? true :takes-args? true}]})

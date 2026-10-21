@@ -33,55 +33,19 @@
 
 ;; ── Commands ─────────────────────────────────────────────────────────────────
 
-(def palette-commands
-  "Curated command list shown in both palettes' Commands section (web Cmd/K
-   and TUI Ctrl+P) and the web '/' suggestion popup — the same items on every
-   surface. `:while-busy?` marks non-interrupting commands: read-only views
-   that neither mutate session state nor interrupt the running turn, so they
-   may be submitted while the agent is busy; `:takes-args?` ones are completed
-   into the composer for their argument instead of run when picked. Each entry is display metadata;
-   the actual handler is resolved by name in the assembly's command registry."
-  [{:name "help"     :description "Show available commands" :while-busy? true}
-   {:name "model"    :description "Show or set model"}
-   {:name "resume"   :description "Resume a previous session"}
-   {:name "sessions" :description "List previous sessions"}
-   {:name "new"      :description "Start a new session"}
-   {:name "clear"    :description "Clear current session"}
-   {:name "truncate" :description "Summarize conversation to reduce context"}
-   {:name "trim"     :description "Trim bloated tool results from the transcript"
-    :subcommands [{:name "yes"    :description "Apply the pending trim preview"}
-                  {:name "cancel" :description "Abandon the pending trim preview"}]}
-   {:name "rollover" :description "Fresh session with lineage pointers to this one"}
-   {:name "lineage"  :description "Show this session's ancestor chain" :while-busy? true}
-   {:name "summary"  :description "Describe this session and refresh its title"}
-   {:name "diff"     :description "Show changes from this session" :while-busy? true
-    :subcommands [{:name "git"             :description "All git changes (staged + unstaged + untracked)"}
-                  {:name "staged"          :description "Staged changes"}
-                  {:name "unstaged"        :description "Unstaged changes"}
-                  {:name "session-edits"   :description "Diff of files edited this session"}
-                  {:name "session-git"     :description "Session edits still uncommitted (vs the last commit)"}
-                  {:name "session-commits" :description "Diff of commits made this session"}]}
-   {:name "commit"   :description "Review changes and create a git commit"}
-   ;; Starts a background turn of its own; the running one goes on.
-   {:name "subagent" :aliases ["sa"] :description "Run a task in a background sub-agent (/subagent <task>)"
-    :while-busy? true :takes-args? true}
-   {:name "review"   :description "Review git changes against the code-review methodology"
-    :subcommands [{:name "staged" :description "Review staged changes vs HEAD"}]}
-   {:name "debug"    :description "Copy debug info to clipboard" :while-busy? true}
-   {:name "rules"    :description "List, reload or save policy rules"
-    :subcommands [{:name "save"   :description "Save this chat's session rules to the project (.xi/rules.edn)"}
-                  {:name "reload" :description "Clear the rules-file cache"}]}
-   {:name "plan"     :description "Toggle plan mode (read-only exploration)"}
-   ;; Flipping the flag mid-turn is the point: the next ask runs instead.
-   {:name "yolo"     :description "Toggle yolo mode (run tool calls without asking)" :while-busy? true
-    :subcommands [{:name "sane"       :description "Run tool calls without asking, except risky ones"}
-                  {:name "relentless" :description "Run every tool call without asking"}
-                  {:name "off"        :description "Ask again"}]}
-   ;; Answer the pending permission ask — only ever useful mid-turn.
-   {:name "allow"    :aliases ["a"] :description "Allow the pending permission request" :while-busy? true
-    :subcommands [{:name "always" :description "Allow and don't ask again"}
-                  {:name "repo"   :description "Allow writes to this repo"}]}
-   {:name "deny"     :aliases ["d"] :description "Deny the pending permission request (/deny <reason> tells the agent why)" :while-busy? true}])
+(def featured-commands
+  "Command names listed first, in this order, on every surface (palettes and
+   the web '/' popup); the rest of the published commands (xi.commands/specs)
+   follow in registration order. A name nothing registers is skipped."
+  ["help" "model" "resume" "sessions" "new" "clear" "truncate" "trim"
+   "rollover" "lineage" "summary" "diff" "commit" "subagent" "review"
+   "debug" "rules" "plan" "yolo" "allow" "deny"])
+
+(defn order-commands
+  "Command specs with the `featured-commands` first."
+  [specs]
+  (let [rank (zipmap featured-commands (range))]
+    (vec (sort-by #(get rank (:name %) (count rank)) specs))))
 
 (defn expand-commands
   "Flatten commands + their subcommands into a single suggestion list, where

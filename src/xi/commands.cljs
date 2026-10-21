@@ -10,6 +10,15 @@
    Command handlers have the same contract as event handlers:
      (fn [state {:keys [room-id args]}]) → {:state :effects} | nil
 
+   A command map is the one source of what every surface lists: besides
+   :name :description :handler it may carry :aliases, :subcommands
+   [{:name :description}], :takes-args? (completed into the editor for its
+   argument instead of run when picked), :while-busy? (may run while the
+   agent works) and :surfaces (#{:tui :web}, default both; a listing filter
+   only, dispatch ignores it). `specs` strips the handlers; xi.cli publishes
+   them as :commands/changed, which puts them at the state's :commands and
+   which the server sends every client (xi.server.ws).
+
    Everything here is pure — filesystem/network work happens in effects
    (see xi.fx): :session/list, :session/load, :session/new, :session/sync,
    :image/process, :models/fetch, plus the TUI-owned :app/quit,
@@ -390,38 +399,49 @@
      :effects [[:clipboard/copy {:text text}]]}))
 
 (def built-in-commands
-  "Built-in commands. Each :handler is (fn [state {:keys [room-id args]}])."
-  [{:name "help"     :description "Show available commands"            :handler cmd-help}
+  "Built-in commands. Each :handler is (fn [state {:keys [room-id args]}]).
+   :surfaces #{:tui} marks the ones whose result is a terminal menu or view
+   the web has its own UI for."
+  [{:name "help"     :description "Show available commands"            :handler cmd-help
+    :while-busy? true}
    {:name "model"    :description "Show or set model"                  :handler cmd-model}
    {:name "login"    :description "Sign in to a provider's subscription (/login opencode)" :handler cmd-login}
    {:name "logout"   :description "Forget a provider sign-in (/logout opencode)" :handler cmd-logout}
-   {:name "resume"   :description "Resume a previous session"          :handler cmd-resume}
-   {:name "sessions" :description "List previous sessions"             :handler cmd-sessions}
+   {:name "resume"   :description "Resume a previous session"          :handler cmd-resume
+    :surfaces #{:tui}}
+   {:name "sessions" :description "List previous sessions"             :handler cmd-sessions
+    :surfaces #{:tui}}
    {:name "new"      :description "Start a new session"                :handler cmd-new}
    {:name "clear"    :description "Clear current session"              :handler cmd-clear}
    {:name "fork"     :description "Split the conversation into a new session" :handler cmd-fork}
    {:name "truncate" :description "Summarize conversation to reduce context" :handler cmd-compact}
    {:name "summary"  :description "Describe what this session is about (cheap model)" :handler cmd-summary}
    {:name "prompt"   :description "Show system prompt"                 :handler cmd-prompt}
-   {:name "tree"     :description "Navigate session history"             :handler cmd-tree}
+   {:name "tree"     :description "Navigate session history"             :handler cmd-tree
+    :surfaces #{:tui}}
    {:name "events"   :description "Show event log for this session"     :handler cmd-events}
-   {:name "buffers"  :description "Switch buffer view"                 :handler cmd-buffers}
+   {:name "buffers"  :description "Switch buffer view"                 :handler cmd-buffers
+    :surfaces #{:tui}}
    {:name "cd"       :description "Change working directory"            :handler cmd-cd}
-   {:name "debug"    :description "Copy debug info to clipboard"       :handler cmd-debug}
-   {:name "allow"    :aliases ["a"]
+   {:name "debug"    :description "Copy debug info to clipboard"       :handler cmd-debug
+    :while-busy? true}
+   ;; Answer the pending permission ask — only ever useful mid-turn.
+   {:name "allow"    :aliases ["a"] :while-busy? true
     :description "Allow the pending permission request (always/a, repo/r)"
     :subcommands [{:name "always" :description "Allow and don't ask again"}
                   {:name "repo"   :description "Allow writes to this repo"}]
     :handler (cmd-answer :allow)}
-   {:name "deny"     :aliases ["d"]
+   {:name "deny"     :aliases ["d"] :while-busy? true
     :description "Deny the pending permission request (/deny <reason> tells the agent why)"
     :handler (cmd-answer :deny)}
    {:name "holds"    :description "Show who holds this room's shared resources (git index)"
     :handler (fn [_st {:keys [room-id]}] {:effects [[:holds/list {:room-id room-id}]]})}
    {:name "release"  :description "Force-release holds on this room's shared resources (git index)"
     :handler (fn [_st {:keys [room-id]}] {:effects [[:holds/release {:room-id room-id}]]})}
-   {:name "reload"   :description "Restart Xi (picks up recompiled code)" :handler cmd-reload}
-   {:name "quit"     :description "Exit Xi"                            :handler cmd-quit}])
+   {:name "reload"   :description "Restart Xi (picks up recompiled code)" :handler cmd-reload
+    :surfaces #{:tui}}
+   {:name "quit"     :description "Exit Xi"                            :handler cmd-quit
+    :surfaces #{:tui}}])
 
 ;; ── Event handlers ───────────────────────────────────────────────────────────
 
@@ -464,13 +484,20 @@
 
         :else nil))))
 
+(defn- index-by-name
+  "name and alias → command; the first command claiming a name wins, so the
+   built-ins (listed first) beat an extension's command of the same name."
+  [commands]
+  (reduce (fn [m cmd]
+            (reduce (fn [m n] (cond-> m (not (contains? m n)) (assoc n cmd)))
+                    m (cons (:name cmd) (:aliases cmd))))
+          {} commands))
+
 (defn- make-command-run
   "A :command/run handler closed over the merged command vector; each handler
    gets the full :commands list in its ctx."
   [commands]
-  (let [by-name (into {} (mapcat (fn [cmd]
-                                   (map #(vector % cmd) (cons (:name cmd) (:aliases cmd)))))
-                      commands)]
+  (let [by-name (index-by-name commands)]
     (fn command-run [st {:keys [room-id name args remote? client-id images] :as ev}]
       (when (state/get-room st room-id)
         (if-let [cmd (get by-name name)]
@@ -763,6 +790,39 @@
   ([] (all-commands nil))
   ([extra-commands] (into built-in-commands (or extra-commands []))))
 
+;; ── Command specs (the handler-free list every surface renders) ──────────────
+
+(def ^:private spec-keys
+  [:name :description :aliases :subcommands :takes-args? :while-busy? :surfaces])
+
+(defn specs
+  "`commands` without their handlers, wire-safe: one entry per command that
+   :command/run would dispatch to (a name an earlier command claims is
+   dropped), in order."
+  [commands]
+  (let [by-name (index-by-name commands)]
+    (into [] (comp (filter #(identical? % (get by-name (:name %))))
+                   (distinct)
+                   (map #(select-keys % spec-keys)))
+          commands)))
+
+(defn on-surface?
+  "True when the command `spec` is listed on `surface` (:tui | :web)."
+  [surface {:keys [surfaces]}]
+  (or (empty? surfaces) (contains? (set surfaces) surface)))
+
+(defn listed
+  "The command specs `surface` lists: the published ones (the state's
+   :commands), else `fallback` (a command vector, e.g. the assembly's own)."
+  [state surface fallback]
+  (filterv (partial on-surface? surface)
+           (or (:commands state) (specs fallback))))
+
+(defn- commands-changed
+  [st {:keys [commands]}]
+  (when (not= commands (:commands st))
+    {:state (assoc st :commands (vec commands))}))
+
 (defn command-handlers
   "The command/event handler map for an assembly; extra-commands are extension
    commands joining the built-ins."
@@ -770,6 +830,7 @@
   ([extra-commands]
    {:input/submit    input-submit
     :command/run     (make-command-run (all-commands extra-commands))
+    :commands/changed commands-changed
     :ui/status       ui-status
     :ui/status-action-expire ui-status-action-expire
     :ui/menu-open    menu-open

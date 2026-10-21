@@ -517,13 +517,16 @@ Be thorough but concise. Output only the summary, no preamble.")
    :init {:room {:pending nil}}
    :commands [{:name "trim"
                :description "Trim bloated tool results from this session's transcript"
-               :handler cmd-trim}
+               :handler cmd-trim
+               :subcommands [{:name "yes"    :description "Apply the pending trim preview"}
+                             {:name "cancel" :description "Abandon the pending trim preview"}]}
               {:name "rollover"
                :description "Fresh session with lineage pointers to this one"
                :handler cmd-rollover}
               {:name "lineage"
                :description "Show this session's ancestor chain"
-               :handler cmd-lineage}]
+               :handler cmd-lineage
+               :while-busy? true}]
    :handlers {:ext.resume/trim-previewed trim-previewed
               :ext.resume/trim-applied trim-applied
               :ext.resume/rollover-ready rollover-ready

@@ -384,6 +384,55 @@
     (is (str/includes? text "/resume"))
     (is (str/includes? text "/truncate"))))
 
+;; ── command specs (what the TUI and the web list) ───────────────────────────
+
+(def ^:private ext-commands
+  [{:name "gtd" :description "Tasks" :handler (fn [_ _] nil)
+    :subcommands [{:name "add" :description "Add one"}]}
+   {:name "new" :description "An extension's /new" :handler (fn [_ _] nil)}
+   {:name "a" :description "Claimed by /allow's alias" :handler (fn [_ _] nil)}
+   {:name "picker" :handler (fn [_ _] nil) :surfaces #{:tui}}])
+
+(deftest specs-are-what-command-run-dispatches
+  (let [specs   (commands/specs (commands/all-commands ext-commands))
+        by-name (into {} (map (juxt :name identity)) specs)]
+    (testing "no handlers, metadata kept"
+      (is (not-any? :handler specs))
+      (is (= {:name "gtd" :description "Tasks"
+              :subcommands [{:name "add" :description "Add one"}]}
+             (by-name "gtd")))
+      (is (true? (:while-busy? (by-name "allow")))))
+    (testing "a name a built-in claims (also as an alias) is the built-in's"
+      (is (= 1 (count (filter #(= "new" (:name %)) specs))))
+      (is (= "Start a new session" (:description (by-name "new"))))
+      (is (nil? (by-name "a"))))
+    (testing "dispatch agrees: the built-in runs"
+      (let [handlers (merge events/core-handlers agent/handlers
+                            (commands/command-handlers ext-commands))]
+        (is (= [[:session/new {:room-id "r" :save-current? true}]]
+               (:effects (events/handle-event handlers (with-room)
+                                              {:type :command/run :room-id "r" :name "new"}))))))))
+
+(deftest listed-by-surface
+  (let [specs (commands/specs (commands/all-commands ext-commands))
+        names (fn [st surface] (set (map :name (commands/listed st surface ext-commands))))]
+    (testing "the published specs win over the fallback"
+      (is (= #{"only"} (names {:commands [{:name "only"}]} :web))))
+    (testing "before they arrive, the fallback's"
+      (is (contains? (names {} :tui) "gtd")))
+    (testing ":surfaces filters the listing"
+      (is (contains? (names {:commands specs} :tui) "picker"))
+      (is (not (contains? (names {:commands specs} :web) "picker")))
+      (is (not (contains? (names {:commands specs} :web) "quit")))
+      (is (contains? (names {:commands specs} :web) "gtd")))))
+
+(deftest commands-changed-installs-the-specs
+  (let [specs [{:name "x"}]
+        st    (apply-events (with-room) {:type :commands/changed :commands specs})]
+    (is (= specs (:commands st)))
+    (is (identical? st (:state (handle st {:type :commands/changed :commands specs})))
+        "an unchanged list is a no-op")))
+
 (deftest clear-and-new-emit-session-new
   (is (= [[:session/new {:room-id "r"}]]
          (:effects (handle (with-room) {:type :command/run :room-id "r" :name "clear"}))))

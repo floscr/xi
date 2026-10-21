@@ -1533,25 +1533,38 @@
 
 ;; ── Command suggestions ───────────────────────────────────────────────────────
 
-(def ^:private web-commands
-  "Commands in the web suggestion popup and palette: the shared list
-   (xi.palette/palette-commands) plus web-only palette sub-pages."
-  (conj (vec palette/palette-commands)
-        {:name "commits"
-         :description "List commits made this session"
-         :while-busy? true}
-        {:name "log"
-         :description "Browse the git log"
-         :while-busy? true}
-        {:name "files"
-         :description "Browse project files"
-         :while-busy? true}
-        {:name "skills"
-         :description "Browse and load skills"
-         :while-busy? true}))
+(def ^:private web-page-commands
+  "Web palette sub-pages run as commands (dispatch-command!). They shadow a
+   published command of the same name (the diff extension's terminal
+   /commits menu)."
+  [{:name "commits"
+    :description "List commits made this session"
+    :while-busy? true}
+   {:name "log"
+    :description "Browse the git log"
+    :while-busy? true}
+   {:name "files"
+    :description "Browse project files"
+    :while-busy? true}
+   {:name "skills"
+    :description "Browse and load skills"
+    :while-busy? true}])
 
-(def ^:private web-command-names
-  (into #{} (map :name) web-commands))
+(def ^:private web-commands-of
+  (memoize
+   (fn [published]
+     (let [pages (into #{} (map :name) web-page-commands)]
+       (palette/order-commands
+        (into (filterv #(and (commands/on-surface? :web %) (not (pages (:name %))))
+                       (or published (commands/specs commands/built-in-commands)))
+              web-page-commands))))))
+
+(defn web-commands
+  "Commands in the web suggestion popup and palettes, featured first: the
+   server's (xi.commands/listed; the built-ins until they arrive) plus the
+   web's palette sub-pages."
+  [state]
+  (web-commands-of (:commands state)))
 
 (defn draft-key
   "Per-chat key for chat-scoped state (drafts, …): the virtual room's id
@@ -1564,40 +1577,42 @@
       (get-in state [:web/route :session-id])
       :new))
 
+(defn- command-names
+  "Every name and alias of `cmds`."
+  [cmds]
+  (into #{} (mapcat #(cons (:name %) (:aliases %))) cmds))
+
 (defn known-command?
-  [name]
-  (contains? web-command-names name))
+  [cmds name]
+  (contains? (command-names cmds) name))
 
 (defn command-usage-name
   "The name a run of `name` with `args` is recorded under in
-   :web/command-usage: \"yolo sane\" when the first arg is a subcommand,
-   else `name`."
-  [name args]
+   :web/command-usage: \"yolo sane\" when the first arg is a subcommand of
+   `name` in `cmds`, else `name`."
+  [cmds name args]
   (let [sub     (first (str/split (str/trim (or args "")) #"\s+"))
-        subcmds (some #(when (= name (:name %)) (:subcommands %)) web-commands)]
+        subcmds (some #(when (= name (:name %)) (:subcommands %)) cmds)]
     (if (some #(= sub (:name %)) subcmds)
       (str name " " sub)
       name)))
 
-(def ^:private while-busy-command-names
-  (into #{} (comp (filter :while-busy?) (mapcat #(cons (:name %) (:aliases %)))) web-commands))
-
 (defn command-while-busy?
-  "True when `text` is a slash command flagged :while-busy? (matched on the
-   leading token, so subcommands qualify)."
-  [text]
+  "True when `text` is a slash command of `cmds` flagged :while-busy?
+   (matched on the leading token, so subcommands qualify)."
+  [cmds text]
   (let [t (str/trim (or text ""))]
     (and (str/starts-with? t "/")
-         (contains? while-busy-command-names
+         (contains? (command-names (filter :while-busy? cmds))
                     (-> t (subs 1) (str/split #"\s+") first)))))
 
 (defn submittable-while-busy?
   "True when `text` may be submitted while the agent is busy: a plain prompt
-   (queued) or a :while-busy? command."
-  [text]
+   (queued) or a :while-busy? command of `cmds`."
+  [cmds text]
   (let [t (str/trim (or text ""))]
     (or (not (str/starts-with? t "/"))
-        (command-while-busy? t))))
+        (command-while-busy? cmds t))))
 
 (defn match-commands
   "Commands (and subcommands) matching the prefix `query`, as families (a
@@ -1607,8 +1622,9 @@
    `usage` (:web/command-usage, most recent first); names as in
    command-usage-name. `skills` ({:name :description}) join as entries with
    :skill, tracked as \"skill:<name>\" (xi.web.core/skill-select). Unused
-   entries keep declaration order, commands before skills."
-  [query {:keys [usage counts skills]}]
+   entries keep declaration order, commands before skills. `commands`
+   defaults to the web's list before the server sent one (`web-commands`)."
+  [query {:keys [usage counts skills commands]}]
   (let [q        (str/lower-case (or query ""))
         family   (fn [name] (first (str/split name #" ")))
         rank     (zipmap usage (range))
@@ -1617,7 +1633,7 @@
         never    (count usage)
         exact?   (fn [{:keys [name aliases]}] (boolean (or (= name q) (some #{q} aliases))))
         stat-key (fn [{:keys [name skill]}] (if skill (str "skill:" skill) name))
-        all      (concat (palette/expand-commands web-commands)
+        all      (concat (palette/expand-commands (or commands (web-commands nil)))
                          (map (fn [{:keys [name description]}]
                                 {:name name :skill name
                                  :description (str "Skill" (when (seq description)
@@ -1660,19 +1676,23 @@
                    args (assoc :args args))))))
 
 (defn slash-ctx
-  "match-commands' options from state: usage, counts and the recently used
-   skills (described once the skill list is loaded, gone ones dropped);
-   :skill-names are all skills a typed \"/<skill> args\" may run."
+  "match-commands' options from state: the commands, usage, counts and the
+   recently used skills (described once the skill list is loaded, gone ones
+   dropped); :skill-names are all skills a typed \"/<skill> args\" may run
+   (a command of the same name wins)."
   [state]
   (let [listed  (:web/skill-list state)
         by-name (into {} (map (juxt :name identity)) listed)
-        recents (:web/recent-skills state)]
-    {:usage       (:web/command-usage state)
+        recents (:web/recent-skills state)
+        cmds    (web-commands state)]
+    {:commands    cmds
+     :usage       (:web/command-usage state)
      :counts      (:web/command-counts state)
      :skills      (if listed
                     (vec (keep by-name recents))
                     (mapv (fn [n] {:name n}) recents))
-     :skill-names (into (set recents) (map :name) listed)}))
+     :skill-names (into #{} (remove (command-names cmds))
+                        (concat recents (map :name listed)))}))
 
 (defn- clear-compose! [dispatch! draft-key]
   (when-let [^js el (compose-textarea-el)]
@@ -1698,11 +1718,11 @@
         (clear-compose! dispatch! draft-key))))
 
 (defn- skill-invocation
-  "[skill args] when `text` is \"/<skill> args\" for one of `skill-names` that
-   isn't also a command (submit-compose! runs it client-side)."
+  "[skill args] when `text` is \"/<skill> args\" for one of `skill-names`
+   (submit-compose! runs it client-side)."
   [text skill-names]
   (let [{:keys [name args]} (when (str/starts-with? text "/") (commands/parse-input text))]
-    (when (and name (contains? skill-names name) (not (known-command? name)))
+    (when (and name (contains? skill-names name))
       [name args])))
 
 (defn- command-suggestions
@@ -1920,7 +1940,7 @@
                             (let [sel (min (or cmd-selected 0) (dec (count cmd-matches)))]
                               (pick-command! dispatch! room-id draft-key (nth cmd-matches sel)))
                             (let [v (.. e -target -value)]
-                              (when (or (not busy?) (submittable-while-busy? v)
+                              (when (or (not busy?) (submittable-while-busy? (:commands cmd-ctx) v)
                                         (skill-invocation (str/trim v) skill-names))
                                 (submit-compose! dispatch! room-id session-id
                                                  images draft-key v skill-names))))))
@@ -1979,7 +1999,7 @@
                             (= "Enter" (.-key e))
                             (do (.preventDefault e)
                                 (let [v (.. e -target -value)]
-                                  (when (or (not busy?) (submittable-while-busy? v)
+                                  (when (or (not busy?) (submittable-while-busy? (:commands cmd-ctx) v)
                                             (skill-invocation (str/trim v) skill-names))
                                     (submit-compose! dispatch! room-id session-id
                                                      images draft-key v skill-names)))))))}}})]
@@ -1990,7 +2010,7 @@
                         :data-key-action "agent/abort"
                         :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
                (spinner)])]
-        (if (and busy? (not (command-while-busy? draft)))
+        (if (and busy? (not (command-while-busy? (:commands cmd-ctx) draft)))
           [:div {:class ["compose-actions"]}
            (when offline? (offline-indicator))
            spinner-abort
@@ -6421,9 +6441,10 @@
                       (map #(first (str/split % #" ")))
                       distinct
                       (take 6))
-        by-name  (into {} (map (juxt :name identity)) web-commands)
+        cmds     (web-commands state)
+        by-name  (into {} (map (juxt :name identity)) cmds)
         recent   (keep by-name recents)
-        the-rest (remove (comp (set recents) :name) web-commands)]
+        the-rest (remove (comp (set recents) :name) cmds)]
     [:div
      (when (seq recent)
        (apply cmd/command-group {:heading "Recent"}
@@ -7132,7 +7153,7 @@
                   "Prune all")))))
      (when room
        (apply cmd/command-group {:heading "Commands"}
-         (for [{:keys [name description takes-args?]} (palette/expand-commands web-commands)]
+         (for [{:keys [name description takes-args?]} (palette/expand-commands (web-commands state))]
            (cmd/command-item
             {:icon :terminal
              :value (str name " " description)

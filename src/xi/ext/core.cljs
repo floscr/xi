@@ -48,7 +48,9 @@
                    so /ext disable restores them). E.g. the clj extension
                    removes bash.
      :commands     [{:name :description :handler}] — same contract as
-                   xi.commands: (fn [state {:keys [room-id args commands]}])
+                   xi.commands: (fn [state {:keys [room-id args commands]}]),
+                   plus the keys every surface lists them by (:aliases
+                   :subcommands :takes-args? :while-busy? :surfaces)
      :roomless-events #{event-type} — event types clients may send without
                    joining a room (connection-level, keyed by :client-id).
                    Unioned into the WS server's roomless whitelist.

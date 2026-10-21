@@ -206,6 +206,7 @@
    :commands [{:name "diff"
                :description "Show diff viewer (git|git-upstream|staged|unstaged|<branch>); prefix with difft for difftastic"
                :handler cmd-diff
+               :while-busy? true
                :subcommands [{:name "git"             :description "All git changes (staged + unstaged + untracked)"}
                              {:name "git-upstream"    :description "Diff against the upstream default branch (origin/main|master)"}
                              {:name "staged"          :description "Staged changes"}
@@ -216,7 +217,9 @@
                              {:name "difft"           :description "Render with difftastic (append a source, e.g. difft staged)"}]}
               {:name "commits"
                :description "Pick a commit made this session and view its diff"
-               :handler cmd-commits}]
+               :handler cmd-commits
+               ;; a terminal menu; the web has its own /commits page
+               :surfaces #{:tui}}]
    :handlers {:ui/diff-open    handlers/diff-open
               :diff/open-commit diff-open-commit
               :diff/show       diff-show}

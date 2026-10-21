@@ -2256,11 +2256,12 @@
 
 (defn- record-command-tap
   [dispatch!]
-  (fn [event _state]
-    (when (and (= :web/command (:type event))
-               (views/known-command? (:name event)))
-      (dispatch! {:type :web/record-command
-                  :name (views/command-usage-name (:name event) (:args event))}))))
+  (fn [event state]
+    (when (= :web/command (:type event))
+      (let [cmds (views/web-commands state)]
+        (when (views/known-command? cmds (:name event))
+          (dispatch! {:type :web/record-command
+                      :name (views/command-usage-name cmds (:name event) (:args event))}))))))
 
 (defn- prompt-nav-close-tap
   [dispatch!]

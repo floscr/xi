@@ -197,7 +197,9 @@
   {:id       :projects
    :commands [{:name "project"
                :description "Pick a project path"
-               :handler open-picker}]
+               :handler open-picker
+               ;; a terminal menu; the web has its projects page
+               :surfaces #{:tui}}]
    :handlers {:project/insert insert-handler
               :project/open   open-picker
               :project/drill  drill-handler
