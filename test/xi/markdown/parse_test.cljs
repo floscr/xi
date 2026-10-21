@@ -73,6 +73,17 @@
     (is (= ["hello there"]
            (parse/parse-inline "hello there")))))
 
+(deftest code-span-backtick-runs
+  (testing "a run of n backticks closes at the next run of exactly n"
+    (is (= ["like " [:code "`#fff`"] "."]
+           (parse/parse-inline "like `` `#fff` ``.")))
+    (is (= [[:code "a`b"]] (parse/parse-inline "``a`b``"))))
+  (testing "single backticks still work"
+    (is (= ["run " [:code "ls"]] (parse/parse-inline "run `ls`"))))
+  (testing "an unmatched run stays literal"
+    (is (= "``a`" (apply str (parse/parse-inline "``a`"))))
+    (is (= "a ` b" (apply str (parse/parse-inline "a ` b"))))))
+
 (deftest color-literal-test
   (testing "hex and rgb()/rgba() literals become :color tokens"
     (is (= ["na more like this " [:color "#c3f187"]]

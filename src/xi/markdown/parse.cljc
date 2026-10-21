@@ -34,13 +34,32 @@
 
 (declare parse-inline)
 
+(defn- backtick-run [^String s idx]
+  (loop [i idx]
+    (if (and (< i (count s)) (= (.charAt s i) \`)) (recur (inc i)) (- i idx))))
+
 (defn- parse-code-span
+  "CommonMark code span: an opening run of n backticks closes at the next run
+   of exactly n, so `` `x` `` holds literal backticks. One padding space on
+   each side is stripped."
   [^String s idx]
-  (let [len (count s)]
-    (when (and (< idx len) (= (.charAt s idx) \`))
-      (let [close (find-closing s (inc idx) "`")]
-        (when (and (not= close -1) (> close (inc idx)))
-          [[:code (subs s (inc idx) close)] (inc close)])))))
+  (let [n (backtick-run s idx)
+        start (+ idx n)]
+    (when (pos? n)
+      (loop [i start]
+        (let [close (find-closing s i "`")]
+          (if (= close -1)
+            ;; unmatched: the whole run is literal text
+            [(subs s idx start) start]
+            (let [m (backtick-run s close)]
+              (if (and (= m n) (> close start))
+                (let [body (subs s start close)
+                      body (if (and (str/starts-with? body " ") (str/ends-with? body " ")
+                                    (not (str/blank? body)))
+                             (subs body 1 (dec (count body)))
+                             body)]
+                  [[:code body] (+ close m)])
+                (recur (+ close m))))))))))
 
 (defn- parse-delimited
   "Parse delimited span (**bold**, *italic*, ~~strike~~).
