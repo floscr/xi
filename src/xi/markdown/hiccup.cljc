@@ -45,6 +45,13 @@
   [^String s]
   (interpose [:br] (str/split s #"\n" -1)))
 
+(defn- color-chip
+  "An inline-code chip with a tile of the colour it names."
+  [color]
+  [:code {:class ["md-color"]}
+   [:span {:class ["md-color-swatch"] :style {:background-color color}}]
+   color])
+
 (defn- render-inline-token
   "Render a single inline token to a seq of hiccup nodes (a string may expand
    to several under :hard-breaks?). `opts` is the render opts map (see
@@ -59,7 +66,10 @@
            :bold (into [:strong] (nodes content))
            :italic (into [:em] (nodes content))
            :strike (into [:del] (nodes content))
-           :code (into [:code] (linkify content))
+           :code (if (parse/color-literal? content)
+                   (color-chip content)
+                   (into [:code] (linkify content)))
+           :color (color-chip content)
            :link [:a {:href (:url content) :target "_blank" :rel "noopener noreferrer"} (:text content)]
            ;; fallback
            (str token))])
@@ -81,7 +91,7 @@
              (vector? t) (let [[tag content] t]
                            (case tag
                              (:bold :italic :strike) (inline-text content)
-                             :code content
+                             (:code :color) content
                              :link (:text content)
                              ""))
              :else ""))))

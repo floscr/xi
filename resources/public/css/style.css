@@ -1773,6 +1773,36 @@ body {
   color: #fff;
 }
 
+/* Colour literals (#c3f187, rgb(…)) as chips with a tile
+   (xi.markdown.hiccup/color-chip). Chat inline code has no fill, so the
+   chip brings its own (ui.chip's tokens); user bubbles keep their white tint
+   from `.post--user .post-content code`. The ring keeps a tile visible on a
+   background of its own colour. */
+.markdown .md-color,
+.post-content .md-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.05em 0.55em 0.05em 0.4em;
+  border: var(--border-0);
+  border-radius: var(--radius-pill);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  line-height: 1.4;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+.md-color-swatch {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  flex-shrink: 0;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
+}
+
 .post--user .post-content pre {
   background-color: rgba(0, 0, 0, 0.25);
   color: #fff;

@@ -45,6 +45,14 @@
       (is (= 1 (count anchors)))
       (is (= "https://example.com" (:href (second (first anchors))))))))
 
+(deftest color-literals-render-as-chips
+  (testing "bare and backticked colours get a swatch tile; other code doesn't"
+    (let [chips (filter #(find-tag % :span)
+                        (find-all (md/render "#c3f187 and `rgb(1, 2, 3)` but not `#fff on x`") :code))]
+      (is (= ["#c3f187" "rgb(1, 2, 3)"] (map last chips)))
+      (is (= ["#c3f187" "rgb(1, 2, 3)"]
+             (map #(-> % (find-tag :span) second :style :background-color) chips))))))
+
 (deftest renders-table-as-html-table
   (let [out (md/render "| A | B |\n| --- | ---: |\n| 1 | 2 |")
         table (find-tag out :table)

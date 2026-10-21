@@ -73,6 +73,29 @@
     (is (= ["hello there"]
            (parse/parse-inline "hello there")))))
 
+(deftest color-literal-test
+  (testing "hex and rgb()/rgba() literals become :color tokens"
+    (is (= ["na more like this " [:color "#c3f187"]]
+           (parse/parse-inline "na more like this #c3f187")))
+    (is (= [[:color "#fff"] " on " [:color "#1e1e2e80"]]
+           (parse/parse-inline "#fff on #1e1e2e80")))
+    (is (= ["use " [:color "rgb(195, 241, 135)"] " or " [:color "rgba(0 0 0 / 50%)"] "."]
+           (parse/parse-inline "use rgb(195, 241, 135) or rgba(0 0 0 / 50%)."))))
+
+  (testing "lookalikes stay plain text"
+    (is (= ["fixes #123"] (parse/parse-inline "fixes #123")))
+    (is (= ["#c3f187x"] (parse/parse-inline "#c3f187x")))
+    (is (= ["a#fff"] (parse/parse-inline "a#fff")))
+    (is (= ["argb(1, 2, 3)"] (parse/parse-inline "argb(1, 2, 3)")))
+    (is (= ["rgb(a, b, c) right"] (parse/parse-inline "rgb(a, b, c) right"))))
+
+  (testing "color-rgb"
+    (is (= [195 241 135] (parse/color-rgb "#c3f187")))
+    (is (= [255 255 255] (parse/color-rgb "#fff")))
+    (is (= [195 241 135] (parse/color-rgb "rgb(195 241 135)")))
+    (is (= [255 128 0] (parse/color-rgb "rgba(100%, 50%, 0%, 0.5)")))
+    (is (nil? (parse/color-rgb "#123")))))
+
 (deftest nested-lists
   (testing "indented items become child blocks of the item above"
     (let [[block :as blocks] (parse/parse "- **A:**\n  - a1\n  - a2\n- **B:**\n  - b1")

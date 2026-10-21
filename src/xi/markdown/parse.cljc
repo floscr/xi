@@ -100,12 +100,53 @@
     (when-let [[url end] (url/url-at s idx)]
       [[:link {:url url :text url}] end])))
 
+;; ---------------------------------------------------------------------------
+;; Colour literals (#c3f187, #fff, rgb(…), rgba(…)) → [:color "…"] chips
+;; ---------------------------------------------------------------------------
+
+;; 3-digit hex needs a letter so issue refs like #123 stay text.
+(def ^:private color-re
+  #"^(?:#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|(?=[0-9]*[a-fA-F])[0-9a-fA-F]{3})|[rR][gG][bB][aA]?\(\s*\d{1,3}(?:\.\d+)?%?(?:\s*,\s*|\s+)\d{1,3}(?:\.\d+)?%?(?:\s*,\s*|\s+)\d{1,3}(?:\.\d+)?%?(?:\s*[,/]\s*(?:\d*\.)?\d+%?)?\s*\))(?![0-9A-Za-z_])")
+
+(defn color-literal?
+  "True if the whole string is a colour literal the parser would chip."
+  [s]
+  (and (string? s) (= s (re-find color-re s))))
+
+(defn- color-start?
+  [^String s idx]
+  (let [ch (.charAt s idx)]
+    (and (or (= ch \#) (= ch \r) (= ch \R))
+         (not (and (pos? idx) (word-char? (.charAt s (dec idx))))))))
+
+(defn- parse-color [^String s idx]
+  (when (color-start? s idx)
+    (when-let [m (re-find color-re (subs s idx (min (count s) (+ idx 48))))]
+      [[:color m] (+ idx (count m))])))
+
+(defn color-rgb
+  "[r g b] (0–255) of a colour literal, or nil. Alpha is dropped."
+  [s]
+  (when (color-literal? s)
+    (if (str/starts-with? s "#")
+      (let [h (subs s 1)
+            h (if (= 3 (count h)) (apply str (mapcat #(vector % %) h)) (subs h 0 6))]
+        (mapv #(#?(:clj Integer/parseInt :cljs js/parseInt) (subs h % (+ % 2)) 16) [0 2 4]))
+      (->> (re-seq #"(\d+(?:\.\d+)?)(%?)" s)
+           (take 3)
+           (mapv (fn [[_ n pct]]
+                   (let [v (#?(:clj Double/parseDouble :cljs js/parseFloat) n)]
+                     (-> (if (= pct "%") (/ (* v 255) 100) v)
+                         (min 255) Math/round int))))))))
+
 (defn- try-parse-at
   "Try to parse an inline token at position idx."
   [^String s idx]
   (let [len (count s)
         ch (.charAt s idx)]
     (case ch
+      \# (parse-color s idx)
+      (\r \R) (parse-color s idx)
       \` (parse-code-span s idx)
       \* (or (parse-delimited s idx "**" :bold)
              (parse-delimited s idx "*" :italic))
@@ -133,14 +174,17 @@
             (let [[token next-idx] result]
               (recur (long next-idx) (conj! acc token)))
             ;; Collect plain text until the next special char or bare URL.
-            (let [end (loop [i (inc idx)]
+            ;; An unmatched backtick run stays literal as a whole.
+            (let [end (loop [i (+ idx (max 1 (backtick-run s idx)))]
                         (if (>= i len)
                           i
                           (let [ch (.charAt s i)]
                             (if (or (special-char? ch)
-                                    ;; Stop before a bare URL autolink so the
-                                    ;; next iteration parses it as a :link.
-                                    (and (= ch \h) (autolink-start? s i)))
+                                    ;; Stop before a bare URL autolink or a
+                                    ;; colour literal so the next iteration
+                                    ;; parses it as a token.
+                                    (and (= ch \h) (autolink-start? s i))
+                                    (and (color-start? s i) (parse-color s i)))
                               i
                               (recur (inc i))))))]
               (recur end (conj! acc (subs s idx end))))))))))

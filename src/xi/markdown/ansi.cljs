@@ -11,6 +11,12 @@
 ;; Inline rendering → ANSI string
 ;; ---------------------------------------------------------------------------
 
+(defn- color-chip
+  "A truecolour tile followed by the colour literal."
+  [color]
+  (let [[r g b] (parse/color-rgb color)]
+    (str (ansi/fg (str "\033[38;2;" r ";" g ";" b "m") "■") " " (ansi/fg :accent color))))
+
 (defn- render-inline-token
   [token]
   (cond
@@ -21,7 +27,10 @@
         :bold (ansi/fg :bold (apply str (map render-inline-token content)))
         :italic (apply str (map render-inline-token content))
         :strike (apply str (map render-inline-token content))
-        :code (ansi/fg :accent content)
+        :code (if (parse/color-literal? content)
+                (color-chip content)
+                (ansi/fg :accent content))
+        :color (color-chip content)
         :link (let [{:keys [text url]} content]
                 ;; Bare URL (text == url): render once in accent so terminals
                 ;; that auto-detect URLs can make it clickable.
