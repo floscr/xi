@@ -1867,7 +1867,7 @@ body {
 }
 
 .markdown li {
-  margin: var(--size-1) 0;
+  margin: var(--size-2) 0;
 }
 
 .markdown blockquote {
