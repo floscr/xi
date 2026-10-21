@@ -486,19 +486,28 @@
 (def ^:private themes-handlers
   {:themes/select       (fn [st {:keys [name]}]
                           (themes-commit st (theme/select (:web/themes st) name)))
+   ;; a custom theme's name edits it; a built-in's keyword starts a copy
    :themes/edit         (fn [st {:keys [name]}]
                           (preview-draft st (theme/draft-for (:web/themes st) name)))
-   :themes/draft-set    (fn [st {:keys [key value]}]
+   ;; with :mode a palette color of that mode; a nil value unsets
+   :themes/draft-set    (fn [st {:keys [key value mode]}]
                           (when-let [draft (:web/theme-draft st)]
-                            (preview-draft st (assoc-in draft [:params key] value))))
+                            (preview-draft st (update draft :params
+                                                      #(if mode
+                                                         (theme/set-palette % mode key value)
+                                                         (theme/set-param % key value))))))
    :themes/draft-preset (fn [st {:keys [preset]}]
                           (when-let [draft (:web/theme-draft st)]
-                            (preview-draft st (update draft :params merge (dissoc preset :name)))))
+                            (preview-draft st (update draft :params theme/apply-preset preset))))
    :themes/draft-name   (fn [st {:keys [name]}]
                           (when (:web/theme-draft st)
                             {:state (assoc-in st [:web/theme-draft :name] name)}))
    :themes/draft-cancel themes-draft-cancel
    :themes/save         themes-save
+   ;; the editor's font fields suggest the browser's installed families
+   :themes/query-fonts  (fn [_ _] {:effects [[:theme/query-local-fonts nil]]})
+   :themes/local-fonts  (fn [st {:keys [families]}]
+                          {:state (assoc st :web/local-fonts families)})
    :themes/delete       (fn [st {:keys [name]}]
                           (themes-commit st (theme/remove-theme (:web/themes st) name)))
    ;; startup: the cached value onto the page (index.html's inline script
@@ -2055,6 +2064,17 @@
    :cache/sidebar-buffers-open (fn [_ {:keys [session-ids]}] (cache/save-sidebar-buffers-open! session-ids))
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
    :cache/themes (fn [_ {:keys [themes]}] (cache/save-themes! themes))
+   ;; window.queryLocalFonts (Chromium; asks for permission): one entry per
+   ;; face, so the families deduplicated
+   :theme/query-local-fonts
+   (fn [{:keys [dispatch!]} _]
+     (when (exists? js/window.queryLocalFonts)
+       (-> (js/window.queryLocalFonts)
+           (.then (fn [^js fonts]
+                    (dispatch! {:type :themes/local-fonts
+                                :families (->> (array-seq fonts) (map #(.-family ^js %))
+                                               distinct sort vec)})))
+           (.catch (fn [e] (js/console.warn "[theme] installed fonts:" e))))))
    ;; Set / remove every theme-managed property on <html>; a committed theme
    ;; (:persist?) also refreshes the early-paint cache, a draft preview does
    ;; not. A tour wears the embedding site's theme instead (xi.web.embed).

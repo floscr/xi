@@ -1,6 +1,7 @@
 (ns xi.web.theme-test
   (:require [cljs.test :refer [deftest is testing]]
             [clojure.string :as str]
+            [ui.theme-model :as model]
             [xi.web.theme :as theme]))
 
 (deftest default-params-reproduce-the-generated-theme
@@ -12,7 +13,7 @@
       (is (= "1rem" (get vars "--font-base")))
       (is (= "4rem" (get vars "--size-16")))
       (is (= "0.25rem" (get vars "--size-1")))
-      (is (= "10px" (get vars "--radius-md")))
+      (is (= "8px" (get vars "--radius-md")) "tokens.edn's radii")
       (is (= "0.75em" (get vars "--paragraph-space")) "style.css's :root fallback")
       (is (= "1" (get vars "--code-scale")) "style.css's :root fallback"))
     (testing "backgrounds: white / gray-950 pages, the sidebar 2.5% darker"
@@ -20,10 +21,12 @@
       (is (= "oklch(0.975 0.0000 0.0)" (get vars "--theme-sidebar-light")))
       (is (= "oklch(0.147 0.0107 285.0)" (get vars "--theme-bg-dark")))
       (is (= "oklch(0.122 0.0107 285.0)" (get vars "--theme-sidebar-dark"))))
-    (testing "every managed property has a value"
-      (is (= (set theme/var-names) (set (keys vars))))
-      (is (= 137 (count theme/var-names))
-          "11 gray + 11 accent + 33 status + 4 backgrounds + 48 surfaces + 16 sizes + paragraph + code + 8 fonts + 4 radii"))))
+    (testing "every property is a managed one; palettes and fonts add more"
+      (is (every? (set theme/var-names) (keys vars)))
+      (is (nil? (get vars "--font-body")))
+      (is (nil? (get vars "--theme-accent-dark")))
+      (is (some #{"--theme-accent-dark"} theme/var-names))
+      (is (some #{"--font-mono"} theme/var-names)))))
 
 (deftest hex-to-oklch
   (let [[l c h] (theme/hex->oklch "#ff0000")]
@@ -211,8 +214,68 @@
         (is (theme/draft-savable? full {:original "t1" :name "t1 renamed"}))))))
 
 (deftest strip-colors-sum-up-a-theme
-  (testing "light page, gray 500, dark page, accent 500; unset parameters are the defaults"
-    (is (= ["#ffffff" (theme/gray-color {}) "#0a0a0f" (theme/accent-color {})]
+  (testing "light page, its muted text, dark page, accent; unset parameters are the defaults"
+    (is (= ["#ffffff" (get-in (theme/surfaces {}) [:light "fg-1"]) "#0a0a0f" (theme/accent-color {})]
            (theme/strip-colors nil)))
     (is (= "#123456" (first (theme/strip-colors {:bg-light "#123456"}))))
+    (is (= "#fabd2f" (last (theme/strip-colors {:light {:accent "#fabd2f"}}))))
     (is (= "oklch(0.530 0.0350 285.0)" (theme/gray-color {})))))
+
+(deftest palettes-set-exact-colors
+  (let [p {:bg-dark "#282828"
+           :dark {:fg "#ebdbb2" :accent "#fabd2f" :sidebar "#1d2021" :danger "#fb4934"
+                  :keyword "#fb4934" :number "#d3869b"}}
+        {:keys [dark light]} (theme/surfaces p)
+        vars (theme/css-vars p)]
+    (is (= "#ebdbb2" (get dark "fg-0")))
+    (is (= "#ebdbb2" (get dark "hl-var")) "plain code follows the palette's text")
+    (is (= "#fb4934" (get dark "hl-keyword")))
+    (is (= "#fb4934" (get dark "hl-operator")) "operators share the keyword color")
+    (is (= "#d3869b" (get dark "hl-symbol")) "symbols fall back to numbers")
+    (is (not= "#ebdbb2" (get light "hl-var")) "the light mode stays derived")
+    (is (= "#1d2021" (second (:dark (theme/backgrounds p)))) "the sidebar")
+    (is (= "#fabd2f" (get vars "--theme-accent-dark")))
+    (is (= "#fb4934" (get vars "--theme-danger-dark")))
+    (is (= (let [[_ _ h] (model/hex->oklch "#fb4934")] (model/oklch 0.85 0.12 h))
+           (get dark "danger-fg"))
+        "error text in the palette's danger hue"))
+  (testing "the editor shows set colors as given, the rest derived"
+    (let [shown (theme/palette-colors {:dark {:fg "#ebdbb2"}})]
+      (is (= "#ebdbb2" (get-in shown [:dark :fg])))
+      (is (= (get-in (theme/surfaces {}) [:light "fg-0"]) (get-in shown [:light :fg])))
+      (is (= (set model/palette-keys) (set (keys (:light shown))))))))
+
+(deftest fonts-set-their-stacks
+  (let [vars (theme/css-vars {:font-body "Inter" :font-mono "bad;value"})]
+    (is (str/starts-with? (get vars "--font-body") "\"Inter\", "))
+    (is (nil? (get vars "--font-mono")) "an invalid list sets nothing"))
+  (is (= "Inter" (theme/font-label {:font-body "Inter, sans-serif"} :font-body)))
+  (is (= "System" (theme/font-label {} :font-mono)))
+  (is (= {:font-body "Inter"} (theme/normalize-params {:font-body " Inter " :font-mono "{x}"}))))
+
+(deftest built-in-themes
+  (testing "selected by keyword; their params come from the catalog"
+    (let [themes (theme/select {} :gruvbox)]
+      (is (= {:active :gruvbox} themes))
+      (is (= "#fabd2f" (get (theme/active-vars themes) "--theme-accent-dark")))
+      (is (= {} (theme/normalize {:active :no-such-theme})))))
+  (testing "every built-in renders"
+    (doseq [[id label p] theme/builtin-themes]
+      (is (string? label))
+      (is (seq (theme/css-vars p)) (name id))))
+  (testing "duplicating one starts a new draft named after it"
+    (let [{:keys [original name params]} (theme/draft-for {} :nord)]
+      (is (nil? original))
+      (is (= "Nord 2" name) "a built-in's name is taken")
+      (is (= "#88c0d0" (get-in params [:dark :accent])))
+      (is (theme/draft-savable? {} {:original nil :name name}))
+      (is (not (theme/draft-savable? {} {:original nil :name "Nord"}))))))
+
+(deftest draft-edits
+  (is (= {:dark {:fg "#ffffff"}} (theme/set-palette {} :dark :fg "#ffffff")))
+  (is (= {} (theme/set-palette {:dark {:fg "#ffffff"}} :dark :fg nil)) "the last color drops the palette")
+  (is (= {:a 1} (theme/set-param {:a 1 :font-body "x"} :font-body "  ")) "blank unsets")
+  (let [p (theme/apply-preset {:light {:fg "#000000"} :size-base 0.3} (second theme/presets))]
+    (is (nil? (:light p)) "a hue preset drops the palettes")
+    (is (= 0.3 (:size-base p)))
+    (is (theme/preset-active? (second theme/presets) p))))

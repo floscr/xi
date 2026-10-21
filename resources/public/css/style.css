@@ -29,6 +29,21 @@
    overrides it (xi.web.theme :code-scale). */
 :root { --code-scale: 1; }
 
+/* Xi's type over theme.css's stacks; a theme's fonts (xi.web.theme,
+   ui.theme-model font-stack) override both inline on <html>. Every rule
+   names one of the two, never a family. */
+:root {
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "SF Mono", "Cascadia Code", "Fira Code", Menlo, ui-monospace, monospace;
+}
+
+/* Text selection: an accent wash under the text's own color, so it follows
+   the theme (xi.web.terminal derives xterm's selection the same way). */
+::selection {
+  background: color-mix(in oklch, var(--accent) 32%, transparent);
+  color: inherit;
+}
+
 html, body {
   margin: 0; padding: 0;
   overflow: hidden; position: fixed;
@@ -38,7 +53,7 @@ html, body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body);
   font-size: var(--font-base);
   line-height: 1.5;
   color: var(--fg-0);
@@ -804,6 +819,14 @@ body {
 
 .theme-row + .theme-row { border-top: var(--border-0); }
 
+/* "Built-in" / "Yours" above their rows */
+.theme-list-heading {
+  padding: var(--size-2) var(--size-3) var(--size-1);
+  border-top: var(--border-0);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+}
+
 .theme-row--active,
 .theme-row--editing {
   background: color-mix(in oklch, var(--accent) 8%, transparent);
@@ -965,6 +988,53 @@ body {
   gap: var(--size-2);
 }
 
+.theme-color {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* a palette color left to the parameters: shows what it derives to */
+.theme-color--derived .theme-color-chip {
+  border-style: dashed;
+  color: var(--fg-2);
+}
+
+.theme-color-clear { margin-left: 2px; }
+
+/* ── Palette: a column of chips per mode ── */
+.theme-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--size-4);
+}
+
+.theme-palette-mode {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+}
+
+.theme-palette-title {
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+}
+
+/* ── Fonts: a family field per role, the specimen in the draft's fonts ── */
+.theme-font {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--font-xs);
+}
+
+.theme-font-code {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  white-space: pre-wrap;
+}
+
 /* opens ui.color-picker in .theme-color-popover */
 .theme-color-chip {
   display: inline-flex;
@@ -1085,7 +1155,7 @@ body {
   overflow: hidden;
   outline: 1px solid rgba(128, 128, 128, 0.25);
   outline-offset: -1px;
-  font: 11px/1.6 "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font: 11px/1.6 var(--font-mono);
 }
 
 .theme-mini-diff > div {
@@ -1140,7 +1210,7 @@ body {
   padding: 0.1em 0.35em;
   border-radius: var(--radius-xs);
   background: var(--bg-2);
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-family: var(--font-mono);
   font-size: 1em;
 }
 
@@ -1496,7 +1566,7 @@ body {
 }
 
 .post--user .post-body {
-  background-color: var(--accent-600);
+  background-color: var(--bubble-bg);
   color: #fff;
   border-radius: var(--radius-surface);
   padding: var(--size-3) var(--size-5);
@@ -1671,7 +1741,7 @@ body {
 }
 
 .post--editing .post-body {
-  background-color: var(--accent-600);
+  background-color: var(--bubble-bg);
   color: #fff;
   border-radius: var(--radius-lg);
   padding: var(--size-2) var(--size-2);
@@ -1764,7 +1834,7 @@ body {
   background-color: var(--bg-2);
   padding: 0.15em 0.4em;
   border-radius: 0.4rem;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   font-size: 1em;
 }
 
@@ -3074,7 +3144,7 @@ body {
 
 .tool-call-toggle-label {
   font-weight: 500;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-xs);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3194,7 +3264,7 @@ body {
   min-width: 0;
   display: flex;
   white-space: nowrap;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
 }
 
 .viewer-group-latest::before {
@@ -3343,7 +3413,7 @@ body {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.4;
   color: var(--fg-0);
@@ -3415,7 +3485,7 @@ code a:hover,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-xs);
   color: var(--fg-2);
 }
@@ -3435,7 +3505,7 @@ code a:hover,
    size, not the monospace of the code boxes / diff view it sits in. */
 .md-diff {
   padding: var(--size-2) 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body);
   font-size: var(--font-base);
   white-space: normal;
 }
@@ -3523,7 +3593,7 @@ code a:hover,
    moment the block is expanded, so the command is never rendered twice. The
    returned value, stdout and errors each get their own zone. */
 .clj-head-preview {
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-xs);
   color: var(--fg-2);
   flex: 1;
@@ -3921,6 +3991,7 @@ code a:hover,
   --menu-danger-hover-bg: var(--theme-danger-bg-light, var(--danger-50));
   --menu-danger-hover-fg: var(--theme-danger-fg-light, var(--danger-700));
   --menu-separator: var(--theme-border-0-light, var(--gray-200));
+  --bubble-bg: var(--theme-bubble-light, var(--accent-600));
 }
 [data-theme="dark"] {
   --sidebar-bg: var(--theme-sidebar-dark, var(--bg-0));
@@ -3944,6 +4015,7 @@ code a:hover,
   --menu-danger-hover-bg: var(--theme-danger-bg-dark, var(--danger-950));
   --menu-danger-hover-fg: var(--theme-danger-fg-dark, var(--danger-300));
   --menu-separator: var(--theme-border-0-dark, var(--gray-800));
+  --bubble-bg: var(--theme-bubble-dark, var(--accent-600));
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -3968,6 +4040,7 @@ code a:hover,
     --menu-danger-hover-bg: var(--theme-danger-bg-dark, var(--danger-950));
     --menu-danger-hover-fg: var(--theme-danger-fg-dark, var(--danger-300));
     --menu-separator: var(--theme-border-0-dark, var(--gray-800));
+    --bubble-bg: var(--theme-bubble-dark, var(--accent-600));
   }
 }
 /* The framework's context menu paints its danger item and separator from
@@ -5748,7 +5821,7 @@ code a:hover,
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 0;
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-family: var(--font-mono);
   font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.5;
 }
@@ -5811,7 +5884,7 @@ code a:hover,
 .diff-file-status--renamed { color: var(--hl-keyword); }
 
 .diff-hunk {
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-family: var(--font-mono);
   font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.5;
   overflow-x: auto;
@@ -5992,7 +6065,7 @@ code a:hover,
   z-index: 30;
   margin-top: var(--size-1);
   /* Sit inside the monospace .diff-view, but this is UI chrome — use the UI font. */
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body);
 }
 
 /* The modify panel is pinned above the on-screen keyboard instead of the
@@ -6043,7 +6116,7 @@ code a:hover,
     overflow: auto;
     border-top: var(--border-0);
     border-bottom: var(--border-0);
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: var(--font-mono);
   }
 }
 
@@ -6092,7 +6165,7 @@ code a:hover,
 }
 
 .diff-sel-pill-key {
-  font-family: "SF Mono", "Cascadia Code", monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   opacity: 0.6;
 }
@@ -6137,7 +6210,7 @@ code a:hover,
   border-left: 3px solid var(--thread-rail);
   border-radius: 0 var(--radius-md, 10px) var(--radius-md, 10px) 0;
   white-space: normal;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body);
   font-size: var(--font-sm);
   line-height: 1.55;
   color: var(--fg-0);
@@ -6195,7 +6268,7 @@ code a:hover,
 .diff-thread-reply { align-items: flex-end; }
 
 .diff-thread-kbd {
-  font-family: "SF Mono", "Cascadia Code", monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-xs);
   color: var(--fg-2);
   border: var(--border-0);
@@ -6265,7 +6338,7 @@ code a:hover,
   gap: var(--size-2);
   border-left: 3px solid color-mix(in srgb, var(--fg-2) 45%, transparent);
   background: linear-gradient(90deg, var(--bg-1), transparent);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body);
   font-size: var(--font-xs);
   color: var(--fg-1);
   white-space: nowrap;
@@ -6293,7 +6366,7 @@ code a:hover,
   overflow: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--size-3) var(--size-4);
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-family: var(--font-mono);
   font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.5;
   white-space: pre;
@@ -6326,7 +6399,7 @@ code a:hover,
 }
 
 .file-tab-path {
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-xs);
   color: var(--fg-1);
   overflow: hidden;
@@ -6356,7 +6429,7 @@ code a:hover,
   overflow: auto;
   -webkit-overflow-scrolling: touch;
   padding: var(--size-3) var(--size-4);
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-family: var(--font-mono);
   font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.5;
   white-space: pre;
@@ -6370,7 +6443,7 @@ code a:hover,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-xs);
   color: var(--fg-0);
 }
@@ -6562,7 +6635,7 @@ code a:hover,
 }
 
 .prompt-part-source {
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-family: var(--font-mono);
   font-size: var(--font-xs);
   font-weight: 600;
   color: var(--fg-1);
@@ -6577,7 +6650,7 @@ code a:hover,
 
 .prompt-part-preview {
   padding: var(--size-2) var(--size-3);
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-family: var(--font-mono);
   font-size: calc(var(--font-xs) * var(--code-scale));
   line-height: 1.5;
   color: var(--fg-2);
@@ -6626,7 +6699,7 @@ code a:hover,
 }
 
 .diff-commit-sha {
-  font-family: "SF Mono", "Cascadia Code", "Fira Code", "Menlo", monospace;
+  font-family: var(--font-mono);
   color: var(--fg-1);
 }
 
@@ -6885,7 +6958,7 @@ code a:hover,
 .cr-node-loc {
   font-size: var(--font-xs);
   color: var(--fg-2);
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
 }
 
@@ -7011,7 +7084,7 @@ code a:hover,
 .cr-tray-loc {
   font-size: var(--font-xs);
   color: var(--fg-2);
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

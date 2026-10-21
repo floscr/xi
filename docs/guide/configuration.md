@@ -135,7 +135,7 @@ drop one setting while keeping the rest.
 | `~/.config/xi/opencode-go.json` | The OpenCode Go sign-in (`/login opencode`). See [Models](models.md#opencode-go). |
 | `~/.config/xi/tls/` | Certificate and key for [HTTPS](https.md). |
 | `~/.config/xi/sessions/`, `personal-agent/` | Saved chats. See [Sessions](sessions.md). |
-| `~/.config/xi/state/users/<user>.edn` | One user's web client choices (theme, custom color themes, appearance, collapsed groups, preferred model, recent commands and skills) and the data extensions keep about them. Written by Xi; see [The web client](web-client.md#what-follows-you) and [Users and their state](extensions-reference.md#users-and-their-state). |
+| `~/.config/xi/state/users/<user>.edn` | One user's web client choices (theme, color themes with their palettes and fonts, appearance, collapsed groups, preferred model, recent commands and skills) and the data extensions keep about them. Written by Xi; see [The web client](web-client.md#what-follows-you) and [Users and their state](extensions-reference.md#users-and-their-state). |
 
 Everything under `~/.config/xi` is off-limits to the agent: no tool can read
 the keys in it or write to it. The exception is the sessions directory, which

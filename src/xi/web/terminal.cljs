@@ -101,7 +101,6 @@
    :foreground          ["--fg-0" "#1f2328"]
    :cursor              ["--accent" "#3b82f6"]
    :cursorAccent        ["--bg-0" "#ffffff"]
-   :selectionBackground ["--accent-200" "#bfdbfe"]
    :black               ["--bg-2" "#e5e7eb"]
    :red                 ["--danger" "#d73a49"]
    :green               ["--success" "#22863a"]
@@ -128,9 +127,13 @@
 
 (def ^:private tint-alpha 0.14)
 
+;; style.css ::selection: the accent over the page at this strength
+(def ^:private selection-alpha 0.32)
+
 (defn- theme [node]
   (let [bg (css-var node "--bg-0" "#ffffff")]
     (clj->js (assoc (update-vals palette (fn [[k fallback]] (hex-color (css-var node k fallback))))
+                    :selectionBackground (hex-color bg (css-var node "--accent" "#3b82f6") selection-alpha)
                     :extendedAnsi (mapv (fn [[themed k fallback]]
                                           (if-let [c (css-var node themed nil)]
                                             (hex-color c)

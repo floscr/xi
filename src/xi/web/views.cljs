@@ -6311,9 +6311,9 @@
             m)))])))
 
 (defn- palette-theme-page
-  "Color themes (xi.web.theme) as a palette sub-page: Default and the user's
-   themes, the active one checked; picking one applies it like a chip in the
-   Appearance dialog."
+  "Color themes (xi.web.theme) as a palette sub-page: Default, the built-ins
+   and the user's themes, the active one checked; picking one applies it
+   like a row in the Appearance dialog."
   [state dispatch!]
   (let [themes (:web/themes state)
         active (:active themes)
@@ -6326,7 +6326,8 @@
     [:div {:replicant/key :theme-page}
      (apply cmd/command-group {:heading "Color theme"}
        (item nil "Default")
-       (for [[n _] (ctheme/custom-themes themes)] (item n n)))
+       (concat (for [[n _] (ctheme/custom-themes themes)] (item n n))
+               (for [[id label] ctheme/builtin-themes] (item id label))))
      (cmd/command-group {}
        (cmd/command-item
         {:icon :settings
@@ -7435,29 +7436,54 @@
                                                  :value (/ (js/parseInt (.. e -target -value) 10) scale)}))}}
                 gradient (assoc :style {:background gradient}))})]))
 
+(defn- color-chip
+  "A swatch-and-label chip opening ui.color-picker in a popover, limited to
+   the formats xi.web.theme/color? accepts. A `derived?` chip shows a
+   computed color, dimmed; `on-clear` puts a set one back to derived."
+  [{:keys [id value label derived? on-change on-clear]}]
+  [:div {:class (cond-> ["theme-color"] derived? (conj "theme-color--derived"))
+         :replicant/key id}
+   [:button (merge {:type "button" :class ["theme-color-chip"]
+                    :title (if derived? (str value " · derived") value)
+                    :replicant/key (str id "-trigger")}
+                   (popover/trigger-attrs id))
+    [:span {:class ["theme-color-swatch"] :style {:background value}}]
+    [:span {:class ["theme-color-label"]} label]]
+   (when on-clear
+     (button/button {:variant :ghost :size :sm :icon :x
+                     :class "theme-color-clear"
+                     :attrs {:aria-label (str "Reset " label) :title "Back to derived"}
+                     :on-click on-clear}))
+   (popover/popover-content
+    {:id id :side :bottom :align :start :class "theme-color-popover"
+     :attrs {:replicant/key (str id "-popover")}}
+    (color-picker/color-picker
+     {:value value
+      :formats [:oklch :hex]
+      :on-change on-change}))])
+
 (defn- theme-color
-  "One color parameter of the draft: a swatch-and-label chip opening
-   ui.color-picker in a popover, limited to the formats xi.web.theme/color?
-   accepts. `fallback` is what an unset parameter shows."
+  "One color parameter of the draft. `fallback` is what an unset parameter
+   shows (and makes a set one clearable)."
   [dispatch! draft key label & [fallback]]
-  (let [v  (or (get-in draft [:params key]) fallback)
-        id (str "theme-color-" (name key))]
-    [:div {:class ["theme-color"]}
-     [:button (merge {:type "button" :class ["theme-color-chip"]
-                      :title v
-                      :replicant/key (str id "-trigger")}
-                     (popover/trigger-attrs id))
-      [:span {:class ["theme-color-swatch"] :style {:background v}}]
-      [:span {:class ["theme-color-label"]} label]]
-     (popover/popover-content
-      {:id id :side :bottom :align :start :class "theme-color-popover"
-       :attrs {:replicant/key id}}
-      (color-picker/color-picker
-       {:value v
-        :formats [:oklch :hex]
-        :on-change (fn [^js e]
-                     (dispatch! {:type :themes/draft-set :key key
-                                 :value (.. e -target -value)}))}))]))
+  (let [v (get-in draft [:params key])]
+    (color-chip {:id (str "theme-color-" (name key))
+                 :value (or v fallback) :label label
+                 :on-change (fn [^js e]
+                              (dispatch! {:type :themes/draft-set :key key
+                                          :value (.. e -target -value)}))
+                 :on-clear (when (and v fallback)
+                             (fn [_] (dispatch! {:type :themes/draft-set :key key :value nil})))})))
+
+(defn- theme-palette-color
+  "Palette color `key` of `mode`: set, or showing the derived `shown`."
+  [dispatch! draft mode key label shown]
+  (let [set? (some? (get-in draft [:params mode key]))
+        ev   {:type :themes/draft-set :mode mode :key key}]
+    (color-chip {:id (str "theme-palette-" (name mode) "-" (name key))
+                 :value shown :label label :derived? (not set?)
+                 :on-change (fn [^js e] (dispatch! (assoc ev :value (.. e -target -value))))
+                 :on-clear (when set? (fn [_] (dispatch! (assoc ev :value nil))))})))
 
 (defn- theme-section
   "A collapsible group of the editor (ui.accordion, starts open, the open
@@ -7518,10 +7544,33 @@
    [:div {:style {:background (surface "del-bg")}} "-  (read s))"]
    [:div {:style {:background (surface "add-bg")}} "+  (read (str/trim s)))"]])
 
+(defn- mini-code
+  "A few lines of code on one mode's page in its syntax colors."
+  [page surface]
+  (let [c (fn [token text] [:span {:style {:color (surface (str "hl-" token))}} text])]
+    [:div {:class ["theme-mini-diff"] :style {:background page :color (surface "fg-0")}}
+     [:div (c "comment" ";; split a header line")]
+     [:div "(" (c "keyword" "defn") " " (c "fn" "parse") " [s]"]
+     [:div "  (" (c "fn" "str/split") " s " (c "string" "\": \"") " " (c "number" "2") "))"]
+     [:div "{" (c "symbol" ":ok") " " (c "keyword" "true") "}"]]))
+
 (defn- theme-specimen-for
   "The specimen of editor section `section` for the draft's `params`."
   [section params]
   (case section
+    :palette
+    (let [{[light-page] :light [dark-page] :dark} (ctheme/backgrounds params)
+          {:keys [light dark]} (ctheme/surfaces params)]
+      (theme-specimen
+       [:div {:class ["theme-specimen-pair"]}
+        (mini-code light-page light)
+        (mini-code dark-page dark)]))
+    :fonts
+    (theme-specimen
+     [:div {:class ["theme-type"]}
+      [:div {:class ["theme-type-heading"]} "The quick brown fox"]
+      [:div "Body text the chat is set in, jumping over the lazy dog."]
+      [:pre {:class ["theme-font-code"]} "(defn parse [s] (str/split s #\":\" 2)) ; 0O 1lI"]])
     :accent
     (theme-specimen
      [:div {:class ["theme-specimen-row"]}
@@ -7574,6 +7623,46 @@
       [:div {:class ["theme-space-card"]}
        [:span "A card"]
        (button/button {:variant :secondary :size :sm} "Button")]])))
+
+(def ^:private palette-groups
+  [[[:fg "Text"] [:fg-muted "Muted"] [:fg-subtle "Subtle"]]
+   [[:sidebar "Sidebar"] [:surface "Surface"] [:border "Border"]]
+   [[:accent "Accent"] [:bubble "Bubble"] [:success "Success"] [:warning "Warning"]
+    [:danger "Danger"]]
+   [[:keyword "Keyword"] [:string "String"] [:fn "Function"] [:number "Number"]
+    [:symbol "Symbol"] [:comment "Comment"]]])
+
+(defn- theme-palette
+  "Every palette color of both modes (ui.theme-model palette-keys): the
+   derived ones dimmed, a set one with a reset."
+  [dispatch! draft]
+  (let [shown (ctheme/palette-colors (:params draft))]
+    [:div {:class ["theme-palette"]}
+     (for [[mode title] [[:light "Light"] [:dark "Dark"]]]
+       [:div {:class ["theme-palette-mode"] :replicant/key (name mode)}
+        [:div {:class ["theme-palette-title"]} title]
+        (for [group palette-groups]
+          (into [:div {:class ["theme-colors"] :replicant/key (str (ffirst group))}]
+                (for [[k label] group]
+                  (theme-palette-color dispatch! draft mode k label (get-in shown [mode k])))))])]))
+
+(defn- theme-font
+  "One font family list of the draft: a text field suggesting
+   `ctheme/font-suggestions` and the browser's installed families."
+  [dispatch! draft key label local-fonts]
+  (let [list-id (str "theme-fonts-" (name key))]
+    [:label {:class ["theme-font"]}
+     [:span {:class ["theme-slider-label"]} label]
+     (form/form-input
+      {:value (or (get-in draft [:params key]) "")
+       :placeholder "System"
+       :attrs {:list list-id :aria-label label :spellcheck "false" :autocomplete "off"
+               :on {:input (fn [^js e]
+                             (dispatch! {:type :themes/draft-set :key key
+                                         :value (.. e -target -value)}))}}})
+     (into [:datalist {:id list-id}]
+           (for [f (distinct (concat (ctheme/font-suggestions key) local-fonts))]
+             [:option {:value f}]))]))
 
 (defn- theme-editor
   "The draft (:web/theme-draft): name, color presets, a slider or color
@@ -7631,6 +7720,12 @@
          (theme-color dispatch! draft :bg-dark "Dark page"))
         (theme-controls
          (theme-slider dispatch! draft :sidebar-shift "Sidebar" {:min -20 :max 20 :step 1 :scale 100 :fmt signed})))
+      ;; exact per-mode colors over everything derived above
+      (theme-section {:label "Palette"
+                      :summary (let [n (count (mapcat #(get params %) [:light :dark]))]
+                                 [(if (pos? n) (str n " set") "all derived")])}
+        (theme-specimen-for :palette params)
+        (theme-palette dispatch! draft))
       ;; --success / --warning / --danger: status dots, usage meters, errors
       (theme-section {:label "Status"
                       :summary (map #(swatch-dot (get params %))
@@ -7652,6 +7747,19 @@
          (theme-color dispatch! draft :diff-del-color "Removed" (ctheme/diff-color params :del)))
         (theme-controls
          (theme-slider dispatch! draft :diff-strength "Strength" {:min 0 :max 250 :step 5 :scale 100 :fmt percent})))
+      ;; --font-body / --font-mono (ui.theme-model font-stack)
+      (theme-section {:label "Fonts"
+                      :summary [(str (ctheme/font-label params :font-body) " · "
+                                     (ctheme/font-label params :font-mono))]}
+        (theme-specimen-for :fonts params)
+        (theme-controls
+         (theme-font dispatch! draft :font-body "Text" (:web/local-fonts state))
+         (theme-font dispatch! draft :font-mono "Code" (:web/local-fonts state)))
+        (when (and (empty? (:web/local-fonts state)) (exists? js/window.queryLocalFonts))
+          [:div
+           (button/button {:variant :ghost :size :sm
+                           :on-click (fn [_] (dispatch! {:type :themes/query-fonts}))}
+             "Suggest installed fonts")]))
       (theme-section {:label "Type"
                       :summary [(str (decimal (:font-base params)) " · ×" (decimal (:font-ratio params))
                                      " · code " (percent (:code-scale params)))]}
@@ -7672,11 +7780,12 @@
 
 (defn- theme-row
   "One theme of the picker: a radio that applies it, its `ctheme/strip-colors`
-   and name, then `aside` (an Edit button, an \"Editing\" note). A nil `name`
-   is the default theme; `selectable?` false leaves the radio out (an unsaved
-   new theme). A click anywhere on the active custom theme's row edits it."
+   and name, then `aside` (Edit / Duplicate, an \"Editing\" note). `name` is
+   a custom theme's name, a built-in's keyword, nil for the default;
+   `selectable?` false leaves the radio out (an unsaved new theme). A click
+   anywhere on the active custom theme's row edits it."
   [dispatch! {:keys [key name label params checked? editing? selectable? aside]}]
-  (let [edit-on-click? (and checked? name (not editing?))]
+  (let [edit-on-click? (and checked? (string? name) (not editing?))]
     [:div (cond-> {:class (cond-> ["theme-row"]
                             checked?       (conj "theme-row--active")
                             editing?       (conj "theme-row--editing")
@@ -7696,19 +7805,32 @@
      aside]))
 
 (defn- theme-picker
-  "Default + the user's themes as radio rows; Edit opens a theme in the
-   editor below, \"New theme\" starts a draft from the defaults."
+  "Default, the built-ins and the user's themes as radio rows; Edit opens a
+   theme in the editor below, Duplicate starts a new one from a built-in,
+   \"New theme\" one from the defaults."
   [state dispatch!]
   (let [themes  (:web/themes state)
         active  (:active themes)
         draft   (:web/theme-draft state)
         custom  (ctheme/custom-themes themes)
         new?    (and draft (nil? (:original draft)))
+        full?   (>= (count custom) ctheme/max-themes)
         editing [:span {:class ["theme-row-note"]} "Editing"]]
     (into [:div {:class ["theme-list"]}
            (theme-row dispatch! {:key "default" :label "Default" :selectable? true
                                  :checked? (nil? active)})]
           (concat
+           [[:div {:class ["theme-list-heading"] :replicant/key "builtin-heading"} "Built-in"]]
+           (for [[id label p] ctheme/builtin-themes]
+             (theme-row dispatch!
+                        {:key (str "builtin-" (name id)) :name id :label label :params p
+                         :selectable? true :checked? (= id active)
+                         :aside (button/button
+                                 {:variant :ghost :size :sm :disabled full?
+                                  :attrs {:title "A copy of it to edit"}
+                                  :on-click (fn [_] (dispatch! {:type :themes/edit :name id}))}
+                                 "Duplicate")}))
+           [[:div {:class ["theme-list-heading"] :replicant/key "custom-heading"} "Yours"]]
            (for [[n p] custom]
              (theme-row dispatch!
                         {:key n :name n :label n :params p :selectable? true
@@ -7727,7 +7849,7 @@
               [:div {:class ["theme-row" "theme-row--new"] :replicant/key "new"}
                (button/button
                 {:variant :ghost :size :sm
-                 :disabled (>= (count custom) ctheme/max-themes)
+                 :disabled full?
                  :on-click (fn [_] (dispatch! {:type :themes/edit :name nil}))}
                 (icon/icon {:icon-name :plus :size :sm}) "New theme")])]))))
 
@@ -7742,7 +7864,7 @@
    [:div {:class ["appearance-block"]}
     [:div {:class ["appearance-row-label"]} "Color theme"]
     [:div {:class ["form-hint"]}
-     "Your own hues, spacing, type scale and radii over the light and dark themes."]
+     "A built-in palette or your own: colors, fonts, spacing, type scale and radii, for light and dark mode."]
     (theme-picker state dispatch!)]
    (when (:web/theme-draft state)
      (theme-editor state dispatch!))])

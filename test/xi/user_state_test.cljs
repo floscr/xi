@@ -18,7 +18,11 @@
   (is (user-state/valid? :recent-skills []))
   (is (user-state/valid? :themes {}))
   (is (user-state/valid? :themes {:active "Ocean" :themes {"Ocean" {:accent-hue 200 :gray-chroma 0.5 :bg-dark "#0a0a0f"}}}))
-  (is (user-state/valid? :themes {:themes {"Ocean" {:bg-light "oklch(0.972 0.022 74.1)"}}})))
+  (is (user-state/valid? :themes {:themes {"Ocean" {:bg-light "oklch(0.972 0.022 74.1)"}}}))
+  (is (user-state/valid? :themes {:active :gruvbox}) "a built-in")
+  (is (user-state/valid? :themes {:themes {"G" {:font-body "Inter, sans-serif"
+                                                 :dark {:fg "#ebdbb2" :accent "oklch(0.8 0.15 80)"}}}})
+      "fonts and palettes"))
 
 (deftest valid-rejects-unknown-keys-and-bad-values
   (testing "unknown key"
@@ -37,7 +41,9 @@
     (is (not (user-state/valid? :preferred-model "")))
     (is (not (user-state/valid? :recent-commands [1 2])))
     (is (not (user-state/valid? :themes {:bogus 1})))
-    (is (not (user-state/valid? :themes {:active :ocean})))
+    (is (not (user-state/valid? :themes {:active 42})))
+    (is (not (user-state/valid? :themes {:themes {"a" {:dark {:fg "red"}}}})))
+    (is (not (user-state/valid? :themes {:themes {"a" {:font-mono 12}}})))
     (is (not (user-state/valid? :themes {:themes {"" {}}})))
     (is (not (user-state/valid? :themes {:themes {"a" {:accent-hue :big}}})))
     (is (not (user-state/valid? :themes {:themes {"a" {:bg-dark "not a color"}}})))

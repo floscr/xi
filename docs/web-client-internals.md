@@ -323,7 +323,8 @@ Never sent over the wire:
 | `:web/compose-images` | staged attachments |
 | `:web/timeline-window` | virtualization window |
 | `:web/appearance`, `:web/appearance-config`, `:web/appearance-open?` | appearance overrides, the seeded config map, dialog open |
-| `:web/themes`, `:web/theme-draft` | the user's custom color themes (`xi.web.theme`, per-user state `:themes`, cached in `xi/themes`) and the editor's unsaved copy, previewed live. The active theme's CSS properties are also cached as JSON in `xi/theme-vars` for index.html's inline script to paint before main.js loads |
+| `:web/themes`, `:web/theme-draft` | the user's color themes (`xi.web.theme` over the framework's `ui.theme-model`; `:active` is a custom name or a built-in's keyword from `ui.themes`; per-user state `:themes`, cached in `xi/themes`) and the editor's unsaved copy, previewed live. The active theme's CSS properties are also cached as JSON in `xi/theme-vars` for index.html's inline script to paint before main.js loads. Per-mode colors go out as `--theme-<token>-<mode>`, which theme.css and style.css read before their own mapping |
+| `:web/local-fonts` | installed font families from `window.queryLocalFonts` (Chromium, on request), suggested in the theme editor's font fields |
 | `:web/lightbox` | open image src |
 | `:web/watched`, `:web/response-counts` | unread tracking |
 | `:web/cache` | hydrated per-session history for deep links |

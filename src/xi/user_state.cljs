@@ -109,6 +109,19 @@
        (<= (count v) max-count)
        (every? #(and (string? %) (<= 1 (count %) max-len)) v)))
 
+(defn- theme-color? [x]
+  (and (string? x) (re-matches #"#[0-9a-fA-F]{6}|oklch\([0-9. ]{5,24}\)" x)))
+
+(defn- theme-param?
+  "A color theme parameter (ui.theme-model): a font family list, a palette
+   of colors per mode, else a number or a color."
+  [k x]
+  (case k
+    (:font-body :font-mono) (and (string? x) (<= 1 (count x) 200))
+    (:light :dark)          (and (map? x) (<= (count x) 24)
+                                 (every? (fn [[pk c]] (and (keyword? pk) (theme-color? c))) x))
+    (or (number? x) (theme-color? x))))
+
 (def max-read-state
   "Most chats one user's read markers cover."
   20000)
@@ -135,23 +148,23 @@
                                                     (or (boolean? x) (keyword? x)
                                                         (bounded-strings? x 64 128))))
                                              v)))}
-   ;; xi.web.theme custom color themes: {:active name :themes {name {param n-or-color}}}
+   ;; xi.web.theme color themes: {:active name-or-builtin-id :themes {name params}};
+   ;; a param is a number, a color, a font family list or a palette
+   ;; ({:light {color-key color}}); the client normalizes the rest
    :themes           {:valid? (fn [v]
                                 (and (map? v)
                                      (every? #{:active :themes} (keys v))
                                      (let [a (:active v)]
-                                       (or (nil? a) (and (string? a) (<= 1 (count a) 40))))
+                                       (or (nil? a) (keyword? a) (and (string? a) (<= 1 (count a) 40))))
                                      (let [t (:themes v)]
                                        (or (nil? t)
                                            (and (map? t)
                                                 (<= (count t) 20)
                                                 (every? (fn [[n p]]
                                                           (and (string? n) (<= 1 (count n) 40)
-                                                               (map? p) (<= (count p) 24)
+                                                               (map? p) (<= (count p) 32)
                                                                (every? (fn [[k x]]
-                                                                         (and (keyword? k)
-                                                                              (or (number? x)
-                                                                                  (and (string? x) (re-matches #"#[0-9a-fA-F]{6}|oklch\([0-9. ]{5,24}\)" x)))))
+                                                                         (and (keyword? k) (theme-param? k x)))
                                                                        p)))
                                                         t))))))}
    ;; collapsed drawer groups, e.g. [:projects :recent]

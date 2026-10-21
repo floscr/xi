@@ -427,27 +427,41 @@ or in a [window](#windows) at the right).
 
 ### Color themes
 
-"Color theme" in the same dialog holds your own themes next to the default
-one. A theme changes the hue and chroma of the gray and accent scales and
-the status colors (success, warning, danger: status dots, usage meters,
-errors), the background of added and removed diff lines (in the chat, the
-diff view and the terminal: a color for each, which sets the hue, and how
-strongly they stand out; unset, they follow success and danger), the page background of light and dark mode (each its own
-color) with the sidebar a chosen step brighter or darker than it, the spacing base, the gap
-between paragraphs, the type scale, the size of code (code blocks, tool
-output, diffs, the file viewer, the terminal) and the corner radius; light and dark mode stay separate and both use
-it. The themes are a list with a color strip each (light page, gray, dark
-page, accent); pick one to use it. "Edit", or a click on the row of the
-theme in use, opens a theme in the editor below the list, "New theme"
-opens it with the defaults and a set of presets to start from. Each
-section of the editor starts with a preview of what it changes (buttons
-for the accent, a light and a dark page for the backgrounds, a diff, a
-text sample) above its controls. The sections fold; a folded one shows
-its values in its header. The sliders change the page as you move them, and
-"Save theme" keeps the result under the name you typed; "Delete" removes
-it, and closing the dialog drops unsaved changes. "Change color theme…" in
-the command palette switches between themes. Themes are per
-[user](#what-follows-you), up to twenty.
+"Color theme" in the same dialog lists the default theme, the built-in ones
+(Tokyo Night, Catppuccin, Gruvbox, Nord, Rosé Pine and
+Nezumi) and your own, each with a color strip (light page, its text, dark
+page, accent); pick one to use it. Every theme has a light and a dark side,
+so the mode switch keeps working.
+
+A theme sets:
+
+- the hue and chroma of the gray and accent scales and the status colors
+  (success, warning, danger: status dots, usage meters, errors);
+- the page background of light and dark mode, with the sidebar a chosen step
+  brighter or darker than it;
+- the background of added and removed diff lines (in the chat, the diff
+  view and the terminal: a color for each and how strongly they stand out;
+  unset, they follow success and danger);
+- the **palette**: exact colors per mode for text, sidebar, surfaces,
+  borders, accent, status and code highlighting. Unset ones are derived from
+  the settings above and shown dashed;
+- the **fonts** for text and for code, as family names (`Inter`,
+  `"IBM Plex Mono", monospace`). Only fonts installed on the device show; a
+  missing one falls back to the default. In Chromium, "Suggest installed
+  fonts" adds your installed families to the suggestions;
+- the spacing base, the gap between paragraphs, the type scale, the size of
+  code (code blocks, tool output, diffs, the file viewer, the terminal) and
+  the corner radius.
+
+"Duplicate" on a built-in theme opens an editable copy of it in the editor
+below the list; "Edit", or a click on the row of your theme in use, opens
+that one; "New theme" starts from the defaults and a set of hue presets.
+Each section of the editor starts with a preview of what it changes, and
+folds; a folded one shows its values in its header. Changes apply to the
+page as you make them. "Save theme" keeps the result under the name you
+typed, "Delete" removes it, and closing the dialog drops unsaved changes.
+"Change color theme…" in the command palette switches between themes.
+Your themes are per [user](#what-follows-you), up to twenty.
 
 ### What follows you
 
