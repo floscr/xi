@@ -167,20 +167,24 @@ pure handler map:
 
 ## Providers
 
-A provider is a map: `{:id kw :start-turn! (fn [opts] {:promise :abort!})
-:list-models! (fn [] Promise<[id…]>)}`. Which providers load is declared in
-`src/xi/config.cljc` (like extensions); `xi.cli` derives the id → provider
-lookup from that vector.
+Every provider is an external program speaking the
+[provider protocol](provider-protocol.md), spawned per request; none is
+compiled in. `config.edn`'s `:providers` picks them (bundled ones from
+`providers/`, a directory, an npm package); `xi.providers.process` turns
+each into a map `{:id kw :start-turn! (fn [opts] {:promise :abort!
+:exited}) :list-models! (fn [] Promise<[id…]>) …}`, and `xi.cli` keeps the
+id → provider lookup. Details: [providers.md](providers.md).
 
 - Routing: an explicit `:provider` on the room's agent wins, otherwise the
-  model-name heuristic in `xi.util/provider-for-model` picks one (shared with
+  providers' own routes (their manifests' prefixes, ids, default), published
+  as `:providers/changed` and routed by `xi.providers.routing` (shared with
   the browser build).
 - In-flight turn handles live in the `agent/create-fx` closure (runtime
   resources, not app state). Abort: `:agent/abort` event →
-  `:provider/abort` effect → handle's `abort!`.
-- `xi.providers.anthropic` runs the Claude Agent SDK in the out-of-process
-  `packages/providers/anthropic/` (tool calls proxy back to the host) — see
-  [mcp-tool-bridge.md](mcp-tool-bridge.md).
+  `:provider/abort` effect → handle's `abort!` → the `abort` frame.
+- Tools stay in Xi: a provider's `tool-call` frame runs through the rules
+  and the registry here. The Claude provider exposes them to the SDK as an
+  MCP server — see [mcp-tool-bridge.md](mcp-tool-bridge.md).
 
 ## Assembly (`xi.cli`)
 

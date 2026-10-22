@@ -2,7 +2,7 @@
   "Auto-titling — generate a short session name from the first user message
    so the UI never lingers on \"New session\".
 
-   The title turn runs a cheap model through the claude provider. The SDK/CLI
+   The title turn runs a cheap model through the side-turn provider. The SDK/CLI
    always persists that turn as its own session file, which Xi would otherwise
    surface in the session list — so we run it against a throwaway
    CLAUDE_CONFIG_DIR (a temp mirror of the real config). The CLI writes the
@@ -23,7 +23,8 @@
 
    A rename (:session/name-set) sets a real name; :session/suggest-name
    titles an existing session from an excerpt of its conversation."
-  (:require [clojure.string :as str]
+  (:require [xi.providers.routing :as routing]
+            [clojure.string :as str]
             [xi.core.state :as state]
             [xi.util :as util]))
 
@@ -253,7 +254,7 @@
 
 (defn create-fx
   "Title effects, each a throwaway one-shot turn against a cheap model through
-   the claude provider (`side-turn!`). The temp CLAUDE_CONFIG_DIR is created
+   the side-turn provider (`side-turn!`, xi.providers.routing). The temp CLAUDE_CONFIG_DIR is created
    via `make-config-dir!` and torn down via `remove-config-dir!`.
    :session/suggest-name reads a saved session through `session-conversation`
    (session-id → {:cwd :messages}, xi.session/conversation shape); without it
@@ -261,7 +262,7 @@
   [providers {:keys [session-conversation] :as opts}]
   {:session/generate-title
    (fn [{:keys [dispatch! state]} {:keys [room-id text]}]
-     (when-let [provider (get providers :anthropic)]
+     (when-let [provider (routing/side-turn-provider providers)]
        (-> (side-turn! provider opts (get-in state [:rooms room-id :cwd])
                        (str TITLE_PROMPT_PREFIX (subs text 0 (min MAX_INPUT (count text)))))
            ;; A nil title clears the pending guard so a retry can regenerate.
@@ -276,7 +277,7 @@
                                   :session-id session-id
                                   :names (parse-suggestions (:text res))
                                   :stats (:stats res)}))
-           provider (get providers :anthropic)
+           provider (routing/side-turn-provider providers)
            {:keys [cwd messages]} (when session-conversation
                                     (session-conversation session-id))
            input    (suggestion-input messages)]

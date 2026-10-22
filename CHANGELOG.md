@@ -2,6 +2,17 @@
 
 What changed in each Xi release, newest first.
 
+## 0.5.0 - 2026-10-22
+
+### Changed
+
+- Providers are programs
+  - Every model provider runs as its own process, spawned per message; Xi keeps the tools, the rules and the chat
+  - Claude, Ollama, OpenAI Codex and OpenCode moved to the xi-providers repo and ship inside the package as before
+  - `:providers` in `config.edn` picks which run, in model-picker order, with options (`{:id :ollama :base-url …}`)
+  - A provider can come from a directory (`{:dir …}`) or an npm package (`{:npm "name@1.2.0"}`)
+  - Write your own in any language: [the provider protocol](docs/provider-protocol.md), or TypeScript with `@xi-agent/provider-kit`
+
 ## 0.4.0 - 2026-10-15
 
 ### Added

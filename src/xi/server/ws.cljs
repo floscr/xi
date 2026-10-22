@@ -120,7 +120,7 @@
    register as another identity)."
   #{:user/loaded :user/ui-set :user/ext-set :room/presence
     :client/connect :client/disconnect :server/started
-    :session/name-suggested :commands/changed})
+    :session/name-suggested :commands/changed :providers/changed})
 
 (def ^:private pre-join-types
   "Event types a client may send before joining a room."
@@ -742,6 +742,8 @@
                  (send-event! cid {:type :keys/config :keys (user-config/keys-config)})
                  (when-let [cmds (:commands @state)]
                    (send-event! cid {:type :commands/changed :commands cmds}))
+                 (when-let [specs (:providers @state)]
+                   (send-event! cid {:type :providers/changed :providers specs}))
                  (send! cid (lobby-payload @state agent-id (:model server-opts) user))))
              resolve-pending!
              (fn [code approved?]
@@ -1109,6 +1111,8 @@
             ;; client's, joined to a room or not.
             (when (= :commands/changed (:type event))
               (notify-authed! {:type :commands/changed :commands (:commands event)}))
+            (when (= :providers/changed (:type event))
+              (notify-authed! {:type :providers/changed :providers (:providers event)}))
             (when (lobby-relevant (:type event))
               (schedule-lobby-broadcast!))))
 

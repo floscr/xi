@@ -32,7 +32,8 @@
           not re-add chips under the current response)
      :prompt/submit (chained clear-on-submit)
        ─► the user sent something, so any lingering chips are stale — clear."
-  (:require [clojure.string :as str]
+  (:require [xi.providers.routing :as routing]
+            [clojure.string :as str]
             [xi.config :as config]
             [xi.core.state :as state]))
 
@@ -176,14 +177,14 @@
 
 (defn create-fx
   "Chip-detection effect. Runs a throwaway one-shot turn against a cheap model
-   through the claude provider, pointed at a temp CLAUDE_CONFIG_DIR so the CLI
+   through the side-turn provider, pointed at a temp CLAUDE_CONFIG_DIR so the CLI
    session it leaves behind never reaches the session list. The temp dir is
    created via `make-config-dir!` and removed via `remove-config-dir!` once the
    turn ends."
   [providers {:keys [make-config-dir! remove-config-dir!]}]
   {:quick-replies/generate
    (fn [{:keys [dispatch! state]} {:keys [room-id gen text]}]
-     (when-let [provider (get providers :anthropic)]
+     (when-let [provider (routing/side-turn-provider providers)]
        (let [cwd        (get-in state [:rooms room-id :cwd])
              chunks     (atom [])
              config-dir (when make-config-dir! (make-config-dir!))

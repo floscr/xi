@@ -539,22 +539,57 @@
    :task (apply shell "bun" "scripts/build-treesitter-wasm.mjs" *command-line-args*)}
 
   claude:build
-  {:doc "Force a nix build of the pinned Claude CLI (packages/providers/anthropic/nix) to the packages/providers/anthropic/claude out-link. Optional: the runner builds it itself when it is missing or not the pinned version."
-   :task (do (shell "nix" "build" "path:./packages/providers/anthropic/nix#claude-code"
-                    "-o" "packages/providers/anthropic/claude")
-             (shell "packages/providers/anthropic/claude/bin/claude" "--version"))}
+  {:doc "Force a nix build of the pinned Claude CLI to the Claude provider's `claude` out-link (providers/packages/anthropic). Optional: the provider builds it itself when it is missing or not the pinned version."
+   :task (shell {:dir "providers/packages/anthropic"} "bun" "src/pin.ts" "build")}
 
   claude:update
-  {:doc "Pin the Claude CLI to the latest upstream release (or `bb claude:update <version>`): rewrites packages/providers/anthropic/nix/claude-code-manifest.json and rebuilds packages/providers/anthropic/claude. Takes effect on the next turn (runners are spawned per turn)."
-   :task (let [base "https://downloads.claude.ai/claude-code-releases"
-               version (or (first *command-line-args*)
-                           (clojure.string/trim
-                            (:out (shell {:out :string} "curl" "-fsSL" (str base "/latest")))))
-               manifest (:out (shell {:out :string} "curl" "-fsSL"
-                                     (str base "/" version "/manifest.zst.json")))]
-           (spit "packages/providers/anthropic/nix/claude-code-manifest.json" manifest)
-           (println (str "Pinned Claude CLI " version " → packages/providers/anthropic/nix/claude-code-manifest.json"))
-           (run 'claude:build))}
+  {:doc "Pin the Claude CLI to the latest upstream release (or `bb claude:update <version>`): rewrites the Claude provider's nix/claude-code-manifest.json (providers/packages/anthropic) and rebuilds it. Takes effect on the next turn (a provider runs per turn). Commit the change in the xi-providers repo."
+   :task (apply shell {:dir "providers/packages/anthropic"} "bun" "src/pin.ts" "update" *command-line-args*)}
+
+  providers:link
+  {:doc "Make providers/ a link to your xi-providers checkout (default ../xi-providers, or `bb providers:link <dir>`), so the bundled providers run from it: an edit applies on the next turn. Replaces a fetched providers/."
+   :requires ([babashka.fs :as fs])
+   :task (let [target (fs/normalize (fs/absolutize (or (first *command-line-args*) "../xi-providers")))]
+           (when-not (fs/exists? (fs/path target "packages"))
+             (throw (ex-info (str "no xi-providers checkout at " target) {})))
+           (when (or (fs/sym-link? "providers") (fs/exists? "providers"))
+             (if (fs/sym-link? "providers") (fs/delete "providers") (fs/delete-tree "providers")))
+           (fs/create-sym-link "providers" target)
+           (when-not (fs/exists? (fs/path target "node_modules"))
+             (shell {:dir (str target)} "bun" "install"))
+           (println (str "providers → " target)))}
+
+  providers:fetch
+  {:doc "Check out the pinned xi-providers commit (resources/providers.edn) into providers/ and install its dependencies, for a checkout without your own (see providers:link). A link already there is left alone."
+   :requires ([babashka.fs :as fs])
+   :task (let [{:keys [repo sha]} (edn/read-string (slurp "resources/providers.edn"))]
+           (cond
+             (fs/sym-link? "providers")
+             (println (str "providers/ links to " (fs/read-link "providers") " — leaving it"))
+
+             (nil? sha)
+             (throw (ex-info "resources/providers.edn pins no :sha yet — run bb providers:pin" {}))
+
+             :else
+             (do (when-not (fs/exists? "providers/.git")
+                   (fs/delete-tree "providers")
+                   (shell "git" "clone" "--quiet" repo "providers"))
+                 (shell {:dir "providers"} "git" "fetch" "--quiet" "origin")
+                 (shell {:dir "providers"} "git" "checkout" "--quiet" sha)
+                 (shell {:dir "providers"} "bun" "install")
+                 (println (str "providers/ at " sha)))))}
+
+  providers:pin
+  {:doc "Pin resources/providers.edn's :sha to the HEAD of the providers/ checkout (your link or a fetch). Refuses a commit that isn't on its origin: a pin must be fetchable."
+   :task (let [sha (str/trim (:out (shell {:dir "providers" :out :string} "git" "rev-parse" "HEAD")))
+               ;; remote branches holding the commit; none = not pushed
+               remote-has (str/trim (:out (shell {:dir "providers" :continue true :out :string :err :string}
+                                                 "git" "branch" "-r" "--contains" sha)))
+               f "resources/providers.edn"]
+           (when (str/blank? remote-has)
+             (throw (ex-info (str sha " is not on the providers repo's origin yet — push it first") {})))
+           (spit f (str/replace (slurp f) (re-pattern ":sha\\s+(nil|\"[0-9a-f]+\")") (str ":sha \"" sha "\"")))
+           (println (str "Pinned providers " sha " → " f)))}
 
   demo:key
   {:doc "Print the demo client key + the localStorage snippet to install it"

@@ -1,0 +1,9 @@
+;; The providers Xi bundles: the xi-providers repo at a pinned commit.
+;; `bb providers:fetch` checks it out into providers/ (bb providers:link links
+;; your own checkout there instead), `bb package` copies the :bundled packages
+;; into the npm package, `bb providers:pin` moves :sha to the checkout's
+;; pushed HEAD. :bundled is the package directories under packages/, in the
+;; order the model picker lists them (xi.providers.config).
+{:repo    "https://github.com/floscr/xi-providers.git"
+ :sha     nil
+ :bundled ["anthropic" "ollama" "codex" "opencode"]}

@@ -63,52 +63,60 @@ Full picture: [docs/architecture.md](docs/architecture.md).
   maps themselves as transit (`xi.wire`).
 - **Standalone = not connected.** Standalone, server and client modes share
   the same state shape and code paths; transports just forward events.
-- **Extensions and providers are plain data maps**, declared per surface in
+- **Extensions are plain data maps**, declared per surface in
   `src/xi/config.cljc` and composed at assembly time — no registration atoms.
   See [docs/extensions.md](docs/extensions.md) (reference) and
   [docs/writing-extensions.md](docs/writing-extensions.md) (recipe).
-- **Providers:** `anthropic` (Claude Agent SDK, out-of-process runner),
-  `ollama`, `openai.codex` (`openai/<id>`, ChatGPT subscription), `zen`
-  (`opencode/<id>`).
+- **Providers are external programs** speaking the
+  [provider protocol](docs/provider-protocol.md), one process per request;
+  none is compiled in. The bundled ones (`anthropic`, `ollama`, `codex`
+  `openai/<id>`, `opencode` `opencode/<id>`) live in the separate
+  xi-providers repo, TypeScript on Bun, pinned by `resources/providers.edn`.
+  `config.edn` `:providers` picks them. See [docs/providers.md](docs/providers.md).
 - Sessions: metadata in `~/.config/xi/sessions/`, transcripts in Claude CLI
   sessions under `~/.claude/projects/`; named-agent sessions (`--agent`,
   profiles in `~/.config/xi/config.edn`) in
   `~/.config/xi/personal-agent/<agent>/`. Auth: the Claude CLI's own login, or
   `ANTHROPIC_API_KEY`.
 
-### The Claude SDK runner
+### Providers in development
 
-The Agent SDK is not a Xi dependency: `packages/providers/anthropic/runner.mjs`
-(own `package.json`) is spawned per turn and speaks NDJSON over stdio; every
-tool call is proxied back to the host, so tools + rules stay host-side. The
-host side (`xi.providers.runner`) is provider-agnostic. Details:
+`providers/` (gitignored) holds the bundled providers: run
+`bb providers:link` to make it a link to your `../xi-providers` clone (an
+edit there applies on the next turn, no build, no restart), or
+`bb providers:fetch` to check out the pinned commit. Without it no provider
+loads. Every tool call a provider makes is proxied back to Xi, so tools +
+rules stay here; host side in `xi.providers.process`. Claude details:
 [docs/mcp-tool-bridge.md](docs/mcp-tool-bridge.md).
 
-- **The Claude CLI is pinned in-repo via nix** (`packages/providers/anthropic/nix/`)
-  and built by the runner itself. On "Claude Code X does not support this
-  model": `bb claude:update` — applies next turn, no restart.
+- **The Claude CLI is pinned via nix** in the Claude provider
+  (`providers/packages/anthropic/nix/`) and built by it. On "Claude Code X
+  does not support this model": `bb claude:update` — applies next turn, no
+  restart; commit the bump in xi-providers.
 - **Token hygiene:** text-only side turns (titles, quick replies, summaries)
   must pass `:no-tools? true`, or each carries every tool definition (~25k
   tokens). Xi is the sole loader of project instructions — don't re-enable the
   CLI's own AGENTS.md loading.
-- The runner's stderr paints over the TUI — real errors only, no per-turn logs.
+- A provider's stderr paints over the TUI — real errors only, no per-turn logs.
 
 ## Repo map
 
 ```
-src/xi/          cli (entry + assembly), config.cljc (extensions/providers/
-                 options), core/ (state, events, app, log), agent, commands,
+src/xi/          cli (entry + assembly), config.cljc (extensions/options),
+                 core/ (state, events, app, log), agent, commands,
                  wire, session*, system_prompt, rules/, paths, tools/,
-                 providers/, server/, client/ (TUI), tui/, web/ (browser),
+                 providers/ (the protocol host), server/, client/ (TUI),
+                 tui/, web/ (browser),
                  ext/ (extensions), markdown/, highlight/, mcp/
-test/xi/         mirrors src/
+test/xi/         mirrors src/; test/providers/ a hand-written provider (e2e)
 resources/       web client (public/), syntax grammars, treesitter/ (WASM
-                 runtime + grammars for outlines)
+                 runtime + grammars for outlines), providers.edn (the pin)
+providers/       the bundled providers: a link to xi-providers or a checkout
+                 of the pin (gitignored; bb providers:link / providers:fetch)
 bin/             `xi` launcher (the npm bin; hands over to bun)
 scripts/         bb/node build helpers (demo seed, codegen, treesitter WASM,
                  build-package.mjs → `bb package`)
 packages/        outside xi's own bundle: bb-client/ (JVM client lib),
-                 providers/anthropic/ (SDK runner + pinned CLI),
                  mcp-bb-example/ (babashka MCP server example)
 docs/            see the index below; docs/guide/ is the user guide the site renders
 site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:build`
@@ -124,10 +132,10 @@ site/            home page + docs site (own bb.edn; `bb site:dev` / `bb site:bui
 |---|---|
 | Core loop, state, events, connection layer | [architecture.md](docs/architecture.md) |
 | Unit tests · e2e scenarios, the fake LLM, user profiles | [testing.md](docs/testing.md) |
-| Compile-time config (`config.cljc`: extension/provider vectors, TUI opts, appearance, flags) | [config.md](docs/config.md) |
+| Compile-time config (`config.cljc`: extension vectors, TUI opts, appearance, flags) | [config.md](docs/config.md) |
 | Built-in extensions: every key, dialogs, hooks, web halves · recipe for a new one | [extensions.md](docs/extensions.md) · [writing-extensions.md](docs/writing-extensions.md) |
 | MCP client internals (manager, trust fingerprint, wire protocol) · tree-sitter reads | [mcp-internals.md](docs/mcp-internals.md) · [treesitter.md](docs/treesitter.md) |
-| Providers (map shape, adapters, Zen/Codex internals) · the Claude SDK runner | [providers.md](docs/providers.md) · [mcp-tool-bridge.md](docs/mcp-tool-bridge.md) |
+| The provider protocol · loading, routing, the host side · the Claude provider's tool bridge | [provider-protocol.md](docs/provider-protocol.md) · [providers.md](docs/providers.md) · [mcp-tool-bridge.md](docs/mcp-tool-bridge.md) |
 | Web client internals · offline cache · UI components · demo | [web-client-internals.md](docs/web-client-internals.md) · [web-offline.md](docs/web-offline.md) · [frontend.md](docs/frontend.md) · [demo.md](docs/demo.md) |
 | Web animations: leave/FLIP patterns, Firefox + Replicant pitfalls | [animations.md](docs/animations.md) |
 | TUI rendering · syntax highlighting | [tui-rendering.md](docs/tui-rendering.md) · [syntax-highlighting.md](docs/syntax-highlighting.md) |

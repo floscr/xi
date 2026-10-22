@@ -51,6 +51,7 @@
             [clojure.string :as str]
             [clojure.walk :as walk]
             [xi.agent :as agent]
+            [xi.providers.routing :as routing]
             [xi.session :as session]
             [xi.session.claude-store :as claude-store]
             [xi.session.sync :as sync]
@@ -181,7 +182,8 @@
 ;; ── Turn ─────────────────────────────────────────────────────────────────────
 
 (defn- start-turn!
-  [{:keys [prompt model system cwd no-tools? resume-session-id tool-ctx tool-policy
+  [id specs
+   {:keys [prompt model system cwd no-tools? resume-session-id tool-ctx tool-policy
               on-text on-thinking on-tool-start on-tool-args on-tool-result on-error
               on-session]
        :as opts}]
@@ -198,7 +200,7 @@
         flags      #js {:aborted false :wake nil}
         !turn      (atom {:messages []
                           :blocks [] :calls [] :usage {:input_tokens 0 :output_tokens 0}})
-        req        {:provider (or (:provider opts) (util/provider-for-model model))
+        req        {:provider (or (:provider opts) (routing/provider-for-model specs model) id)
                     :model model :prompt prompt :system system
                     :user user :tools tool-names :side? side?}
         base-entry (merge req {:cwd cwd :resume-session-id resume-session-id
@@ -327,7 +329,10 @@
                 (when-let [wake (.-wake flags)] (wake)))}))
 
 (defn provider
-  "The fake provider, registered under provider id `id`. Its transcripts are
-   Claude-format, so it shares the Claude session store."
-  [id]
-  {:id id :start-turn! start-turn! :store claude-store/store})
+  "The fake provider, registered under provider id `id`; `specs` are the real
+   providers' routing table (xi.providers.routing), for the provider a turn
+   would have used. Its transcripts are Claude-format, so it shares the
+   Claude session store, and it runs side turns too."
+  [id specs]
+  {:id id :start-turn! (partial start-turn! id specs) :store claude-store/store
+   :side-turns? true})

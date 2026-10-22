@@ -94,7 +94,8 @@
   ;; session name; a nil title is dispatched so the pending guard clears.
   (async done
     (let [fx (naming/create-fx
-              {:anthropic {:start-turn!
+              {:anthropic {:side-turns? true
+                           :start-turn!
                            (fn [_opts]
                              {:promise (js/Promise.resolve
                                         {:is-error true
@@ -177,7 +178,8 @@
   (async done
     (let [prompts (atom [])
           fx (naming/create-fx
-              {:anthropic {:start-turn!
+              {:anthropic {:side-turns? true
+                           :start-turn!
                            (fn [opts]
                              (swap! prompts conj opts)
                              {:promise (js/Promise.resolve
@@ -203,7 +205,8 @@
 
 (deftest suggest-name-without-conversation-replies-empty
   (let [evs (atom [])
-        fx  (naming/create-fx {:anthropic {:start-turn! (fn [_] (throw (js/Error. "no turn")))}}
+        fx  (naming/create-fx {:anthropic {:side-turns? true
+                           :start-turn! (fn [_] (throw (js/Error. "no turn")))}}
                               {:session-conversation (fn [_] nil)})]
     ((:session/suggest-name fx) {:dispatch! #(swap! evs conj %)}
                                 {:client-id "c1" :session-id "s1"})

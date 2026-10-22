@@ -2,7 +2,9 @@
 
 Claude through the Claude Agent SDK is the default. Xi can also run local
 models through Ollama, the models of OpenCode Zen and OpenCode Go, and GPT
-models on a ChatGPT subscription. Pick one with `/model` or `--model`.
+models on a ChatGPT subscription. Pick one with `/model` or `--model`. Each
+of these is a [provider](providers.md); `:providers` in `config.edn` chooses
+which run.
 
 ## Claude (default)
 
@@ -13,8 +15,15 @@ a bare id such as `claude-sonnet-4-6` goes to Claude.
 ## Ollama
 
 Models served by a local [Ollama](https://ollama.com) are listed by `/model`
-when Ollama is running. `OLLAMA_BASE_URL` changes the endpoint from
-`http://localhost:11434`. Tool calls work with models that support them.
+when Ollama is running. A model id no other provider claims goes to Ollama.
+The endpoint is `http://localhost:11434`; the `:base-url` option or
+`OLLAMA_BASE_URL` changes it:
+
+```clojure
+:providers [:anthropic {:id :ollama :base-url "http://gpu:11434"} :openai :zen]
+```
+
+Tool calls work with models that support them.
 
 ## OpenCode Zen
 

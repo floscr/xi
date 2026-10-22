@@ -18,7 +18,8 @@
 
    State: room-scoped [:rooms rid :ext :resume {:pending {:opts … :at ms}}]
    holds the pending trim preview (expires after 10 minutes)."
-  (:require [clojure.string :as str]
+  (:require [xi.providers.routing :as routing]
+            [clojure.string :as str]
             [xi.commands :as commands]
             [xi.core.state :as state]
             [xi.session :as session]
@@ -449,7 +450,7 @@ Be thorough but concise. Output only the summary, no preamble.")
                                        rollover-instruction)}))]
          (if-not focus
            (ready! nil)
-           (if-let [provider (get providers :anthropic)]
+           (if-let [provider (routing/side-turn-provider providers)]
              (let [chunks (atom [])
                    {:keys [promise abort!]}
                    ((:start-turn! provider)
@@ -481,7 +482,7 @@ Be thorough but concise. Output only the summary, no preamble.")
                       (fail! dispatch! room-id
                              (str "Rollover failed: " (.-message err)))))))
              (fail! dispatch! room-id
-                    "No claude provider for the summary — use /rollover without a focus.")))))
+                    "No provider runs side turns, so no summary — use /rollover without a focus.")))))
 
      :ext.resume/abort
      (fn [_ {:keys [room-id]}]

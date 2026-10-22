@@ -37,6 +37,7 @@
             [xi.core.state :as state]
             [xi.dialog :as dialog]
             [xi.naming :as naming]
+            [xi.providers.routing :as routing]
             [xi.util :as util]))
 
 ;; ── Helpers ──────────────────────────────────────────────────────────────────
@@ -212,7 +213,7 @@
 
 (defn- cmd-model [st {:keys [room-id args user]}]
   (if (seq args)
-    (let [provider (util/provider-for-model args)
+    (let [provider (routing/provider-for-model (:providers st) args)
           has-session? (get-in st [:rooms room-id :session :provider-session-id])]
       {:state (-> st
                   (assoc-in [:rooms room-id :agent :model] args)
@@ -272,20 +273,16 @@
 (defn- cmd-summary [_st {:keys [room-id]}]
   {:effects [[:app/dispatch {:type :summary/request :room-id room-id}]]})
 
-(def ^:private claude-preset-note
-  (str "## [CLAUDE_SYSTEM_PROMPT]\n\n"
-       "The Claude Code \"claude_code\" preset is injected by the Agent SDK "
-       "ahead of everything below. Its text is supplied by the SDK and is not "
-       "visible here; the parts that follow are appended after it."))
-
 (defn- render-system-prompt
   "A room's system prompt for the buffer: expanded, the verbatim string; else a
-   per-part overview with 200-char previews. Claude rooms get a
-   [CLAUDE_SYSTEM_PROMPT] header for the SDK-injected preset."
+   per-part overview with 200-char previews. A provider that brings a prompt
+   of its own says so in its manifest's note (Claude's SDK preset), shown
+   first."
   [st room-id expanded?]
   (let [parts   (get-in st [:rooms room-id :agent :system-parts])
         system  (get-in st [:rooms room-id :agent :system])
-        claude? (= :anthropic (get-in st [:rooms room-id :agent :provider]))
+        pspec   (routing/agent-spec (:providers st) (get-in st [:rooms room-id :agent]))
+        note    (:prompt-note pspec)
         body    (cond
                   expanded?
                   (or system
@@ -303,8 +300,8 @@
 
                   :else
                   (or system "(no system prompt)"))]
-    (if claude?
-      (str claude-preset-note "\n\n---\n\n" body)
+    (if note
+      (str "## [" (:label pspec) " system prompt]\n\n" note "\n\n---\n\n" body)
       body)))
 
 (defn- prompt-buffer [st room-id expanded?]
@@ -457,7 +454,7 @@
                    model-change?
                    (-> (assoc-in [:rooms room-id :agent :model] model)
                        (assoc-in [:rooms room-id :agent :provider]
-                                 (util/provider-for-model model))))
+                                 (routing/provider-for-model (:providers st) model))))
           parsed (parse-input text)
           images (into (vec (get-in room [:ui :pending-images])) images)]
       (cond
@@ -744,7 +741,7 @@
                     (->
                      (assoc-in [:rooms room-id :agent :model] model)
                      (assoc-in [:rooms room-id :agent :provider]
-                               (util/provider-for-model model)))))
+                               (routing/provider-for-model (:providers st) model)))))
        :effects (cond-> []
                   change-cwd? (conj [:cwd/change {:room-id room-id :path resume-cwd}]))})))
 
@@ -836,6 +833,8 @@
    {:input/submit    input-submit
     :command/run     (make-command-run (all-commands extra-commands))
     :commands/changed commands-changed
+    ;; the providers' routing table (xi.providers.routing), same path
+    :providers/changed (:providers/changed routing/handlers)
     :ui/status       ui-status
     :ui/status-action-expire ui-status-action-expire
     :ui/menu-open    menu-open

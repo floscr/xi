@@ -76,6 +76,7 @@
             [xi.ext.user :as user-ext]
             [xi.fx :as fx]
             [xi.naming :as naming]
+            [xi.providers.config :as provider-config]
             [xi.providers.fake :as fake]
             [xi.quick-replies :as quick-replies]
             [xi.rules.store :as rules-store]
@@ -95,15 +96,42 @@
             ["node:path" :as node-path]
             ["node:worker_threads" :as wt]))
 
-(def providers
-  "Provider id → provider map from the xi.config/providers vector, in picker
-   order. Every provider's chats get a transcript: those that keep none
-   themselves are recorded (xi.session.recorder). With XI_FAKE_LLM (e2e
-   tests) the scripted fake is the only provider, registered as :anthropic
-   so no turn reaches a real model."
-  (if (fake/script-path)
-    {:anthropic (fake/provider :anthropic)}
-    (into {} (map (juxt :id recorder/with-transcripts)) config/providers)))
+(defonce ^:private !providers
+  ;; {:providers id → provider :specs [spec …]}, loaded on first use
+  (atom nil))
+
+(defn- loaded-providers
+  "The providers config.edn names (xi.providers.config), loaded once: id →
+   provider map in picker order, and their specs for routing. Every
+   provider's chats get a transcript: those that keep none themselves are
+   recorded (xi.session.recorder). With XI_FAKE_LLM (e2e tests) the scripted
+   fake is the only provider, registered as :anthropic so no turn reaches a
+   real model; the specs still route, so the fake logs which provider a
+   model would have used."
+  []
+  (or @!providers
+      (let [{ps :providers errors :errors} (provider-config/load-providers)
+            specs (mapv :spec ps)]
+        (doseq [e errors] (js/console.error (str "[providers] " e)))
+        (reset! !providers
+                {:specs     specs
+                 :providers (if (fake/script-path)
+                              {:anthropic (fake/provider :anthropic specs)}
+                              (apply array-map
+                                     (mapcat (fn [p] [(:id p) (recorder/with-transcripts p)]) ps)))}))))
+
+(defn- providers [] (:providers (loaded-providers)))
+
+(defn- provider-usage-sources
+  "The usage-page sources of the providers that report usage."
+  []
+  (vec (mapcat :usage-sources (vals (providers)))))
+
+(defn- publish-providers!
+  "Put the providers' routing table in the app state (:providers); the server
+   sends it every client (xi.server.ws)."
+  [dispatch!]
+  (dispatch! {:type :providers/changed :providers (:specs (loaded-providers))}))
 
 ;; ── Extensions (per mode) ─────────────────────────────────────────────────────
 ;; Declared in xi.config, instantiated and composed here into the seams the
@@ -118,7 +146,7 @@
    extensions (/ext, /mcp)."
   [ring & [ask! manager]]
   (ext/instantiate config/server {:ring ring :ask! ask! :manager manager
-                                  :providers providers}))
+                                  :providers (providers)}))
 
 (defn- mirror-extensions
   "Server extensions instantiated for the client mirror: a throwaway manager so
@@ -441,26 +469,26 @@ See docs/guide/command-line.md for the full reference.")
                         (ext/merge-handlers composed)
                         (merge (:handlers dialogs)))))
         static-fx (merge (agent/create-fx
-                          providers
+                          (providers)
                           (tooling-opts mgr (:ask! dialogs)))
                          (subagent/create-fx
-                          providers
+                          (providers)
                           (subagent-opts mgr (:ask! dialogs)))
-                         (fx/create-fx ring providers
+                         (fx/create-fx ring (providers)
                            {:system-prompt-fn
                             (fn [cwd]
                               (let [parts (into (system-prompt/load-agents-parts cwd)
                                                 (ext/system-prompt-parts (manager/composed mgr) cwd))]
                                 {:system       (system-prompt/parts->system parts)
                                  :system-parts parts}))})
-                         (compaction/create-fx providers)
-                         (naming/create-fx providers
+                         (compaction/create-fx (providers))
+                         (naming/create-fx (providers)
                          {:make-config-dir!   session/make-throwaway-config-dir!
                           :remove-config-dir! session/remove-config-dir!})
-                         (quick-replies/create-fx providers
+                         (quick-replies/create-fx (providers)
                          {:make-config-dir!   session/make-throwaway-config-dir!
                           :remove-config-dir! session/remove-config-dir!})
-                         (summary/create-fx providers
+                         (summary/create-fx (providers)
                          {:make-config-dir!   session/make-throwaway-config-dir!
                           :remove-config-dir! session/remove-config-dir!}))
         app (app/create-app {:initial-state (state/initial-state
@@ -480,7 +508,8 @@ See docs/guide/command-line.md for the full reference.")
         {:keys [dispatch!]} app
         _ (user-ext/start! app {:ask! (:ask! dialogs)})
         _ (ext-persist/install! app mgr)
-        _ (publish-commands! mgr dispatch!)]
+        _ (publish-commands! mgr dispatch!)
+        _ (publish-providers! dispatch!)]
     (when jsonl-writer
       (js/process.on "exit" (fn [] ((:flush! jsonl-writer)))))
     (dispatch! (users/loaded-event (own-user opts)))
@@ -603,19 +632,19 @@ See docs/guide/command-line.md for the full reference.")
                          :handlers      handlers
                          :transform-event (ext/transform-event composed)
                          :effects       (merge (agent/create-fx
-                                                providers
+                                                (providers)
                                                 (tooling-opts mgr (:ask! dialogs)))
                                                (subagent/create-fx
-                                                providers
+                                                (providers)
                                                 (subagent-opts mgr (:ask! dialogs)))
-                                               (fx/create-fx ring providers
+                                               (fx/create-fx ring (providers)
                                                  {:system-prompt-fn
                                                   (fn [cwd]
                                                     (let [parts (into (system-prompt/load-agents-parts cwd)
                                                                       (ext/system-prompt-parts composed cwd))]
                                                       {:system       (system-prompt/parts->system parts)
                                                        :system-parts parts}))})
-                                               (compaction/create-fx providers)
+                                               (compaction/create-fx (providers))
                                                (:fx composed)
                                                (:fx dialogs))
                          :ring          ring})]
@@ -904,11 +933,12 @@ See docs/guide/command-line.md for the full reference.")
         composed (manager/composed mgr)
         server (ws/create-server
                 {:server-opts server-opts
-                 :providers providers
+                 :providers (providers)
                  :agent-id agent
                  :ext-system-prompt-parts (fn [cwd] (ext/system-prompt-parts (manager/composed mgr) cwd))
                  :room-ext-init (manager/live-view mgr :room-ext-init)
-                 :usage-sources (manager/live-view mgr :usage-sources)
+                 :usage-sources (let [ext-sources (manager/live-view mgr :usage-sources)]
+                                  #(into (provider-usage-sources) (ext-sources)))
                  :tool-sources #(tool-sources mgr (:ask! dialogs))
                  :ext composed})
         ;; Late-bound: a live extension reload rebuilds handlers and fx.
@@ -944,27 +974,27 @@ See docs/guide/command-line.md for the full reference.")
                              :transform-event (ext/transform-event composed)
                              :effects  (let [static-fx
                                              (merge (agent/create-fx
-                                                     providers
+                                                     (providers)
                                                      (tooling-opts mgr (:ask! dialogs)))
                                                     (subagent/create-fx
-                                                     providers
+                                                     (providers)
                                                      (subagent-opts mgr (:ask! dialogs)))
-                                                    (fx/create-fx ring providers
+                                                    (fx/create-fx ring (providers)
                                                       {:system-prompt-fn
                                                        (fn [cwd]
                                                          (let [parts (into (system-prompt/load-agents-parts cwd)
                                                                            (ext/system-prompt-parts (manager/composed mgr) cwd))]
                                                            {:system       (system-prompt/parts->system parts)
                                                             :system-parts parts}))})
-                                                    (compaction/create-fx providers)
-                                                    (naming/create-fx providers
+                                                    (compaction/create-fx (providers))
+                                                    (naming/create-fx (providers)
                                                      {:make-config-dir!   session/make-throwaway-config-dir!
                                                       :remove-config-dir! session/remove-config-dir!
                                                       :session-conversation saved-conversation})
-                                                    (quick-replies/create-fx providers
+                                                    (quick-replies/create-fx (providers)
                                                      {:make-config-dir!   session/make-throwaway-config-dir!
                                                       :remove-config-dir! session/remove-config-dir!})
-                                                    (summary/create-fx providers
+                                                    (summary/create-fx (providers)
                                                      {:make-config-dir!   session/make-throwaway-config-dir!
                                                       :remove-config-dir! session/remove-config-dir!}))]
                                          (manager/live-view
@@ -976,6 +1006,7 @@ See docs/guide/command-line.md for the full reference.")
         _ (user-ext/start! app {:ask! (:ask! dialogs)})
         _ (ext-persist/install! app mgr)
         _ (publish-commands! mgr (:dispatch! app))
+        _ (publish-providers! (:dispatch! app))
         ;; Rooms the server provisions itself act for its own user.
         _ ((:dispatch! app) (users/loaded-event (own-user opts)))
         {actual-port :port} ((:start! server) app {:port port :host host :no-pairing? no-pairing?})]
@@ -1196,12 +1227,12 @@ See docs/guide/command-line.md for the full reference.")
 (defn- login-of
   "The :login map of the provider whose sign-in is called `name`."
   [name]
-  (some #(when (= name (get-in % [:login :name])) (:login %)) (vals providers)))
+  (some #(when (= name (get-in % [:login :name])) (:login %)) (vals (providers))))
 
 (defn- unknown-login! [cmd name]
   (.write js/process.stderr
           (str "xi " cmd ": unknown provider " (pr-str name) ". Available: "
-               (str/join ", " (sort (keep #(get-in % [:login :name]) (vals providers))))
+               (str/join ", " (sort (keep #(get-in % [:login :name]) (vals (providers)))))
                "\n"))
   (js/process.exit 2))
 
@@ -1229,9 +1260,13 @@ See docs/guide/command-line.md for the full reference.")
 (defn- run-logout! [{:keys [auth-args]}]
   (let [[name] auth-args]
     (if-let [login (login-of name)]
-      (do ((:logout! login))
-          (println (str "Signed out of " (:label login) "."))
-          (js/process.exit 0))
+      (-> (js/Promise.resolve ((:logout! login)))
+          (.then (fn [_]
+                   (println (str "Signed out of " (:label login) "."))
+                   (js/process.exit 0)))
+          (.catch (fn [err]
+                    (.write js/process.stderr (str "xi logout: " (.-message err) "\n"))
+                    (js/process.exit 1))))
       (unknown-login! "logout" name))))
 
 (defn- silence-worker-console!

@@ -58,7 +58,7 @@
 (def max-tool-names 64)
 
 ;; The Claude provider advertises every Xi tool as mcp__xi-tools__<name>
-;; (xi.providers.anthropic); the other providers use the bare name.
+;; (docs/mcp-tool-bridge.md); the other providers use the bare name.
 (def ^:private xi-tools-prefix "mcp__xi-tools__")
 
 (defn tool-key

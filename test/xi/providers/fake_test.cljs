@@ -84,7 +84,7 @@
                                    {:when {:prompt "again"} :reply [{:text "second"}]}]}))
           seen   (atom [])
           cb     (fn [k] (fn [x] (swap! seen conj [k x])))
-          prov   (fake/provider :anthropic)
+          prov   (fake/provider :anthropic [])
           opts   {:cwd tmp :model "m" :tool-ctx {:user "root"}
                   :only-tools #{"read" "write"}
                   ;; the policy blocks writes, like a deny rule would

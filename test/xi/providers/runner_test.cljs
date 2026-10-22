@@ -1,6 +1,5 @@
 (ns xi.providers.runner-test
   (:require [cljs.test :refer [deftest is testing]]
-            [clojure.string :as str]
             [xi.providers.runner :as runner]))
 
 (deftest split-frames
@@ -16,6 +15,8 @@
     (is (= {:lines ["x"] :rest ""}
            (runner/split-frames "" "\n\nx\n  \n")))))
 
-(deftest script-path
-  (is (str/ends-with? (runner/script-path :anthropic)
-                      "/packages/providers/anthropic/runner.mjs")))
+(deftest resolve-command
+  (testing "bun is the Bun running Xi, so it needs nothing on PATH"
+    (is (= [(.-execPath js/process) "src/main.ts"] (runner/resolve-command ["bun" "src/main.ts"]))))
+  (testing "anything else runs as named"
+    (is (= ["bb" "main.clj"] (runner/resolve-command ["bb" "main.clj"])))))

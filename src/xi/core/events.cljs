@@ -15,15 +15,18 @@
    :prompt/*, :render/*."
   (:require [xi.buffers :as buffers]
             [xi.core.state :as state]
-            [xi.dialog :as dialog]))
+            [xi.dialog :as dialog]
+            [xi.providers.routing :as routing]))
 
 ;; ── Rooms ────────────────────────────────────────────────────────────────────
 
 (defn- room-create [st {:keys [room-id room]}]
   (when-not (state/get-room st room-id)
-    {:state (-> st
-                (assoc-in [:rooms room-id] (state/make-room room-id room))
-                (update :active-room #(or % room-id)))}))
+    (let [room (update room :provider
+                       #(or % (routing/provider-for-model (:providers st) (:model room))))]
+      {:state (-> st
+                  (assoc-in [:rooms room-id] (state/make-room room-id room))
+                  (update :active-room #(or % room-id)))})))
 
 (defn- room-switch [st {:keys [room-id]}]
   (when (state/get-room st room-id)

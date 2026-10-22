@@ -35,6 +35,7 @@ an old file wrong.
 | `:trusted-mcp-servers` | MCP servers whose tools run without asking: `mcp.edn` ids, or an extension's `"<extension>/<name>"`. Trusted as they are, with no code fingerprint. | [MCP servers](mcp-servers.md#trusting-a-server) |
 | `:agents` | Profiles for `xi --agent <id>`: a fixed tool set and prompt. | [Agent profiles](agents.md), keys below |
 | `:keys` | Keyboard shortcuts: bind, rebind or remove keys per layer, for both clients or one. | [Keyboard shortcuts](keyboard.md#changing-keys), keys below |
+| `:providers` | The model providers to run, in model-picker order, with their options. Without it every bundled provider runs. | [Providers](providers.md), keys below |
 
 Xi reads the file when it needs it (listing projects, starting a chat,
 loading extensions), so most edits apply without a restart. `/ext reload`
@@ -102,6 +103,29 @@ The layers, actions and key spelling are in [Keyboard shortcuts](keyboard.md).
 | `:defaults?` | `true` | `false` drops every built-in key. Also allowed inside `:web` / `:tui`. |
 
 Read when a client starts (the server sends it to the web client on connect).
+
+### `:providers`
+
+A vector; each entry is one provider.
+
+```clojure
+:providers [:anthropic
+            {:id :ollama :base-url "http://gpu:11434"}
+            {:dir "~/code/my-provider"}
+            {:npm "xi-provider-example@1.2.0"}]
+```
+
+| Entry | Runs |
+| --- | --- |
+| `:anthropic` | A bundled provider: `:anthropic` (Claude), `:ollama`, `:openai` (Codex), `:zen` (OpenCode). |
+| `{:id :ollama …}` | A bundled provider with options. |
+| `{:dir "path" …}` | The provider in that directory; relative to `~/.config/xi/`. |
+| `{:npm "name@1.2.0" …}` | An npm package, at an exact version. Installed on the first start that needs it. |
+
+Every other key of a map is an option for that provider; its page in
+[Models](models.md) lists them. An entry that doesn't load is reported on
+startup and skipped. Read on startup: adding or removing a provider takes a
+restart.
 
 ## When the file is invalid
 

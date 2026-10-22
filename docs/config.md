@@ -3,12 +3,13 @@
 User-facing configuration (`~/.config/xi/config.edn`, the other files under
 `~/.config/xi`, environment variables) is documented in the guide:
 [configuration](guide/configuration.md). This page covers what is compiled
-into the build from `src/xi/config.cljc`: which extensions and providers
-load per surface, the TUI display overrides, the web appearance defaults and
-the feature flags. Editing it needs a recompile (the shadow watch picks it
+into the build from `src/xi/config.cljc`: which extensions load per surface,
+the TUI display overrides, the web appearance defaults and the feature flags.
+Model providers are not compiled in: they are programs `config.edn` picks
+([providers.md](providers.md)). Editing it needs a recompile (the shadow watch picks it
 up).
 
-## Extension and provider loading (`server` · `client` · `web` · `providers`)
+## Extension loading (`server` · `client` · `web`)
 
 One vector per surface of extension maps or factory fns `(fn [ctx] → ext|nil)`,
 composed in order by `ext/compose` at assembly. **Order matters**: handlers
@@ -88,7 +89,8 @@ Plain `def`s read by their consuming namespace.
 | `xi.system-prompt` | `~/.config/xi/prompt-files.edn` |
 | `xi.auth` | `~/.config/xi/client-key`, `clients.edn`, `pending-clients.edn` |
 | `xi.server.ws` (`resolve-tls`) | `XI_TLS_CERT`/`XI_TLS_KEY`, else `~/.config/xi/tls/xi.{crt,key}` |
-| `xi.providers.fake` (via `xi.cli/providers`) | `XI_FAKE_LLM` (script file; when set, the scripted fake is the only provider, as `:anthropic`), `XI_FAKE_LLM_LOG` (JSONL of what each turn saw). Dev/test only, not user settings; see [testing.md](testing.md). |
+| `xi.providers.fake` (via `xi.cli/loaded-providers`) | `XI_FAKE_LLM` (script file; when set, the scripted fake is the only provider, as `:anthropic`), `XI_FAKE_LLM_LOG` (JSONL of what each turn saw). Dev/test only, not user settings; see [testing.md](testing.md). |
+| `xi.providers.config` | `XI_PROVIDERS_DIR` (where the bundled providers are, instead of `providers/` next to the bundle). Dev/test; see [providers.md](providers.md). |
 
 `CLAUDE_CONFIG_DIR` is set internally (`xi.session/make-throwaway-config-dir!`)
 to point the Claude CLI at a throwaway mirror for side turns and

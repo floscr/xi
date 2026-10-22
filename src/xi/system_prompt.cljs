@@ -69,10 +69,9 @@ When committing changes:
    fallback for repos without an AGENTS.md — a directory holding both (CLAUDE.md
    is then usually a pointer to AGENTS.md) contributes AGENTS.md alone.
 
-   Xi is the sole loader of project instructions: the Anthropic provider tells
-   the Claude CLI not to load them itself (settingSources, see
-   xi.providers.anthropic/base-query-opts), otherwise every session would carry
-   the same file twice."
+   Xi is the sole loader of project instructions: the Claude provider tells
+   the Claude CLI not to load them itself (settingSources in its turn.ts,
+   xi-providers), otherwise every session would carry the same file twice."
   ["AGENTS.md" "CLAUDE.md"])
 
 (defn- agents-ignored?

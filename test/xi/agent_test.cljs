@@ -310,12 +310,21 @@
                                              {:type :agent/abort :room-id "r"})))))
 
 (deftest provider-routing
-  (let [providers {:anthropic {:id :anthropic} :ollama {:id :ollama}}]
-    (is (= :anthropic (:id (agent/resolve-provider providers {:model "claude-sonnet-4-5"}))))
-    (is (= :anthropic (:id (agent/resolve-provider providers {:model "opus"}))))
-    (is (= :ollama (:id (agent/resolve-provider providers {:model "qwen3:32b"}))))
-    (is (= :ollama (:id (agent/resolve-provider providers {:provider :ollama
-                                                           :model "claude-sonnet-4-5"}))))))
+  (let [providers (array-map
+                   :anthropic {:id :anthropic :side-turns? true
+                               :spec {:id :anthropic :routes {:prefixes ["claude-"] :ids ["opus"]}}}
+                   :ollama    {:id :ollama
+                               :spec {:id :ollama :routes {:default? true}}})]
+    (testing "the providers' own routes pick"
+      (is (= :anthropic (:id (agent/resolve-provider providers {:model "claude-sonnet-4-5"}))))
+      (is (= :anthropic (:id (agent/resolve-provider providers {:model "opus"}))))
+      (is (= :ollama (:id (agent/resolve-provider providers {:model "qwen3:32b"})))))
+    (testing "an explicit provider wins"
+      (is (= :ollama (:id (agent/resolve-provider providers {:provider :ollama
+                                                             :model "claude-sonnet-4-5"})))))
+    (testing "without a route the side-turn provider runs it"
+      (is (= :anthropic (:id (agent/resolve-provider (update-in providers [:ollama :spec :routes] dissoc :default?)
+                                                     {:model "qwen3:32b"})))))))
 
 ;; ── Full turn through the app with a fake provider ───────────────────────────
 

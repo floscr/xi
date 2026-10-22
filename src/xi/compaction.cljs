@@ -13,7 +13,8 @@
    Unlike master (which talked to the SDK directly), the summarization run
    goes through the provider layer — same .close()/abort handling as any
    other turn. Pure handlers here; the provider call lives in create-fx."
-  (:require [clojure.string :as str]
+  (:require [xi.providers.routing :as routing]
+            [clojure.string :as str]
             [xi.commands :as commands]
             [xi.core.state :as state]))
 
@@ -92,13 +93,13 @@ Be thorough but concise. Output only the summary, no preamble.")
 ;; ── Effects (contained impure edge) ──────────────────────────────────────────
 
 (defn create-fx
-  "Compaction effects. Runs the summary turn through the claude provider,
+  "Compaction effects. Runs the summary turn through the side-turn provider,
    resuming the room's provider session."
   [providers]
   (let [inflight (js/Map.)]
     {:compact/start
      (fn [{:keys [dispatch! state]} {:keys [room-id session-id]}]
-       (let [provider (get providers :anthropic)
+       (let [provider (routing/side-turn-provider providers)
              chunks (atom [])
              {:keys [promise abort!]}
              ((:start-turn! provider)

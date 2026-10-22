@@ -23,6 +23,7 @@
             [xi.layout :as layout]
             [xi.web.layout :as wlayout]
             [xi.palette :as palette]
+            [xi.providers.routing :as routing]
             [xi.session.sidebar :as sb :refer [format-relative-time session-status
                                                active-first orphan-rooms
                                                sidebar-session-groups sidebar-session-order]]
@@ -3124,10 +3125,11 @@
 
 (defn- prompt-tab-view
   "The system-prompt buffer as the active tab: one collapsible card per part.
-   `expanded` is the :web/prompt-expanded set."
-  [dispatch! room expanded]
+   `expanded` is the :web/prompt-expanded set; `specs` the published
+   providers, whose manifest may note a prompt of their own (Claude's preset)."
+  [dispatch! room expanded specs]
   (let [parts   (get-in room [:agent :system-parts])
-        claude? (= :anthropic (get-in room [:agent :provider]))
+        note    (:prompt-note (routing/agent-spec specs (:agent room)))
         n       (count parts)
         all?    (and (pos? n) (= expanded (set (range n))))]
     [:div {:class ["file-tab" "prompt-tab"]}
@@ -3138,10 +3140,8 @@
                   :on {:click (fn [_] (dispatch! {:type :prompt/toggle-all :n n}))}}
          (if all? "Collapse all" "Expand all")])]
      [:div {:class ["prompt-tab-body"]}
-      (when claude?
-        [:div {:class ["prompt-note"]}
-         "The Claude Code preset is injected by the Agent SDK ahead of everything "
-         "below and is not shown here; the parts below are appended after it."])
+      (when note
+        [:div {:class ["prompt-note"]} note])
       (if (seq parts)
         (map-indexed
          (fn [idx {:keys [source text repo?]}]
@@ -4946,7 +4946,7 @@
                      (contains? (:web/terminals-gone state) (:term-id buffer)))
 
       :prompt
-      (prompt-tab-view dispatch! room (or (:web/prompt-expanded state) #{}))
+      (prompt-tab-view dispatch! room (or (:web/prompt-expanded state) #{}) (:providers state))
 
       (cond
         (and buffer (buffer-views/view kind))

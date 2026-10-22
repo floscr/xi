@@ -1,10 +1,12 @@
-# MCP Tool Bridge (SDK Runner)
+# MCP Tool Bridge (the Claude provider)
 
 Xi uses the Claude Agent SDK to talk to Claude Code (CC), but **CC never
-executes tools directly**. The SDK runs in a separate **runner process**
-(`packages/providers/anthropic/runner.mjs`, its own `node_modules`, freely upgradable SDK); the
-runner exposes Xi's tools to CC via an in-process MCP server and **proxies
-every tool call back to the host** over stdio. The host executes the call
+executes tools directly**. The Claude provider is a program like every
+other provider (the `anthropic` package of
+[xi-providers](https://github.com/floscr/xi-providers), spawned per turn,
+see the [provider protocol](provider-protocol.md)). It runs the SDK,
+exposes Xi's tools to CC through an in-process MCP server and **proxies
+every tool call back to Xi** as a `tool-call` frame. Xi executes the call
 through its own pipeline — including the rules policy step that can block
 dangerous operations — so the tool registry and the rules engine never leave
 the Xi process.
@@ -13,73 +15,54 @@ the Xi process.
 
 ```
 ┌──────────────────────────────────────────────────────┐
-│  Claude Code (subprocess of the runner, via SDK)     │
+│  Claude Code (subprocess of the provider, via SDK)   │
 │                                                      │
 │  Built-in tools: DISABLED (tools: [] whitelist)      │
 │  Available tools: mcp__xi-tools__* only              │
 │                                                      │
 │  CC proposes: mcp__xi-tools__bash {command: "ls"}    │
 └──────────────┬───────────────────────────────────────┘
-               │ MCP call (in-process in the runner)
+               │ MCP call (in-process in the provider)
                ▼
 ┌──────────────────────────────────────────────────────┐
-│  Runner (packages/providers/anthropic/runner.mjs, spawned per turn)        │
+│  Claude provider (xi-providers/packages/anthropic)   │
 │                                                      │
-│  · builds the SDK MCP server from the host's         │
-│    toolDefs (JSON Schema → Zod)                      │
-│  · forwards every SDK message to the host            │
-│    as a `message` frame                          │
+│  · builds the SDK MCP server from the turn's         │
+│    tools (JSON Schema → Zod)                         │
+│  · decodes SDK messages into text / thinking /       │
+│    tool-start / tool-args / tool-done frames         │
 │  · proxies each tool call as a `tool-call` frame     │
 │    and waits for the `tool-result` frame             │
 └──────────────┬───────────────────────────────────────┘
                │ newline-delimited JSON over stdio
                ▼
 ┌──────────────────────────────────────────────────────┐
-│  Xi host (providers/anthropic.cljs)                  │
+│  Xi (xi.providers.process)                           │
 │                                                      │
-│  1. Receive tool-call frame from the runner          │
+│  1. Receive a tool-call frame                        │
 │  2. Run :tool-policy (the rules engine)              │
 │  3. nil → "Blocked by Xi permission gate" error      │
 │     {:intercepted true :result …} → return result    │
-│     tool-call → execute via Xi tool registry         │
-│  4. Send tool-result frame back to the runner        │
+│     else → execute via Xi's tool registry            │
+│  4. Send the tool-result frame back                  │
 └──────────────────────────────────────────────────────┘
 ```
 
-## Wire protocol (host ⇄ runner)
-
-Newline-delimited JSON over the runner's stdin/stdout (stderr is inherited
-for diagnostics). One runner process per turn — no cross-room interleaving.
-
-Host → runner:
-
-| Frame | Meaning |
-|---|---|
-| `{type:"start", queryOpts, envOverride, toolDefs, prompt, noTools}` | begin the turn |
-| `{type:"tool-result", id, result:{content, isError}}` | answer a proxied tool call |
-| `{type:"abort"}` | interrupt the turn gracefully |
-
-Runner → host:
-
-| Frame | Meaning |
-|---|---|
-| `{type:"message", message}` | one SDK message, decoded host-side by `process-sdk-message` |
-| `{type:"tool-call", id, name, arguments}` | proxied tool call awaiting a `tool-result` |
-| `{type:"done"}` | terminal: turn complete |
-| `{type:"error", message}` | terminal: turn failed |
-
-The runner guarantees a **single terminal frame** (`done` or `error`); the
-host ignores any frame after it.
+The frames are the [provider protocol](provider-protocol.md)'s; nothing in
+them is Claude-specific. One provider process per turn, so turns of
+different chats never interleave.
 
 ## Key files
 
 | File | Role |
 |------|------|
-| `packages/providers/anthropic/runner.mjs` | SDK integration: query lifecycle, MCP server, tool-call proxying |
-| `packages/providers/anthropic/package.json` | pins the SDK version — upgrade here; the runner reinstalls when the lockfile changes |
-| `packages/providers/anthropic/nix/` | pins the Claude CLI release; the runner builds it to the `claude` out-link — see [The pinned CLI](#the-pinned-cli) |
-| `src/xi/providers/runner.cljs` | host side of the runner protocol, provider-agnostic: spawn, framing, tool-call proxying, terminal frame |
-| `src/xi/providers/anthropic.cljs` | Claude-specific: query options, SDK message decoding, tool policy + registry wiring |
+| `xi-providers/packages/anthropic/src/turn.ts` | query options, the MCP server, the login freshness gate |
+| `xi-providers/packages/anthropic/src/decode.ts` | SDK messages → protocol frames, errors shown once per turn |
+| `xi-providers/packages/anthropic/src/cli.ts` | which Claude CLI runs, and keeping it from outliving the turn |
+| `xi-providers/packages/anthropic/package.json` | the SDK version, and the manifest |
+| `xi-providers/packages/anthropic/nix/` | pins the Claude CLI release; built to the `claude` out-link — see [The pinned CLI](#the-pinned-cli) |
+| `src/xi/providers/process.cljs` | Xi's side: the turn request, frames → callbacks, tool calls through policy + registry |
+| `src/xi/providers/runner.cljs` | spawn and framing |
 | `src/xi/tools/registry.cljs` | Tool definitions and execute fns |
 | `src/xi/tools/*.cljs` | Individual tools (bash, read, write, edit, grep, find, ls) |
 | `src/xi/ext/rules.cljs` | `tool-policy`: the rules engine's decision on each tool call |
@@ -91,16 +74,17 @@ host ignores any frame after it.
 CC is started with `permissionMode: "bypassPermissions"` (so it doesn't
 prompt on stdin) and a **whitelist**: `tools: []` disables every built-in,
 `allowedTools: ["mcp__xi-tools__*"]` exposes only Xi's MCP tools
-(`base-query-opts` in `providers/anthropic.cljs`).
+(`queryOptions` in the provider's `turn.ts`).
 
-### 2. Xi's tools are exposed via MCP — in the runner
+### 2. Xi's tools are exposed via MCP — in the provider
 
-The host resolves the turn's tool surface with `resolve-tooling`
-(extension extras/removals, an agent profile's `:only-tools` allowlist) and ships the ordered
-`toolDefs` in the `start` frame. The runner builds an in-process MCP server
-from them (`createSdkMcpServer`), converting each JSON Schema to Zod. Each
-tool's handler doesn't execute anything — it emits a `tool-call` frame and
-resolves when the matching `tool-result` arrives.
+Xi resolves the turn's tool surface with `resolve-tooling`
+(extension extras/removals, an agent profile's `:only-tools` allowlist) and
+sends the ordered definitions as the turn request's `tools`. The provider
+builds an in-process MCP server from them (`createSdkMcpServer`), converting
+each JSON Schema to Zod. Each tool's handler doesn't execute anything — it
+sends a `tool-call` frame and resolves when the matching `tool-result`
+arrives.
 
 Extensions extend the tool surface per assembly via
 `:extra-tool-definitions` / `:extra-tool-registry` (e.g. `kb_*`,
@@ -115,8 +99,8 @@ so an unlisted tool is never advertised.
 ### 3. The tool policy (host-side)
 
 Every tool call passes one policy step before it runs: the rules engine
-(`xi.ext.rules/tool-policy`), wired by `xi.cli` and passed into the provider
-per turn as `:tool-policy`. It is core, not an extension surface — extensions
+(`xi.ext.rules/tool-policy`), wired by `xi.cli` and handed to every turn as
+`:tool-policy`. It is core, not an extension surface — extensions
 can't add to it or skip it. `(fn [tool-call ctx]) → promise` of:
 
 | Return | Meaning |
@@ -166,8 +150,8 @@ To add a policy, add a rule (`.xi/rules.edn`, `/rules`, or a default in
 ## Claude CLI resolution (NixOS)
 
 The SDK ships a native, generically-linked CC binary that can't run on NixOS
-(wrong `ld-linux`). The runner's `resolveClaudeExecutable()` instead resolves,
-in order: `XI_CLAUDE_CLI_PATH`, the pinned `packages/providers/anthropic/claude/bin/claude`
+(wrong `ld-linux`). The provider's `resolveClaudeExecutable()` (`src/cli.ts`) instead
+resolves, in order: `XI_CLAUDE_CLI_PATH`, the pinned `claude/bin/claude`
 out-link, then `claude` from `PATH` (following the symlink with
 `realpathSync`), and passes the result as `pathToClaudeCodeExecutable`.
 
@@ -175,16 +159,16 @@ out-link, then `claude` from `PATH` (following the symlink with
 
 The CLI gates new model ids on its own version ("Claude Code X does not
 support this model; version Y or newer is required") and nixpkgs lags
-upstream, so the release is pinned next to the runner:
+upstream, so the provider pins the release (paths in xi-providers):
 
 | File | Role |
 |------|------|
-| `packages/providers/anthropic/nix/claude-code-manifest.json` | the upstream release manifest — this *is* the pin |
-| `packages/providers/anthropic/nix/flake.nix` + `flake.lock` | nixpkgs' `claude-code` built with that manifest |
-| `packages/providers/anthropic/claude` | out-link to the build (gitignored) |
+| `packages/anthropic/nix/claude-code-manifest.json` | the upstream release manifest — this *is* the pin |
+| `packages/anthropic/nix/flake.nix` + `flake.lock` | nixpkgs' `claude-code` built with that manifest |
+| `packages/anthropic/claude` | out-link to the build (gitignored) |
 
 Nothing is built by hand and there is no dev shell to enter: before each turn
-the runner compares the manifest's version with the version the out-link
+the provider compares the manifest's version with the version the out-link
 points at, and runs `nix build path:…/nix#claude-code -o …/claude` when they
 differ or the link is missing. When they match this costs a file read. Without
 `nix` on `PATH`, or when the build fails (offline), it uses whatever is already
@@ -197,7 +181,10 @@ that evaluating it copies three small files into the store rather than
 `node_modules` or the repo, and so it works on hosts without a git checkout.
 
 `bb claude:update [version]` bumps the manifest to the latest release;
-`bb claude:build` forces a build. Both take effect on the next turn.
+`bb claude:build` forces a build (both run the provider's `src/pin.ts` in
+`providers/`; commit the bump in xi-providers). Both take effect on the next
+turn. A package install has no `nix/`: it runs the `claude` on `PATH`, else
+the SDK's own binary.
 
 ## Prompt caching & token hygiene
 
@@ -210,7 +197,7 @@ dead weight. The rules:
   (`system-prompt/load-agents-parts` + extension prompts), not per turn. An
   AGENTS.md edit mid-session therefore does not invalidate the cache; it is
   picked up by the next room / server restart.
-- **Xi is the sole loader of project instructions.** `base-query-opts` passes
+- **Xi is the sole loader of project instructions.** `queryOptions` passes
   `settingSources ["user"]`, so the CLI loads `~/.claude/CLAUDE.md` but not the
   project's `AGENTS.md`/`CLAUDE.md` — those are already in the appended system
   prompt (`find-agents-md` takes `AGENTS.md`, falling back to `CLAUDE.md`).
@@ -249,13 +236,12 @@ next turn start a fresh Claude session with a new JSONL file.
 
 ## Stream processing
 
-`stream-messages-runner` returns `{:promise :abort!}`. The runner's
-`message` frames are decoded host-side by `process-sdk-message` into
-provider callbacks (`:on-text`, `:on-thinking`, `:on-tool-start`,
-`:on-tool-args`, `:on-tool-result`, `:on-error`), which the agent layer
-turns into `:agent/*` events:
+The provider decodes each SDK message into protocol frames (`decode.ts`);
+`xi.providers.process` maps those onto the turn's callbacks (`:on-text`,
+`:on-thinking`, `:on-tool-start`, `:on-tool-args`, `:on-tool-result`,
+`:on-error`), which the agent layer turns into `:agent/*` events:
 
-| Message type | What Xi does |
+| Message type | What the provider sends |
 |---|---|
 | `stream_event` | SSE events: text/thinking deltas, tool_use blocks, usage |
 | `assistant` | Fallback for complete assistant messages (when no stream events) |
@@ -265,20 +251,21 @@ turns into `:agent/*` events:
 | `rate_limit_event` | Report rate limits via on-error callback |
 
 Tool names in stream events have the MCP prefix (`mcp__xi-tools__bash`),
-which `util/strip-mcp-prefix` removes for display.
+which the provider strips for display.
 
-SDK lifecycle quirks are contained in the runner: the query must be
+SDK lifecycle quirks are contained in the provider: the query must be
 `.close()`d after completion to avoid EPIPE from orphaned subprocess pipes;
 abort uses `.interrupt()` then `.close()`.
 
 The Claude CLI must never outlive the host. The SDK only kills it from a
-`process.on("exit")` hook, which doesn't run when the runner dies by signal,
+`process.on("exit")` hook, which doesn't run when the provider dies by signal,
 and `bb serve:restart` SIGKILLs just the bun host (`reap-stray-serve!`). An
 orphaned CLI then finishes the in-flight turn on its own, and the restarted
 server's auto-resume sends `continue` on top of a turn that actually
-completed. So the runner spawns the CLI itself (`spawnClaudeCodeProcess`) and
-SIGKILLs it as soon as the host is gone: stdin EOF, EPIPE on stdout, or
-SIGHUP. A SIGTERM from the host (the normal kill after the terminal frame, or
-after an abort) is passed on to the CLI as SIGTERM. The server also skips
+completed. So the provider spawns the CLI itself (`spawnClaudeCodeProcess`) and
+SIGKILLs it as soon as Xi is gone (the kit's `shutdown` hook): stdin EOF, EPIPE on stdout, or
+SIGHUP. After `done`, or on a SIGTERM from Xi (after an abort), the CLI gets
+SIGTERM and three seconds before SIGKILL; the provider exits once it is gone,
+which Xi takes as "the transcript is settled". The server also skips
 auto-resume when the transcript already ends in an `end_turn`
 (`session/turn-completed?`).

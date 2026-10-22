@@ -21,7 +21,8 @@
      :summary/generated ─► append the description as a status entry, overwrite
                            the session title, and persist via :session/sync
      :summary/failed    ─► append an error status"
-  (:require [clojure.string :as str]
+  (:require [xi.providers.routing :as routing]
+            [clojure.string :as str]
             [xi.commands :as commands]
             [xi.core.state :as state]
             [xi.naming :as naming]))
@@ -132,14 +133,14 @@
 
 (defn create-fx
   "Summary-generation effect. Runs a throwaway one-shot turn against a cheap
-   model through the claude provider, pointed at a temp CLAUDE_CONFIG_DIR so
+   model through the side-turn provider, pointed at a temp CLAUDE_CONFIG_DIR so
    the CLI session it leaves behind never reaches the session list. The temp
    dir is created via `make-config-dir!` and removed via `remove-config-dir!`
    once the turn ends."
   [providers {:keys [make-config-dir! remove-config-dir!]}]
   {:summary/generate
    (fn [{:keys [dispatch! state]} {:keys [room-id]}]
-     (if-let [provider (get providers :anthropic)]
+     (if-let [provider (routing/side-turn-provider providers)]
        (let [room       (get-in state [:rooms room-id])
              transcript (build-transcript (:history room))
              cwd        (:cwd room)
@@ -182,4 +183,4 @@
                             :error (str (.-message err))})
                 nil))))
        (dispatch! {:type :summary/failed :room-id room-id
-                   :error "no claude provider"})))})
+                   :error "no side-turn provider"})))})

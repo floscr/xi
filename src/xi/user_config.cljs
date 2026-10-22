@@ -73,7 +73,41 @@
 
 (def ^:private config-file-keys
   #{:type :version :extensions :demo-extensions :agents :projects :users
-    :trusted-mcp-servers :keys})
+    :trusted-mcp-servers :keys :providers})
+
+(defn- providers-error
+  "→ nil when `providers` is a well-formed `:providers` vector, else why not.
+   An entry is a bundled provider's id, or a map naming one (:id), a
+   directory (:dir) or an npm package at an exact version (:npm); its other
+   keys are the provider's options (xi.providers.config)."
+  [providers]
+  (cond
+    (not (sequential? providers))
+    ":providers must be a vector of provider ids or {:id|:dir|:npm …} maps"
+
+    :else
+    (some (fn [p]
+            (cond
+              (keyword? p) nil
+
+              (not (map? p))
+              (str ":providers entries are ids like :anthropic or maps, not " (pr-str p))
+
+              (not= 1 (count (filter #(contains? p %) [:id :dir :npm])))
+              (str ":providers entry " (pr-str p) " needs exactly one of :id, :dir or :npm")
+
+              (and (contains? p :id) (not (keyword? (:id p))))
+              (str ":providers :id must be a keyword like :ollama, not " (pr-str (:id p)))
+
+              (and (contains? p :dir) (not (and (string? (:dir p)) (seq (:dir p)))))
+              ":providers :dir must be a directory path"
+
+              (and (contains? p :npm)
+                   (not (and (string? (:npm p))
+                             (re-matches #"(@[^/@\s]+/)?[^/@\s]+@\d+\.\d+\.\d+[^\s]*" (:npm p)))))
+              (str ":providers :npm needs a package at an exact version, like "
+                   "\"xi-provider-x@1.2.0\", not " (pr-str (:npm p)))))
+          providers)))
 
 (defn- users-error
   "→ nil when `users` is a well-formed `:users` map, else why not."
@@ -122,7 +156,7 @@
   [data]
   (let [shape   (str "{:type " CONFIG_FILE_TYPE " :version " CONFIG_FILE_VERSION
                      " :extensions [...] :demo-extensions [...] :agents {...} :projects {...}"
-                     " :users {...} :trusted-mcp-servers [...] :keys {...}}")
+                     " :users {...} :trusted-mcp-servers [...] :keys {...} :providers [...]}")
         unknown (when (map? data) (remove config-file-keys (keys data)))
         spec    (when (map? data) (projects/parse-spec (:projects data)))]
     (cond
@@ -171,6 +205,9 @@
       (xkeys/config-error (:keys data))
       {:error (xkeys/config-error (:keys data))}
 
+      (and (contains? data :providers) (providers-error (:providers data)))
+      {:error (providers-error (:providers data))}
+
       (:error spec)
       {:error (:error spec)}
 
@@ -181,7 +218,8 @@
                :projects            spec
                :users               (or (:users data) {})
                :trusted-mcp-servers (set (:trusted-mcp-servers data))}
-        (contains? data :keys) (assoc :keys (:keys data))))))
+        (contains? data :keys)      (assoc :keys (:keys data))
+        (contains? data :providers) (assoc :providers (vec (:providers data)))))))
 
 (def PROJECTS_FILE_NAME
   "The optional file next to the config file whose content (a bare map) is the
@@ -255,6 +293,12 @@
       (js/console.error (str "xi: " (config-file) " is invalid — " e
                              " — no users declared")))
     (or (:users cfg) {})))
+
+(defn providers
+  "The config file's `:providers` entries (xi.providers.config), or nil when
+   it doesn't set the key: then every bundled provider loads."
+  []
+  (:providers (read-config)))
 
 (defn trusted-mcp-servers
   "The MCP server ids the config file trusts outright (`:trusted-mcp-servers`:

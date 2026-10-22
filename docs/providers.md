@@ -1,117 +1,99 @@
 # Providers
 
-How model providers are wired. Picking and authenticating a model as a user
-is in the guide: [models](guide/models.md).
+How model providers are wired. Every provider is an external program that
+speaks the [provider protocol](provider-protocol.md); Xi compiles none in.
+Picking providers and models as a user is in the guide:
+[models](guide/models.md) and [configuration](guide/configuration.md#providers).
 
-A provider is a map `{:id kw :start-turn! (fn [opts] {:promise :abort!
-:exited}) :list-models! (fn [] Promise<[id…]>) :store {:rewind! …}}`.
-`:exited` (optional, default `:promise`) settles once the turn's process is
-gone and can no longer write its transcript. `:store` (optional) translates
-conversation edits to the data the provider keeps:
-`(:rewind! store) {:cwd :session-id} {:keep-prompts [text…]}` →
-`Promise<{:status …}>` cuts the stored conversation to those prompts
-(`xi.session.claude-store`, shared by Claude and the fake provider; design in
-`tasks/session-store.md`). `:login` (optional) is a subscription sign-in,
-`{:name :label :login! :logout!}`: `/login <name>` (`xi.fx` `:provider/login`)
-and `xi login <name>` (`xi.cli`) call `(:login! login) {:on-prompt f}` →
-`Promise<credentials>`, `f` receiving `{:url :user-code}` to show the user.
-Which providers load is the
-`providers` vector in `src/xi/config.cljc`; `xi.cli` derives the id →
-provider lookup from it, wrapping every provider without a `:store` in
-`xi.session.recorder` (below), so every provider's chats have a transcript. Routing: an explicit `:provider` on the room's
-agent wins, else `xi.util/provider-for-model` picks by model-name prefix
-(shared with the browser build). In-flight turn handles live in the
-`agent/create-fx` closure; `:agent/abort` → `:provider/abort` → `abort!`.
+## Where they come from
 
-| Provider | Namespace | Model ids | Transport |
+`xi.providers.config/load-providers` reads `config.edn`'s `:providers`
+(`xi.user-config/providers`) once at startup, in `xi.cli`:
+
+| Entry | Resolves to |
+| --- | --- |
+| `:anthropic`, `{:id :anthropic …}` | a bundled provider: `providers/packages/<name>` next to the bundle, or under `$XI_PROVIDERS_DIR` |
+| `{:dir "path" …}` | that directory; relative to the config file |
+| `{:npm "name@1.2.3" …}` | the package, installed once with `bun add` into `~/.cache/xi/providers/<name>@<version>/` |
+
+The entry's other keys are the provider's options. Without `:providers`
+every bundled provider loads, in `resources/providers.edn`'s `:bundled`
+order. A broken entry is logged as `[providers] …` and skipped; a turn
+whose model no loaded provider routes gets "No provider runs …" from
+`xi.agent`. Adding or removing a provider takes a restart; an edit to a
+provider's program applies on its next request, since every request spawns
+it afresh.
+
+The bundled set is the [xi-providers](https://github.com/floscr/xi-providers)
+repo at the commit `resources/providers.edn` pins. In a checkout,
+`providers/` is either a link to your own clone (`bb providers:link`) or a
+checkout of the pin (`bb providers:fetch`); `bb providers:pin` moves the pin
+to the clone's pushed HEAD. `bb package` copies the bundled packages and the
+kit into the npm package ([packaging.md](packaging.md)).
+
+| Provider | Package | Model ids | Notes |
 | --- | --- | --- | --- |
-| Claude | `xi.providers.anthropic` | bare Claude ids | Claude Agent SDK in the out-of-process runner, tools proxied back ([mcp-tool-bridge.md](mcp-tool-bridge.md)) |
-| Ollama | `xi.providers.ollama` | Ollama ids | `xi.providers.openai-compat` against `OLLAMA_BASE_URL` |
-| OpenCode Zen · Go | `xi.providers.zen` | `opencode/<id>` · `opencode-go/<id>` | dispatcher over three adapters (below), one base URL per gateway |
-| OpenAI Codex | `xi.providers.openai.codex` | `openai/<id>` | Responses SSE against the ChatGPT Codex backend |
+| Claude | `anthropic` | `claude-…`, `anthropic/…`, `sonnet`/`opus`/`haiku` | Claude Agent SDK; tools as an in-process MCP server proxying to Xi ([mcp-tool-bridge.md](mcp-tool-bridge.md)); runs side turns; writes its own transcripts |
+| Ollama | `ollama` | every id no other provider claims | OpenAI-compatible Chat Completions against `OLLAMA_BASE_URL` / `:base-url`; starts a local `ollama serve` |
+| OpenAI Codex | `codex` | `openai/…` | Responses API on the ChatGPT subscription, with the Codex CLI's login |
+| OpenCode Zen · Go | `opencode` | `opencode/…` · `opencode-go/…` | three wire formats behind each gateway; `/login opencode` for Go |
 
-The runner host side (`xi.providers.runner`) is provider-agnostic; the
-Claude CLI is pinned via nix in `packages/providers/anthropic/nix/` and
-built by the runner (`bb claude:update` bumps it).
+Each package's README in xi-providers has its details (endpoints, auth,
+prompt caching).
 
-## Shared cores
+## The host side
 
-- `xi.providers.openai-compat` — OpenAI Chat Completions streaming + tool-use
-  loop, extracted from the Ollama provider; Ollama and Zen's chat-completions
-  surface are config wrappers (base URL, auth headers, pre-flight).
-- `xi.providers.openai.responses` — OpenAI **Responses** SSE streaming +
-  tool loop, shared by Zen's Responses surface and the Codex provider. Runs
-  stateless (`store:false`): streamed output items (reasoning / message /
-  function_call) are echoed verbatim into the next request's `input` so ids
-  and reasoning ↔ function_call pairing stay valid; tool calls run through
-  the registry + policy and return as `function_call_output`. Sends
-  `reasoning.effort` (default `low`; the models reject `none`) with
-  `include: ["reasoning.encrypted_content"]`, streams reasoning summaries as
-  thinking. `:reasoning-effort` on the turn overrides.
+| Namespace | Role |
+| --- | --- |
+| `xi.providers.manifest` | read and normalize a manifest (`package.json` `xi` key, else `provider.edn`); `spec`, the part clients get |
+| `xi.providers.config` | resolve `:providers` entries to manifests, install npm ones, build the providers |
+| `xi.providers.process` | `create`: a manifest → the provider map below; turn requests, frame handling, tool calls, `models` / `usage` / `login` requests |
+| `xi.providers.runner` | spawn a program for one request, frame its stdio, pass stderr through |
+| `xi.providers.locks` | the named mutexes of the protocol's `lock` frame, per Xi process |
+| `xi.providers.routing` | (cljc) route a model id with the published specs; the side-turn provider |
+| `xi.providers.fake` | the scripted e2e model ([testing.md](testing.md)) |
 
-## OpenCode Zen and Go (`xi.providers.zen`)
+The provider map is what `xi.agent` and the side-turn effects consume:
 
-One provider for OpenCode's two gateways: Zen (pay-as-you-go,
-`opencode/<id>`) and the Go subscription (`opencode-go/<id>`). The prefix
-picks the gateway (`xi.providers.zen.models/gateway`), and with it the base
-URL, the key and the model list; the rest is shared. Each model is routed to
-an adapter by a static wire-format table (`xi.providers.zen.models`,
-transcribed from the docs' endpoint tables; unknown ids default to
-chat-completions). Go serves MiniMax M3 and Qwen3.8 Max on the Anthropic
-surface where Zen uses chat-completions; the table carries that override.
+```clojure
+{:id :start-turn!   ; (fn [opts]) → {:promise :abort! :exited}
+ :list-models!      ; (fn []) → Promise<[id …]>
+ :side-turns? :spec :manifest
+ :store             ; {:rewind! …} for `transcripts: self` (xi.session.claude-store)
+ :login             ; {:name :label :login! :logout!}, with a manifest :login
+ :usage-sources}    ; [{:id :fetch}], with the `usage` capability
+```
 
-| Surface | Zen endpoint | Go endpoint | Models | Adapter |
-| --- | --- | --- | --- | --- |
-| Chat Completions | `POST /zen/v1/chat/completions` | `POST /inference/go/openai/v1/chat/completions` | DeepSeek, GLM, Kimi, MiniMax, Big Pickle, `*-free` | `openai-compat` |
-| Anthropic Messages | `POST /zen/v1/messages` (`x-api-key`; bearer-only is rejected) | `POST /inference/go/anthropic/v1/messages` | Claude, Qwen | `xi.providers.zen.anthropic` |
-| Responses | `POST /zen/v1/responses` | `POST /inference/go/openai/v1/responses` | GPT (incl. preview ids), Grok, Muse | `xi.providers.zen.responses` |
-| Google | `POST /zen/v1/models/<id>` | `POST /inference/go/google/v1beta/models/<id>` | Gemini | not implemented; clear error |
+`start-turn!` gets xi.agent's callbacks (`:on-text`, `:on-tool-start`, …)
+and maps the program's frames onto them. A `tool-call` frame runs through the
+turn's `:tool-policy` (the rules engine) and registry
+(`xi.providers.process/run-call`), the same way for every provider. The
+`done` frame becomes the result map (`:usage :cost :session-id
+:result-text :is-error :aborted :resume-failed :fatal-error`); a missing
+working directory resolves `{:cwd-missing true}` without starting the
+program. `:exited` settles when the program is gone, which for Claude means
+its CLI wrote everything; a rewind waits for it.
 
-Auth (`xi.providers.zen.auth/credential`, a promise resolved per turn).
-Zen: `OPENCODE_API_KEY`, `OPENCODE_ZEN_API_KEY`, then the `opencode` entry of
-`~/.local/share/opencode/auth.json`. Go: the Console sign-in first
-(`xi.providers.zen.login`: the OpenCode CLI's device flow as client
-`opencode-cli` against `https://opencode.ai/console/auth/device/*`; tokens at
-`~/.config/xi/opencode-go.json`, refreshed a minute before expiry with one
-refresh in flight at a time since the Console rotates refresh tokens, an
-`invalid_grant` deleting them), then `OPENCODE_GO_API_KEY`, the `opencode-go`
-entry, then the Zen key. A sign-in scoped to an organization adds
-`x-org-id`. `/model` lists live ids from `https://opencode.ai/zen/v1/models`
-and `https://opencode.ai/inference/go/v1/models`.
+## Routing
 
-Every request carries `User-Agent: xi-agent` and the room id as
-`x-opencode-session`: Go requires clients to identify themselves and uses
-the session for routing and prompt caching (the usage server reads the Go
-windows from `/zen/go/v1/usage` with the same key).
+`xi.cli` publishes the loaded providers' specs as `:providers/changed`; the
+state keeps them at `:providers` and `xi.server.ws` sends them every client
+on admit. A room's `:agent :provider` is set from them at `:room/create`,
+`/model`, a web resubmission with a model, and a resume; nil (no table yet)
+leaves it to `xi.agent/resolve-provider`, which routes with the providers'
+own specs, then falls back to the side-turn provider. `/prompt` and the
+web's prompt tab show the spec's `:prompt-note`.
 
-**Prompt caching.** The Anthropic adapter sets
-`cache_control: {type: "ephemeral"}` on the system prompt, the last tool
-definition (caching the whole static tool list) and the tail of the
-conversation, so each tool-loop iteration pays full price only for the newest
-turn. Measured on a real multi-tool turn: ~51K `cache_read_input_tokens` at
-10% price, roughly a 3× reduction, growing with the number of iterations.
-Cache hits need Anthropic's ~1024-token minimum prefix, so one-line turns show
-none. The native Claude provider already caches via the SDK's `claude_code`
-preset.
+## Usage
 
-## OpenAI Codex (`xi.providers.openai.codex`)
-
-Reuses the Codex CLI's credentials: reads `~/.codex/auth.json` (`CODEX_HOME`)
-on each turn, uses `tokens.access_token` as bearer and its
-`chatgpt_account_id` claim (or `tokens.account_id`) as the
-`chatgpt-account-id` header; when the JWT `exp` has passed it refreshes
-against `https://auth.openai.com/oauth/token` with `tokens.refresh_token` and
-writes the tokens back so the CLI stays in sync. Request: the system prompt in
-the top-level `instructions` field, `include: ["reasoning.encrypted_content"]`,
-`reasoning: {effort, summary:auto}`, `text: {verbosity:"medium"}`,
-`tool_choice:"auto"`, `parallel_tool_calls:true`; headers `OpenAI-Beta:
-responses=experimental`, `originator: codex_cli_rs`. SSE only, no WebSocket
-transport; no per-model effort clamping. The `openai/` prefix is stripped
-before the request.
+`xi.server.usage` polls the live Claude Code login itself (the sidebar
+ring reads it) and every provider's and extension's `:usage-sources`. A
+provider's `usage` request returns readings in the protocol's camelCase;
+`xi.providers.process/reading` turns them into `xi.usage`'s shape.
 
 ## Transcripts for sessionless providers
 
-Ollama, Codex and OpenCode keep no conversation server-side. `xi.cli` wraps
+A provider with `transcripts: host` keeps no conversation. `xi.cli` wraps
 each provider without a `:store` in `xi.session.recorder/with-transcripts`:
 every main turn is recorded from the provider's callbacks (text, tool
 calls, results, errors) into a Claude CLI-format transcript under
@@ -120,12 +102,13 @@ CLI), and its id is reported as the provider session id. Saving, the
 sidebar, resume, interrupted-turn detection and `/tree` rewinds
 (`xi.session.claude-store`) then work as for Claude. The prompt is written
 when the turn starts and the rest when it ends; side turns are not
-recorded. The model's context still comes from the replayed room history,
-which a resume rebuilds from the transcript.
+recorded. The model's context comes from the `history` Xi sends, which a
+resume rebuilds from the transcript.
 
 ## Side turns
 
-Text-only side turns (titles, summaries, quick replies, compaction) must pass
-`:no-tools? true`, or each carries every tool definition (~25k tokens). They
-run against a throwaway `CLAUDE_CONFIG_DIR` so their transcripts never reach
-the session list.
+Titles, summaries, quick replies and compaction run on the first provider
+with `sideTurns` (Claude). They pass `:no-tools? true` (the request's
+`noTools`), or each carries every tool definition (~25k tokens), and run
+against a throwaway `CLAUDE_CONFIG_DIR` (the request's `env`) so their
+transcripts never reach the session list.

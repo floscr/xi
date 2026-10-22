@@ -1,26 +1,15 @@
 (ns xi.providers.runner
-  "Host side of the provider runner protocol, shared by every provider that
-   runs its vendor SDK out of process (`packages/providers/<id>/runner.mjs`, its own
-   node_modules — see docs/mcp-tool-bridge.md).
+  "Spawn a provider's program for one request and speak the protocol's
+   framing (docs/provider-protocol.md): the request as the first line on
+   stdin, then one JSON object per line each way. What the frames mean is
+   xi.providers.process's business.
 
-   One runner process per turn, newline-delimited JSON over stdio:
-
-     host → runner   {type \"start\", …}  {type \"tool-result\", id, result}
-                     {type \"abort\"}
-     runner → host   {type \"message\", message}  {type \"tool-call\", id, name,
-                     arguments}  {type \"done\"}  {type \"error\", message}
-
-   This namespace owns spawning, framing, tool-call proxying and the single
-   terminal frame. What a `message` means is the provider's business."
+   The program runs with its provider directory as cwd; a leading \"bun\" in
+   the manifest's command is the Bun binary running Xi, so it needs nothing
+   on PATH. stderr is passed through to ours (the server log) and its tail is
+   kept for the error when the program dies without a `done`."
   (:require ["node:child_process" :as child-process]
-            ["node:path" :as path]
             [clojure.string :as str]))
-
-(defn script-path
-  "Default location of a provider's runner script: `packages/providers/<id>/runner.mjs`
-   next to the directory holding the compiled main.js."
-  [provider-id]
-  (.resolve path js/__dirname ".." "packages" "providers" (name provider-id) "runner.mjs"))
 
 (defn split-frames
   "Append `chunk` to the pending `buf` and split off the complete lines.
@@ -30,91 +19,53 @@
     {:lines (vec (remove str/blank? (butlast parts)))
      :rest  (last parts)}))
 
-(defn run-turn!
-  "Spawn `script` and drive one turn. Returns {:promise :abort! :exited}; the
-   promise resolves (never rejects) once the runner sent its terminal frame or
-   exited, :exited once the runner process is gone (it outlives its CLI, so
-   the transcript is settled).
+(defn resolve-command
+  "The manifest's command with \"bun\" as this process's own executable."
+  [[exe & args]]
+  (into [(if (= "bun" exe) (.-execPath js/process) exe)] args))
 
-     :script        runner script path
-     :start         the `start` frame's payload (a JSON-serializable map)
-     :on-message    (fn [^js message]) — payload of each `message` frame
-     :on-tool-call  (fn [tool-name args]) → Promise<#js {:content :isError}>
-     :on-error      (fn [msg]) — an `error` frame or a failed spawn
-     :log-tag       prefix for diagnostics (default \"runner\")"
-  [{:keys [script start on-message on-tool-call on-error log-tag]
-    :or {log-tag "runner"}}]
-  (let [^js proc (child-process/spawn (.-execPath js/process)
-                                      #js [script]
-                                      #js {:stdio #js ["pipe" "pipe" "inherit"]})
-        send-frame! (fn [m]
-                      (try
-                        (.write (.-stdin proc) (str (js/JSON.stringify (clj->js m)) "\n"))
-                        (catch :default _e nil)))
-        exited (js/Promise.
-                (fn [resolve _reject]
-                  (.once proc "close" (fn [_code] (resolve nil)))
-                  (.once proc "error" (fn [_err] (resolve nil)))))
-        promise
-        (js/Promise.
-         (fn [resolve _reject]
-           (let [buf (atom "")
-                 done? (atom false)
-                 finish! (fn []
-                           (when-not @done?
-                             (reset! done? true)
-                             (try (.kill proc) (catch :default _e nil))
-                             (resolve nil)))
-                 handle-frame
-                 (fn [^js frame]
-                   ;; Frames after the terminal `done`/`error` (e.g. a late
-                   ;; runner error while we're killing it) must not fire
-                   ;; callbacks into an already-resolved turn.
-                   (when-not @done?
-                     (case (aget frame "type")
-                       "message"
-                       (on-message (aget frame "message"))
+(def ^:private stderr-tail-chars 2000)
 
-                       "tool-call"
-                       (let [id (aget frame "id")
-                             args (js->clj (aget frame "arguments") :keywordize-keys true)]
-                         (-> (on-tool-call (aget frame "name") args)
-                             (.then (fn [^js res]
-                                      (send-frame! {:type "tool-result"
-                                                    :id id
-                                                    :result {:content (.-content res)
-                                                             :isError (.-isError res)}})))
-                             (.catch (fn [e]
-                                       (send-frame!
-                                        {:type "tool-result" :id id
-                                         :result {:content #js [#js {:type "text" :text (str e)}]
-                                                  :isError true}})))))
-
-                       "done" (finish!)
-
-                       "error"
-                       (do (on-error (str (aget frame "message")))
-                           (finish!))
-
-                       nil)))]
-             (.setEncoding (.-stdout proc) "utf8")
-             (.on (.-stdout proc) "data"
-                  (fn [chunk]
-                    (let [{:keys [lines rest]} (split-frames @buf chunk)]
-                      (reset! buf rest)
-                      (doseq [line lines]
-                        (try (handle-frame (js/JSON.parse line))
-                             (catch :default e
-                               (js/console.error (str "[" log-tag "] bad frame:") (str e))))))))
-             (.on proc "error"
-                  (fn [err]
-                    (when-not @done?
-                      (on-error (str err)))
-                    (finish!)))
-             (.on proc "close" (fn [_code] (finish!)))
-             (send-frame! (assoc start :type "start")))))]
-    {:promise promise
-     :exited exited
-     :abort! (fn []
-               (send-frame! {:type "abort"})
-               (js/setTimeout (fn [] (try (.kill proc) (catch :default _e nil))) 500))}))
+(defn start!
+  "Spawn `command` in `dir` and send `request` (a JSON-serializable map).
+   `on-frame` gets every frame from the program as a keywordized map.
+   Returns {:send! (fn [frame]) :kill! (fn [] ) :exited Promise<{:code :signal
+   :stderr}>}; :exited also resolves when the spawn itself fails (:error)."
+  [{:keys [command dir request on-frame log-tag]}]
+  (let [[exe & args] (resolve-command command)
+        ^js proc (child-process/spawn exe (clj->js args)
+                                      #js {:cwd dir :stdio #js ["pipe" "pipe" "pipe"]})
+        tail     (atom "")
+        send!    (fn [m]
+                   (try
+                     (.write (.-stdin proc) (str (js/JSON.stringify (clj->js m)) "\n"))
+                     (catch :default _ nil)))
+        exited   (js/Promise.
+                  (fn [resolve _]
+                    (.once proc "close" (fn [code signal]
+                                          (resolve {:code code :signal signal :stderr @tail})))
+                    (.once proc "error" (fn [err]
+                                          (resolve {:error (.-message err) :stderr @tail})))))
+        buf      (atom "")]
+    (.on (.-stdin proc) "error" (fn [_] nil))
+    (.setEncoding (.-stdout proc) "utf8")
+    (.on (.-stdout proc) "data"
+         (fn [chunk]
+           (let [{:keys [lines rest]} (split-frames @buf chunk)]
+             (reset! buf rest)
+             (doseq [line lines]
+               (let [frame (try (js->clj (js/JSON.parse line) :keywordize-keys true)
+                                (catch :default e
+                                  (js/console.error (str "[" log-tag "] bad frame:") (str e) line)
+                                  nil))]
+                 (when (map? frame) (on-frame frame)))))))
+    (.setEncoding (.-stderr proc) "utf8")
+    (.on (.-stderr proc) "data"
+         (fn [chunk]
+           (.write js/process.stderr chunk)
+           (swap! tail (fn [t] (let [t (str t chunk) n (count t)]
+                                 (if (> n stderr-tail-chars) (subs t (- n stderr-tail-chars)) t))))))
+    (send! request)
+    {:send!  send!
+     :kill!  (fn [] (try (.kill proc) (catch :default _ nil)))
+     :exited exited}))

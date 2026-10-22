@@ -128,45 +128,6 @@
 
     :else content))
 
-(defn claude-model?
-  "Returns true if model string looks like a Claude/Anthropic model."
-  [model]
-  (when model
-    (or (str/starts-with? model "claude-")
-        (str/starts-with? model "anthropic/")
-        (contains? #{"sonnet" "opus" "haiku"} model))))
-
-(defn zen-model?
-  "Returns true if model string names an OpenCode model — the explicit
-   `opencode/` (Zen) or `opencode-go/` (OpenCode Go) prefix routes to the
-   OpenCode provider regardless of the bare id. (Bare Zen ids like
-   `claude-opus-4-8` overlap with Claude and are intentionally NOT matched
-   here; prefix them to force the gateway.)"
-  [model]
-  (boolean
-   (when (string? model)
-     (or (str/starts-with? model "opencode/")
-         (str/starts-with? model "opencode-go/")))))
-
-(defn openai-model?
-  "True when `model` names an OpenAI ChatGPT-subscription (Codex) model — the
-   explicit `openai/` prefix routes to the Codex Responses backend."
-  [model]
-  (boolean
-   (when (string? model)
-     (str/starts-with? model "openai/"))))
-
-(defn provider-for-model
-  "Route a model id to a provider keyword: OpenCode (`opencode/…`,
-   `opencode-go/…`) and OpenAI Codex (`openai/…`) prefixes win, then Claude,
-   else the OpenAI-compatible Ollama path."
-  [model]
-  (cond
-    (zen-model? model)    :zen
-    (openai-model? model) :openai
-    (claude-model? model) :anthropic
-    :else                 :ollama))
-
 (defn extract-text-content
   "Extract plain text from content that may be a string or a vec of blocks."
   [content]

@@ -1,7 +1,7 @@
 (ns xi.server.usage
-  "Server-side usage polling (xi.server.ws): every source — the built-in
-   providers' subscriptions below plus the composed extensions'
-   `:usage-sources` — is fetched at start, every five minutes, on demand
+  "Server-side usage polling (xi.server.ws): every source — the live Claude login below, the
+   providers' `:usage-sources` (xi.providers.process) and the composed
+   extensions' — is fetched at start, every five minutes, on demand
    (`refresh!`, throttled) and whenever the Claude login changes. Readings
    (xi.usage) are kept in memory; the sample history behind the charts is
    persisted at ~/.config/xi/state/usage-history.edn so a restart keeps the
@@ -13,8 +13,6 @@
    are unique by :id, the built-in ones first: a pool extension listing every
    stored Claude login never doubles the live one's card."
   (:require [cljs.reader :as reader]
-            [xi.providers.openai.auth :as codex-auth]
-            [xi.providers.zen.auth :as zen-auth]
             [xi.session :as session]
             [xi.usage :as usage]
             ["node:fs" :as fs]
@@ -128,49 +126,11 @@
                                                         :now (js/Date.now)))
                            vector)))))))
 
-(defn- fetch-codex [_]
-  (when (.existsSync fs (codex-auth/auth-path))
-    (some-> (codex-auth/resolve-token)
-            (.then (fn [{:keys [access-token account-id]}]
-                     (fetch-json "https://chatgpt.com/backend-api/wham/usage"
-                                 (cond-> {"Authorization" (str "Bearer " access-token)
-                                          "Accept" "application/json"
-                                          "User-Agent" "codex-cli"}
-                                   account-id (assoc "ChatGPT-Account-Id" account-id)))))
-            (.then (fn [response]
-                     (when response
-                       (some-> (usage/codex-reading {:response response :now (js/Date.now)})
-                               vector))))
-            (.catch (fn [_] nil)))))
-
-(defn- fetch-ollama [_]
-  (when-let [key (env "OLLAMA_API_KEY")]
-    (let [headers {"Authorization" (str "Bearer " key)}]
-      (-> (js/Promise.all #js [(fetch-json "https://ollama.com/api/balance" headers)
-                               (fetch-json "https://ollama.com/api/usage?range=30d" headers)])
-          (.then (fn [[balance usage-resp]]
-                   (when balance
-                     (some-> (usage/ollama-reading {:balance balance :usage usage-resp
-                                                    :now (js/Date.now)})
-                             vector))))))))
-
-(defn- fetch-opencode [_]
-  (-> (zen-auth/credential :go)
-      (.then (fn [{:keys [token]}]
-               (when token
-                 (-> (fetch-json "https://opencode.ai/zen/go/v1/usage"
-                                 {"Authorization" (str "Bearer " token)})
-                     (.then (fn [response]
-                              (when response
-                                (some-> (usage/opencode-reading {:response response :now (js/Date.now)})
-                                        vector))))))))
-      (.catch (fn [_] nil))))
-
 (def builtin-sources
-  [{:id :claude   :fetch fetch-claude}
-   {:id :codex    :fetch fetch-codex}
-   {:id :ollama   :fetch fetch-ollama}
-   {:id :opencode :fetch fetch-opencode}])
+  ;; The live Claude Code login of this machine; the sidebar ring reads it
+  ;; (claude-summary). Providers report their own accounts as :usage-sources
+  ;; (xi.providers.process), passed in with the extensions'.
+  [{:id :claude :fetch fetch-claude}])
 
 ;; ── Polling ───────────────────────────────────────────────────────────────────
 

@@ -16,8 +16,17 @@
 (defn- apply-events [st & evs]
   (reduce #(:state (handle %1 %2)) st evs))
 
+;; The routing table the server publishes (the bundled manifests' routes).
+(def ^:private provider-specs
+  [{:id :anthropic :label "Claude" :side-turns? true
+    :prompt-note "The Claude Code preset is injected by the Agent SDK."
+    :routes {:prefixes ["claude-" "anthropic/"] :ids ["sonnet" "opus" "haiku"]}}
+   {:id :ollama :label "Ollama" :routes {:prefixes [] :ids [] :default? true}}
+   {:id :zen :label "OpenCode" :routes {:prefixes ["opencode/" "opencode-go/"] :ids []}}])
+
 (defn- with-room []
   (apply-events (state/initial-state)
+                {:type :providers/changed :providers provider-specs}
                 {:type :room/create :room-id "r"
                  :room {:model "claude-sonnet-4-5" :cwd "/tmp"
                         :system "AGENTS content"
@@ -231,10 +240,11 @@
   (let [{:keys [state]} (handle (with-room)
                                 {:type :command/run :room-id "r" :name "prompt"})
         text (get-in state [:rooms "r" :ui :buffers :prompt :text])]
-    ;; Claude rooms prepend a [CLAUDE_SYSTEM_PROMPT] note surfacing the
-    ;; SDK-injected preset, ahead of the room's own system prompt.
+    ;; A provider whose manifest notes a prompt of its own (Claude's SDK
+    ;; preset) gets that note ahead of the room's own system prompt.
     (is (str/includes? text "AGENTS content"))
-    (is (str/includes? text "[CLAUDE_SYSTEM_PROMPT]"))
+    (is (str/includes? text "[Claude system prompt]"))
+    (is (str/includes? text "The Claude Code preset is injected by the Agent SDK."))
     (is (= :prompt (get-in state [:rooms "r" :ui :active-buffer])))))
 
 (deftest buffers-command-omits-the-buffer-in-view

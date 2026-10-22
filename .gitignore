@@ -18,6 +18,11 @@ resources/public/mkcert-rootCA.crt
 tasks/
 # npm package staging (bb package)
 dist/
+# the bundled providers: an xi-providers checkout (bb providers:fetch) or a
+# link to yours (bb providers:link) — resources/providers.edn pins it
+/providers
+# the worktree-local link to the main checkout's node_modules
+/node_modules
 # rendered site (bb site:build)
 site/dist/
 site/dist-next/

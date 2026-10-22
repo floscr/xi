@@ -17,21 +17,22 @@
 //     resources/highlight/    syntax grammars
 //     resources/treesitter/   web-tree-sitter runtime + WASM grammars
 //     resources/extensions/   demo extensions (config.edn :demo-extensions)
-//     packages/providers/anthropic/runner.mjs   the Claude SDK runner
+//     resources/providers.edn which providers are bundled, in picker order
+//     providers/packages/<n>  the bundled providers and the provider kit, from
+//                             providers/ (bb providers:fetch or providers:link)
 //     LICENSE, THIRD_PARTY_NOTICES.md, README.md, CHANGELOG.md (when present)
 //
-// Paths between these are relative (the bundle finds resources/ and packages/
-// next to target/), so the layout above is part of the contract.
+// Paths between these are relative (the bundle finds resources/ and
+// providers/ next to target/), so the layout above is part of the contract.
 //
 // The generated package.json is the repo's with private/devDependencies
-// dropped and the runner's dependencies (@anthropic-ai/claude-agent-sdk, zod)
-// promoted to the package's own `dependencies`: the runner would otherwise
-// `npm install` into the package directory on first use, which is read-only
-// for a global install.
+// dropped and the bundled providers' npm dependencies (the Claude Agent SDK,
+// zod) promoted to the package's own `dependencies`: a global install's
+// directory is read-only, so nothing can be installed there later.
 
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -72,18 +73,68 @@ copy("resources/public", undefined, (src) => {
   const name = src.slice(rel("resources/public").length);
   return !(name === "/js" || name.startsWith("/js/") || name === "/mkcert-rootCA.crt");
 });
-copy("packages/providers/anthropic/runner.mjs");
+copy("resources/providers.edn");
 for (const f of ["LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "CHANGELOG.md"]) {
   if (existsSync(rel(f))) copy(f);
 }
 
+// ── Bundled providers ────────────────────────────────────────────────────────
+// Their source as it is (Bun runs the .ts), without what only development
+// needs: node_modules, tests, the nix pin and its `claude` out-link (a package
+// install uses the SDK's own Claude binary).
+const pin = readFileSync(rel("resources/providers.edn"), "utf8");
+const bundled = [...(/:bundled\s+\[([^\]]*)\]/.exec(pin)?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+if (!existsSync(rel("providers"))) {
+  console.error("no providers/ checkout: run bb providers:fetch (or bb providers:link)");
+  process.exit(1);
+}
+const providersSrc = realpathSync(rel("providers"));
+const skip = new Set(["node_modules", "test", "nix", "claude"]);
+const providerDeps = {};
+for (const name of [...bundled, "provider-kit"]) {
+  const pkgDir = join(providersSrc, "packages", name);
+  if (!existsSync(join(pkgDir, "package.json"))) {
+    console.error(`missing bundled provider ${name} in ${providersSrc}`);
+    process.exit(1);
+  }
+  const to = into(`providers/packages/${name}`);
+  cpSync(pkgDir, to, {
+    recursive: true,
+    dereference: true,
+    filter: (src) => !skip.has(src.slice(pkgDir.length + 1).split("/")[0]),
+  });
+  const deps = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).dependencies ?? {};
+  for (const [dep, version] of Object.entries(deps)) {
+    if (!dep.startsWith("@xi-agent/")) providerDeps[dep] = version;
+  }
+}
+
+// npm pack leaves out every node_modules directory, so the kit can't be
+// resolved as a package there: its imports become relative paths.
+const kitSrc = into("providers/packages/provider-kit/src");
+function relinkKit(dir) {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) relinkKit(p);
+    else if (e.name.endsWith(".ts")) {
+      const src = readFileSync(p, "utf8");
+      const out = src.replace(/(["'])@xi-agent\/provider-kit(?:\/([\w-]+))?\1/g, (_m, q, sub) => {
+        let r = relative(dirname(p), join(kitSrc, (sub ?? "index") + ".ts"));
+        if (!r.startsWith(".")) r = "./" + r;
+        return q + r + q;
+      });
+      if (out !== src) writeFileSync(p, out);
+    }
+  }
+}
+for (const name of bundled) relinkKit(into(`providers/packages/${name}`));
+
 // ── package.json ─────────────────────────────────────────────────────────────
 const repo = JSON.parse(readFileSync(rel("package.json"), "utf8"));
-const runner = JSON.parse(readFileSync(rel("packages/providers/anthropic/package.json"), "utf8"));
 const { private: _private, devDependencies: _dev, scripts: _scripts, ...pub } = repo;
 writeFileSync(
   into("package.json"),
-  JSON.stringify({ ...pub, dependencies: runner.dependencies }, null, 2) + "\n",
+  JSON.stringify({ ...pub, dependencies: providerDeps }, null, 2) + "\n",
 );
 
 // ── Pack ─────────────────────────────────────────────────────────────────────

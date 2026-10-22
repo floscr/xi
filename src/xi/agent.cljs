@@ -28,6 +28,7 @@
   (:require [clojure.string :as str]
             [xi.core.state :as state]
             [xi.dialog :as dialog]
+            [xi.providers.routing :as routing]
             [xi.util :as util]))
 
 ;; ── History folding (pure) ───────────────────────────────────────────────────
@@ -416,11 +417,13 @@
 ;; ── Provider routing (pure) ──────────────────────────────────────────────────
 
 (defn resolve-provider
-  "Pick a provider: explicit :provider key wins, else route by model name."
+  "Pick a provider: explicit :provider key wins, else route the model id with
+   the providers' specs (xi.providers.routing), else the side-turn provider,
+   else the first."
   [providers {:keys [provider model]}]
   (or (get providers provider)
-      (get providers (util/provider-for-model model))
-      (get providers :anthropic)
+      (get providers (routing/provider-for-model (keep :spec (vals providers)) model))
+      (routing/side-turn-provider providers)
       (first (vals providers))))
 
 ;; ── Effects (contained impure edge) ──────────────────────────────────────────
@@ -508,7 +511,15 @@
    (merge
     fx
     {:provider/start-turn
-     (fn [{:keys [dispatch! get-state]} {:keys [room-id cwd] :as payload}]
+     (fn [{:keys [dispatch! get-state]} {:keys [room-id cwd model] :as payload}]
+      (if-not (resolve-provider providers payload)
+       ;; none loaded (config.edn :providers names none that works)
+       (do (dispatch! {:type :agent/error :room-id room-id
+                       :error {:type "error"
+                               :message (str "No provider runs " (or model "this model")
+                                             " — check :providers in ~/.config/xi/config.edn.")}})
+           (dispatch! {:type :agent/turn-end :room-id room-id})
+           (when turn-finished! (turn-finished! room-id cwd)))
        (let [provider (resolve-provider providers payload)
              ;; Per-turn context for the tool policy and tool exec-fns (as :tool-ctx):
              ;; live state, dispatch, and confirm dialogs.
@@ -622,7 +633,7 @@
                                 :error {:type "error" :message (str (.-message err))}})
                     (dispatch! {:type :agent/turn-end :room-id room-id}))))
                ;; Every turn reports back (xi.holds/settle-room! via xi.cli).
-               (.finally #(when turn-finished! (turn-finished! room-id cwd)))))))
+               (.finally #(when turn-finished! (turn-finished! room-id cwd))))))))
 
      :provider/abort
      (fn [_ {:keys [room-id]}]

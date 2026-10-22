@@ -1,0 +1,8 @@
+;; A provider for the end-to-end scenarios (test/xi/e2e/providers_e2e.cljs):
+;; the protocol by hand, without the provider kit, to pin the contract.
+{:id           :scripted
+ :label        "Scripted"
+ :command      ["bun" "main.mjs"]
+ :routes       {:prefixes ["scripted/"]}
+ :models       ["scripted/echo"]
+ :capabilities #{:usage}}

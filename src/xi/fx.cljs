@@ -352,7 +352,7 @@
                       :menu {:prompt "model> " :items items}})))))
 
    ;; `/login <name>`: the subscription sign-in of the provider whose :login
-   ;; map is called `name` (xi.providers.zen: "opencode"). The page to open
+   ;; map is called `name` (a manifest's :login, e.g. "opencode"). The page to open
    ;; and the code arrive as a status banner with a link button, which goes
    ;; once the Console approves or the flow fails.
    :provider/login
@@ -386,12 +386,13 @@
 
    :provider/logout
    (fn [{:keys [dispatch!]} {:keys [room-id provider]}]
-     (let [login (some #(when (= provider (:name %)) %) (keep :login (vals providers)))]
-       (dispatch! {:type :ui/status :room-id room-id
-                   :text (if login
-                           (do ((:logout! login))
-                               (str "Signed out of " (:label login) "."))
-                           (str "No sign-in for \"" provider "\"."))})))
+     (let [login   (some #(when (= provider (:name %)) %) (keep :login (vals providers)))
+           status! (fn [text] (dispatch! {:type :ui/status :room-id room-id :text text}))]
+       (if login
+         (-> (js/Promise.resolve ((:logout! login)))
+             (.then (fn [_] (status! (str "Signed out of " (:label login) "."))))
+             (.catch (fn [err] (status! (str (:label login) " sign-out failed: " (.-message err))))))
+         (status! (str "No sign-in for \"" provider "\".")))))
 
    ;; The model a user's new chats start with: kept in their own state
    ;; (xi.user-state :preferred-model), the same key the web client syncs.

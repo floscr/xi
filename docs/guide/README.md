@@ -83,6 +83,7 @@ lines; each page line is `- [Title](file.md) — one-line hook`.
 **Making it yours**
 - [Configuration](configuration.md) — `config.edn`, the other files, environment variables
 - [Models](models.md) — Claude, Ollama, OpenCode Zen, OpenAI Codex
+- [Providers](providers.md) — choose which providers run, add one, write your own
 - [Permissions and rules](rules.md) — what Xi may do on its own, and how to change it
 - [Rules reference](rules-reference.md) — every match field, action and default bundle
 - [The clj tool](clj-tool.md) — how the agent runs commands, and how you approve them

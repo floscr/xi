@@ -50,7 +50,7 @@
                                       ;; maintained by the room manager via :room/presence)
     :session session                  ;; current session map (+ :provider-session-id)
     :agent   {:busy?           false
-              :provider        (or provider (util/provider-for-model model))
+              :provider        provider        ;; nil: routed by model id per turn (xi.agent)
               :model           model
               :system          system          ;; concatenated system prompt string
               :system-parts    (or system-parts []) ;; [{:source :text}] with attribution

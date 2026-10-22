@@ -14,10 +14,11 @@ shadow watch keeps fresh and compiles it first only when no watch runs.
 ## The fake LLM (`xi.providers.fake`)
 
 With `XI_FAKE_LLM=<script.edn>` set, the fake is the only provider in
-`xi.cli/providers`, under `:anthropic`. Side turns (titles, summaries,
-compaction) ask for `:anthropic` by id, and `xi.agent/resolve-provider`
-falls back to it for every other model (`qwen3:8b`, `opencode/…`), so no
-turn reaches a model. xi prints `[fake-llm] …` on stderr at startup. The
+`xi.cli/loaded-providers`, under `:anthropic`. It runs side turns (titles,
+summaries, compaction), and `xi.agent/resolve-provider` falls back to it for
+every other model (`qwen3:8b`, `opencode/…`), so no turn reaches a model.
+The bundled providers' routes still load (from `providers/`), so the log
+names the provider a model would have used. xi prints `[fake-llm] …` on stderr at startup. The
 model picker lists nothing (the fake has no `:list-models!`).
 
 The script is re-read every turn, so a test can swap it between turns:
@@ -71,6 +72,15 @@ resumed session), `history` (what the host replayed), `rule`, `tool-calls`
 model *saw* through it.
 
 Without the harness: `XI_FAKE_LLM=script.edn bun target/main.js prompt "hi"`.
+
+## Provider programs
+
+`providers_e2e.cljs` runs a real provider process instead of the fake: its
+scenarios pass `XI_FAKE_LLM` empty and configure `:providers [{:dir
+"test/providers/scripted"}]`, a provider written against the
+[protocol](provider-protocol.md) by hand (EDN manifest, a lock, a tool call
+through Xi, options). The bundled providers' own tests run in xi-providers
+(`bun test` there).
 
 ## The e2e harness (`xi.e2e.harness`)
 

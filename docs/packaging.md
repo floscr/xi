@@ -18,7 +18,7 @@ touched, and it is safe to run next to `bb serve`.
 ## Layout
 
 Paths between these are relative — the bundle finds `resources/` and
-`packages/` next to `target/` — so the layout is part of the contract:
+`providers/` next to `target/` — so the layout is part of the contract:
 
 ```
 package.json                    generated (below)
@@ -28,12 +28,20 @@ resources/public/               web client; js/ is the release :web build
 resources/highlight/            syntax-highlighting grammars
 resources/treesitter/           web-tree-sitter runtime + WASM grammars
 resources/extensions/           demo extensions (config.edn :demo-extensions)
-packages/providers/anthropic/runner.mjs    the Claude SDK runner
+resources/providers.edn         which providers are bundled, in picker order
+providers/packages/<name>/      the bundled providers and provider-kit (their source)
 LICENSE, THIRD_PARTY_NOTICES.md, README.md, CHANGELOG.md
 ```
 
-Left out on purpose: `nix/` and the `claude` out-link (the Nix-pinned Claude
-CLI), `docs/`, tests, the dev builds, `mkcert-rootCA.crt`.
+The providers come from `providers/` (`bb providers:fetch` checks out the
+pin, or `bb providers:link` your clone). Their imports of
+`@xi-agent/provider-kit` are rewritten to relative paths into
+`providers/packages/provider-kit`: npm pack drops every `node_modules`
+directory, so the kit can't be resolved as a package inside the tarball.
+
+Left out on purpose: the providers' `node_modules`, tests, `nix/` and the
+`claude` out-link (the Nix-pinned Claude CLI), `docs/`, xi's tests, the dev
+builds, `mkcert-rootCA.crt`.
 
 ## Runtime: Bun
 
@@ -46,13 +54,11 @@ missing (exit 127). `engines.bun` records the version it was tested with.
 ## The generated package.json
 
 Derived from the repo's: `private`, `devDependencies` and `scripts` are
-dropped, and the runner's `dependencies` (`@anthropic-ai/claude-agent-sdk`,
-`zod`, read from `packages/providers/anthropic/package.json`) become the
-package's own. The runner used to `npm install` into its own directory on
-first use, which fails for a global install into a read-only directory; it now
-skips that when the SDK already resolves from a parent `node_modules` (the
-`external` state in `runner.mjs`). In a checkout nothing changes: the runner's
-own `package.json` and bootstrap still apply.
+dropped, and the bundled providers' `dependencies` (`@anthropic-ai/claude-agent-sdk`,
+`zod`; the `@xi-agent/` workspace ones excepted) become the package's own. A
+global install's directory is read-only, so nothing can be installed into a
+provider later; the providers resolve these from the package's
+`node_modules` or the global one above it.
 
 The SDK brings its own native `claude` binary through the
 `@anthropic-ai/claude-agent-sdk-<platform>` optional dependency, so a package
