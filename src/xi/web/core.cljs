@@ -322,6 +322,23 @@
 (defn- lightbox-close [st _]
   {:state (dissoc st :web/lightbox)})
 
+(defn- attachment-open
+  "Show a prompt's text attachment as a :file buffer of the active room,
+   rendered like any file (markdown included): from its base64 `data` (UTF-8)
+   while the prompt carries it, else from its upload `path` (a resumed
+   transcript keeps only that, xi.commands/messages->history)."
+  [st {:keys [name data path]}]
+  (when-let [room-id (:active-room st)]
+    (if-not (string? data)
+      (when path
+        {:effects [[:app/dispatch {:type :file/open :path path}]]})
+      (let [text (.decode (js/TextDecoder.)
+                          (js/Uint8Array.from (js/atob data) #(.charCodeAt % 0)))
+            id   (buffers/file-id (str "attachment:" name))]
+        {:effects [[:app/dispatch {:type :ui/buffer-set :room-id room-id :buffer-id id
+                                   :buffer {:kind :file :title name :path name :text text}}]
+                   [:app/dispatch {:type :ui/buffer-switch :room-id room-id :buffer-id id}]]}))))
+
 (defn- file-drag
   [st {:keys [on?]}]
   (when (not= (boolean on?) (boolean (:web/file-drag? st)))
@@ -1220,6 +1237,7 @@
           :timeline/block-toggle timeline-block-toggle
           :lightbox/open         lightbox-open
           :lightbox/close        lightbox-close
+          :attachment/open       attachment-open
           :web/file-drag         file-drag
           :copy/open             (fn [st {:keys [text]}] {:state (assoc st :web/copy-text text)})
           :copy/close            (fn [st _] {:state (dissoc st :web/copy-text)})

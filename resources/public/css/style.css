@@ -2956,6 +2956,16 @@ body {
   background: color-mix(in srgb, var(--accent) 16%, transparent);
 }
 
+.user-attachment-card--viewable {
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .user-attachment-card--viewable:hover {
+    background: var(--bg-2);
+  }
+}
+
 .user-attachment-card--pdf .user-attachment-icon {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 16%, transparent);

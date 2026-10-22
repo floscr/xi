@@ -1161,6 +1161,10 @@
                 :x (.-clientX e)
                 :y (.-clientY e)})))
 
+(defn- viewable-file? [path]
+  (let [ext (file-ext path)]
+    (or (contains? md-diff/markdown-exts ext) (some? (grammars/get-grammar ext)))))
+
 (defn- attachment-meta
   "`PDF · 2.4 MB` for a file attachment: its extension (else the media
    subtype) and the decoded size of its base64 `data`."
@@ -1183,7 +1187,7 @@
   (if-let [atts (seq (:images entry))]
     [:div {:class ["user-attachments"]}
      (map-indexed
-      (fn [i {:keys [data media-type name] :as att}]
+      (fn [i {:keys [data media-type name path] :as att}]
         (if (str/starts-with? (or media-type "") "image/")
           (let [src (str "data:" media-type ";base64," data)]
             [:img {:replicant/key i
@@ -1193,9 +1197,18 @@
                    :on {:click (fn [^js e]
                                  (.stopPropagation e)
                                  (dispatch! {:type :lightbox/open :src src}))}}])
-          [:div {:replicant/key i
-                 :class ["user-attachment-card"
-                         (when (= media-type "application/pdf") "user-attachment-card--pdf")]}
+          [:div (cond-> {:replicant/key i
+                         :class ["user-attachment-card"
+                                 (when (= media-type "application/pdf") "user-attachment-card--pdf")]}
+                  (and (or (string? data) path)
+                       (or (str/starts-with? (or media-type "") "text/")
+                           (viewable-file? (or name ""))))
+                  (-> (update :class conj "user-attachment-card--viewable")
+                      (assoc :title "View file"
+                             :on {:click (fn [^js e]
+                                           (.stopPropagation e)
+                                           (dispatch! {:type :attachment/open
+                                                       :name (or name "file") :data data :path path}))})))
            [:span {:class ["user-attachment-icon"]}
             (icon/icon {:icon-name :file-text :size :md})]
            [:span {:class ["user-attachment-text"]}
@@ -3084,10 +3097,6 @@
                           :md-code (or md-code #{})
                           :scroll-key (diff-state/view-key state)
                           :after-line (diff-inline-cards dispatch! state room-id rows range)})))]))
-
-(defn- viewable-file? [path]
-  (let [ext (file-ext path)]
-    (or (contains? md-diff/markdown-exts ext) (some? (grammars/get-grammar ext)))))
 
 (defn open-linked-file!
   "Document click handler (xi.web.core): a relative link to a text file opens
