@@ -29,6 +29,16 @@
                (is (= "hi! read: instructions\n" stdout)
                    "the option reached it and its read ran through Xi's tools"))))))))
 
+(deftest without-a-default-model-xi-asks-for-one
+  (async done
+    ;; the scripted provider names no defaultModel, and no Claude runs
+    (h/with-env! (config [{:dir scripted-dir}]) {} done
+      (fn [env]
+        (-> (prompt! env "hello")
+            (.then
+             (fn [{:keys [stderr]}]
+               (is (str/includes? stderr "No model picked: choose one with /model or --model.")))))))))
+
 (deftest an-unusable-provider-is-reported
   (async done
     (h/with-env! (config [{:dir "/nonexistent/provider"}]) {} done

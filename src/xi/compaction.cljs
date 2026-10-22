@@ -18,7 +18,6 @@
             [xi.commands :as commands]
             [xi.core.state :as state]))
 
-(def ^:private COMPACT_MODEL "claude-sonnet-4-6")
 
 (def ^:private COMPACT_PROMPT
   "Summarize this conversation for continuity. Produce a concise summary preserving:
@@ -103,7 +102,7 @@ Be thorough but concise. Output only the summary, no preamble.")
              chunks (atom [])
              {:keys [promise abort!]}
              ((:start-turn! provider)
-              {:model COMPACT_MODEL
+              {:model (routing/side-model provider :strong)
                :prompt COMPACT_PROMPT
                :cwd (get-in state [:rooms room-id :cwd])
                :resume-session-id session-id

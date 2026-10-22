@@ -20,7 +20,17 @@ The entry's other keys are the provider's options. Without `:providers`
 every bundled provider loads, in `resources/providers.edn`'s `:bundled`
 order. A broken entry is logged as `[providers] …` and skipped; a turn
 whose model no loaded provider routes gets "No provider runs …" from
-`xi.agent`. Adding or removing a provider takes a restart; an edit to a
+`xi.agent`, a turn without a model "No model picked …". A new chat's model
+is the first provider's `defaultModel` (`xi.providers.routing/default-model`,
+`xi.cli/resolve-model-opts`); Xi names none itself.
+
+Xi has no runtime dependencies of its own. A provider's npm dependencies
+must resolve from its directory (`xi.providers.config/with-deps`): a
+bundled one inside the npm package is copied, with the kit, to
+`~/.cache/xi/providers/bundled/<name>-<hash>/` and `bun install`ed there on
+the first start that loads it; in a checkout or on a deployed host `bun
+install` in `providers/` covers them; a `:dir` provider without them is
+skipped with a hint. Adding or removing a provider takes a restart; an edit to a
 provider's program applies on its next request, since every request spawns
 it afresh.
 
@@ -108,7 +118,10 @@ resume rebuilds from the transcript.
 ## Side turns
 
 Titles, summaries, quick replies and compaction run on the first provider
-with `sideTurns` (Claude). They pass `:no-tools? true` (the request's
+with `sideTurns` (Claude), on the models its manifest names
+(`xi.providers.routing/side-model`: `:fast` for titles, `/summary`,
+`/truncate` and quick replies, `:strong` for compaction and a rollover's
+summary); without such a provider they don't run. They pass `:no-tools? true` (the request's
 `noTools`), or each carries every tool definition (~25k tokens), and run
 against a throwaway `CLAUDE_CONFIG_DIR` (the request's `env`) so their
 transcripts never reach the session list.

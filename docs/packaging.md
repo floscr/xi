@@ -38,6 +38,8 @@ pin, or `bb providers:link` your clone). Their imports of
 `@xi-agent/provider-kit` are rewritten to relative paths into
 `providers/packages/provider-kit`: npm pack drops every `node_modules`
 directory, so the kit can't be resolved as a package inside the tarball.
+The same goes for each provider's `package.json`: its `workspace:` kit
+dependency is dropped, so its own `bun install` works.
 
 Left out on purpose: the providers' `node_modules`, tests, `nix/` and the
 `claude` out-link (the Nix-pinned Claude CLI), `docs/`, xi's tests, the dev
@@ -54,11 +56,12 @@ missing (exit 127). `engines.bun` records the version it was tested with.
 ## The generated package.json
 
 Derived from the repo's: `private`, `devDependencies` and `scripts` are
-dropped, and the bundled providers' `dependencies` (`@anthropic-ai/claude-agent-sdk`,
-`zod`; the `@xi-agent/` workspace ones excepted) become the package's own. A
-global install's directory is read-only, so nothing can be installed into a
-provider later; the providers resolve these from the package's
-`node_modules` or the global one above it.
+dropped, and nothing is added: xi-agent has no runtime dependencies. A
+bundled provider's own (the Claude provider's Agent SDK and zod) are
+installed on the first start that loads it, into a copy under
+`~/.cache/xi/providers/bundled/`, since a global install's directory is
+read-only ([providers.md](providers.md)). A user who runs only Ollama never
+downloads the SDK.
 
 The SDK brings its own native `claude` binary through the
 `@anthropic-ai/claude-agent-sdk-<platform>` optional dependency, so a package

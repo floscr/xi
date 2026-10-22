@@ -171,7 +171,7 @@ Settings that belong to the machine rather than to you:
 
 | Variable | Default | Does |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | — | Use an API key instead of the Claude login. |
+| `ANTHROPIC_API_KEY` | — | The Claude provider: an API key instead of the Claude login. |
 | `XI_PORT` | `7474` | The port the server listens on and clients connect to. |
 | `XI_HOST` | all interfaces | Addresses the server binds, comma-separated. Loopback is always included. |
 | `XI_CWD` | the current directory | The directory a chat starts in. |

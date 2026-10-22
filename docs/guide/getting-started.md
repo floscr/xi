@@ -7,8 +7,10 @@ minutes, one package.
 
 - **Bun** 1.3 or newer. Xi runs on Bun, not Node. Install it from
   [bun.sh](https://bun.sh).
-- **A Claude subscription or an API key.** Xi talks to Claude through the
-  Claude Agent SDK, using either your Claude Code login or `ANTHROPIC_API_KEY`.
+- **A model.** Claude with your Claude Code login or `ANTHROPIC_API_KEY`, GPT
+  on a ChatGPT plan, OpenCode, or local models in Ollama. See
+  [Models](models.md); the first Claude message installs the Claude Agent
+  SDK, which takes a few seconds.
 
 ## Install
 
@@ -84,6 +86,7 @@ to touch `~/.config/xi`. What you put there is yours.
 git clone https://github.com/floscr/xi
 cd xi
 npm install
+bb providers:fetch   # the bundled model providers, at the pinned commit
 bb build        # the terminal client and server
 bb web:build    # the web client
 bin/xi

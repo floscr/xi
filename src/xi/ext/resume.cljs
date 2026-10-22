@@ -31,7 +31,6 @@
 (def ^:private default-threshold 500)
 (def ^:private preview-ttl-ms (* 10 60 1000))
 (def ^:private max-lineage-depth 20)
-(def ^:private SUMMARY_MODEL "claude-sonnet-4-6")
 
 (def ^:private SUMMARY_PROMPT
   "Summarize this conversation for continuity. Produce a concise summary preserving:
@@ -454,7 +453,7 @@ Be thorough but concise. Output only the summary, no preamble.")
              (let [chunks (atom [])
                    {:keys [promise abort!]}
                    ((:start-turn! provider)
-                    {:model SUMMARY_MODEL
+                    {:model (routing/side-model provider :strong)
                      :prompt (str SUMMARY_PROMPT "\n\nFocus especially on: " focus)
                      :cwd (:cwd room)
                      :resume-session-id session-id

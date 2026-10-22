@@ -1,10 +1,11 @@
 # Xi
 
 Xi is an extendable coding harness for the terminal, with a web UI that joins
-the same sessions. It runs Claude through the Claude Agent SDK, keeps every
-tool call on your machine, and lets you shape it: permission rules in EDN, a
-sandboxed Clojure REPL as the agent's shell, MCP servers, and extensions you
-write yourself.
+the same sessions. It runs any model a provider speaks for (Claude, GPT on a
+ChatGPT plan, OpenCode, local models in Ollama, or one you write), keeps
+every tool call on your machine, and lets you shape it: permission rules in
+EDN, a sandboxed Clojure REPL as the agent's shell, MCP servers, and
+extensions you write yourself.
 
 Documentation and the user guide: <https://xi.florianschroedl.com>
 
@@ -23,9 +24,11 @@ xi            # the terminal client
 xi server     # the same, plus the web client on http://localhost:7474
 ```
 
-Xi uses your Claude Code login when there is one; otherwise set
-`ANTHROPIC_API_KEY`. The [Getting started](https://xi.florianschroedl.com/docs/getting-started/)
-page walks through the first run, the browser, and pairing another device.
+Claude uses your Claude Code login when there is one, otherwise
+`ANTHROPIC_API_KEY`; the other providers and how to pick them are in
+[Models](https://xi.florianschroedl.com/docs/models/). The
+[Getting started](https://xi.florianschroedl.com/docs/getting-started/) page
+walks through the first run, the browser, and pairing another device.
 
 ## From source
 
@@ -33,6 +36,7 @@ page walks through the first run, the browser, and pairing another device.
 git clone https://github.com/floscr/xi
 cd xi
 npm install
+bb providers:fetch   # the bundled model providers (xi-providers, pinned)
 bb build        # the terminal client and server
 bb web:build    # the web client
 bin/xi

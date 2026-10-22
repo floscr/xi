@@ -283,6 +283,8 @@
              :manifest     m
              :spec         (manifest/spec m)
              :side-turns?  (:side-turns? m)
+             :side-models  (:side-models m)
+             :default-model (:default-model m)
              :start-turn!  (fn [opts] (start-turn! m options opts))
              :list-models! (fn []
                              (cond

@@ -43,10 +43,21 @@ key of `package.json`; otherwise a `provider.edn` file with the same keys
 | `models` | A static model list for `/model`. Without it, and with the `models` capability, Xi sends a `models` request. |
 | `capabilities` | Optional requests it answers: `models`, `usage`, `login`. |
 | `login` | `{"name", "label"}`: `/login <name>` and `xi login <name>` run its `login` request. |
-| `sideTurns` | It runs titles, summaries, quick replies and compaction. The first such provider does. |
+| `defaultModel` | The model a new chat starts on when nobody picked one; the first provider (in config order) that names one decides. |
+| `sideTurns` | It runs titles, summaries, quick replies and compaction; the first such provider does. `{"fast": id, "strong": id}` names the models: `fast` for titles, summaries and quick replies, `strong` for compaction and a rollover's summary. `true` leaves the model to the provider (the request's `model` is empty). |
 | `transcripts` | `host` (default): Xi records the chat's transcript and sends the history every turn. `self`: the program keeps the conversation and writes a Claude CLI transcript itself; Xi sends a `sessionId` to resume instead of the history. |
 | `basePrompt` | `false` when the provider brings its own system prompt; Xi then leaves out `basePrompt`. Default `true`. |
 | `promptNote` | Shown above the system prompt in `/prompt` and the web client's prompt tab, e.g. that an SDK prepends a preset. |
+
+## Dependencies
+
+Xi depends on no provider's libraries. A provider's npm `dependencies`
+must resolve from its directory before Xi runs it: in a checkout `bun
+install` puts them there, an `:npm` entry gets them from `bun add`, and a
+bundled provider inside the npm package (a read-only directory in a global
+install) is copied with its dependencies installed under
+`~/.cache/xi/providers/bundled/` on the first start that loads it. A `:dir`
+provider whose dependencies don't resolve is reported and skipped.
 
 ## Frames
 

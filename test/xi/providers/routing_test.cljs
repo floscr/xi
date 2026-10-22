@@ -34,6 +34,15 @@
   (is (= "OpenCode" (:label (routing/agent-spec specs {:provider :zen :model "claude-x"}))))
   (is (= :b (:id (routing/side-turn-provider (array-map :a {:id :a} :b {:id :b :side-turns? true}))))))
 
+(deftest models-come-from-the-providers
+  (let [providers (array-map :ollama {:id :ollama}
+                             :anthropic {:id :anthropic :side-turns? true :default-model "claude-x"
+                                         :side-models {:fast "claude-small" :strong "claude-mid"}})]
+    (is (= "claude-x" (routing/default-model providers)))
+    (is (nil? (routing/default-model {:ollama {:id :ollama}})) "no provider names one")
+    (is (= "claude-small" (routing/side-model (routing/side-turn-provider providers) :fast)))
+    (is (= "claude-mid" (routing/side-model (routing/side-turn-provider providers) :strong)))))
+
 (deftest providers-changed
   (let [h (:providers/changed routing/handlers)]
     (is (= specs (:providers (:state (h {} {:providers specs})))))

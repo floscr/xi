@@ -27,7 +27,6 @@
             [xi.core.state :as state]
             [xi.naming :as naming]))
 
-(def ^:private SUMMARY_MODEL "claude-haiku-4-5-20251001")
 
 (def ^:private SUMMARY_PROMPT_PREFIX
   (str "Below is a transcript of a coding session between a user and an AI "
@@ -151,7 +150,7 @@
                             (remove-config-dir! config-dir)))
              {:keys [promise]}
              ((:start-turn! provider)
-              (cond-> {:model   SUMMARY_MODEL
+              (cond-> {:model   (routing/side-model provider :fast)
                        :prompt  (str SUMMARY_PROMPT_PREFIX transcript)
                        :cwd     cwd
                        ;; Text-only throwaway turn: skip the tool bridge so the

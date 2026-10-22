@@ -37,7 +37,6 @@
             [xi.config :as config]
             [xi.core.state :as state]))
 
-(def ^:private MODEL "claude-haiku-4-5-20251001")
 
 (def ^:private MAX_INPUT 4000)
 (def ^:private MAX_CHIPS 4)
@@ -196,7 +195,7 @@
                                       :room-id room-id :gen gen :chips chips}))
              {:keys [promise]}
              ((:start-turn! provider)
-              (cond-> {:model   MODEL
+              (cond-> {:model   (routing/side-model provider :fast)
                        :prompt  (str PROMPT_PREFIX text "\n>>>")
                        :cwd     cwd
                        ;; Text-only throwaway turn: without this the request

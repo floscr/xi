@@ -43,6 +43,19 @@
   [providers]
   (some #(when (:side-turns? %) %) (vals providers)))
 
+(defn side-model
+  "The model the side-turn `provider` runs a side turn of `tier` on: :fast
+   (titles, summaries, quick replies) or :strong (compaction, a rollover's
+   summary), from its manifest's sideTurns. nil leaves it to the provider."
+  [provider tier]
+  (get-in provider [:side-models tier]))
+
+(defn default-model
+  "The model a chat starts on when nobody picked one: the first of
+   `providers` (picker order) whose manifest names a defaultModel."
+  [providers]
+  (some :default-model (vals providers)))
+
 (defn- providers-changed
   [st {:keys [providers]}]
   (when (not= providers (:providers st))

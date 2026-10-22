@@ -8,7 +8,8 @@
      {:id kw :label str :dir abs-path :command [str …]
       :routes {:prefixes [str] :ids [str] :default? bool}
       :models [id …]|nil      ; static list: no `models` request
-      :side-turns? bool :base-prompt? bool :transcripts :host|:self
+      :side-turns? bool :side-models {:fast id :strong id}|nil
+      :default-model id|nil :base-prompt? bool :transcripts :host|:self
       :capabilities #{:models :usage :login}
       :login {:name :label}|nil :prompt-note str|nil}"
   (:require [cljs.reader :as reader]
@@ -36,7 +37,12 @@
         id      (some-> (:id m) name not-empty keyword)
         command (string-vec (:command m))
         routes  (into {} (map (fn [[k v]] [(keyword (name k)) v])) (:routes m))
-        login   (some->> (:login m) (into {} (map (fn [[k v]] [(keyword (name k)) v]))))]
+        login   (some->> (:login m) (into {} (map (fn [[k v]] [(keyword (name k)) v]))))
+        ;; true, or the models side turns run on: {fast strong}
+        side    (get-any m :sideTurns :side-turns?)
+        side-models (when (map? side)
+                      (into {} (keep (fn [[k v]] (when (string? v) [(keyword (name k)) v]))) side))
+        default-model (get-any m :defaultModel :default-model)]
     (cond
       (not (map? raw))         {:error "the manifest is not a map"}
       (nil? id)                {:error "the manifest has no :id"}
@@ -52,12 +58,14 @@
                 :routes       {:prefixes (or (string-vec (:prefixes routes)) [])
                                :ids      (or (string-vec (:ids routes)) [])
                                :default? (boolean (get-any routes :default :default?))}
-                :side-turns?  (boolean (get-any m :sideTurns :side-turns?))
+                :side-turns?  (boolean side)
                 ;; Xi's base prompt rides along unless the provider brings its own
                 :base-prompt? (not (false? (get-any m :basePrompt :base-prompt?)))
                 :transcripts  (if (= "self" (some-> (:transcripts m) name)) :self :host)
                 :capabilities (into #{} (map keyword) (:capabilities m))}
          (sequential? (:models m))                 (assoc :models (string-vec (:models m)))
+         (seq side-models)                         (assoc :side-models side-models)
+         (string? default-model)                   (assoc :default-model default-model)
          login                                     (assoc :login {:name  (:name login)
                                                                   :label (or (:label login) (:name login))})
          (string? (get-any m :promptNote :prompt-note)) (assoc :prompt-note (get-any m :promptNote :prompt-note)))})))

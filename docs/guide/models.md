@@ -1,16 +1,18 @@
 # Models
 
-Claude through the Claude Agent SDK is the default. Xi can also run local
-models through Ollama, the models of OpenCode Zen and OpenCode Go, and GPT
-models on a ChatGPT subscription. Pick one with `/model` or `--model`. Each
-of these is a [provider](providers.md); `:providers` in `config.edn` chooses
-which run.
+Xi runs Claude through the Claude Agent SDK, local models through Ollama,
+the models of OpenCode Zen and OpenCode Go, and GPT models on a ChatGPT
+subscription. Pick one with `/model` or `--model`. Each of these is a
+[provider](providers.md); `:providers` in `config.edn` chooses which run,
+and you can add your own.
 
-## Claude (default)
+## Claude
 
 Xi signs in the way the Claude CLI does: your Claude Code login if you have
 one, else `ANTHROPIC_API_KEY`. `/model` lists the available Claude models;
-a bare id such as `claude-sonnet-4-6` goes to Claude.
+a bare id such as `claude-sonnet-4-6` goes to Claude. When Claude runs, a
+new chat starts on Claude Opus. The first start that loads it installs
+the Claude Agent SDK, once.
 
 ## Ollama
 
@@ -106,6 +108,11 @@ your plan's. Zen's preview ids (`gpt-6-astra`) exist only on Zen; use
 
 | Use | Model |
 | --- | --- |
-| A chat | The one you picked, else your last `/model` pick (kept per [user](server.md#users), in the web client and the terminal alike), else the default |
-| Naming a chat, `/summary`, `/truncate` | A cheaper Claude model, always |
+| A chat | The one you picked, else your last `/model` pick (kept per [user](server.md#users), in the web client and the terminal alike), else the first provider's default (Claude Opus); with none, Xi asks you to pick one |
+| Naming a chat, `/summary`, `/truncate`, quick replies | The side-turn provider's fast model (Claude Haiku) |
+| `/compact`, a `/rollover` summary | The side-turn provider's strong model (Claude Sonnet) |
 | An [agent profile](agents.md) | Its `:model`, unless `--model` says otherwise |
+
+The side-turn provider is the first that runs side turns; of the bundled
+ones only Claude does. Without it, Xi generates no titles, summaries or
+quick replies.

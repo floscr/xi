@@ -28,8 +28,6 @@
             [xi.core.state :as state]
             [xi.util :as util]))
 
-(def ^:private TITLE_MODEL "claude-haiku-4-5-20251001")
-
 (def ^:private TITLE_PROMPT_PREFIX
   (str "Write a concise title (3-6 words, Title Case, no surrounding quotes, "
        "no trailing punctuation) that summarizes the following request for a "
@@ -211,7 +209,7 @@
   [result ms]
   (let [{:keys [input_tokens output_tokens cache_read_input_tokens
                 cache_creation_input_tokens]} (:usage result)]
-    {:model         TITLE_MODEL
+    {:model         (:model result)
      :input-tokens  (+ (or input_tokens 0) (or cache_read_input_tokens 0)
                        (or cache_creation_input_tokens 0))
      :output-tokens (or output_tokens 0)
@@ -219,8 +217,8 @@
      :ms            ms}))
 
 (defn- side-turn!
-  "One throwaway turn on `provider` (TITLE_MODEL, no tools, no thinking, in a
-   temp CLAUDE_CONFIG_DIR). Resolves to {:text :stats}, or nil when the turn
+  "One throwaway turn on `provider` (its :fast side-turn model, no tools, no
+   thinking, in a temp CLAUDE_CONFIG_DIR). Resolves to {:text :stats}, or nil when the turn
    failed, errored or was aborted — an errored turn's result text is the
    failure notice (auth expired, billing, …), never a title."
   [provider {:keys [make-config-dir! remove-config-dir!]} cwd prompt]
@@ -232,7 +230,7 @@
                        (remove-config-dir! config-dir)))
         {:keys [promise]}
         ((:start-turn! provider)
-         (cond-> {:model   TITLE_MODEL
+         (cond-> {:model   (routing/side-model provider :fast)
                   :prompt  prompt
                   :cwd     cwd
                   ;; Title generation is a throwaway text-only turn: skip

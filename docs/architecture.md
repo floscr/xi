@@ -248,7 +248,7 @@ its offline paint.
 ## Session tools
 
 - **`/truncate`** (`xi.compaction`): `:compact/request` runs a summary turn
-  through the Claude provider (always `COMPACT_MODEL`, resuming the room's
+  through the side-turn provider (its `strong` model, resuming the room's
   provider session), then `[:session/new]` with `:after-prompt` starts a
   fresh session whose first user message is the summary in
   `<conversation-summary>`. `:keep-history?` keeps the old entries on screen

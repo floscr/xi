@@ -5,5 +5,5 @@
 ;; pushed HEAD. :bundled is the package directories under packages/, in the
 ;; order the model picker lists them (xi.providers.config).
 {:repo    "https://github.com/floscr/xi-providers.git"
- :sha     "b3c9c6caa387136df09910a53556fafed766c7ec"
+ :sha     "65ebc78e377fcfdcd221aa6a127515d3829e41aa"
  :bundled ["anthropic" "ollama" "codex" "opencode"]}

@@ -32,6 +32,18 @@
     (is (= [true false :self ["a" "b"] "note"]
            ((juxt :side-turns? :base-prompt? :transcripts :models :prompt-note) m)))))
 
+(deftest side-turn-models-and-the-default-model
+  (let [{m :manifest} (manifest/normalize
+                       {"id" "c" "command" ["bun" "x"] "defaultModel" "c-big"
+                        "sideTurns" {"fast" "c-small" "strong" "c-mid"}}
+                       "/p/c")]
+    (is (= [true {:fast "c-small" :strong "c-mid"} "c-big"]
+           ((juxt :side-turns? :side-models :default-model) m))))
+  (testing "sideTurns true runs side turns on the provider's own choice of model"
+    (let [{m :manifest} (manifest/normalize {"id" "c" "command" ["x"] "sideTurns" true} "/d")]
+      (is (:side-turns? m))
+      (is (nil? (:side-models m))))))
+
 (deftest invalid-manifests
   (is (re-find #"no :id" (:error (manifest/normalize {"command" ["x"]} "/d"))))
   (is (re-find #"no :command" (:error (manifest/normalize {"id" "x"} "/d"))))

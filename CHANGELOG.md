@@ -12,6 +12,10 @@ What changed in each Xi release, newest first.
   - `:providers` in `config.edn` picks which run, in model-picker order, with options (`{:id :ollama :base-url …}`)
   - A provider can come from a directory (`{:dir …}`) or an npm package (`{:npm "name@1.2.0"}`)
   - Write your own in any language: [the provider protocol](docs/provider-protocol.md), or TypeScript with `@xi-agent/provider-kit`
+- No Claude dependency
+  - The package has no runtime dependencies; the Claude Agent SDK installs on the first start that runs Claude
+  - A new chat starts on the first provider's default model, and titles, summaries and compaction use the side-turn provider's models
+  - With no default model, Xi asks you to pick one instead of failing at the provider
 
 ## 0.4.0 - 2026-10-15
 

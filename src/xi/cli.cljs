@@ -78,6 +78,7 @@
             [xi.naming :as naming]
             [xi.providers.config :as provider-config]
             [xi.providers.fake :as fake]
+            [xi.providers.routing :as routing]
             [xi.quick-replies :as quick-replies]
             [xi.rules.store :as rules-store]
             [xi.summary :as summary]
@@ -97,7 +98,8 @@
             ["node:worker_threads" :as wt]))
 
 (defonce ^:private !providers
-  ;; {:providers id → provider :specs [spec …]}, loaded on first use
+  ;; {:providers id → provider :specs [spec …] :default-model id}, loaded on
+  ;; first use
   (atom nil))
 
 (defn- loaded-providers
@@ -106,19 +108,22 @@
    provider's chats get a transcript: those that keep none themselves are
    recorded (xi.session.recorder). With XI_FAKE_LLM (e2e tests) the scripted
    fake is the only provider, registered as :anthropic so no turn reaches a
-   real model; the specs still route, so the fake logs which provider a
-   model would have used."
+   real model; the specs, the default model and the side-turn models still
+   come from the real ones, so the fake sees the turns they would get."
   []
   (or @!providers
       (let [{ps :providers errors :errors} (provider-config/load-providers)
-            specs (mapv :spec ps)]
+            specs (mapv :spec ps)
+            real  (apply array-map
+                         (mapcat (fn [p] [(:id p) (recorder/with-transcripts p)]) ps))]
         (doseq [e errors] (js/console.error (str "[providers] " e)))
         (reset! !providers
-                {:specs     specs
-                 :providers (if (fake/script-path)
-                              {:anthropic (fake/provider :anthropic specs)}
-                              (apply array-map
-                                     (mapcat (fn [p] [(:id p) (recorder/with-transcripts p)]) ps)))}))))
+                {:specs         specs
+                 :default-model (routing/default-model real)
+                 :providers     (if (fake/script-path)
+                                  {:anthropic (assoc (fake/provider :anthropic specs)
+                                                     :side-models (:side-models (routing/side-turn-provider real)))}
+                                  real)}))))
 
 (defn- providers [] (:providers (loaded-providers)))
 
@@ -215,8 +220,6 @@
           (user-of n)  {:name n :source :user :ext (name (user-of n))}
           :else        {:name n :source :extension :ext (some-> (owners n) name)})))))
 
-(def ^:private DEFAULT_MODEL "claude-opus-4-8")
-
 (def ^:private HELP_TEXT
   "xi — a personal coding harness (ClojureScript + Bun)
 
@@ -287,7 +290,8 @@ ENVIRONMENT
   XI_HOST                    Server bind address when --host is omitted.
   XI_CWD                     Working directory the agent runs in.
   XI_USER                    Default for --user.
-  ANTHROPIC_API_KEY          Auth (otherwise the Claude CLI's own login).
+  Model providers read their own (ANTHROPIC_API_KEY, OLLAMA_BASE_URL, …);
+  which providers run is :providers in ~/.config/xi/config.edn.
 
 EXAMPLES
   xi                                         # standalone TUI
@@ -375,11 +379,12 @@ See docs/guide/command-line.md for the full reference.")
 
 (defn- resolve-model-opts
   "Model and effort this process starts with: --model, else its user's last
-   pick (xi.user-state :preferred-model), else the default."
+   pick (xi.user-state :preferred-model), else the first provider's
+   defaultModel (xi.providers.routing/default-model)."
   [{:keys [model] :as opts}]
   {:model  (or model
                (:preferred-model (user-store/load-state (own-user opts)))
-               DEFAULT_MODEL)
+               (:default-model (loaded-providers)))
    :effort "high"})
 
 (defn- install-agent-extensions!

@@ -512,12 +512,15 @@
     fx
     {:provider/start-turn
      (fn [{:keys [dispatch! get-state]} {:keys [room-id cwd model] :as payload}]
-      (if-not (resolve-provider providers payload)
-       ;; none loaded (config.edn :providers names none that works)
+      (if (or (str/blank? model) (not (resolve-provider providers payload)))
+       ;; no model picked and no provider names a default, or none loaded
+       ;; (config.edn :providers names none that works)
        (do (dispatch! {:type :agent/error :room-id room-id
                        :error {:type "error"
-                               :message (str "No provider runs " (or model "this model")
-                                             " — check :providers in ~/.config/xi/config.edn.")}})
+                               :message (if (str/blank? model)
+                                          "No model picked: choose one with /model or --model."
+                                          (str "No provider runs " model
+                                               " — check :providers in ~/.config/xi/config.edn."))}})
            (dispatch! {:type :agent/turn-end :room-id room-id})
            (when turn-finished! (turn-finished! room-id cwd)))
        (let [provider (resolve-provider providers payload)

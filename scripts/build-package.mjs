@@ -26,9 +26,10 @@
 // providers/ next to target/), so the layout above is part of the contract.
 //
 // The generated package.json is the repo's with private/devDependencies
-// dropped and the bundled providers' npm dependencies (the Claude Agent SDK,
-// zod) promoted to the package's own `dependencies`: a global install's
-// directory is read-only, so nothing can be installed there later.
+// dropped: xi itself has no runtime dependencies. A bundled provider's own
+// (the Claude provider's Agent SDK) are installed on the first start that
+// loads it, into a copy under ~/.cache/xi/providers/bundled/
+// (xi.providers.config), since a global install's directory is read-only.
 
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -81,7 +82,7 @@ for (const f of ["LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "CHANGELOG.md
 // ── Bundled providers ────────────────────────────────────────────────────────
 // Their source as it is (Bun runs the .ts), without what only development
 // needs: node_modules, tests, the nix pin and its `claude` out-link (a package
-// install uses the SDK's own Claude binary).
+// install runs the claude on PATH, else the SDK's own binary).
 const pin = readFileSync(rel("resources/providers.edn"), "utf8");
 const bundled = [...(/:bundled\s+\[([^\]]*)\]/.exec(pin)?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]);
 if (!existsSync(rel("providers"))) {
@@ -90,7 +91,6 @@ if (!existsSync(rel("providers"))) {
 }
 const providersSrc = realpathSync(rel("providers"));
 const skip = new Set(["node_modules", "test", "nix", "claude"]);
-const providerDeps = {};
 for (const name of [...bundled, "provider-kit"]) {
   const pkgDir = join(providersSrc, "packages", name);
   if (!existsSync(join(pkgDir, "package.json"))) {
@@ -103,10 +103,13 @@ for (const name of [...bundled, "provider-kit"]) {
     dereference: true,
     filter: (src) => !skip.has(src.slice(pkgDir.length + 1).split("/")[0]),
   });
-  const deps = JSON.parse(readFileSync(join(pkgDir, "package.json"), "utf8")).dependencies ?? {};
-  for (const [dep, version] of Object.entries(deps)) {
-    if (!dep.startsWith("@xi-agent/")) providerDeps[dep] = version;
+  // The kit is no package dependency here (relinkKit below): `workspace:*`
+  // would stop the provider's own `bun install`.
+  const pkgJson = JSON.parse(readFileSync(join(to, "package.json"), "utf8"));
+  for (const dep of Object.keys(pkgJson.dependencies ?? {})) {
+    if (dep.startsWith("@xi-agent/")) delete pkgJson.dependencies[dep];
   }
+  writeFileSync(join(to, "package.json"), JSON.stringify(pkgJson, null, 2) + "\n");
 }
 
 // npm pack leaves out every node_modules directory, so the kit can't be
@@ -134,7 +137,7 @@ const repo = JSON.parse(readFileSync(rel("package.json"), "utf8"));
 const { private: _private, devDependencies: _dev, scripts: _scripts, ...pub } = repo;
 writeFileSync(
   into("package.json"),
-  JSON.stringify({ ...pub, dependencies: providerDeps }, null, 2) + "\n",
+  JSON.stringify(pub, null, 2) + "\n",
 );
 
 // ── Pack ─────────────────────────────────────────────────────────────────────
