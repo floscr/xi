@@ -2103,7 +2103,7 @@ body {
 .md-table-wrap {
   width: fit-content; max-width: 100%; min-width: 6rem;
   margin: var(--size-2) 0; overflow-x: auto;
-  border: var(--border-0); border-radius: var(--radius-2);
+  border: var(--border-0); border-radius: var(--radius-md);
 }
 /* the frame is the table's outer border: cells only draw inner lines */
 .markdown .md-table-wrap .md-table {
@@ -2497,7 +2497,7 @@ body {
   display: inline-flex;
   align-items: stretch;
   border: var(--border-0);
-  border-radius: var(--radius-full, 9999px);
+  border-radius: var(--radius-pill);
   overflow: hidden;
   background: color-mix(in srgb, var(--bg-0) 70%, transparent);
   -webkit-backdrop-filter: blur(8px);
@@ -2615,7 +2615,7 @@ body {
   align-items: center;
   gap: 0;
   border: var(--border-0);
-  border-radius: var(--radius-full, 9999px);
+  border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--bg-0) 55%, transparent);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
@@ -5175,7 +5175,7 @@ code a:hover,
   justify-content: center;
   flex-shrink: 0;
   padding: var(--size-1);
-  border-radius: var(--radius-1, 6px);
+  border-radius: var(--radius-sm);
   color: var(--fg-2);
   background: transparent;
   border: none;
@@ -5344,7 +5344,7 @@ code a:hover,
 .confirm-panel {
   background: var(--bg-0);
   border: var(--border-0);
-  border-radius: var(--radius-2);
+  border-radius: var(--radius-lg);
   width: min(24rem, calc(100vw - var(--size-8)));
   padding: var(--size-5);
   display: flex;
@@ -5425,7 +5425,7 @@ code a:hover,
   gap: var(--size-1);
   align-self: flex-start;
   padding: var(--size-1) var(--size-2);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-pill);
   font-size: var(--font-sm);
   font-weight: 600;
 }
@@ -5662,7 +5662,7 @@ code a:hover,
 
 /* Override the base .btn so the chip is a self-contained accent pill. */
 .quick-replies .quick-reply-btn {
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-pill);
   padding: var(--size-2) var(--size-4);
   font-size: var(--font-sm);
   font-weight: 600;
@@ -5709,7 +5709,7 @@ code a:hover,
   color: var(--fg-0);
   background: var(--bg-1);
   border: var(--border-0);
-  border-radius: var(--radius-full, 999px);
+  border-radius: var(--radius-pill);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   pointer-events: none;
   animation: copy-toast-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -5740,7 +5740,7 @@ code a:hover,
 .resume-panel {
   background: var(--bg-0);
   border: var(--border-0);
-  border-radius: var(--radius-2);
+  border-radius: var(--radius-lg);
   width: min(28rem, calc(100vw - var(--size-8)));
   max-height: 60vh;
   display: flex;
@@ -7217,7 +7217,7 @@ code a:hover,
   align-items: center;
   gap: var(--size-2);
   padding: var(--size-1) var(--size-2);
-  border-radius: var(--radius-1, 6px);
+  border-radius: var(--radius-sm);
   background: var(--bg-2, var(--bg-1));
 }
 .cr-tray-item-main { min-width: 0; flex: 1; display: flex; flex-direction: column; }
@@ -7246,7 +7246,7 @@ code a:hover,
   background: transparent;
   border: none;
   cursor: pointer;
-  border-radius: var(--radius-1, 6px);
+  border-radius: var(--radius-sm);
 }
 .cr-tray-remove:hover { color: var(--fg-0); background: var(--bg-1); }
 .cr-node-note, .cr-node-prose { padding: var(--size-3); font-size: var(--font-sm); }
@@ -7376,7 +7376,7 @@ code a:hover,
   min-width: 1.25rem;
   padding: 0 var(--size-1);
   text-align: center;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-pill);
   background: var(--bg-2);
   color: var(--fg-2);
   font-size: var(--font-xs);
@@ -7462,7 +7462,7 @@ code a:hover,
   align-items: center;
   gap: var(--size-1);
   padding: 1px var(--size-2);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-pill);
   font-size: 0.65rem;
   font-family: var(--font-mono, monospace);
   text-transform: uppercase;
@@ -7815,7 +7815,7 @@ code a:hover,
 .agent-block-source { font-family: var(--font-mono); white-space: nowrap; }
 .agent-block-unread {
   padding: 0 var(--size-2);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-pill);
   background: var(--accent);
   color: var(--fg-on-accent);
   white-space: nowrap;
