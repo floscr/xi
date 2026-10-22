@@ -7448,10 +7448,7 @@ code a:hover,
 /* The tool header's spinner sits at the right; here it leads the label. */
 .subagent-strip .tool-call-running { margin-left: 0; }
 
-.subagent-card {
-  border: var(--border-0);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
-}
+.subagent-card { border: var(--border-0); }
 .subagent-card > .subagent-strip { padding: var(--size-1) var(--size-2); }
 /* The paper: the page surface (--bg-0), set off from the --bg-1 group box. */
 .subagent-rows { background: var(--bg-0); }
