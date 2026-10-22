@@ -103,6 +103,26 @@ read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
   "xi join --user alice            # this terminal acts as alice
 xi clients user iPhone bob      # pin a paired phone to bob")
 
+(def ^:private providers-sample
+  ";; ~/.config/xi/config.edn
+:providers [:anthropic
+            {:id :ollama
+             :base-url \"http://gpu:11434\"}
+            {:dir \"~/code/my-provider\"}]")
+
+(def ^:private provider-sample
+  "// main.ts — its manifest is in package.json
+import { serve } from \"@xi-agent/provider-kit\";
+import { chatCompletionsTurn }
+  from \"@xi-agent/provider-kit/openai-compat\";
+
+serve({
+  turn: (req, io) =>
+    chatCompletionsTurn(req, io, {
+      baseUrl: \"http://localhost:8080\",
+    }),
+});")
+
 (def ^:private durable-sample
   "xi server
 # mid-turn: the server dies, a deploy restarts it, the machine reboots
@@ -171,11 +191,11 @@ xi server
    (arch-box 346 190 268 56 "Rules" "allow, ask, deny or nudge each tool call")
    (arch-box 346 258 268 56 "Extensions" "tools, commands, keys, pages")
    ;; models and tools
-   (arch-group 720 20 230 170 "MODELS")
+   (arch-group 720 20 230 170 "PROVIDERS")
    (arch-box 736 50 198 28 "Claude · Agent SDK")
-   (arch-box 736 84 198 28 "OpenAI · Codex")
+   (arch-box 736 84 198 28 "OpenAI Codex · OpenCode")
    (arch-box 736 118 198 28 "Ollama")
-   (arch-box 736 152 198 28 "Zen")
+   (arch-box 736 152 198 28 "Your own")
    (arch-group 720 204 230 150 "TOOLS")
    (arch-box 736 234 198 28 "clj REPL")
    (arch-box 736 268 198 28 "MCP servers")
@@ -185,7 +205,7 @@ xi server
    [:text.arch-sub.arch-edge {:x 285 :y 172 :text-anchor "middle"} "WebSocket"]
    [:text.arch-sub.arch-edge {:x 285 :y 207 :text-anchor "middle"} "events"]
    (arch-arrow 630 105 720 105)
-   [:text.arch-sub.arch-edge {:x 675 :y 92 :text-anchor "middle"} "providers"]
+   [:text.arch-sub.arch-edge {:x 675 :y 92 :text-anchor "middle"} "stdio"]
    (arch-arrow 630 279 720 279 :both? true)
    [:text.arch-sub.arch-edge {:x 675 :y 266 :text-anchor "middle"} "tool calls"]])
 
@@ -276,7 +296,7 @@ xi server
      [:span.hero-pill-arrow {:aria-hidden "true"} "→"]]
     [:h1.hero-in "A coding harness " [:span.hero-gradient "you can shape."]]
     [:p.lede.hero-in
-     "A coding harness with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
+     "A coding harness for any model, with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
     [:div.hero-install.hero-in
      [:code [:span {:aria-hidden "true"} "$ "] install-command]
      (button/button {:variant :primary :icon-left :copy :class "hero-copy"
@@ -447,12 +467,27 @@ xi server
        (code "clojure" users-sample)
        (code "sh" users-cli-sample)]]]
 
+    [:section.feature.alt {:id "providers"}
+     [:div.wrap.split.reverse
+      [:div.feature-text
+       [:p.eyebrow "Providers"]
+       [:h2 "Any model. Bring your own."]
+       [:p "Every model provider is a program Xi starts for each message: Claude through the Agent SDK, GPT on a ChatGPT plan, OpenCode, Ollama, or one you write. Xi keeps the tools, the rules and the chat; a provider only turns a prompt into text and tool calls."]
+       (feature-list
+        [["Pick in your config." "List the providers you want, in the order the model picker shows them, with options for each. Only those load."]
+         ["Write your own." "A manifest and a program that speaks JSON lines over stdio. With the TypeScript kit it is a dozen lines; babashka or Go work just as well."]
+         ["Same rules for every model." "A provider asks Xi to run each tool, so your rules and approvals apply whichever model is talking."]])
+       [:p [:a {:href "/docs/providers/"} "Providers →"]]]
+      [:div.feature-code
+       (code "clojure" providers-sample)
+       (code "ts" provider-sample)]]]
+
     [:section.feature.architecture {:id "architecture"}
      [:div.wrap
       [:div.arch-intro
        [:p.eyebrow "Architecture"]
        [:h2 "One server, every surface."]
-       [:p "A server holds each session as one state and runs every action through a single event queue. Terminal, browser and scripts are clients of the same session. Models, the clj tool and MCP servers sit behind rules you wrote."]]
+       [:p "A server holds each session as one state and runs every action through a single event queue. Terminal, browser and scripts are clients of the same session. Model providers are programs it starts per message; their tool calls, the clj tool and MCP servers sit behind rules you wrote."]]
       [:div.arch (architecture-diagram)]]]
 
     [:section.under-the-hood
@@ -464,13 +499,13 @@ xi server
        [:div [:h3 "Everything is an event."]
         [:p "Prompts, output, commands, dialogs and renders all pass through one queue. The wire protocol is the event maps themselves."]]
        [:div [:h3 "ClojureScript on Bun."]
-        [:p "One runtime dependency. Model access through the Claude Agent SDK, Ollama, or an OpenAI-compatible endpoint."]]]]]
+        [:p "No runtime dependencies. Models come from provider programs: Claude, Codex, OpenCode, Ollama, or one you write."]]]]]
 
     [:section.band
      [:div.wrap
       [:div
        [:h2 "Install Xi"]
-       [:p "One package, one command. Sign in with your Claude account or an API key."]]
+       [:p "One package, one command. Bring a Claude login, a ChatGPT plan, an OpenCode key or a local Ollama."]]
       (button/button {:variant :primary :size :lg :href "/docs/getting-started/"
                       :icon-right :arrow-right}
                      "Getting started")]])))
