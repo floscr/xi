@@ -345,12 +345,13 @@
        "robust than exact-text edit: it survives reformatting and concurrent "
        "edits elsewhere in the file, and two agents editing different forms "
        "never collide (a conflicting same-form edit fails the match cleanly "
-       "instead of clobbering). Use clj_replace to change a form, "
-       "clj_mv/clj_extract/clj_fix_declares to move or reorganize forms, and "
-       "clj_rename_ns for namespace renames. Fall back to edit only for "
-       "non-structural text (comments, strings, docstrings), partial fragments of "
-       "a form (clj_replace only takes one complete, balanced form), or when "
-       "clj_replace cannot match."))
+       "instead of clobbering).\n"
+       "- Change a form: clj_replace.\n"
+       "- Move or reorganize forms: clj_mv / clj_extract / clj_fix_declares.\n"
+       "- Rename a namespace: clj_rename_ns.\n"
+       "- Fall back to edit only for non-structural text (comments, strings, "
+       "docstrings), partial fragments of a form (clj_replace only takes one "
+       "complete, balanced form), or when clj_replace cannot match."))
 
 (def extension
   {:id               :clj-surgeon

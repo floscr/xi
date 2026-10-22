@@ -501,7 +501,7 @@ Be thorough but concise. Output only the summary, no preamble.")
                                   (lineage-entries chain)))})))}))
 
 (def ^:private system-prompt-note
-  (str "# Session continuity\n"
+  (str "## Session continuity\n"
        "Transcripts of this and ancestor sessions are JSONL files on disk. A "
        "<session-lineage> block or a \"[trimmed by xi /trim]\" placeholder cites "
        "the file (and line) where the full original text lives — recover it "
