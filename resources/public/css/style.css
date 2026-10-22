@@ -1933,6 +1933,19 @@ body {
   opacity: 0.6;
 }
 
+/* Hover: a hairline in the kind's hue as an inset shadow, so it adds no
+   width and the wrapped line doesn't reflow. */
+@media (hover: hover) {
+  .md-code:hover {
+    background-color: color-mix(in oklab, color-mix(in oklab, var(--code-hue) 55%, var(--fg-0)) 11%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--code-hue) 14%, transparent);
+  }
+
+  .md-code:hover .md-code-prefix {
+    opacity: 0.85;
+  }
+}
+
 .post--user .post-content code,
 .post--user .md-code {
   background-color: rgba(255, 255, 255, 0.2);
