@@ -2201,9 +2201,9 @@
    into :web/resolved-dialogs and drops the live dialog in one render, then
    forwards the response and a :ui/dialog-close (the mirrored core handler is
    what clears it on other clients)."
-  [dispatch! state room history suppress-id]
+  [dispatch! state room history inline-ids]
   (when-let [{:keys [id type message text options] :as live-dialog}
-             (first (remove #(= suppress-id (:id %)) (get-in room [:ui :dialogs])))]
+             (first (remove (comp inline-ids :id) (get-in room [:ui :dialogs])))]
     (let [room-id (:id room)
           answer! (fn [value]
                     (dispatch! {:type :web/dialog-resolved
@@ -4593,17 +4593,15 @@
                   resolved-list (get-in state [:web/resolved-dialogs (:id room)])
                   resolved-by-tool (into {} (keep (fn [e] (when-let [t (:tool-id e)] [t e]))
                                                   resolved-list))
-                  pending-dialog (first (get-in room [:ui :dialogs]))
-                  ;; The pending :confirm dialog renders inside its gated tool
-                  ;; block (dlg/permission-tool-index), but only when that block
-                  ;; is in the rendered window; otherwise the standalone dialog shows.
-                  perm-tool-idx (when (= :confirm (:type pending-dialog))
-                                  (dlg/permission-tool-index pending-dialog entries start))
+                  ;; Each pending :confirm dialog renders inside its gated tool
+                  ;; block (dlg/permission-hosts), but only when that block is
+                  ;; in the rendered window; otherwise it shows standalone.
+                  perm-hosts (dlg/permission-hosts (get-in room [:ui :dialogs]) entries start)
                   perm-answer!
-                  (when perm-tool-idx
-                    (let [{:keys [id type message text options]} pending-dialog
+                  (fn [p]
+                    (let [{:keys [id type message text options]} (perm-hosts p)
                           room-id (:id room)
-                          tool-id (:id (nth entries perm-tool-idx))]
+                          tool-id (:id (nth entries p))]
                       (fn [value]
                         (dispatch! {:type :web/dialog-resolved
                                     :room-id room-id :dialog-id id
@@ -4699,7 +4697,7 @@
                      replaced? (let [hides (into #{} (keep :hides) xposts)]
                                  (fn [p entry]
                                    (and (hides p)
-                                        (not= p perm-tool-idx)
+                                        (not (perm-hosts p))
                                         (not (resolved-by-tool (:id entry))))))
                      xitems    (fn [p]
                                  (map (fn [{:keys [key node]}]
@@ -4736,12 +4734,12 @@
                                ;; A tool awaiting Allow/Deny stays open and out of
                                ;; any viewer group.
                                groupable? (and (#{:tool-call :thinking} (:kind entry))
-                                               (not= p perm-tool-idx))
-                               collapsed? (and (not= p perm-tool-idx)
+                                               (not (perm-hosts p)))
+                               collapsed? (and (not (perm-hosts p))
                                                (appearance/block-collapsed? app entry))
                                ;; A pending ask's block keeps the native toggle.
                                block-key  (when (and (#{:tool-call :thinking} (:kind entry))
-                                                     (not= p perm-tool-idx))
+                                                     (not (perm-hosts p)))
                                             (str "h-" p))
                                open-choice (get block-open block-key)
                                cwd      (or (:cwd room) (get-in state [:web/pending-room :cwd]))
@@ -4759,7 +4757,7 @@
                             entry
                             ;; The memo ctx; nil for the post with the pending ask
                             ;; (it carries fresh answer fns), which always rebuilds.
-                            (when-not (= p perm-tool-idx)
+                            (when-not (perm-hosts p)
                               [p dispatch! cwd (:id room) sender groupable? collapsed?
                                session-key open-choice
                                (when tool?
@@ -4788,13 +4786,13 @@
                                                  (assoc :md-diff-code? true)
                                                  editing?
                                                  (assoc :editing? true :edit-text (:text editing))
-                                                 (= p perm-tool-idx)
-                                                 (assoc :permission {:dialog pending-dialog
-                                                                     :answer! perm-answer!
+                                                 (perm-hosts p)
+                                                 (assoc :permission {:dialog (perm-hosts p)
+                                                                     :answer! (perm-answer! p)
                                                                      :deny-reason!
                                                                      #(dispatch! {:type :deny-reason/start
                                                                                   :room-id (:id room)
-                                                                                  :dialog-id (:id pending-dialog)})})
+                                                                                  :dialog-id (:id (perm-hosts p))})})
                                                  resolved
                                                  (assoc :resolved-permission resolved)
                                                  explanation
@@ -4820,7 +4818,7 @@
                               (pending-command-post state room sid))
                (with-post-key "tl-dialog"
                               (dialog-post dispatch! state room history
-                                           (when perm-tool-idx (:id pending-dialog))))
+                                           (into #{} (map :id) (vals perm-hosts))))
                (when room (ask-hover-button dispatch! (:id room)))))
             (with-post-key "tl-empty"
                            (empty-state/empty-state {} (spinner) [:p "Connecting…"])))

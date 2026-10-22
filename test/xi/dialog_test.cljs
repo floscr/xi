@@ -91,6 +91,23 @@
     (is (nil? (dialog/permission-tool-index
                {} (mapv #(assoc % :status :done) parallel-history) 0)))))
 
+(deftest permission-hosts-puts-each-parallel-ask-on-its-own-call
+  (let [write {:id "d1" :type :confirm
+               :call {:name "write" :arguments {:path "/a.clj" :content "x"}}}
+        grep  {:id "d2" :type :confirm
+               :call {:name "grep" :arguments {:pattern "log-in"}}}]
+    (is (= {0 write 1 grep}
+           (dialog/permission-hosts [grep write] parallel-history 0))
+        "queue order doesn't matter, each call hosts its own ask")
+    (is (= {1 grep}
+           (dialog/permission-hosts [grep write] parallel-history 1))
+        "a call before the rendered window leaves its ask standalone")
+    (is (= {1 grep}
+           (dialog/permission-hosts [grep {:id "d3" :type :confirm}] parallel-history 0))
+        "an ask resolving to a taken block stays standalone")
+    (is (= {} (dialog/permission-hosts [{:id "c" :type :choice}] parallel-history 0))
+        "only :confirm dialogs render inline")))
+
 (def ^:private gating-dialog
   {:type :confirm
    :call {:name "write" :arguments {:path "/a.clj" :content "x"}}})

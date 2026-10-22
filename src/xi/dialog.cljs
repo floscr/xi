@@ -244,6 +244,21 @@
       (or (first (filter #(and (= :running (:status (nth entries %))) (match %)) idxs))
           (when call (first (filter match idxs)))))))
 
+(defn permission-hosts
+  "Entry index → pending :confirm dialog for every one of `dialogs` (queue
+   order) whose gated call is in `entries` ≥ `start` (permission-tool-index),
+   so parallel calls each show their own ask inline. A block hosts one ask:
+   a later dialog resolving to a taken index stays out (rendered standalone)."
+  [dialogs entries start]
+  (reduce (fn [acc dialog]
+            (let [i (when (= :confirm (:type dialog))
+                      (permission-tool-index dialog entries start))]
+              (if (and i (not (contains? acc i)))
+                (assoc acc i dialog)
+                acc)))
+          {}
+          dialogs))
+
 (defn restamp-gated-call
   "History with the :started-at of the tool call an allowed :confirm `dialog`
    was gating moved to `ts` (the answer's :event/ts). The gate holds the call
