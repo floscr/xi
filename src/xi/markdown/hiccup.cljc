@@ -1,6 +1,7 @@
 (ns xi.markdown.hiccup
   "Renders markdown AST tokens to Replicant-compatible hiccup."
   (:require [clojure.string :as str]
+            [xi.markdown.code-kind :as code-kind]
             [xi.markdown.parse :as parse]
             [xi.url :as url]
             [xi.highlight.core :as hl]
@@ -46,11 +47,25 @@
   (interpose [:br] (str/split s #"\n" -1)))
 
 (defn- color-chip
-  "An inline-code chip with a tile of the colour it names."
+  "An inline-code chip with a tile of the colour it names, tinted toward that
+   colour the way `inline-code` tints toward its kind's."
   [color]
-  [:code {:class ["md-color"]}
+  [:code {:class ["md-code" "md-color"] :style {:--code-hue color}}
    [:span {:class ["md-color-swatch"] :style {:background-color color}}]
    color])
+
+(defn- inline-code
+  "Inline code classed by its kind (xi.markdown.code-kind) for the tint, its
+   dir / namespace prefix in a span to dim. Code holding a URL keeps the link
+   unsplit."
+  [s]
+  (let [nodes (linkify s)
+        kind  (code-kind/classify s)
+        attrs {:class ["md-code" (str "md-code--" (name kind))]}
+        [prefix leaf] (code-kind/split-prefix s)]
+    (if (or (not-every? string? nodes) (= kind :literal) (empty? prefix))
+      (into [:code attrs] nodes)
+      [:code attrs [:span {:class ["md-code-prefix"]} prefix] leaf])))
 
 (defn- render-inline-token
   "Render a single inline token to a seq of hiccup nodes (a string may expand
@@ -68,7 +83,7 @@
            :strike (into [:del] (nodes content))
            :code (if (parse/color-literal? content)
                    (color-chip content)
-                   (into [:code] (linkify content)))
+                   (inline-code content))
            :color (color-chip content)
            :link [:a {:href (:url content) :target "_blank" :rel "noopener noreferrer"} (:text content)]
            ;; fallback

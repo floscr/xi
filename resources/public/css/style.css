@@ -1899,51 +1899,64 @@ body {
   text-decoration-color: var(--accent);
 }
 
-/* Inline code and code blocks: the same borderless --bg-2 panel as the chat's
+/* Code blocks: the same borderless --bg-2 panel as the chat's
    .md-code-block (theme.css), so markdown rendered in a .post-content wrapper
    (file viewer, md diff, prompt tab, user bubbles) matches the chat blocks.
-   Inline code keeps the paragraph's size; --code-scale sizes only blocks. */
+   --code-scale sizes only blocks. */
 .post-content code {
-  background-color: var(--bg-2);
-  padding: 0.15em 0.4em;
-  border-radius: 0.4rem;
   font-family: var(--font-mono);
-  font-size: 1em;
 }
 
-.post--user .post-content code {
+/* Inline code, in chat and .post-content alike: a faint wash of the text
+   colour, tinted toward the code's kind (classed by
+   xi.markdown.hiccup/inline-code, decided by xi.markdown.code-kind) in the
+   theme's syntax colours. The dir / namespace prefix is dimmed so the name
+   that matters stands out. */
+.md-code {
+  --code-hue: var(--fg-1);
+  padding: 0.08em 0.3em;
+  border-radius: 4px;
+  background-color: color-mix(in oklab, color-mix(in oklab, var(--code-hue) 45%, var(--fg-0)) 7%, transparent);
+  color: color-mix(in oklab, var(--code-hue) 32%, var(--fg-0));
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.md-code--path    { --code-hue: var(--hl-builtin); }
+.md-code--ident   { --code-hue: var(--hl-symbol); }
+.md-code--sigil   { --code-hue: var(--hl-string); }
+.md-code--literal { --code-hue: var(--hl-number); }
+
+.md-code-prefix {
+  opacity: 0.6;
+}
+
+.post--user .post-content code,
+.post--user .md-code {
   background-color: rgba(255, 255, 255, 0.2);
   color: #fff;
 }
 
-/* Colour literals (#c3f187, rgb(…)) as chips with a tile
-   (xi.markdown.hiccup/color-chip). Chat inline code has no fill, so the
-   chip brings its own (ui.chip's tokens); user bubbles keep their white tint
-   from `.post--user .post-content code`. The ring keeps a tile visible on a
-   background of its own colour. */
-.markdown .md-color,
-.post-content .md-color {
+/* Colour literals (#c3f187, rgb(…)) with a tile
+   (xi.markdown.hiccup/color-chip): an .md-code whose --code-hue is the colour
+   itself. The ring keeps a tile visible on a background of its own colour. */
+.md-color {
   display: inline-flex;
   align-items: center;
-  gap: 0.4em;
-  padding: 0.05em 0.55em 0.05em 0.4em;
-  border: var(--border-0);
-  border-radius: var(--radius-pill);
-  background: var(--bg-2);
-  font-family: var(--font-mono);
-  font-size: 0.9em;
-  line-height: 1.4;
+  gap: 0.35em;
   white-space: nowrap;
   vertical-align: baseline;
 }
 
 .md-color-swatch {
   display: inline-block;
-  width: 0.85em;
-  height: 0.85em;
+  width: 0.75em;
+  height: 0.75em;
   flex-shrink: 0;
-  border-radius: 3px;
-  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent);
 }
 
 .post--user .post-content pre {
