@@ -588,7 +588,7 @@
                f "resources/providers.edn"]
            (when (str/blank? remote-has)
              (throw (ex-info (str sha " is not on the providers repo's origin yet — push it first") {})))
-           (spit f (str/replace (slurp f) (re-pattern ":sha\\s+(nil|\"[0-9a-f]+\")") (str ":sha \"" sha "\"")))
+           (spit f (str/replace (slurp f) (re-pattern "(:sha\\s+)(nil|\"[0-9a-f]+\")") (str "$1\"" sha "\"")))
            (println (str "Pinned providers " sha " → " f)))}
 
   demo:key
