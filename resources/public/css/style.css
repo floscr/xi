@@ -2185,6 +2185,50 @@ body {
   color: var(--fg-1); font-size: 0.95em; line-height: 1.6;
 }
 
+/* User bubbles: every theme colour (--fg-*, --bg-*, --border-0) is made for
+   the page, not the accent fill, so the table derives its text, lines and
+   tints from the bubble's own text colour instead. */
+.post--user .md-table-wrap {
+  --ub-muted: color-mix(in srgb, currentColor 75%, transparent);
+  --ub-line: color-mix(in srgb, currentColor 28%, transparent);
+  --ub-tint: color-mix(in srgb, currentColor 10%, transparent);
+  --ub-active: color-mix(in srgb, currentColor 25%, transparent);
+  color: inherit;
+  scrollbar-color: var(--ub-active) transparent;
+}
+.post--user .md-table-wrap,
+.post--user .md-table-bar,
+.post--user .markdown .md-table th,
+.post--user .markdown .md-table td,
+.post--user .md-table-wrap.as-text .md-table tr {
+  border-color: var(--ub-line);
+}
+.post--user .md-table-bar,
+.post--user .markdown .md-table th { background: var(--ub-tint); }
+.post--user .md-table-toggle { background: none; }
+.post--user .markdown .md-table th,
+.post--user .markdown .md-table td,
+.post--user .md-table-wrap.as-text .md-table td:first-child,
+.post--user .md-table-wrap.as-text .md-table tr:hover td:first-child,
+.post--user .md-table-wrap.as-text .md-table td:last-child:not(:first-child) {
+  color: inherit;
+}
+.post--user .md-table-meta,
+.post--user .md-table-toggle .button-group-item,
+.post--user .md-table-wrap.as-text .md-table td:not(:first-child):not(:last-child),
+.post--user .md-table-wrap.as-text .md-table td:not(:first-child):not(:last-child)::before {
+  color: var(--ub-muted);
+}
+.post--user .md-table-wrap:not(.as-text) .md-table-mode-grid,
+.post--user .md-table-wrap.as-text .md-table-mode-list {
+  background: var(--ub-active); color: inherit; box-shadow: none;
+}
+@media (hover: hover) {
+  .post--user .md-table-toggle .button-group-item:hover {
+    background: var(--ub-tint); color: inherit;
+  }
+}
+
 .error-text { color: var(--danger); }
 .status-text { color: var(--fg-2); font-style: italic; }
 
