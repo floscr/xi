@@ -69,6 +69,12 @@
            (dissoc req :dataDir)))
     (is (not (contains? req :sessionId)) "a sessionless provider replays history instead")))
 
+(deftest data-less-attachments-stay-out-of-the-request
+  (let [turn #(process/turn-request host-m {} [] {:model "m" :prompt "p" :cwd "/tmp" :images %})]
+    (is (= [{:mediaType "image/png" :data "AAA"}]
+           (:images (turn [{:media-type "image/png" :data "AAA"} {:name "a.md" :path "/u/a.md"}]))))
+    (is (not (contains? (turn [{:name "a.md" :path "/u/a.md"}]) :images)))))
+
 (deftest a-provider-with-its-own-session
   (let [req (process/turn-request (assoc host-m :transcripts :self) {} []
                                   {:model "m" :prompt "p" :cwd "/tmp" :resume-session-id "s1"

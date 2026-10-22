@@ -97,12 +97,15 @@
         flag (fn [entry block]
                (cond-> entry (:pre-truncation? block) (assoc :no-llm? true)))
         ;; Attach buffered image blocks to the most recent user entry — in the
-        ;; transcript they immediately follow that message's text block.
+        ;; transcript they immediately follow that message's text block —
+        ;; ahead of its file attachments.
         flush-imgs (fn [out imgs]
                      (if (and (seq imgs) (seq out)
                               (= :user (:kind (peek out))))
-                       (update out (dec (count out)) merge
-                               {:images imgs :image-count (count imgs)})
+                       (update out (dec (count out))
+                               (fn [entry]
+                                 (let [all (into imgs (:images entry))]
+                                   (assoc entry :images all :image-count (count all)))))
                        out))]
     (loop [ms (seq messages) out [] imgs []]
       (if-not ms
@@ -127,13 +130,16 @@
               ;; :collapsed-label from it and strip it so the entry reads clean.
               (let [raw   (:text block)
                     label (util/collapse-label raw)
-                    text  (util/transcript-prompt-text raw)]
+                    text  (util/transcript-prompt-text raw)
+                    files (util/attached-files raw)]
                 (if (util/cli-interrupt-marker? raw)
                   (recur (next ms) out imgs)
                   (recur (next ms)
                          (conj (flush-imgs out imgs)
                                (flag (cond-> {:kind :user :text text}
-                                       label (assoc :collapsed-label label))
+                                       label       (assoc :collapsed-label label)
+                                       (seq files) (assoc :images files
+                                                          :image-count (count files)))
                                      block))
                          [])))
               "assistant"

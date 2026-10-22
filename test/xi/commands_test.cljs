@@ -674,6 +674,19 @@
              {:type :text :role "assistant" :text "reply"}
              {:type :text :role "user" :text "second"}])))))
 
+(deftest messages->history-reattaches-files
+  ;; A file attachment survives in the transcript only as its reference line;
+  ;; it comes back as a data-less card the web client opens by path.
+  (let [path "/home/u/.config/xi/uploads/c575948baed4a649-notes.md"]
+    (is (= [{:kind :user :text "read this"
+             :images [{:media-type "image/png" :data "X"}
+                      {:name "notes.md" :path path}]
+             :image-count 2}]
+           (commands/messages->history
+            [{:type :text :role "user"
+              :text (str "read this\n[Attached image: /tmp/a.png]\n[Attached file: " path "]")}
+             {:type :image :media-type "image/png" :data "X"}])))))
+
 ;; ── turn-end session sync (chained) ──────────────────────────────────────────
 
 (deftest turn-end-chain-syncs-session

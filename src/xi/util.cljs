@@ -255,6 +255,16 @@
           (str/replace attachment-ref-re "")
           str/trimr))
 
+(defn attached-files
+  "The non-image attachments a provider prompt references (\"[Attached file: …]\")
+   as `{:name :path}`, the name without the upload's hash prefix
+   (xi.image/persist-file!). A resumed transcript keeps only these lines."
+  [text]
+  (mapv (fn [[_ path]]
+          {:name (str/replace (last (str/split path #"/")) #"^[0-9a-f]{16}-" "")
+           :path path})
+        (re-seq #"(?m)^\[Attached file: (.*)\]$" (or text ""))))
+
 (def ^:private cli-interrupt-marker-re
   ;; The user message the Claude CLI writes into its own transcript when a
   ;; turn is interrupted ("[Request interrupted by user]", "… for tool use]").

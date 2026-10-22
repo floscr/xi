@@ -159,9 +159,12 @@
                    :prompt (or prompt "")
                    :cwd    cwd
                    :tools  (if no-tools? [] defs))
-      (seq images)       (assoc :images (mapv (fn [{:keys [media-type data]}]
-                                                {:mediaType media-type :data data})
-                                              images))
+      ;; A file resumed from a transcript has no data, only the path the
+      ;; prompt names (xi.agent/prompt-with-attachment-paths).
+      (some :data images) (assoc :images (into [] (comp (filter :data)
+                                                        (map (fn [{:keys [media-type data]}]
+                                                               {:mediaType media-type :data data})))
+                                               images))
       system             (assoc :system system)
       (and (:base-prompt? m) (not no-tools?))
       (assoc :basePrompt (system-prompt/build defs cwd))
