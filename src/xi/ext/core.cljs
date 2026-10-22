@@ -50,7 +50,8 @@
      :commands     [{:name :description :handler}] — same contract as
                    xi.commands: (fn [state {:keys [room-id args commands]}]),
                    plus the keys every surface lists them by (:aliases
-                   :subcommands :takes-args? :while-busy? :surfaces)
+                   :subcommands :takes-args? :while-busy? :surfaces);
+                   `compose` adds :source {:kind :extension :ext id}
      :roomless-events #{event-type} — event types clients may send without
                    joining a room (connection-level, keyed by :client-id).
                    Unioned into the WS server's roomless whitelist.
@@ -220,7 +221,13 @@
                                {:ext.persist/hydrate (hydrate-handler persist-specs)}
                                (keep :handlers exts))
      :fx               (apply merge {} (keep :fx exts))
-     :commands         (vec (mapcat :commands exts))
+     ;; each tagged with the extension it comes from (a user extension's
+     ;; loader tags its own, with the file: xi.ext.user/load-dir)
+     :commands         (vec (mapcat (fn [e]
+                                      (map #(cond-> % (not (:source %))
+                                              (assoc :source {:kind :extension :ext (:id e)}))
+                                           (:commands e)))
+                                    exts))
      :tool-definitions (vec (mapcat :tool-definitions exts))
      :tool-registry    (apply merge {} (keep :tool-registry exts))
      :event-hooks      (reduce (fn [acc e]

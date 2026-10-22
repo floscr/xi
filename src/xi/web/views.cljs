@@ -63,6 +63,7 @@
             [ui.color-picker :as color-picker]
             [ui.chip :as chip]
             [ui.accordion :as accordion]
+            [ui.tabs :as tabs]
             [xi.clj-result :as clj-result]
             [ui.theme-toggle :as theme-toggle]))
 
@@ -1537,18 +1538,11 @@
   "Web palette sub-pages run as commands (dispatch-command!). They shadow a
    published command of the same name (the diff extension's terminal
    /commits menu)."
-  [{:name "commits"
-    :description "List commits made this session"
-    :while-busy? true}
-   {:name "log"
-    :description "Browse the git log"
-    :while-busy? true}
-   {:name "files"
-    :description "Browse project files"
-    :while-busy? true}
-   {:name "skills"
-    :description "Browse and load skills"
-    :while-busy? true}])
+  (mapv #(assoc % :while-busy? true :source {:kind :web})
+        [{:name "commits" :description "List commits made this session"}
+         {:name "log"     :description "Browse the git log"}
+         {:name "files"   :description "Browse project files"}
+         {:name "skills"  :description "Browse and load skills"}]))
 
 (def ^:private web-commands-of
   (memoize
@@ -8121,58 +8115,152 @@
                     (for [{:keys [display]} kbds]
                       (keycaps display))))])
 
+(defn command-source-label
+  "Where a command comes from (its xi.commands/specs :source), for the reader."
+  [{:keys [kind ext file]}]
+  (case kind
+    :builtin   "built-in"
+    :extension (str "built-in · " (name ext))
+    :user      file
+    :demo      (str file " · demo")
+    :web       "web client"
+    nil))
+
+(defn- reference-row
+  "A row of the dialog's Commands and Skills tabs: name, description and
+   source (on the right, or a `path` on a line of its own); `on-click` nil
+   renders it inert."
+  [{:keys [key label aliases description source path sub? on-click]}]
+  [:li {:replicant/key key}
+   [:button (cond-> {:class ["keys-row" "keys-row--action" (when sub? "keys-row--sub")]
+                     :type "button"
+                     :disabled (nil? on-click)}
+              on-click (assoc :on {:click (fn [_] (on-click))}))
+    [:span {:class ["keys-row-main"]}
+     (into [:span {:class ["keys-row-name"]} label]
+           (for [a aliases] [:span {:class ["keys-row-alias"]} (str "/" a)]))
+     (when (seq description)
+       [:span {:class ["keys-row-desc"]} description])
+     (when path
+       [:span {:class ["keys-row-path"]} path])]
+    (when source
+      [:span {:class ["keys-row-source"] :title source} source])]])
+
+(defn- keys-commands-tab
+  "Every command the web lists (`web-commands`), subcommands below their
+   command; a click runs it as picking it in the '/' list would (one that
+   takes an argument goes into the message box). Inert without a chat."
+  [state dispatch!]
+  (let [room  (state/active-room state)
+        chat? (or room (:web/pending-room state))
+        dkey  (draft-key state)
+        run   (fn [{:keys [name takes-args?]}]
+                (when chat?
+                  (fn []
+                    (dispatch! {:type :keys/close})
+                    (if takes-args?
+                      (dispatch! {:type :compose/prefill :draft-key dkey :text (str "/" name " ")})
+                      (dispatch-command! dispatch! (:id room) name)))))]
+    (into [:ul {:class ["keys-list" "keys-list--reference"]}]
+          (mapcat (fn [{:keys [name aliases description subcommands source] :as cmd}]
+                    (cons (reference-row {:key         name
+                                          :label       (str "/" name)
+                                          :aliases     aliases
+                                          :description description
+                                          :source      (command-source-label source)
+                                          :on-click    (run cmd)})
+                          (for [{sub :name sub-desc :description} subcommands]
+                            (reference-row {:key         (str name " " sub)
+                                            :label       (str "/" name " " sub)
+                                            :description sub-desc
+                                            :sub?        true
+                                            :on-click    (run {:name (str name " " sub)})}))))
+                  (web-commands state)))))
+
+(defn- keys-skills-tab
+  "The skills (:web/skill-list, fetched when the dialog opens) with the
+   directory each lives in; a click picks it as the palette does."
+  [state dispatch!]
+  (let [skills (:web/skill-list state)]
+    (cond
+      (nil? skills)   [:div {:class ["command-loading"]} (spinner)]
+      (empty? skills) [:p {:class ["keys-empty"]} "No skills in ~/.config/xi/skills."]
+      :else
+      (into [:ul {:class ["keys-list" "keys-list--reference"]}]
+            (for [{:keys [name description source]} skills]
+              (reference-row {:key         name
+                              :label       (str "/" name)
+                              :description description
+                              :path        source
+                              :on-click    (fn []
+                                             (dispatch! {:type :keys/close})
+                                             (dispatch! {:type :skill/select :name name}))}))))))
+
+(defn- keys-tab-label [label n]
+  [:span label (when n [:span {:class ["keys-count"]} n])])
+
 (defn- keys-dialog
-  "The Keyboard shortcuts dialog: every key of the effective keymap
+  "The shortcuts dialog, in tabs: every key of the effective keymap
    (xi.web.keymap/listing) as keycaps, one section per layer, active layers
-   first. Rows changed in config.edn carry a bar."
+   first (rows changed in config.edn carry a bar); the slash commands; the
+   skills."
   [state dispatch!]
   (when (:web/keys-open? state)
     (let [close!   (fn [] (dispatch! {:type :keys/close}))
           sections (keymap/listing state)
-          custom?  (boolean (some #(some :custom? (:rows %)) sections))
           n-keys   (reduce + (for [{:keys [rows]} sections
                                    {ks :keys :keys [action]} rows
                                    :when action]
-                               (count ks)))]
+                               (count ks)))
+          key-sections
+          (into [:div {:class ["keys-sections"]}]
+                (concat
+                 (for [{:keys [layer label active? rows]} sections]
+                   [:section {:class ["keys-section" (when-not active? "keys-section--inactive")]
+                              :replicant/key layer}
+                    [:h4 {:class ["keys-section-title"]}
+                     label
+                     (when-not active?
+                       [:span {:class ["keys-section-note"]} "not active here"])]
+                    (into [:ul {:class ["keys-list"]}]
+                          (for [{ks :keys :keys [label custom? action]} rows]
+                            (keys-row {:label label
+                                       :key (str/join " " ks)
+                                       :title (when custom? "changed in config.edn")
+                                       :class [(when custom? "keys-row--custom")
+                                               (when-not action "keys-row--unbound")]
+                                       :kbds (for [k ks]
+                                               {:display (xkeys/format-key k)})})))])
+                 [[:section {:class ["keys-section" "keys-section--fixed"]}
+                   [:h4 {:class ["keys-section-title"]} "Always"]
+                   (into [:ul {:class ["keys-list"]}]
+                         (for [[k label] fixed-shortcuts]
+                           (keys-row {:label label
+                                      :key k
+                                      :kbds (for [d (str/split k #" / ")]
+                                              {:display d})})))]]))]
       (dialog/dialog-overlay
        {:on-close close!
         :class "keys-overlay"
         :attrs {:replicant/key "keys-dialog"}}
        (dialog/dialog-panel {:class "keys-dialog"}
          (dialog/dialog-header {}
-           [:h3 "Keyboard shortcuts"
-            [:span {:class ["keys-count"]} (str n-keys " bindings")]]
+           [:h3 "Shortcuts"]
            [:button {:class ["icon-btn" "icon-btn--sm"]
                      :title "Close"
                      :on {:click (fn [_] (close!))}}
             (icon/icon {:icon-name :x :size :md})])
          (dialog/dialog-body {:class "keys-body"}
-           (into [:div {:class ["keys-sections"]}]
-                 (concat
-                  (for [{:keys [layer label active? rows]} sections]
-                    [:section {:class ["keys-section" (when-not active? "keys-section--inactive")]
-                               :replicant/key layer}
-                     [:h4 {:class ["keys-section-title"]}
-                      label
-                      (when-not active?
-                        [:span {:class ["keys-section-note"]} "not active here"])]
-                     (into [:ul {:class ["keys-list"]}]
-                           (for [{ks :keys :keys [label custom? action]} rows]
-                             (keys-row {:label label
-                                        :key (str/join " " ks)
-                                        :title (when custom? "changed in config.edn")
-                                        :class [(when custom? "keys-row--custom")
-                                                (when-not action "keys-row--unbound")]
-                                        :kbds (for [k ks]
-                                                {:display (xkeys/format-key k)})})))])
-                  [[:section {:class ["keys-section" "keys-section--fixed"]}
-                    [:h4 {:class ["keys-section-title"]} "Always"]
-                    (into [:ul {:class ["keys-list"]}]
-                          (for [[k label] fixed-shortcuts]
-                            (keys-row {:label label
-                                       :key k
-                                       :kbds (for [d (str/split k #" / ")]
-                                               {:display d})})))]])))
+           (tabs/tabs
+            {:variant :line
+             :name    "keys-dialog-tab"
+             :class   "keys-tabs"
+             :tabs    [{:id "keys" :label (keys-tab-label "Keys" n-keys)
+                        :content key-sections}
+                       {:id "commands" :label (keys-tab-label "Commands" (count (web-commands state)))
+                        :content (keys-commands-tab state dispatch!)}
+                       {:id "skills" :label (keys-tab-label "Skills" (some-> (:web/skill-list state) count))
+                        :content (keys-skills-tab state dispatch!)}]}))
          (dialog/dialog-footer {}
            (button/button
             {:variant :primary :size :sm

@@ -4,7 +4,8 @@
             [xi.agent :as agent]
             [xi.commands :as commands]
             [xi.core.events :as events]
-            [xi.core.state :as state]))
+            [xi.core.state :as state]
+            [xi.ext.core :as ext]))
 
 (def all-handlers
   (merge events/core-handlers agent/handlers commands/handlers))
@@ -399,7 +400,8 @@
     (testing "no handlers, metadata kept"
       (is (not-any? :handler specs))
       (is (= {:name "gtd" :description "Tasks"
-              :subcommands [{:name "add" :description "Add one"}]}
+              :subcommands [{:name "add" :description "Add one"}]
+              :source {:kind :builtin}}
              (by-name "gtd")))
       (is (true? (:while-busy? (by-name "allow")))))
     (testing "a name a built-in claims (also as an alias) is the built-in's"
@@ -412,6 +414,18 @@
         (is (= [[:session/new {:room-id "r" :save-current? true}]]
                (:effects (events/handle-event handlers (with-room)
                                               {:type :command/run :room-id "r" :name "new"}))))))))
+
+(deftest specs-say-where-a-command-comes-from
+  (let [composed (ext/compose [{:id :gtd :commands [{:name "gtd" :handler identity}]}
+                               {:id :mine :commands [{:name "mine" :handler identity
+                                                      :source {:kind :user :ext :mine
+                                                               :file "mine.cljs"}}]}])
+        source   (into {} (map (juxt :name :source))
+                       (commands/specs (commands/all-commands (:commands composed))))]
+    (is (= {:kind :builtin} (source "help")))
+    (is (= {:kind :extension :ext :gtd} (source "gtd")))
+    (is (= {:kind :user :ext :mine :file "mine.cljs"} (source "mine"))
+        "a source the loader set is kept")))
 
 (deftest listed-by-surface
   (let [specs (commands/specs (commands/all-commands ext-commands))

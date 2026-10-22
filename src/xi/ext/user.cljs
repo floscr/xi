@@ -244,7 +244,15 @@
                         (assoc base :error reason)
                         ;; the token proves to xi.api.* which extension is
                         ;; calling (see xi.api.core/caller)
-                        (let [token (api-core/issue-token! (:id ext))]
+                        (let [token (api-core/issue-token! (:id ext))
+                              ;; where /help, the menus and the web's lists
+                              ;; say a command comes from (xi.commands)
+                              source {:kind (if (= dir (demo-extensions-dir)) :demo :user)
+                                      :ext  (:id ext)
+                                      :file (node-path/basename file)}
+                              ext    (cond-> ext
+                                       (:commands ext)
+                                       (update :commands (partial mapv #(assoc % :source source))))]
                           (cond-> (assoc base :id (:id ext)
                                               :ns nsn
                                               :token token

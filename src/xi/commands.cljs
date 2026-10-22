@@ -15,7 +15,8 @@
    [{:name :description}], :takes-args? (completed into the editor for its
    argument instead of run when picked), :while-busy? (may run while the
    agent works) and :surfaces (#{:tui :web}, default both; a listing filter
-   only, dispatch ignores it). `specs` strips the handlers; xi.cli publishes
+   only, dispatch ignores it). Extension commands are tagged with their
+   :source when composed. `specs` strips the handlers; xi.cli publishes
    them as :commands/changed, which puts them at the state's :commands and
    which the server sends every client (xi.server.ws).
 
@@ -793,17 +794,21 @@
 ;; ── Command specs (the handler-free list every surface renders) ──────────────
 
 (def ^:private spec-keys
-  [:name :description :aliases :subcommands :takes-args? :while-busy? :surfaces])
+  [:name :description :aliases :subcommands :takes-args? :while-busy? :surfaces
+   :source])
 
 (defn specs
   "`commands` without their handlers, wire-safe: one entry per command that
    :command/run would dispatch to (a name an earlier command claims is
-   dropped), in order."
+   dropped), in order. :source says where it comes from: {:kind :builtin},
+   {:kind :extension :ext id} (xi.ext.core/compose) or {:kind :user|:demo
+   :ext id :file name} (xi.ext.user)."
   [commands]
   (let [by-name (index-by-name commands)]
     (into [] (comp (filter #(identical? % (get by-name (:name %))))
                    (distinct)
-                   (map #(select-keys % spec-keys)))
+                   (map #(-> (select-keys % spec-keys)
+                             (update :source (fnil identity {:kind :builtin})))))
           commands)))
 
 (defn on-surface?

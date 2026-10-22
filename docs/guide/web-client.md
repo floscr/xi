@@ -387,9 +387,12 @@ are kept and sent when the connection returns.
 ## Keyboard
 
 Press `?` (while not typing) for the list of shortcuts that apply where you
-are. The keymap's keys, the layers they apply in and how to change them in
-`config.edn`: [Keyboard shortcuts](keyboard.md). Using the client without a
-mouse, with link hints: [Keyboard navigation](keyboard-navigation.md).
+are. Its **Commands** and **Skills** tabs list every slash command and skill
+with its description and where it comes from (built-in, an extension's
+file, the skill's directory); click one to run it. The keymap's keys, the
+layers they apply in and how to change them in `config.edn`: [Keyboard
+shortcuts](keyboard.md). Using the client without a mouse, with link hints:
+[Keyboard navigation](keyboard-navigation.md).
 
 These keys belong to a control and are not in the keymap:
 

@@ -1390,7 +1390,11 @@
                                        (update :state dissoc :web/appearance-open?
                                                :web/appearance-tool-query
                                                :web/appearance-tool-filter)))
-          :keys/show             (fn [st _] {:state (assoc st :web/keys-open? true)})
+          ;; the dialog's Skills tab lists them (views/keys-dialog)
+          :keys/show             (fn [st _]
+                                   (cond-> {:state (assoc st :web/keys-open? true)}
+                                     (nil? (:web/skill-list st))
+                                     (assoc :effects [[:ws/send {:type :skill/web-list}]])))
           :keys/close            (fn [st _] {:state (dissoc st :web/keys-open?)})
           :appearance/set        (fn [st {:keys [key value]}]
                                    (let [settings (appearance/normalize

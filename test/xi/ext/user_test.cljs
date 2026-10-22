@@ -30,7 +30,10 @@
     (let [[e] (user/load-dir dir)]
       (is (nil? (:error e)))
       (is (= :greet (:id e)))
-      (is (= "greet" (-> e :extension :commands first :name))))))
+      (is (= "greet" (-> e :extension :commands first :name)))
+      (is (= {:kind :user :ext :greet :file "greet.cljs"}
+             (-> e :extension :commands first :source))
+          "its commands say which file they come from"))))
 
 (deftest sibling-namespaces-load-via-load-fn
   (let [dir (tmp-dir)]

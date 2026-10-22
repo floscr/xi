@@ -1452,6 +1452,79 @@ body {
   background: var(--bg-2);
   border-color: var(--fg-2);
 }
+/* Tabs (Keys / Commands / Skills): the tab bar stays put while a tab scrolls. */
+.keys-tabs .tabs-list {
+  position: sticky;
+  top: calc(-1 * var(--size-2));
+  z-index: 1;
+  align-self: stretch;
+  padding-top: var(--size-2);
+  background: var(--bg-1);
+}
+.keys-tabs .keys-count { margin-left: var(--size-1); }
+.keys-list--reference {
+  columns: 2 26rem;
+  column-gap: 2rem;
+}
+.keys-list--reference > li { break-inside: avoid; }
+.keys-row--action {
+  width: 100%;
+  align-items: flex-start;
+  font-family: inherit;
+  text-align: start;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.keys-row--action:disabled { cursor: default; }
+.keys-row--action:disabled:hover { background: none; }
+.keys-row--sub { padding-left: var(--size-6); }
+.keys-row-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.keys-row-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--size-2);
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+.keys-row--sub .keys-row-name { font-weight: 500; }
+.keys-row-alias {
+  font-weight: 400;
+  color: var(--fg-2);
+}
+.keys-row-desc {
+  font-size: var(--font-xs);
+  font-weight: 400;
+  color: var(--fg-1);
+}
+.keys-row-source {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-xs);
+  font-weight: 400;
+  color: var(--fg-2);
+}
+.keys-row-path {
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  font-weight: 400;
+  color: var(--fg-2);
+  overflow-wrap: anywhere;
+}
+.keys-empty {
+  padding: var(--size-3);
+  color: var(--fg-2);
+}
 
 /* ---- Project picker ---- */
 .project-picker-backdrop {

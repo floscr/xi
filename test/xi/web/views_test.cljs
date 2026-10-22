@@ -104,6 +104,13 @@
         (is (contains? fallback "files"))
         (is (not (contains? fallback "gtd")))))))
 
+(deftest command-source-label
+  (is (= "built-in" (views/command-source-label {:kind :builtin})))
+  (is (= "built-in · diff" (views/command-source-label {:kind :extension :ext :diff})))
+  (is (= "gtd.cljs" (views/command-source-label {:kind :user :ext :gtd :file "gtd.cljs"})))
+  (is (= "notes.cljs · demo" (views/command-source-label {:kind :demo :file "notes.cljs"})))
+  (is (= "web client" (views/command-source-label (:source (some #(when (= "files" (:name %)) %) cmds))))))
+
 (deftest command-while-busy
   (testing "non-interrupting read-only commands"
     (is (true? (views/command-while-busy? cmds "/diff")))

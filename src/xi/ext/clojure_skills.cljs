@@ -172,13 +172,25 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
   [_st {:keys [client-id name]}]
   {:effects [[:skill/web-get-reply {:client-id client-id :name name}]]})
 
+(defn- skill-source
+  "Where a skill's files live: its directory with symlinks resolved (a skill
+   linked into SKILLS_DIR names its real home), ~ for the home directory."
+  [{:keys [path]}]
+  (let [dir  (.dirname node-path path)
+        real (try (fs/realpathSync dir) (catch :default _ dir))
+        home (os/homedir)]
+    (if (str/starts-with? real (str home "/"))
+      (str "~" (subs real (count home)))
+      real)))
+
 (defn- server-fx
   "WS-server fx: scan on-demand skills and reply to the requesting client."
   [{:keys [send!]}]
   {:skill/web-list-reply
    (fn [_ {:keys [client-id]}]
      (send! client-id {:type   :skill/web-list-result
-                       :skills (mapv #(select-keys % [:name :description :inputs])
+                       :skills (mapv #(-> (select-keys % [:name :description :inputs])
+                                          (assoc :source (skill-source %)))
                                      (scan-skills))}))
    :skill/web-get-reply
    (fn [_ {:keys [client-id name]}]
