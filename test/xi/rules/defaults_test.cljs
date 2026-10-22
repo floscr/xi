@@ -586,6 +586,29 @@
     (testing "relentless still asks before restarting the server"
       (is (= :always (guard {:tool :task :command "bb serve:restart"})))
       (is (= :always (guard {:tool :sh :cli "bb" :command "bb serve:stop"}))))
+    (testing "the trust ask of an untrusted task file keeps the guard of the asks it shadows"
+      (is (= :always (guard {:tool :task :command "bb serve:restart" :task-file-trusted? false})))
+      (is (= :sane (guard {:tool :task :command "bb ship git push origin master"
+                           :task-file-trusted? false})))
+      (is (nil? (guard {:tool :task :command "bb test" :task-file-trusted? false}))))
+    (testing "a :guard :always ask is a floor: an allow above it gives way, a deny wins"
+      (let [req   {:tool :task :command "bb serve:restart" :task-file-trusted? true
+                   :runner-task {:runner "bb" :task "serve:restart"}}
+            above (fn [action] (rules/first-match
+                                (into [{:match {:tool :task} :action action}]
+                                      defaults/default-rules)
+                                req))]
+        (is (= {:type :ask :guard :always}
+               (select-keys (:action (above {:type :allow})) [:type :guard])))
+        (is (= :always (get-in (above {:type :ask}) [:action :guard])))
+        (is (= :deny (get-in (above {:type :deny}) [:action :type])))
+        (is (= :allow (get-in (rules/first-match
+                               (into [{:match {:tool :task} :action {:type :allow}}]
+                                     defaults/default-rules)
+                               (assoc req :command "bb test"
+                                      :runner-task {:runner "bb" :task "test"}))
+                              [:action :type]))
+            "an allow for any other call still decides")))
     (testing "everything else is answered by both levels"
       (is (nil? (guard {:tool :write :path "/etc/x" :outside-cwd? true})))
       (is (nil? (guard {:tool :bash :command "rm -rf build"})))

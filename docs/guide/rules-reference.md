@@ -77,10 +77,10 @@ option when it has one, else the chat's directory.
 
 | `:type` | Does |
 | --- | --- |
-| `:allow` | Runs the call. No later rule is consulted. For a clj `(sh …)` rule: without `:command`, `:path`, `:within`, `:tracked`, `:host`, `:read-only` or `:task` it allows the program; with one of them it allows only the exact matched command. |
+| `:allow` | Runs the call. Later rules are not consulted, except a matching ask with `:guard :always`, which asks in its place. For a clj `(sh …)` rule: without `:command`, `:path`, `:within`, `:tracked`, `:host`, `:read-only` or `:task` it allows the program; with one of them it allows only the exact matched command. |
 | `:deny` | Blocks it. The agent sees `:message`. |
 | `:nudge` | Blocks it, but reports `:message` as a hint rather than an error. |
-| `:ask` | Shows a dialog. `:message` replaces the default text. `:options` defaults to `[:yes :no :always]`; `:unanswered :deny` refuses the call when nobody can answer instead of letting it through. `:guard :sane` (or `true`) keeps the dialog in sane [yolo mode](rules.md#yolo-mode); `:guard :always` keeps it in relentless mode too. |
+| `:ask` | Shows a dialog. `:message` replaces the default text. `:options` defaults to `[:yes :no :always]`; `:unanswered :deny` refuses the call when nobody can answer instead of letting it through. `:guard :sane` (or `true`) keeps the dialog in sane [yolo mode](rules.md#yolo-mode); `:guard :always` keeps it in relentless mode too, and an allow or a laxer ask above it can't skip it; only a deny or nudge above it wins, and "Allow for this chat" never lifts it. The deciding ask takes the strictest `:guard` of the asks below it that also match. |
 | `:hint` | Decides nothing. Matching continues, and `:message` is appended under the message of the first deciding rule below it (a deny, nudge or ask). Several hints stack in order. A hint above an allow, or with no deciding rule below it, is dropped. |
 
 A `:message` may contain `{cli}` (the program of a clj `(sh …)` call) and

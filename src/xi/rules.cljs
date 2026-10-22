@@ -458,10 +458,58 @@
         (cond-> (:cli req)     (str/replace "{cli}" (str (:cli req)))
                 (:command req) (str/replace "{command}" (str (:command req)))))))
 
+(defn guard
+  "The yolo guard of an ask `action` → :sane (sane yolo still asks, `:guard
+   true` too), :always (relentless too) or nil. The dialog carries it as
+   :guard (xi.dialog/auto-confirm?)."
+  [action]
+  (case (:guard action)
+    (true :sane) :sane
+    :always      :always
+    nil))
+
+(def ^:private guard-rank {nil 0 :sane 1 :always 2})
+
+(defn- ask? [rule]
+  (= :ask (get-in rule [:action :type])))
+
+(defn- strictest-guard
+  "An ask `rule` with the strictest `:guard` among it and the asks in `below`
+   that match `req` too: a broad ask listed first (::task-trust) must not let
+   yolo answer a call a narrower guarded ask (::server-control) keeps open."
+  [rule below req]
+  (let [g (->> below
+               (map canonical)
+               (filter #(and (ask? %) (matches? % req)))
+               (map (comp guard :action))
+               (reduce #(if (> (guard-rank %2) (guard-rank %1)) %2 %1)
+                       (guard (:action rule))))]
+    (cond-> rule
+      (not= g (guard (:action rule))) (assoc-in [:action :guard] g))))
+
+(defn- floor-ask
+  "The first `:guard :always` ask in `below` matching `req`, canonicalized."
+  [below req]
+  (some #(let [r (canonical %)]
+           (when (and (ask? r) (= :always (guard (:action r))) (matches? r req)) r))
+        below))
+
+(defn- deciding-rule
+  "What the first matching `rule` decides, given the rules `below` it. A
+   `:guard :always` ask is a floor: only a deny or nudge above it wins; an
+   allow above it gives way to it, an ask above it keeps its dialog but takes
+   its guard."
+  [rule below req]
+  (case (get-in rule [:action :type])
+    :ask   (strictest-guard rule below req)
+    :allow (or (floor-ask below req) rule)
+    rule))
+
 (defn first-match
   "First deciding rule in `rules` (precedence order) matching `req`,
    canonicalized, with the messages of matching `:hint` rules above it attached
-   as `:hints`. nil when none match."
+   as `:hints`. A matching `:guard :always` ask below it is a floor no allow or
+   laxer ask lifts (`deciding-rule`). nil when none match."
   [rules req]
   (loop [rules rules hints []]
     (when-let [r (first rules)]
@@ -471,10 +519,11 @@
           (hint? r)              (recur (rest rules)
                                         (conj hints (render-message
                                                      (get-in r [:action :message]) req)))
-          :else (cond-> r
-                  (some? (get-in r [:action :message]))
-                  (update-in [:action :message] render-message req)
-                  (seq hints) (assoc :hints hints)))))))
+          :else (let [d (deciding-rule r (rest rules) req)]
+                  (cond-> d
+                    (some? (get-in d [:action :message]))
+                    (update-in [:action :message] render-message req)
+                    (seq hints) (assoc :hints hints))))))))
 
 (defn with-hints
   "`msg` with `hints` appended as paragraphs; a nil `msg` yields just the hints."
@@ -489,16 +538,6 @@
    `fallback`, with the collected `:hints` appended."
   [rule fallback]
   (with-hints (or (get-in rule [:action :message]) fallback) (:hints rule)))
-
-(defn guard
-  "The yolo guard of an ask `action` → :sane (sane yolo still asks, `:guard
-   true` too), :always (relentless too) or nil. The dialog carries it as
-   :guard (xi.dialog/auto-confirm?)."
-  [action]
-  (case (:guard action)
-    (true :sane) :sane
-    :always      :always
-    nil))
 
 (defn needs-nodes?
   "True when any rule carries a `:node` matcher, so the store should parse the

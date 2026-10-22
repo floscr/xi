@@ -85,6 +85,12 @@ To keep one of your own asks in sane mode, give its action `:guard :sane`;
  :action {:type :ask :guard :always}}
 ```
 
+A `:guard :always` ask can't be shadowed. An allow above it asks in its place,
+an ask above it takes its guard, and only a deny or nudge above it wins. For
+example, `bb serve:restart` always asks, even with a changed `bb.edn` or a
+rule that allows every `bb` task. A `:guard :sane` ask passes its guard to
+asks above it that match the same call.
+
 ## Writing your own rules
 
 Put rules in `~/.config/xi/rules.edn`. They apply to every project.

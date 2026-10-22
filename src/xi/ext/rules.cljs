@@ -382,10 +382,12 @@
 
 (defn- granted?
   "An :ask rule the user answered [s] for in this chat: it allows instead.
-   Works for config-file asks too, which outrank any session allow-rule."
+   Works for config-file asks too, which outrank any session allow-rule. A
+   `:guard :always` ask (xi.rules/first-match's floor) is never granted."
   [state room-id rule]
   (and (= :ask (get-in rule [:action :type]))
        (not= :hardened (:scope rule))
+       (not= :always (rules/guard (:action rule)))
        (contains? (get-in state [:rooms room-id :ext ext-id :granted])
                   (grant-key rule))))
 
