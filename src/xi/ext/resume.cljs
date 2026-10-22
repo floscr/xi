@@ -112,7 +112,7 @@ Be thorough but concise. Output only the summary, no preamble.")
 
 (defn- placeholder [what len backup-path line-idx]
   (str "[trimmed by xi /trim] " what ", " len " chars removed — original at "
-       backup-path " line " (inc line-idx)))
+       backup-path " line " (inc line-idx) " (read it only if the detail is needed)"))
 
 (defn trim-lines
   "Compute (preview) or perform (apply) a trim over transcript lines.
@@ -500,14 +500,6 @@ Be thorough but concise. Output only the summary, no preamble.")
                              (str "Session lineage (oldest first):\n"
                                   (lineage-entries chain)))})))}))
 
-(def ^:private system-prompt-note
-  (str "## Session continuity\n"
-       "Transcripts of this and ancestor sessions are JSONL files on disk. A "
-       "<session-lineage> block or a \"[trimmed by xi /trim]\" placeholder cites "
-       "the file (and line) where the full original text lives — recover it "
-       "with read/grep, but only when the user asks about earlier work or you "
-       "need a trimmed detail."))
-
 (defn create
   "Factory (xi.config server vector). ctx :providers powers the /rollover
    focus-summary turn; absent (client mirror) the commands still present and
@@ -533,5 +525,4 @@ Be thorough but concise. Output only the summary, no preamble.")
               :ext.resume/lineage-result lineage-result
               :ext.resume/failed on-failed
               :agent/abort on-abort}
-   :fx (create-fx providers)
-   :system-prompt system-prompt-note})
+   :fx (create-fx providers)})
