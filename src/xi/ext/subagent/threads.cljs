@@ -202,8 +202,7 @@
          (str " of sub-agent " sub-id " with `agent: \"" sub-id "\"`")
          (str " (the block is entry " addr ")"))
        "; page around the block with `before` when it doesn't say enough. "
-       "You may read files in the working directory. Use read-only tools "
-       "only: don't edit files or run anything with side effects."))
+       "You may read files in the working directory. " h/ask-edit-policy))
 
 ;; ── Handlers (node ext; the web forwards the user's events) ──────────────────
 

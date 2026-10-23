@@ -219,20 +219,15 @@
   [call-id]
   (str explain-prefix call-id))
 
-(defn- read-only-sub?
-  "An inline sub-agent told to only read (Explain, Ask)."
-  [sub-id]
-  (and (string? sub-id)
-       (or (str/starts-with? sub-id explain-prefix)
-           (str/starts-with? sub-id ask-prefix))))
+(defn- prefixed? [sub-id prefix]
+  (and (string? sub-id) (str/starts-with? sub-id prefix)))
 
 (defn inline-sub?
   "A sub-agent whose answer renders where it was asked (a tool block's
    Explain, the diff viewer's Ask / Modify) instead of in the Sub-agents
    panel."
   [sub-id]
-  (or (read-only-sub? sub-id)
-      (and (string? sub-id) (str/starts-with? sub-id modify-prefix))))
+  (boolean (some #(prefixed? sub-id %) [explain-prefix ask-prefix modify-prefix])))
 
 ;; ── State handlers (pure) ─────────────────────────────────────────────────────
 
@@ -240,8 +235,10 @@
   "The :subagent/start effect of a turn of `child` in `room`: the provider
    settings come from the room's agent, the system from child-system with
    the child's spawn options (:system, :parent-context?). Its label names
-   its permission asks; read-only inline children (Explain, Ask) run
-   :unattended?, denying them, while a Modify asks like any sub-agent."
+   its permission asks; an Explain runs :unattended?, denying them (it
+   explains an ask the user still has to answer), an Ask may edit but
+   :confirm-edits? asks for every file edit (xi.ext.rules), a Modify asks
+   like any sub-agent."
   [room child prompt images]
   [:subagent/start
    (cond-> {:room-id    (:id room)
@@ -258,8 +255,9 @@
             :only-tools (some-> (get-in room [:agent :only-tools])
                                 set
                                 (conj parent-history-tool))}
-     (seq images)              (assoc :images images)
-     (read-only-sub? (:id child)) (assoc :unattended? true))])
+     (seq images)                         (assoc :images images)
+     (prefixed? (:id child) explain-prefix) (assoc :unattended? true)
+     (prefixed? (:id child) ask-prefix)     (assoc :confirm-edits? true))])
 
 (defn spawn
   "Append a sub-agent entry and kick off its turn. The child runs a FRESH
@@ -506,6 +504,14 @@
                                earlier))
          "\n\n")))
 
+(def ask-edit-policy
+  "What an Ask sub-agent's prompt says about changing files: it may when
+   asked to, and the user approves each edit (:confirm-edits?, start-effect)."
+  (str "Don't change anything unless the user asks for a change. If they do, "
+       "make it with the file edit tools (edit, write): the user is asked to "
+       "approve each edit, so a denied one means leave it. Never run anything "
+       "else with side effects."))
+
 (defn ask-prompt
   "The diff Ask sub-agent's prompt. `earlier` ([{:question :answer}]) is the
    thread so far about the same lines, so a follow-up reads in context."
@@ -517,8 +523,7 @@
        "## Question\n" question "\n\n"
        "Answer the question directly, in concise markdown. Read files in the "
        "working directory or the parent conversation (`" parent-history-tool
-       "`) when the snippet doesn't say enough. Use read-only tools only: "
-       "don't edit files or run anything with side effects."))
+       "`) when the snippet doesn't say enough. " ask-edit-policy))
 
 (defn diff-thread-prompt
   "The prompt of a turn in a diff viewer thread of `kind` about `snippet`:
@@ -569,6 +574,27 @@
   [agents call-id]
   (let [sub-id (explain-sub-id call-id)]
     (some #(when (= sub-id (:id %)) %) agents)))
+
+(def ^:private edit-tools #{"edit" "write" "clj_replace"})
+
+(defn modifications
+  "The file changes `children` (sub-agents, oldest first) made: each edit /
+   write call that went through as {:sub-id :id :path :text}, `text` the
+   tool's own diff (xi.diff/tool-diff-body). A thread card steps through
+   them (xi.web.views/thread-card)."
+  [children]
+  (vec (for [{sub-id :id history :history} children
+             {:keys [kind id tool arguments result is-error status]} history
+             :let [tool (str/lower-case (util/strip-mcp-prefix (str tool)))
+                   text (some-> result util/extract-text-content util/strip-file-hash
+                                str/trim not-empty)]
+             :when (and (= :tool-call kind) (edit-tools tool) (= :done status)
+                        (not is-error) text)]
+         {:sub-id sub-id
+          :id     id
+          :path   (some #(or (get arguments %) (get arguments (name %)))
+                        [:path :file_path :file])
+          :text   text})))
 
 (def ^:private explain-max-arg-chars 6000)
 (def ^:private explain-max-diff-chars 6000)

@@ -120,15 +120,17 @@
    `resume-target`) with the same extension tools + rules policy the main
    agent gets, permission asks included (`confirm-fn`): one waits for the
    user like the main agent's, and Stop denies it. `:unattended?` turns
-   (explanations and questions, read-only by their prompt) deny every ask
-   instead, so they never queue a dialog behind the one they explain."
+   (explanations, read-only by their prompt) deny every ask instead, so
+   they never queue a dialog behind the one they explain.
+   `:confirm-edits?` turns (questions) ask for every file edit, whatever
+   the rules allow (xi.ext.rules)."
   ([providers] (create-fx providers nil))
   ([providers {:keys [tool-policy extra-tool-definitions extra-tool-registry ask!
                       make-config-dir! remove-config-dir!]}]
    {:subagent/start
     (fn [{:keys [dispatch! get-state]}
          {:keys [room-id sub-id label prompt images system model provider cwd effort only-tools
-                 resume history unattended?]}]
+                 resume history unattended? confirm-edits?]}]
       (let [prov     (agent/resolve-provider providers {:provider provider :model model})
             target   (when resume (resume-target sub-id resume))
             ;; Run the sub-agent's turn against a throwaway CLAUDE_CONFIG_DIR so
@@ -145,19 +147,20 @@
             ;; Tool ctx uses the PARENT room-id: the sub-agent's tools act in
             ;; the parent room (cwd, canvas state, confirm dialogs). Handed to
             ;; the tool policy and, as :tool-ctx, to tool exec-fns.
-            tool-ctx {:dispatch! dispatch!
-                      :get-state get-state
-                      :room-id   room-id
-                      :cwd       cwd
-                      ;; acts for whoever's prompt the parent turn answers
-                      :user      (state/turn-user (get-state) room-id)
-                      :sub-id    sub-id
-                      ;; MUST stay present — a nil :confirm! makes rules :ask
-                      ;; actions *pass through*, i.e. auto-ALLOW guarded ops +
-                      ;; third-party MCP calls.
-                      :confirm!  (if unattended?
-                                   deny-all
-                                   (confirm-fn ask! dispatch! get-state room-id sub-id label))}
+            tool-ctx (cond-> {:dispatch! dispatch!
+                              :get-state get-state
+                              :room-id   room-id
+                              :cwd       cwd
+                              ;; acts for whoever's prompt the parent turn answers
+                              :user      (state/turn-user (get-state) room-id)
+                              :sub-id    sub-id
+                              ;; MUST stay present — a nil :confirm! makes rules :ask
+                              ;; actions *pass through*, i.e. auto-ALLOW guarded ops +
+                              ;; third-party MCP calls.
+                              :confirm!  (if unattended?
+                                           deny-all
+                                           (confirm-fn ask! dispatch! get-state room-id sub-id label))}
+                       confirm-edits? (assoc :confirm-edits? true))
             policy1    (when tool-policy
                          (fn [tool-call]
                            (tool-policy tool-call (dialog/scope-confirm-to-call tool-ctx tool-call))))

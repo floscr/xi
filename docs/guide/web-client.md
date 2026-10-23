@@ -135,7 +135,11 @@ across the top narrows the cards and lists to one
   **Modify** it (describe the change). Each runs a
   [sub-agent](builtin-tools.md#sub-agents) whose answer shows under the
   lines, where you can reply or close it. A Modify edits the files, asking
-  for permission like any sub-agent; reopen the diff to see its change.
+  for permission like any sub-agent; reopen the diff to see its change. An
+  Ask changes files only when you ask it to, and asks you before every
+  edit, even in yolo mode. Permission asks show in the thread. Once a
+  thread's sub-agents have edited files, **‹ ›** at the top of the thread
+  step through their changes, one diff at a time.
 - **Read Markdown changes as Markdown.** A diff of a Markdown file (an edit,
   a permission ask, the diff buffer, Git status) is shown rendered: changed
   paragraphs, list items, and code blocks get a red (removed) or green

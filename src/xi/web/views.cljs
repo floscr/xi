@@ -3008,6 +3008,53 @@
                 :history      (:history child)
                 :answer-class "diff-thread-a"}))
 
+(defn- thread-changes
+  "The file changes of a thread's sub-agents (sa/modifications), one at a
+   time, with ‹ › to step through them oldest first. `rev` is the shown
+   one's index, nil (or out of range) for the latest."
+  [dispatch! state mods rev on-rev]
+  (let [n    (count mods)
+        i    (if (and (number? rev) (< -1 rev n)) rev (dec n))
+        {:keys [id path text]} (nth mods i)
+        step (fn [d] (fn [_] (on-rev (+ i d))))]
+    [:div {:class ["thread-changes"] :replicant/key "changes"}
+     [:div {:class ["thread-changes-bar"]}
+      (button/button {:variant :ghost :size :sm :disabled (zero? i)
+                      :attrs {:aria-label "Earlier change" :title "Earlier change"}
+                      :on-click (step -1)}
+                     (icon/icon {:icon-name :chevron-left :size :sm}))
+      [:span {:class ["thread-changes-count"]} (str "Change " (inc i) " of " n)]
+      (button/button {:variant :ghost :size :sm :disabled (= i (dec n))
+                      :attrs {:aria-label "Later change" :title "Later change"}
+                      :on-click (step 1)}
+                     (icon/icon {:icon-name :chevron-right :size :sm}))
+      (when path [:span {:class ["thread-changes-path"]} (str path)])]
+     (tool-diff-view dispatch! {:path path :text text :k id
+                                :code? (contains? (:web/md-diff-code state) id)
+                                :grammar (grammars/get-grammar (file-ext (str path)))})]))
+
+(defn- thread-ask
+  "A pending :confirm ask of a thread's running sub-agent, answered in the
+   card: the diff viewer hides the chat timeline whose dialog-post shows it
+   otherwise. The answer is logged there like dialog-post's (`anchor`)."
+  [dispatch! state room-id anchor {:keys [id type message text options diff] :as dialog}]
+  (let [answer! (fn [value]
+                  (dispatch! {:type :web/dialog-resolved
+                              :room-id room-id
+                              :dialog-id id
+                              :entry {:key id :anchor anchor
+                                      :message (or message text) :type type :value value
+                                      :label (dialog-decision-label type options value)}})
+                  (dispatch! {:type :ui/dialog-response
+                              :room-id room-id :dialog-id id :value value})
+                  (dispatch! {:type :ui/dialog-close
+                              :room-id room-id :dialog-id id}))]
+    [:div {:class ["thread-ask"] :replicant/key (str "ask-" id)}
+     [:div {:class ["tool-call-permission-msg"]} (or message text)]
+     (diff-preview dispatch! diff id (contains? (:web/md-diff-code state) id))
+     [:div {:class ["tool-call-permission-actions"]}
+      (confirm-buttons dialog answer! nil)]]))
+
 (defn- thread-card
   "A question thread answered by sub-agents: each turn's question with its
    streamed answer, Stop while one runs, a reply field, collapse and close,
@@ -3017,9 +3064,13 @@
    until the server echoes the spawn); :on-reply gets the reply text;
    :label names what the thread is about; :actions are extra head buttons;
    :draft / :on-draft keep the reply field's text in state; :transcript?
-   shows every text block of a turn instead of only the last."
-  [dispatch! room-id {:keys [key turns children collapsed? label input-id actions
-                              on-reply on-toggle on-close draft on-draft transcript?]}]
+   shows every text block of a turn instead of only the last. The files
+   the children changed step by step (thread-changes) under the head:
+   :rev / :on-rev the shown change. :ask is a pending ask of theirs to
+   answer in the card (thread-ask)."
+  [dispatch! state room-id {:keys [key turns children collapsed? label input-id actions
+                                    on-reply on-toggle on-close draft on-draft transcript?
+                                    rev on-rev ask]}]
   (let [running (some (fn [[t c]] (when (or (nil? c) (= :running (:status c))) t))
                       (map vector turns children))
         reply!  (fn [_]
@@ -3055,7 +3106,12 @@
         (button/button {:variant :ghost :size :sm :attrs {:aria-label "Close thread"}
                         :on-click (fn [_] (on-close))}
                        (icon/icon {:icon-name :x :size :sm}))]
+       (when-let [mods (not-empty (sa/modifications children))]
+         (thread-changes dispatch! state mods rev on-rev))
        (map (partial ask-turn transcript?) turns children)
+       (when ask
+         (thread-ask dispatch! state room-id
+                     (count (get-in state [:rooms room-id :history])) ask))
        (when-not running
          [:div {:class ["diff-thread-reply"]}
           (form/form-textarea-auto
@@ -3070,17 +3126,27 @@
                           :on-click reply!}
                          (icon/icon {:icon-name :arrow-up :size :sm}))])])))
 
+(defn- pending-ask
+  "The first pending :confirm ask of one of the sub-agents `sub-ids`."
+  [state room-id sub-ids]
+  (let [ids (set sub-ids)]
+    (some #(when (and (= :confirm (:type %)) (contains? ids (:sub-id %))) %)
+          (get-in state [:rooms room-id :ui :dialogs]))))
+
 (defn- diff-ask-card
   "A diff Ask / Explain / Modify thread (xi.web.core diff-thread-start)
-   attached after the lines it is about (`child-of`: sub-id → child)."
-  [dispatch! room-id {:keys [id turns collapsed? kind draft]} child-of]
-  (thread-card dispatch! room-id
+   attached after the lines it is about."
+  [dispatch! state room-id {:keys [id turns collapsed? kind draft rev]}]
+  (thread-card dispatch! state room-id
                {:key        (str "ask-" id)
                 :label      ({:explain "Explain" :modify "Modify"} kind)
                 :transcript? (= :modify kind)
                 :turns      turns
-                :children   (mapv (comp child-of :sub-id) turns)
+                :children   (mapv #(sa/find-child state room-id (:sub-id %)) turns)
                 :collapsed? collapsed?
+                :rev        rev
+                :on-rev     #(dispatch! {:type :diff/ask-rev :ask-id id :rev %})
+                :ask        (pending-ask state room-id (map :sub-id turns))
                 :input-id   (str "diff-ask-reply-" id)
                 :draft      draft
                 :on-draft   #(dispatch! {:type :diff/ask-draft :ask-id id :text %})
@@ -3232,13 +3298,12 @@
    (once an action opened it) under its last line, then the view's threads
    under theirs."
   [dispatch! state room-id rows range]
-  (let [child-of #(sa/find-child state room-id %)
-        intent   (diff-state/intent state)
+  (let [intent   (diff-state/intent state)
         view     (diff-state/view-key state)
         last-row (when (and range intent)
                    (some #(when (= (second range) (:sel-idx %)) %) rows))]
     (reduce (fn [m {:keys [anchor] :as ask}]
-              (update m anchor (fnil conj []) (diff-ask-card dispatch! room-id ask child-of)))
+              (update m anchor (fnil conj []) (diff-ask-card dispatch! state room-id ask)))
             (if last-row
               {(diff/line-key last-row)
                [(diff-composer dispatch! room-id rows range intent (diff-state/draft state))]}
@@ -4179,12 +4244,14 @@
 (defn- block-thread-card
   "A question thread on a block (xi.ext.subagent.threads/threads): its turns
    are sub-agents, so the latest one with a saved session opens as a chat."
-  [dispatch! room-id {:keys [id node turns]} collapsed?]
-  (thread-card dispatch! room-id
+  [dispatch! state room-id {:keys [id node turns]} collapsed?]
+  (thread-card dispatch! state room-id
                {:key        (str "thr-" id)
                 :turns      (mapv (fn [c] {:question (:question c) :sub-id (:id c)}) turns)
                 :children   turns
                 :collapsed? collapsed?
+                :rev        (get-in state [:web/thread-rev id])
+                :on-rev     #(dispatch! {:type :thread/rev :thread id :rev %})
                 :label      (node-label node)
                 :input-id   (str "thread-reply-" id)
                 :on-reply   #(dispatch! {:type :thread/reply :room-id room-id :thread id :text %})
@@ -4246,7 +4313,7 @@
   (let [collapsed (:web/thread-collapsed state #{})]
     (concat
      (for [th threads]
-       (block-thread-card dispatch! room-id th (contains? collapsed (:id th))))
+       (block-thread-card dispatch! state room-id th (contains? collapsed (:id th))))
      (when compose
        [(thread-composer dispatch! compose)]))))
 

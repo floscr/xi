@@ -108,8 +108,36 @@
                 (-> (h/spawn (room-state) {:room-id "r1" :sub-id sub-id :task "t"})
                     :effects first second))]
     (is (h/inline-sub? (h/modify-sub-id)) "renders in its diff thread")
-    (is (:unattended? (start (h/ask-sub-id))) "Ask only reads: its asks are denied")
-    (is (not (:unattended? (start (h/modify-sub-id)))) "Modify asks for its edits")))
+    (is (:unattended? (start "explain-tc-9")) "Explain only reads: its asks are denied")
+    (let [ask (start (h/ask-sub-id))]
+      (is (not (:unattended? ask)) "Ask raises its asks")
+      (is (:confirm-edits? ask) "and asks for every edit"))
+    (is (not-any? (start (h/modify-sub-id)) [:unattended? :confirm-edits?])
+        "Modify edits like any sub-agent")))
+
+(deftest ask-prompts-allow-confirmed-edits
+  (is (str/includes? (h/ask-prompt "Rename it?" "+(foo)" nil) h/ask-edit-policy)))
+
+(deftest modifications-lists-the-edits-that-went-through
+  (let [edit (fn [id path & {:as more}]
+               (merge {:kind :tool-call :id id :tool "mcp__xi-tools__edit"
+                       :arguments {:path path} :status :done
+                       :result [{:type "text" :text (str path "\n- a\n+ b\n[file-hash: abc123]")}]}
+                      more))
+        kids [{:id "ask-1"
+               :history [{:kind :text :text "looking"}
+                         (edit "t1" "src/a.clj")
+                         {:kind :tool-call :id "t2" :tool "read" :status :done
+                          :arguments {:path "src/a.clj"} :result "x"}
+                         (edit "t3" "src/b.clj" :is-error true :status :error)]}
+              nil
+              {:id "ask-2"
+               :history [(edit "t4" "src/c.clj" :tool "Write")
+                         (edit "t5" "src/d.clj" :status :running :result nil)]}]]
+    (is (= [{:sub-id "ask-1" :id "t1" :path "src/a.clj" :text "src/a.clj\n- a\n+ b"}
+            {:sub-id "ask-2" :id "t4" :path "src/c.clj" :text "src/c.clj\n- a\n+ b"}]
+           (h/modifications kids))
+        "oldest first, reads, failed and running calls left out, file hash dropped")))
 
 (deftest diff-thread-prompts-by-kind
   (let [p (h/diff-thread-prompt :modify "rename foo" "+(foo)" nil)]

@@ -58,6 +58,9 @@
                             {:state (update st :web/thread-collapsed
                                             (fn [s] (let [s (or s #{})]
                                                       (if (s thread) (disj s thread) (conj s thread)))))})
+   ;; the file change its card shows (xi.web.views/thread-changes)
+   :thread/rev            (fn [st {:keys [thread rev]}]
+                            {:state (assoc-in st [:web/thread-rev thread] rev)})
    :thread/menu-open      (fn [st ev]
                             {:state (assoc st :web/thread-menu
                                            (select-keys ev [:index :sub-id :text :x :y]))})

@@ -27,6 +27,9 @@
      :hint  → never decides; its message is appended to the deciding rule's
               (deny / nudge / ask) text — see xi.rules/first-match
 
+   A ctx with :confirm-edits? (a sub-agent question thread, xi.subagent)
+   asks for every file edit no deny/nudge stops: `confirmed-edit?`.
+
    There is no other policy hook: extensions can't gate tool calls.
 
    The pure matcher lives in `xi.rules`; file/state loading + the imperative
@@ -37,6 +40,7 @@
             [xi.rules.store :as store]
             [xi.tools.edit :as edit]
             [xi.tools.write :as write]
+            [xi.util :as util]
             ["node:path" :as node-path]))
 
 (def ^:private ext-id store/ext-id)
@@ -392,6 +396,27 @@
        (contains? (get-in state [:rooms room-id :ext ext-id :granted])
                   (grant-key rule))))
 
+(def ^:private file-edit-tools
+  "Tools besides :write / :edit that rewrite files (the clj-surgeon refactorings)."
+  #{"clj_replace" "clj_mv" "clj_extract" "clj_fix_declares" "clj_fix_parens"
+    "clj_rename_ns"})
+
+(defn- confirmed-edit?
+  "A file edit under a ctx with :confirm-edits?: it asks whatever allow rule,
+   [s] grant or yolo level would let it run."
+  [req ctx]
+  (and (:confirm-edits? ctx)
+       (or (#{:write :edit} (:tool req))
+           (contains? file-edit-tools (util/strip-mcp-prefix (:tool-name req))))))
+
+(defn- edit-ask
+  "The ask of a `confirmed-edit?`: the matched rule's own, if it asks, else a
+   plain approve; never answered by yolo mode."
+  [rule]
+  (if (= :ask (get-in rule [:action :type]))
+    (assoc (:action rule) :hints (:hints rule) :scope (:scope rule) :guard :always)
+    {:type :ask :options [:yes :no] :guard :always}))
+
 (defn- decide*
   "`decide!`, but synchronous unless it has to ask (value or Promise)."
   [req {:keys [get-state room-id] :as ctx}]
@@ -408,6 +433,10 @@
             req     (store/enrich-request req ruleset)
             rule    (rules/first-match ruleset req)]
         (cond
+          (and (confirmed-edit? req ctx)
+               (not (#{:deny :nudge} (get-in rule [:action :type]))))
+          (apply-action (edit-ask rule) req ctx)
+
           (nil? rule) {:decision :pass}
           (granted? state room-id rule) {:decision :approved}
           :else (apply-action (assoc (:action rule)

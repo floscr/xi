@@ -95,6 +95,50 @@
                    (is (nil? out) "no blocks it")
                    (done)))))))
 
+(deftest confirm-edits-asks-for-every-edit
+  (let [state (state-with [:ext :rules :rules]
+                          {:match {:tool #{:write :other}} :action {:type :allow}})
+        asked (atom [])
+        c     (fn [ans]
+                (assoc (ctx state)
+                       :confirm-edits? true
+                       :confirm! (fn [_ opts] (swap! asked conj opts) (js/Promise.resolve ans))))
+        write {:name "write" :arguments {:path "/tmp/xi-confirm-edits.txt" :content "x"}}
+        surgeon {:name "mcp__xi-tools__clj_replace" :arguments {:file "/tmp/a.clj"}}
+        bash  {:name "bash" :arguments {:command "ls"}}]
+    (async done
+      (-> (rules-ext/tool-policy write (c false))
+          (.then (fn [out]
+                   (is (nil? out) "an :allow rule still asks; no blocks it")
+                   (is (= :always (:guard (first @asked))) "never answered by yolo mode")
+                   (rules-ext/tool-policy surgeon (c true))))
+          (.then (fn [out]
+                   (is (= surgeon out) "clj-surgeon edits ask too; yes runs them")
+                   (is (= 2 (count @asked)))
+                   (rules-ext/tool-policy bash (c true))))
+          (.then (fn [out]
+                   (is (= bash out))
+                   (is (= 2 (count @asked)) "anything but an edit decides as before")
+                   (rules-ext/tool-policy write (dissoc (c true) :confirm-edits?))))
+          (.then (fn [out]
+                   (is (= write out))
+                   (is (= 2 (count @asked)) "without the flag the allow rule runs it")
+                   (done)))))))
+
+(deftest confirm-edits-keeps-denies
+  (let [state (state-with [:ext :rules :rules]
+                          {:match {:tool :write} :action {:type :deny :message "no"}})
+        asked (atom 0)
+        c     (assoc (ctx state)
+                     :confirm-edits? true
+                     :confirm! (fn [_ _] (swap! asked inc) (js/Promise.resolve true)))]
+    (async done
+      (-> (rules-ext/tool-policy {:name "write" :arguments {:path "/tmp/a.txt" :content "x"}} c)
+          (.then (fn [out]
+                   (is (:is-error (:result out)))
+                   (is (zero? @asked))
+                   (done)))))))
+
 (deftest policy-fails-closed
   (testing "a throw while deciding denies the call instead of letting it run"
     (async done

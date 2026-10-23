@@ -6836,6 +6836,57 @@ code a:hover,
 @keyframes diff-thread-shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .diff-thread-skeleton i { animation: none; } }
 
+/* The file changes of a thread's sub-agents, one at a time: ‹ n of N ›
+   over the change's diff (xi.web.views/thread-changes). */
+.thread-changes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-1);
+}
+
+.thread-changes-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  min-width: 0;
+}
+
+.thread-changes-count { font-variant-numeric: tabular-nums; color: var(--fg-1); }
+
+.thread-changes-path {
+  margin-left: var(--size-1);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.thread-changes > .tool-call-diff,
+.thread-changes > .md-diff-wrap,
+.thread-ask .tool-call-diff {
+  margin: 0;
+  max-height: 40vh;
+  overflow: auto;
+  border: var(--border-0);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--bg-1);
+}
+
+/* A pending permission ask of the thread's sub-agent, answered in the card. */
+.thread-ask {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-2);
+  padding: var(--size-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-sm, 6px);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
 /* A collapsed thread: one line under its anchor. */
 .diff-thread-mini {
   position: sticky;

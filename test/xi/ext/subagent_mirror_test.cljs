@@ -235,7 +235,20 @@
                    (is (false? @result) "the gate sees a deny")
                    (done)))))))
 
-(deftest an-inline-sub-agent-denies-without-asking
+(deftest an-explanation-denies-without-asking
+  (async done
+    (let [result (atom :unset)
+          {:keys [dispatch! state]} (gated-app result)]
+      (dispatch! {:type :subagent/spawn :room-id "r1" :sub-id "explain-tc-1"
+                  :task "t" :label "Q" :prompt "t"})
+      (-> (tick)
+          (.then (fn [_]
+                   (is (empty? (open-dialogs @state)))
+                   (is (false? @result))
+                   (is (= :done (child-status @state "explain-tc-1")))
+                   (done)))))))
+
+(deftest an-ask-sub-agent-asks-the-user
   (async done
     (let [result (atom :unset)
           {:keys [dispatch! state]} (gated-app result)]
@@ -243,7 +256,8 @@
                   :task "t" :label "Q" :prompt "t"})
       (-> (tick)
           (.then (fn [_]
-                   (is (empty? (open-dialogs @state)))
-                   (is (false? @result))
-                   (is (= :done (child-status @state "ask-1")))
-                   (done)))))))
+                   (is (= ["ask-1"] (map :sub-id (open-dialogs @state)))
+                       "an Ask may act, once the user says so")
+                   (dispatch! {:type :subagent/abort :room-id "r1" :sub-id "ask-1"})
+                   (tick)))
+          (.then (fn [_] (done)))))))

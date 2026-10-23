@@ -659,7 +659,8 @@
   {:ask "Ask" :explain "Explain" :modify "Modify"})
 
 (defn- thread-sub-id
-  "A Modify edits files, so its sub-agent isn't run read-only (xi.ext.subagent.handlers)."
+  "A Modify edits files freely; an Ask asks before each edit
+   (xi.ext.subagent.handlers/start-effect)."
   [kind]
   (if (= :modify kind) (sa/modify-sub-id) (sa/ask-sub-id)))
 
@@ -733,6 +734,11 @@
 
 (defn- diff-ask-collapse-toggle [st {:keys [ask-id]}]
   {:state (update-ask st ask-id #(update % :collapsed? not))})
+
+(defn- diff-ask-rev
+  "Show the thread's `rev`th file change (xi.web.views/thread-changes)."
+  [st {:keys [ask-id rev]}]
+  {:state (update-ask st ask-id #(assoc % :rev rev))})
 
 (defn- diff-compose-submit
   "The selection composer's send: a thread of the kind its switch is on."
@@ -1525,6 +1531,7 @@
           :diff/ask-follow-up    diff-ask-follow-up
           :diff/ask-draft        diff-ask-draft
           :diff/ask-collapse-toggle diff-ask-collapse-toggle
+          :diff/ask-rev          diff-ask-rev
           :diff/explain          diff-explain
           :diff/modify-submit    diff-modify-submit
           :md-diff/toggle        md-diff-toggle
