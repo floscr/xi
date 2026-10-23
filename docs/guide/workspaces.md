@@ -3,7 +3,7 @@
 A workspace is a set of projects. Pick one in the tab bar across the top of
 the web client and the chat lists, the project list and the home page show
 only chats and projects in it. The first tab, **All**, is always there and
-shows everything. The bar appears once there is a workspace.
+shows everything. The bar appears once a tab besides All is open.
 
 A chat belongs to a workspace when it runs in one of the workspace's
 directories or below one. A chat with no directory, such as a terminal or
@@ -55,7 +55,8 @@ window's tab.
 The × on a tab, or **Close workspace** in its right-click menu, closes it.
 Every tab but All can be closed, the ones from the config file too. Closing
 only hides the tab: **Switch workspace…** in the palette still lists the
-workspace, marked closed, and picking it opens the tab again. Closed tabs
+workspace, marked closed, and picking it opens the tab again. With every
+tab but All closed, the bar hides. Closed tabs
 belong to your user, like your workspaces.
 
 ## Workspaces from the config file

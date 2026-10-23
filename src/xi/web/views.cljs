@@ -6354,13 +6354,14 @@
 (defn- workspace-bar*
   "The workspace tab bar across the top of the app, above the sidebar and the
    chat (xi.workspace): All first, then the open tabs of config.edn's and the
-   user's own workspaces, a + for a new one. Shown once there is a workspace,
-   never for a personal agent. Every tab but All has an × that closes it and
+   user's own workspaces, a + for a new one. Shown once a tab besides All is
+   open, never for a personal agent (New workspace stays in the palette and
+   the sidebar footer menu). Every tab but All has an × that closes it and
    a context menu (`workspace-tab-menu`)."
   [state dispatch!]
-  (when (and (seq (workspace/workspaces state)) (not (get-in state [:lobby :agent-id])))
-    (let [wss    (workspace/open-workspaces state)
-          sel    (workspace/selected-id state)
+  (when-let [wss (and (not (get-in state [:lobby :agent-id]))
+                      (seq (workspace/open-workspaces state)))]
+    (let [sel    (workspace/selected-id state)
           select (fn [id] (dispatch! {:type :workspace/select :id id}))
           tab    (fn [{:keys [id label source]}]
                    (let [active? (= id sel)
