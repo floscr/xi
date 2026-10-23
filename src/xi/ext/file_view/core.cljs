@@ -14,15 +14,18 @@
   (:require ["node:fs" :as fs]
             [xi.buffers :as buffers]
             [xi.core.state :as state]
+            [xi.paths :as paths]
             [xi.tools.fs :as tfs]
             [xi.tools.util :as tools-util]))
 
 (defn- locate-file
-  "Absolute path of `path` for a room at `cwd`: relative to cwd when that
-   exists, else relative to cwd's git root (git diff paths are root-relative).
-   Falls back to the cwd resolution so the caller reports that path."
+  "Absolute path of `path` for a room at `cwd`: `~` expanded, then relative
+   to cwd when that exists, else relative to cwd's git root (git diff paths
+   are root-relative). Falls back to the cwd resolution so the caller
+   reports that path. xi.server.files/exists resolves the same way."
   [path cwd]
-  (let [at-cwd (tfs/resolve-path path cwd)]
+  (let [path   (paths/expand-home path)
+        at-cwd (tfs/resolve-path path cwd)]
     (if (fs/existsSync at-cwd)
       at-cwd
       (let [at-root (when-let [root (tools-util/git-root cwd)]

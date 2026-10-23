@@ -5,6 +5,7 @@
    the room's cwd) and fail soft with {:error ...} so the ws reply can surface a
    status instead of throwing."
   (:require [clojure.string :as str]
+            [xi.paths :as paths]
             [xi.tools.util :as tools-util]
             ["node:fs" :as fs]
             ["node:path" :as node-path]))
@@ -153,14 +154,15 @@
         {:path abs :error (.-message e)}))))
 
 (defn exists
-  "Whether `path` (as inline code names it) is a file: relative to `cwd`,
-   else to cwd's git root (the paths git prints), the way the file viewer
-   resolves it (xi.ext.file-view). Returns {:path :exists?} with the path as
-   asked, so the client can match the reply to its question."
+  "Whether `path` (as inline code names it) is a file: `~` expanded, then
+   relative to `cwd`, else to cwd's git root (the paths git prints), the way
+   the file viewer resolves it (xi.ext.file-view). Returns {:path :exists?}
+   with the path as asked, so the client can match the reply to its question."
   [path cwd]
   (let [cwd   (or cwd (.cwd js/process))
+        p     (paths/expand-home (or path ""))
         file? (fn [base]
-                (try (.isFile (fs/statSync (.resolve node-path base (or path ""))))
+                (try (.isFile (fs/statSync (.resolve node-path base p)))
                      (catch :default _ false)))]
     {:path    path
      :exists? (boolean (or (file? cwd)

@@ -333,4 +333,7 @@
                                 (is (true? (:exists? ev)) "relative to the cwd's git root, like the file viewer")
                                 (ask (:project env) ".")))
                        (.then (fn [ev]
-                                (is (false? (:exists? ev)) "a directory is not a file")))))))))))))
+                                (is (false? (:exists? ev)) "a directory is not a file")
+                                (ask (:project env) "~/.config/xi/config.edn")))
+                       (.then (fn [ev]
+                                (is (true? (:exists? ev)) "a ~ path resolves in the env's HOME")))))))))))))

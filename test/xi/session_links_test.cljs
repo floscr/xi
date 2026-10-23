@@ -22,6 +22,8 @@
   (is (= {:path "src/xi/foo.cljs" :line 12} (sl/code-path "src/xi/foo.cljs:12")))
   (is (= {:path "/abs/a.md" :line nil} (sl/code-path "/abs/a.md")))
   (is (= {:path "README.md" :line 3} (sl/code-path "README.md:3")))
+  (is (= {:path "~/.config/xi/rules.edn" :line nil} (sl/code-path "~/.config/xi/rules.edn"))
+      "a home-relative path stays as written; the server expands it")
   (testing "a bare file name, a dotted symbol or a sentence is not a path"
     (is (nil? (sl/code-path "README.md")))
     (is (nil? (sl/code-path "clojure.string")))
