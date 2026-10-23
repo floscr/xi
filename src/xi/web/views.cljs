@@ -1888,7 +1888,44 @@
 
 (declare skill-form-compose)
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? queue-open? prompt-nav nav-ctx scrolled-up? offline? cmd-ctx]
+(defn- usage-window-outdated?
+  [resets-at]
+  (when resets-at
+    (let [ms (.getTime (js/Date. resets-at))]
+      (and (not (js/isNaN ms)) (<= ms (js/Date.now))))))
+
+(defn- compose-status-pct
+  "A window's percent, amber from 75% on."
+  [pct]
+  [:span {:class [(when (>= pct 75) "compose-status-hot")]} (str pct "%")])
+
+(defn- compose-status
+  "The plain-text line under the composer's input row on wide desktops (CSS
+   hides it below): the chat's model, opening the model picker, and the
+   Claude subscription usage from the lobby broadcast, opening /usage."
+  [dispatch! model claude-usage]
+  (let [{:keys [session weekly session-resets-at weekly-resets-at]} claude-usage
+        session (when-not (usage-window-outdated? session-resets-at) session)
+        weekly  (when-not (usage-window-outdated? weekly-resets-at) weekly)]
+    (when (or model claude-usage)
+      [:div {:class ["compose-status"]}
+       (when model
+         [:button {:class ["compose-status-item"]
+                   :title (str model " — change model")
+                   :on {:click (fn [_] (dispatch! {:type :palette/open-models}))}}
+          (str/lower-case (rename/model-label model))])
+       (when claude-usage
+         [:button {:class ["compose-status-item" "compose-status-usage"]
+                   :title "Claude usage — all usage"
+                   :on {:click (fn [_] (dispatch! {:type :route/navigate :page :usage}))}}
+          (if session (compose-status-pct session) "?")
+          [:span {:class ["compose-status-dim"]} " session"]
+          (when weekly
+            (list [:span {:class ["compose-status-dim"]} " · "]
+                  (compose-status-pct weekly)
+                  [:span {:class ["compose-status-dim"]} " week"]))])])))
+
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? queue-open? prompt-nav nav-ctx scrolled-up? offline? cmd-ctx status]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
@@ -2037,7 +2074,8 @@
            [:button {:class ["icon-btn"]
                      :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
                                                           images draft-key draft skill-names))}}
-            (icon/icon {:icon-name :arrow-up :size :md})]]))]]]))
+            (icon/icon {:icon-name :arrow-up :size :md})]]))]
+      status]]))
 
 (defn- deny-reason-compose
   "The composer turned into the reason field of a deny-with-reason while
@@ -4877,7 +4915,9 @@
                           nav-ctx
                           (:web/scrolled-up? state)
                           (false? (:web/connected? state))
-                          (slash-ctx state))))]))
+                          (slash-ctx state)
+                          (compose-status dispatch! model
+                                          (get-in state [:lobby :claude-usage])))))]))
 
 ;; ── Windows (xi.layout, xi.web.layout) ───────────────────────────────────────
 
@@ -5767,12 +5807,6 @@
        [:circle {:class ["claude-usage-ring-fill"] :cx "18" :cy "18" :r "15"
                  :stroke-dasharray (str (* circumference pct 0.01) " " circumference)
                  :transform "rotate(-90 18 18)"}])]))
-
-(defn- usage-window-outdated?
-  [resets-at]
-  (when resets-at
-    (let [ms (.getTime (js/Date. resets-at))]
-      (and (not (js/isNaN ms)) (<= ms (js/Date.now))))))
 
 (defn- claude-usage-popover
   "Claude subscription usage (rides on the lobby broadcast) for the sidebar
