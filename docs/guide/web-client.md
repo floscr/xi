@@ -423,7 +423,7 @@ These keys belong to a control and are not in the keymap:
 | --- | --- |
 | `Ctrl/Cmd+k` | Command palette. Binding `:palette/open` to a modifier chord in `:global` (`"ctrl+x"`) makes that the palette's key instead, in text fields too, and frees `Ctrl+k` |
 | `Tab` (in the message box) | Expand the snippet word before the cursor: `c` becomes `continue`, `rec` becomes `in a recent change`. Anywhere else Tab moves focus as usual. |
-| `Ctrl+Enter` (on one of your messages) | Go back to before it and edit it |
+| `Ctrl+Enter` (on one of your messages) | Edit it in place: its attachments stay above the bubble with an × each, and `Ctrl+V` in the bubble adds a pasted image. Save goes back to before the message and sends the new text with them |
 | `↑`/`↓`, `Alt+k`/`Alt+j` or `Ctrl+p`/`Ctrl+n` (in the `/` command list) | Move through the matching commands; `Enter` or `Tab` runs the selected one |
 | `Tab` or `Enter` (in the palette, on a project) | Open that project's actions: new chat, git status, search its sessions, open its sessions |
 | `Alt+Enter` (in a project's actions, on New chat) | Type a prompt instead (`Ctrl+V` attaches images, shown below it); `Enter` starts the chat in the background and you stay where you are. The chat shows up under Recent |

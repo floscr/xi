@@ -1165,6 +1165,163 @@
                 :x (.-clientX e)
                 :y (.-clientY e)})))
 
+;; ── Image attachments ────────────────────────────────────────────────────────
+
+(def ^:private MAX_IMAGE_DIMENSION
+  1568)
+
+(defn- resize-image-file
+  [^js file]
+  (js/Promise.
+   (fn [resolve _]
+     (let [reader (js/FileReader.)]
+       (set! (.-onload reader)
+             (fn [_]
+               (let [img (js/Image.)]
+                 (set! (.-onload img)
+                       (fn [_]
+                         (let [w (.-naturalWidth img)
+                               h (.-naturalHeight img)
+                               scale (if (or (> w MAX_IMAGE_DIMENSION) (> h MAX_IMAGE_DIMENSION))
+                                       (/ MAX_IMAGE_DIMENSION (max w h))
+                                       1)
+                               nw (js/Math.round (* w scale))
+                               nh (js/Math.round (* h scale))
+                               canvas (js/document.createElement "canvas")
+                               ctx (.getContext canvas "2d")]
+                           (set! (.-width canvas) nw)
+                           (set! (.-height canvas) nh)
+                           (.drawImage ctx img 0 0 nw nh)
+                           (let [data-url (.toDataURL canvas "image/jpeg" 0.85)
+                                 [_ media-type b64] (re-matches #"data:([^;]+);base64,(.*)" data-url)]
+                             (resolve {:data b64
+                                       :media-type (or media-type "image/jpeg")})))))
+                 (set! (.-onerror img) (fn [_] (resolve nil)))
+                 (set! (.-src img) (.-result reader)))))
+       (set! (.-onerror reader) (fn [_] (resolve nil)))
+       (.readAsDataURL reader file)))))
+
+(defn- read-raw-file
+  "Read any File as base64; promise of {:data :media-type :name} or nil on
+   failure. Non-image attachments reach the agent by on-disk path."
+  [^js file]
+  (js/Promise.
+   (fn [resolve _]
+     (let [reader (js/FileReader.)]
+       (set! (.-onload reader)
+             (fn [_]
+               (let [[_ mime _ b64] (re-matches #"^data:([^;,]*)(;base64)?,(.*)$"
+                                                (.-result reader))]
+                 (resolve {:data b64
+                           :media-type (or (not-empty (.-type file))
+                                           (not-empty mime)
+                                           "application/octet-stream")
+                           :name (.-name file)}))))
+       (set! (.-onerror reader) (fn [_] (resolve nil)))
+       (.readAsDataURL reader file)))))
+
+(defn- read-attachments!
+  "Read Files into attachment maps (images resized, the rest raw) and call
+   `on-ready` with the vector of readable ones; nothing when none read."
+  [files on-ready]
+  (when (seq files)
+    (-> (js/Promise.all
+         (to-array
+          (map (fn [^js f]
+                 (if (str/starts-with? (or (.-type f) "") "image/")
+                   (resize-image-file f)
+                   (read-raw-file f)))
+               files)))
+        (.then (fn [results]
+                 (when-let [valid (seq (remove nil? (array-seq results)))]
+                   (on-ready (vec valid)))))
+        (.catch (fn [err] (js/console.error "[xi-web] attachment read failed:" err))))))
+
+(defn- add-files!
+  [dispatch! draft-key files]
+  (read-attachments! files
+                     (fn [images]
+                       (dispatch! {:type :compose/add-images :draft-key draft-key
+                                   :images images}))))
+
+(defn- pasted-image-files [^js e]
+  (let [items (.. e -clipboardData -items)]
+    (->> (range (.-length items))
+         (keep (fn [i]
+                 (let [^js item (aget items i)]
+                   (when (str/starts-with? (.-type item) "image/")
+                     (.getAsFile item))))))))
+
+(defn- handle-prompt-paste!
+  "Paste into a prompt textarea (the composer, the bubble editor): image
+   files go to `on-files`; long / code-like text gets fenced
+   (xi.util/fence-paste), and `on-text` gets the textarea's new value when
+   the browser could not insert it itself."
+  [^js e {:keys [on-files on-text]}]
+  (let [files (pasted-image-files e)]
+    (if (seq files)
+      (do (.preventDefault e)
+          (on-files files))
+      ;; Inserted via execCommand so it lands on the browser's undo stack
+      ;; (assigning .value wipes it) and fires the :input that saves the draft.
+      ;; Re-setting the selection first ends Chrome's typing group, so the paste
+      ;; is its own undo step instead of merging with the text typed before it.
+      (let [text (some-> (.-clipboardData e) (.getData "text"))]
+        (when (and (seq text) (util/paste-should-fence? text))
+          (.preventDefault e)
+          (let [^js ta (.-target e)
+                value (.-value ta)
+                before (subs value 0 (.-selectionStart ta))
+                after (subs value (.-selectionEnd ta))
+                insertion (util/fence-paste
+                           text
+                           {:at-line-start? (or (empty? before)
+                                                (str/ends-with? before "\n"))
+                            :at-line-end? (or (empty? after)
+                                              (str/starts-with? after "\n"))})]
+            (.setSelectionRange ta (.-selectionStart ta) (.-selectionEnd ta))
+            (when-not (.execCommand js/document "insertText" false insertion)
+              (.setRangeText ta insertion (count before) (- (count value) (count after)) "end")
+              (on-text (.-value ta)))))))))
+
+(defn- handle-compose-paste! [dispatch! draft-key ^js e]
+  (handle-prompt-paste!
+   e
+   {:on-files (fn [files] (add-files! dispatch! draft-key files))
+    :on-text (fn [text] (dispatch! {:type :compose/set-draft
+                                    :draft-key draft-key
+                                    :text text}))}))
+
+(defn- attachment-strip
+  "Staged attachments as a row of thumbs and file chips, each with an ×
+   that calls `(on-remove idx)`. `class` adds a modifier to .compose-images."
+  [dispatch! images {:keys [on-remove class]}]
+  (when (seq images)
+    [:div {:class ["compose-images" class]}
+     (map-indexed
+      (fn [idx {:keys [data media-type name]}]
+        (if-not (str/starts-with? (or media-type "") "image/")
+          [:div {:replicant/key idx :class ["compose-attachment-chip"]}
+           (icon/icon {:icon-name :file-text :size :md})
+           [:span {:class ["compose-attachment-name"]} (or name "file")]
+           [:button {:class ["compose-attachment-remove"] :type "button"
+                     :on {:click (fn [_] (on-remove idx))}}
+            (icon/icon {:icon-name :x :size :sm})]]
+          [:div {:replicant/key idx :class ["compose-image-thumb"]}
+           (let [src (str "data:" media-type ";base64," data)]
+             [:img {:src src :alt "attachment" :class ["lightbox-thumb"]
+                    :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}])
+           [:button {:class ["compose-image-remove"] :type "button"
+                     :on {:click (fn [_] (on-remove idx))}}
+            (icon/icon {:icon-name :x :size :sm})]]))
+      images)]))
+
+(defn- compose-image-strip [dispatch! draft-key images]
+  (attachment-strip dispatch! images
+                    {:on-remove (fn [idx]
+                                  (dispatch! {:type :compose/remove-image
+                                              :draft-key draft-key :idx idx}))}))
+
 (defn- viewable-file? [path]
   (let [ext (file-ext path)]
     (or (contains? md-diff/markdown-exts ext) (some? (grammars/get-grammar ext)))))
@@ -1185,43 +1342,121 @@
                   :else             (str (.toFixed (/ bytes 1048576) 1) " MB")))]
     (str/join " · " (remove str/blank? [(some-> ext str/upper-case) size]))))
 
+(defn- user-attachment
+  "One attachment of a prompt: an image (opens the lightbox) or a file card."
+  [dispatch! i {:keys [data media-type name path] :as att}]
+  (if (str/starts-with? (or media-type "") "image/")
+    (let [src (str "data:" media-type ";base64," data)]
+      [:img {:replicant/key i
+             :class ["user-image" "lightbox-thumb"]
+             :src src
+             :alt (or name "attached image")
+             :on {:click (fn [^js e]
+                           (.stopPropagation e)
+                           (dispatch! {:type :lightbox/open :src src}))}}])
+    [:div (cond-> {:replicant/key i
+                   :class ["user-attachment-card"
+                           (when (= media-type "application/pdf") "user-attachment-card--pdf")]}
+            (and (or (string? data) path)
+                 (or (str/starts-with? (or media-type "") "text/")
+                     (viewable-file? (or name ""))))
+            (-> (update :class conj "user-attachment-card--viewable")
+                (assoc :title "View file"
+                       :on {:click (fn [^js e]
+                                     (.stopPropagation e)
+                                     (dispatch! {:type :attachment/open
+                                                 :name (or name "file") :data data :path path}))})))
+     [:span {:class ["user-attachment-icon"]}
+      (icon/icon {:icon-name :file-text :size :md})]
+     [:span {:class ["user-attachment-text"]}
+      [:span {:class ["user-attachment-name"]} (or name "file")]
+      [:span {:class ["user-attachment-meta"]} (attachment-meta att)]]]))
+
 (defn- user-attachments
-  "A prompt's images and file cards, stacked right-aligned above its bubble."
-  [dispatch! entry]
-  (if-let [atts (seq (:images entry))]
-    [:div {:class ["user-attachments"]}
-     (map-indexed
-      (fn [i {:keys [data media-type name path] :as att}]
-        (if (str/starts-with? (or media-type "") "image/")
-          (let [src (str "data:" media-type ";base64," data)]
-            [:img {:replicant/key i
-                   :class ["user-image" "lightbox-thumb"]
-                   :src src
-                   :alt (or name "attached image")
-                   :on {:click (fn [^js e]
-                                 (.stopPropagation e)
-                                 (dispatch! {:type :lightbox/open :src src}))}}])
-          [:div (cond-> {:replicant/key i
-                         :class ["user-attachment-card"
-                                 (when (= media-type "application/pdf") "user-attachment-card--pdf")]}
-                  (and (or (string? data) path)
-                       (or (str/starts-with? (or media-type "") "text/")
-                           (viewable-file? (or name ""))))
-                  (-> (update :class conj "user-attachment-card--viewable")
-                      (assoc :title "View file"
-                             :on {:click (fn [^js e]
-                                           (.stopPropagation e)
-                                           (dispatch! {:type :attachment/open
-                                                       :name (or name "file") :data data :path path}))})))
-           [:span {:class ["user-attachment-icon"]}
-            (icon/icon {:icon-name :file-text :size :md})]
-           [:span {:class ["user-attachment-text"]}
-            [:span {:class ["user-attachment-name"]} (or name "file")]
-            [:span {:class ["user-attachment-meta"]} (attachment-meta att)]]]))
-      atts)]
-    (when-let [n (:image-count entry)]
-      (when (pos? n)
-        [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))]))))
+  "A prompt's images and file cards, stacked right-aligned above its bubble.
+   With `on-remove` (the bubble editor) each one carries an × calling
+   `(on-remove i)`."
+  ([dispatch! entry] (user-attachments dispatch! entry nil))
+  ([dispatch! entry on-remove]
+   (if-let [atts (seq (:images entry))]
+     [:div {:class ["user-attachments"]}
+      (map-indexed
+       (fn [i att]
+         (let [node (user-attachment dispatch! i att)]
+           (if on-remove
+             [:div {:replicant/key i :class ["user-attachment-edit"]}
+              node
+              [:button {:class ["user-attachment-remove"] :type "button"
+                        :aria-label "Remove attachment"
+                        :on {:click (fn [^js e]
+                                      (.stopPropagation e)
+                                      (on-remove i))}}
+               (icon/icon {:icon-name :x :size :sm})]]
+             node)))
+       atts)]
+     (when-let [n (:image-count entry)]
+       (when (pos? n)
+         [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))))
+
+(defn- bubble-editor
+  "The inline editor of a sent prompt (:web/editing-bubble), in place: the
+   bubble keeps its look and size, the text becomes a textarea sized to it
+   (data-value feeds the CSS replica that grows it), the attachments above
+   each get an × that drops them, a paste adds images, and Cancel/Save sit
+   below the bubble. Save forks the chat at the message (xi.web.core
+   bubble-edit-save). The children are keyed so the textarea survives the
+   attachments appearing."
+  [dispatch! {:keys [edit-text edit-images]}]
+  [:div {:class ["post" "post--user" "post--editing"]}
+   (some-> (user-attachments dispatch! {:images edit-images}
+                             (fn [idx]
+                               (dispatch! {:type :bubble/edit-remove-image :idx idx})))
+           (assoc-in [1 :replicant/key] "attachments"))
+   [:div {:replicant/key "body" :class ["post-body"]}
+    [:span {:class ["bubble-edit-tag"]} "Editing"]
+    [:div {:class ["post-content" "bubble-edit-grow"] :data-value edit-text}
+    [:textarea {:replicant/key "text"
+                :class ["bubble-edit-textarea"]
+                :rows 1
+                :value edit-text
+                :replicant/on-mount
+                (fn [{:replicant/keys [^js node]}]
+                  ;; Scroll into view ourselves once the keyboard has animated in.
+                  (.focus node #js {:preventScroll true})
+                  (let [n (.. node -value -length)]
+                    (.setSelectionRange node n n))
+                  (js/setTimeout
+                   (fn []
+                     (.scrollIntoView node #js {:block "center"
+                                                :behavior "smooth"}))
+                   300))
+                :on {:input (fn [^js e]
+                              (dispatch! {:type :bubble/edit-change
+                                          :text (.. e -target -value)}))
+                     :paste (fn [^js e]
+                              (handle-prompt-paste!
+                               e
+                               {:on-files (fn [files]
+                                            (read-attachments!
+                                             files
+                                             (fn [images]
+                                               (dispatch! {:type :bubble/edit-add-images
+                                                           :images images}))))
+                                :on-text (fn [text]
+                                           (dispatch! {:type :bubble/edit-change
+                                                       :text text}))}))
+                     :keydown (fn [^js e]
+                                (when (= "Escape" (.-key e))
+                                  (dispatch! {:type :bubble/edit-cancel})))}}]]]
+   [:div {:replicant/key "actions" :class ["bubble-edit-actions"]}
+    (button/button
+     {:variant :ghost :size :sm
+      :on-click (fn [_] (dispatch! {:type :bubble/edit-cancel}))}
+     "Cancel")
+    (button/button
+     {:variant :primary :size :sm
+      :on-click (fn [_] (dispatch! {:type :bubble/edit-save}))}
+     "Save")]])
 
 (defn- entry->post [dispatch! entry]
   (case (:kind entry)
@@ -1229,36 +1464,7 @@
     (let [idx (:history-index entry)]
       (cond
         (:editing? entry)
-        [:div {:class ["post" "post--user" "post--editing"]}
-         [:div {:class ["post-body"]}
-          [:textarea {:class ["bubble-edit-textarea"]
-                      :value (:edit-text entry)
-                      :replicant/on-mount
-                      (fn [{:replicant/keys [^js node]}]
-                        ;; Scroll into view ourselves once the keyboard has animated in.
-                        (.focus node #js {:preventScroll true})
-                        (let [n (.. node -value -length)]
-                          (.setSelectionRange node n n))
-                        (js/setTimeout
-                         (fn []
-                           (.scrollIntoView node #js {:block "center"
-                                                      :behavior "smooth"}))
-                         300))
-                      :on {:input (fn [^js e]
-                                    (dispatch! {:type :bubble/edit-change
-                                                :text (.. e -target -value)}))
-                           :keydown (fn [^js e]
-                                      (when (= "Escape" (.-key e))
-                                        (dispatch! {:type :bubble/edit-cancel})))}}]
-          [:div {:class ["bubble-edit-actions"]}
-           (button/button
-            {:variant :ghost :size :sm
-             :on-click (fn [_] (dispatch! {:type :bubble/edit-cancel}))}
-            "Cancel")
-           (button/button
-            {:variant :primary :size :sm
-             :on-click (fn [_] (dispatch! {:type :bubble/edit-save}))}
-            "Save")]]]
+        (bubble-editor dispatch! entry)
         ;; Skill/command-generated prompts collapse to a one-line bubble. A tap
         ;; toggles it, so the bubble menu opens on right-click or a touch
         ;; long-press (data-long-press, the ui runtime) only.
@@ -1371,115 +1577,6 @@
 (defn- compose-textarea-el []
   (.querySelector js/document ".compose-input-wrapper textarea"))
 
-;; ── Image attachments ────────────────────────────────────────────────────────
-
-(def ^:private MAX_IMAGE_DIMENSION
-  1568)
-
-(defn- resize-image-file
-  [^js file]
-  (js/Promise.
-   (fn [resolve _]
-     (let [reader (js/FileReader.)]
-       (set! (.-onload reader)
-             (fn [_]
-               (let [img (js/Image.)]
-                 (set! (.-onload img)
-                       (fn [_]
-                         (let [w (.-naturalWidth img)
-                               h (.-naturalHeight img)
-                               scale (if (or (> w MAX_IMAGE_DIMENSION) (> h MAX_IMAGE_DIMENSION))
-                                       (/ MAX_IMAGE_DIMENSION (max w h))
-                                       1)
-                               nw (js/Math.round (* w scale))
-                               nh (js/Math.round (* h scale))
-                               canvas (js/document.createElement "canvas")
-                               ctx (.getContext canvas "2d")]
-                           (set! (.-width canvas) nw)
-                           (set! (.-height canvas) nh)
-                           (.drawImage ctx img 0 0 nw nh)
-                           (let [data-url (.toDataURL canvas "image/jpeg" 0.85)
-                                 [_ media-type b64] (re-matches #"data:([^;]+);base64,(.*)" data-url)]
-                             (resolve {:data b64
-                                       :media-type (or media-type "image/jpeg")})))))
-                 (set! (.-onerror img) (fn [_] (resolve nil)))
-                 (set! (.-src img) (.-result reader)))))
-       (set! (.-onerror reader) (fn [_] (resolve nil)))
-       (.readAsDataURL reader file)))))
-
-(defn- read-raw-file
-  "Read any File as base64; promise of {:data :media-type :name} or nil on
-   failure. Non-image attachments reach the agent by on-disk path."
-  [^js file]
-  (js/Promise.
-   (fn [resolve _]
-     (let [reader (js/FileReader.)]
-       (set! (.-onload reader)
-             (fn [_]
-               (let [[_ mime _ b64] (re-matches #"^data:([^;,]*)(;base64)?,(.*)$"
-                                                (.-result reader))]
-                 (resolve {:data b64
-                           :media-type (or (not-empty (.-type file))
-                                           (not-empty mime)
-                                           "application/octet-stream")
-                           :name (.-name file)}))))
-       (set! (.-onerror reader) (fn [_] (resolve nil)))
-       (.readAsDataURL reader file)))))
-
-(defn- add-files!
-  [dispatch! draft-key files]
-  (when (seq files)
-    (-> (js/Promise.all
-         (to-array
-          (map (fn [^js f]
-                 (if (str/starts-with? (or (.-type f) "") "image/")
-                   (resize-image-file f)
-                   (read-raw-file f)))
-               files)))
-        (.then (fn [results]
-                 (when-let [valid (seq (remove nil? (array-seq results)))]
-                   (dispatch! {:type :compose/add-images :draft-key draft-key
-                               :images (vec valid)}))))
-        (.catch (fn [err] (js/console.error "[xi-web] attachment read failed:" err))))))
-
-(defn- pasted-image-files [^js e]
-  (let [items (.. e -clipboardData -items)]
-    (->> (range (.-length items))
-         (keep (fn [i]
-                 (let [^js item (aget items i)]
-                   (when (str/starts-with? (.-type item) "image/")
-                     (.getAsFile item))))))))
-
-(defn- handle-compose-paste! [dispatch! draft-key ^js e]
-  (let [files (pasted-image-files e)]
-    (if (seq files)
-      (do (.preventDefault e)
-          (add-files! dispatch! draft-key files))
-      ;; Long / code-like text pastes get fenced (xi.util/fence-paste).
-      ;; Inserted via execCommand so it lands on the browser's undo stack
-      ;; (assigning .value wipes it) and fires the :input that saves the draft.
-      ;; Re-setting the selection first ends Chrome's typing group, so the paste
-      ;; is its own undo step instead of merging with the text typed before it.
-      (let [text (some-> (.-clipboardData e) (.getData "text"))]
-        (when (and (seq text) (util/paste-should-fence? text))
-          (.preventDefault e)
-          (let [^js ta (.-target e)
-                value (.-value ta)
-                before (subs value 0 (.-selectionStart ta))
-                after (subs value (.-selectionEnd ta))
-                insertion (util/fence-paste
-                           text
-                           {:at-line-start? (or (empty? before)
-                                                (str/ends-with? before "\n"))
-                            :at-line-end? (or (empty? after)
-                                              (str/starts-with? after "\n"))})]
-            (.setSelectionRange ta (.-selectionStart ta) (.-selectionEnd ta))
-            (when-not (.execCommand js/document "insertText" false insertion)
-              (.setRangeText ta insertion (count before) (- (count value) (count after)) "end")
-              (dispatch! {:type :compose/set-draft
-                          :draft-key draft-key
-                          :text (.-value ta)}))))))))
-
 (defn- sync-compose-draft!
   "On a chat switch (tracked in a data attribute), write the new chat's draft
    into the reused textarea: child text only sets the default value, which a
@@ -1489,29 +1586,6 @@
     (when-not (= k (.getAttribute node "data-draft-key"))
       (.setAttribute node "data-draft-key" k)
       (set! (.-value node) (or draft "")))))
-
-(defn- compose-image-strip [dispatch! draft-key images]
-  (when (seq images)
-    [:div {:class ["compose-images"]}
-     (map-indexed
-      (fn [idx {:keys [data media-type name]}]
-        (if-not (str/starts-with? (or media-type "") "image/")
-          [:div {:replicant/key idx :class ["compose-attachment-chip"]}
-           (icon/icon {:icon-name :file-text :size :md})
-           [:span {:class ["compose-attachment-name"]} (or name "file")]
-           [:button {:class ["compose-attachment-remove"]
-                     :on {:click (fn [_] (dispatch! {:type :compose/remove-image
-                                                     :draft-key draft-key :idx idx}))}}
-            (icon/icon {:icon-name :x :size :sm})]]
-          [:div {:replicant/key idx :class ["compose-image-thumb"]}
-           (let [src (str "data:" media-type ";base64," data)]
-             [:img {:src src :alt "attachment" :class ["lightbox-thumb"]
-                    :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}])
-           [:button {:class ["compose-image-remove"]
-                     :on {:click (fn [_] (dispatch! {:type :compose/remove-image
-                                                     :draft-key draft-key :idx idx}))}}
-            (icon/icon {:icon-name :x :size :sm})]]))
-      images)]))
 
 ;; ── File drop zone ───────────────────────────────────────────────────────────
 
@@ -4841,7 +4915,7 @@
                                (when tool?
                                  (tool-views/inputs (util/strip-mcp-prefix (:tool entry)) (:ext room)))
                                (when tool? (:tool-args app))
-                               md-code? (when editing? [(:text editing)]) resolved
+                               md-code? (when editing? [(:text editing) (:images editing)]) resolved
                                explanation retry])
                             (fn []
                               (when-let [post (entry->post
@@ -4863,7 +4937,8 @@
                                                  md-code?
                                                  (assoc :md-diff-code? true)
                                                  editing?
-                                                 (assoc :editing? true :edit-text (:text editing))
+                                                 (assoc :editing? true :edit-text (:text editing)
+                                                        :edit-images (:images editing))
                                                  (perm-hosts p)
                                                  (assoc :permission {:dialog (perm-hosts p)
                                                                      :answer! (perm-answer! p)

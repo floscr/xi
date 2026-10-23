@@ -1809,50 +1809,94 @@ body {
 
 /* ── Inline bubble edit ──────────────────────────────────────── */
 
-.post--editing {
-  align-items: stretch;
+/* The edited bubble keeps the sent bubble's look and size (the .post--user
+   rules). The hints: a thin inner edge and an "Editing" tag on its top-left
+   corner. The textarea sizes itself to its text: it shares a grid cell with
+   a hidden replica of the text (data-value on the wrapper, drawn by ::after),
+   so the cell is as wide and tall as the text would render. */
+.post--editing .post-body {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 
-.post--editing .post-body {
-  background-color: var(--bubble-bg);
-  color: #fff;
-  border-radius: var(--radius-lg);
-  padding: var(--size-2) var(--size-2);
-  width: 100%;
-  max-width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--size-2);
+.bubble-edit-tag {
+  position: absolute;
+  top: -10px;
+  left: 14px;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--fg-on-accent, #1b1030);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.bubble-edit-grow {
+  display: grid;
+  min-width: 6rem;
+}
+
+.bubble-edit-grow::after {
+  /* The zero-width space keeps a trailing newline as a line without adding
+     a character's width, so the bubble measures as the sent one. */
+  content: attr(data-value) "\200B";
+  grid-area: 1 / 1;
+  visibility: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .bubble-edit-textarea {
+  grid-area: 1 / 1;
   width: 100%;
-  min-height: 4rem;
-  resize: vertical;
-  box-sizing: border-box;
-  padding: var(--size-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
   border: none;
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: inherit;
   font: inherit;
-  font-size: var(--font-sm);
-  line-height: 1.4;
+  line-height: inherit;
+  overflow-wrap: break-word;
 }
 
-.bubble-edit-textarea:focus {
-  outline: 2px solid rgba(255, 255, 255, 0.5);
-  outline-offset: -1px;
-}
-
-.bubble-edit-textarea::placeholder {
-  color: rgba(255, 255, 255, 0.6);
-}
-
+/* Below the bubble, outside it, right-aligned like the bubble. */
 .bubble-edit-actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--size-2);
+  margin-top: var(--size-2);
+}
+
+/* The editor's attachments render like the sent message's, each with an
+   × in its top-right corner. */
+.user-attachment-edit {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+.user-attachment-remove {
+  position: absolute;
+  top: var(--size-2);
+  right: var(--size-2);
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  cursor: pointer;
 }
 
 .post--assistant {

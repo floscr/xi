@@ -203,6 +203,40 @@
     (testing "without a history index there is no menu"
       (is (nil? (:on (attrs {:kind :user :collapsed-label "/commit" :text "x"})))))))
 
+;; ── bubble editor (inline edit of a sent prompt) ────────────────────────────
+
+(deftest bubble-editor-edits-the-attachments
+  (let [editor    @#'views/bubble-editor
+        events    (atom [])
+        dispatch! (fn [ev] (swap! events conj ev))
+        nodes     (fn [hiccup pred]
+                    (filter (fn [x] (and (vector? x) (map? (second x)) (pred (second x))))
+                            (tree-seq #(or (vector? %) (seq? %)) seq hiccup)))
+        has-class (fn [c] (fn [attrs] (some #{c} (:class attrs))))
+        img       {:data "AAA" :media-type "image/png"}
+        file      {:data "BBB" :media-type "text/plain" :name "notes.txt"}]
+    (testing "the attachments render above the bubble as on the sent message, each with an ×"
+      (let [hiccup (editor dispatch! {:edit-text "hi" :edit-images [img file]})
+            atts   (first (nodes hiccup (has-class "user-attachments")))
+            images (nodes hiccup (has-class "user-image"))
+            cards  (nodes hiccup (has-class "user-attachment-card"))
+            remove (nodes hiccup (has-class "user-attachment-remove"))
+            fake-e #js {:stopPropagation (fn [])}]
+        (is (some? atts))
+        (is (= 1 (count images)))
+        (is (= 1 (count cards)))
+        (is (= 2 (count remove)))
+        ((get-in (second (second remove)) [:on :click]) fake-e)
+        (is (= [{:type :bubble/edit-remove-image :idx 1}] @events))))
+    (testing "a sent message's attachments carry no ×"
+      (let [hiccup (@#'views/user-attachments dispatch! {:images [img]})]
+        (is (empty? (nodes hiccup (has-class "user-attachment-remove"))))))
+    (testing "without attachments there is none; the textarea takes pastes"
+      (let [hiccup (editor dispatch! {:edit-text "hi" :edit-images nil})
+            ta     (first (nodes hiccup (has-class "bubble-edit-textarea")))]
+        (is (empty? (nodes hiccup (has-class "user-attachments"))))
+        (is (fn? (get-in (second ta) [:on :paste])))))))
+
 ;; ── error-retry-target (Retry on an error card) ─────────────────────────────
 
 (deftest error-retry-target-finds-the-unanswered-user-message

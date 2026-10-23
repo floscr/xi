@@ -814,8 +814,9 @@
 
 (defn- bubble-edit-save
   "Commit an inline bubble edit: fork at the edited message and resubmit the
-   text with its original images (xi.web.resubmit/fork-effects). Empty text
-   just closes the editor."
+   text with the editor's attachments (the original ones minus removals, plus
+   pastes; xi.web.resubmit/fork-effects). An edit with neither text nor
+   attachments just closes the editor."
   [st _]
   (let [{:keys [index text images]} (:web/editing-bubble st)
         active  (state/active-room st)
@@ -824,7 +825,7 @@
         model   (viewed-room-model st active sid)
         t       (str/trim (or text ""))]
     (cond-> {:state (dissoc st :web/editing-bubble)}
-      (seq t)
+      (or (seq t) (seq images))
       (assoc :effects (resubmit/fork-effects {:room-id room-id :sid sid :index index
                                               :text t :images images :model model})))))
 
@@ -1289,6 +1290,17 @@
                                                                            :images images}))})
           :bubble/edit-change    (fn [st {:keys [text]}]
                                    {:state (assoc-in st [:web/editing-bubble :text] text)})
+          ;; The editor's attachment strip: pastes append, its × removes.
+          :bubble/edit-add-images
+          (fn [st {:keys [images]}]
+            (when (:web/editing-bubble st)
+              {:state (update-in st [:web/editing-bubble :images] (fnil into []) images)}))
+          :bubble/edit-remove-image
+          (fn [st {:keys [idx]}]
+            (when (:web/editing-bubble st)
+              {:state (update-in st [:web/editing-bubble :images]
+                                 (fn [imgs] (let [v (vec imgs)]
+                                              (into (subvec v 0 idx) (subvec v (inc idx))))))}))
           :bubble/edit-cancel    (fn [st _] {:state (dissoc st :web/editing-bubble)})
           ;; Prompt navigation: :web/prompt-nav is nil (collapsed) or a 0-based
           ;; index into :user-indices (0 = oldest). See prompt-nav-step.
