@@ -1375,6 +1375,7 @@
        (when sab (aset msg "abortSab" sab))
        (swap! pending assoc id {:resolve  resolve
                                 :room-key rk
+                                :sub-id   (.-subId msg)
                                 :abort    (when sab (js/Int32Array. sab))})
        (.postMessage w msg)))))
 
@@ -1387,10 +1388,13 @@
       (update-in res [:content 0 :text] str "\n\n" hint)
       res)))
 
-(defn- run-clj [args {:keys [cwd]}]
+(defn- run-clj [args {:keys [cwd sub-id]}]
   (-> (run-in-worker #js {:kind    "clj"
                           :code    (str (:code args))
                           :roomId  (room-key (:_room-id args))
+                          ;; a sub-agent's evals run in its parent room's
+                          ;; worker; its own stop wakes them (on-subagent-end)
+                          :subId   (some-> sub-id str)
                           :gateId  (some-> (:_gate-id args) str)
                           :allowed (clj->js (vec (:_allowed args)))
                           :allowedCommands (clj->js (vec (:_allowed-commands args)))
@@ -2489,15 +2493,26 @@
 
 (defn- on-turn-end
   "Turn ended (incl. ESC): wake the room's still-blocked clj evals so their
-   abortable sleeps throw and the eval unwinds."
+   abortable sleeps throw and the eval unwinds. Its sub-agents' evals go on."
   [_st {:keys [room-id]}]
   {:effects [[:ext.clj/abort-evals {:room-id room-id}]]})
 
-(defn- abort-evals-fx [_ {:keys [room-id]}]
+(defn- on-subagent-end
+  "A sub-agent was stopped or its turn ended: wake its own blocked evals."
+  [_st {:keys [room-id sub-id]}]
+  (when sub-id
+    {:effects [[:ext.clj/abort-evals {:room-id room-id :sub-id sub-id}]]}))
+
+(defn- abort-evals-fx
+  "Flip the abort flag of `room-id`'s pending evals: the main agent's
+   (no `sub-id`) or sub-agent `sub-id`'s."
+  [_ {:keys [room-id sub-id]}]
   (let [rk (room-key room-id)]
     (doseq [[_ entry] @pending
             :let [^js abort (:abort entry)]
-            :when (and abort (= rk (:room-key entry)))]
+            :when (and abort
+                       (= rk (:room-key entry))
+                       (= (some-> sub-id str) (:sub-id entry)))]
       (js/Atomics.store abort 0 1)
       (js/Atomics.notify abort 0))))
 
@@ -2590,6 +2605,8 @@
    :handlers         {:ext.clj/status ext-status
                       :ext.clj/trust-task-file on-trust-task-file
                       :agent/turn-end on-turn-end
+                      :subagent/abort    on-subagent-end
+                      :subagent/turn-end on-subagent-end
                       :room/close     on-room-close}
    :fx               {:ext.clj/reset-runtime    reset-runtime-fx
                       :ext.clj/trust-task-file  trust-task-file-fx
