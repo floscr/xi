@@ -17,7 +17,11 @@
 
    A closed popover marked `data-key-hints-open` (the permission Allow menu,
    xi.web.views/confirm-split) opens while the badges show when it holds a
-   badged item, so its keys (Always, Allow repo, …) are visible too."
+   badged item, so its keys (Always, Allow repo, …) are visible too.
+
+   `data-alt-held` on <html> marks Alt being down, at once and without the
+   badges' delay: the composer's send button turns into the steer icon by
+   it (style.css, xi.web.views/compose-box)."
   (:require [xi.web.keymap :as keymap]))
 
 (def ^:private show-delay-ms 250)
@@ -34,6 +38,11 @@
 (defn- root [] (.-documentElement js/document))
 
 (defn- shown? [] (.hasAttribute (root) "data-key-hints"))
+
+(defn- alt-held! [held?]
+  (if held?
+    (.setAttribute (root) "data-alt-held" "")
+    (.removeAttribute (root) "data-alt-held")))
 
 (defn- cancel-timer! []
   (when-let [t @timer]
@@ -79,6 +88,7 @@
 
 (defn- on-keydown [get-state ^js e]
   (let [k (.-key e)]
+    (when (= "Alt" k) (alt-held! true))
     (cond
       (= "Alt" k)            (when-not (or (shown?) @timer)
                                (reset! timer (js/setTimeout
@@ -93,7 +103,7 @@
 
 (defn- on-keyup [get-state ^js e]
   (cond
-    (= "Alt" (.-key e))         (hide!)
+    (= "Alt" (.-key e))         (do (alt-held! false) (hide!))
     (and (.-altKey e) (shown?)) (js/requestAnimationFrame
                                  #(when (shown?)
                                     (label! (get-state))
@@ -105,6 +115,8 @@
   (.addEventListener js/document "keydown" #(on-keydown get-state %))
   (.addEventListener js/document "keyup" #(on-keyup get-state %))
   ;; The keyup never arrives when Alt is released in another window.
-  (.addEventListener js/window "blur" hide!)
+  (.addEventListener js/window "blur" #(do (alt-held! false) (hide!)))
   (.addEventListener js/document "visibilitychange"
-                     #(when (= "hidden" (.-visibilityState js/document)) (hide!))))
+                     #(when (= "hidden" (.-visibilityState js/document))
+                        (alt-held! false)
+                        (hide!))))

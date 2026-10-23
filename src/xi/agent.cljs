@@ -3,6 +3,8 @@
 
    Flow:
      :prompt/submit ─► history append + busy + [:provider/start-turn …]
+     :prompt/submit :steer? while busy ─► queued + [:provider/steer …] ─►
+                       :agent/steered (queue → history) once the turn took it
      provider streams ─► :agent/text-delta | :agent/thinking-delta |
                          :agent/tool-start | :agent/tool-args |
                          :agent/tool-result | :agent/error
@@ -13,15 +15,17 @@
                        :session/rewound (queued prompts drained)
 
    History entries (room :history) are flat maps:
-     {:kind :user      :text :images}
+     {:kind :user      :text :images}         ;; :steered? when sent mid-turn
      {:kind :text      :text :done?}          ;; assistant text, folded deltas
      {:kind :thinking  :text :done?}
      {:kind :tool-call :id :tool :arguments :result :is-error :status
       :started-at}          ;; epoch ms the call began (drives the web run timer)
      {:kind :error     :error}
 
-   Providers are maps {:id kw :start-turn! (fn [opts] {:promise :abort! :exited})
-   :store {:rewind! …}} (:exited and :store optional; xi.session.claude-store)
+   Providers are maps {:id kw :start-turn! (fn [opts] {:promise :abort! :exited
+   :steer!}) :store {:rewind! …}} (:exited, :steer! and :store optional;
+   xi.session.claude-store). :steer! (fn [{:text :images}]) → true when the
+   running turn took the message.
    using the callback opts built here — they never touch app state.
    All handlers are pure; `create-fx` is the contained impure edge (holds
    in-flight turn handles, which are runtime resources, not app state)."
@@ -238,19 +242,57 @@
 
 ;; ── Event handlers (pure) ────────────────────────────────────────────────────
 
-(defn- prompt-submit [st {:keys [room-id text images collapsed-label] :as ev}]
+(defn steerable?
+  "True when a message may go into `room`'s running turn (Alt+Enter): the
+   agent is working, the transcript isn't being cut, and no dialog (a
+   permission ask) holds the turn. The web composer shows the steer icon by
+   it; otherwise the message queues."
+  [room]
+  (boolean (and (get-in room [:agent :busy?])
+                (not (get-in room [:agent :rewinding?]))
+                (empty? (get-in room [:ui :dialogs])))))
+
+(defn- prompt-submit [st {:keys [room-id text images collapsed-label steer?] :as ev}]
   (when-let [room (state/get-room st room-id)]
     (let [prompt (cond-> {:text text :images images
                           ;; the server stamps :user on client events; local
                           ;; and server-side submits are this process' user
                           :user (state/event-user st ev)}
-                   collapsed-label (assoc :collapsed-label collapsed-label))]
-      (if (or (get-in room [:agent :busy?])
-              (get-in room [:agent :rewinding?]))
+                   collapsed-label (assoc :collapsed-label collapsed-label))
+          busy?  (get-in room [:agent :busy?])]
+      (cond
+        ;; Steering: hand the prompt to the running turn. It waits in the
+        ;; queue until the turn took it (:agent/steered); a turn that was
+        ;; already ending leaves it there, and turn-end drains it as usual.
+        (and steer? (steerable? room))
+        (let [prompt (assoc prompt :steer? true)]
+          {:state   (update-in st [:rooms room-id :agent :queued] (fnil conj []) prompt)
+           :effects [[:provider/steer {:room-id room-id :prompt prompt}]]})
+
         ;; Busy, or the transcript is being cut (session-rewound drains it) —
         ;; queue for after it settles
+        (or busy? (get-in room [:agent :rewinding?]))
         {:state (update-in st [:rooms room-id :agent :queued] (fnil conj []) prompt)}
+
+        :else
         (begin-turn st room prompt)))))
+
+(defn- steered
+  "The running turn took a steering prompt (:provider/steer): it leaves the
+   queue and joins the history where the turn stood."
+  [st {:keys [room-id prompt]}]
+  (when-let [room (state/get-room st room-id)]
+    (let [queued (vec (get-in room [:agent :queued]))
+          idx    (first (keep-indexed (fn [i q] (when (= q prompt) i)) queued))]
+      (when idx
+        {:state (-> st
+                    (assoc-in [:rooms room-id :agent :queued]
+                              (into (subvec queued 0 idx) (subvec queued (inc idx))))
+                    (update-in [:rooms room-id :history] conj
+                               {:kind :user :text (:text prompt) :images (:images prompt)
+                                :user (:user prompt) :steered? true})
+                    ;; the history diverged from the cached transcript slice
+                    (update-in [:rooms room-id] dissoc :msg-hash :msg-count))}))))
 
 (defn- text-delta [st {:keys [room-id text]}]
   (when (state/get-room st room-id)
@@ -399,8 +441,21 @@
                           (into (subvec queued 0 index)
                                 (subvec queued (inc index))))}))))
 
+(defn- queue-steer
+  "Send the queued prompt at `index` into the running turn (the queue
+   popover's steer button), like an Alt+Enter: it stays in place, flagged,
+   until :agent/steered moves it into the history."
+  [st {:keys [room-id index]}]
+  (when-let [room (state/get-room st room-id)]
+    (let [queued (vec (get-in room [:agent :queued]))]
+      (when (and (steerable? room) (< -1 index (count queued)))
+        (let [prompt (assoc (queued index) :steer? true)]
+          {:state   (assoc-in st [:rooms room-id :agent :queued] (assoc queued index prompt))
+           :effects [[:provider/steer {:room-id room-id :prompt prompt}]]})))))
+
 (def handlers
   {:prompt/submit        prompt-submit
+   :agent/steered        steered
    :agent/text-delta     text-delta
    :agent/thinking-delta thinking-delta
    :agent/tool-start     tool-start
@@ -412,7 +467,8 @@
    :agent/retry-fresh    retry-fresh
    :agent/abort          agent-abort
    :session/rewound      session-rewound
-   :prompt/queue-remove  queue-remove})
+   :prompt/queue-remove  queue-remove
+   :prompt/queue-steer   queue-steer})
 
 ;; ── Provider routing (pure) ──────────────────────────────────────────────────
 
@@ -594,7 +650,7 @@
              token      #js {}
              current?   (fn [] (identical? token (:token (.get inflight room-id))))
              _          (.set inflight room-id {:token token})
-             {:keys [promise abort! exited]}
+             {:keys [promise abort! exited steer!]}
              ((:start-turn! provider)
               (cond-> (merge payload
                              (event-callbacks #(when (current?) (dispatch! %)) room-id)
@@ -605,7 +661,8 @@
                 remove-tools           (assoc :remove-tools remove-tools)
                 client-pid             (assoc :client-pid client-pid)))]
          (do
-           (.set inflight room-id {:token token :abort! abort! :exited (or exited promise)})
+           (.set inflight room-id {:token token :abort! abort! :exited (or exited promise)
+                                   :steer! steer!})
            (-> promise
                (.then
                 (fn [result]
@@ -642,6 +699,16 @@
      (fn [_ {:keys [room-id]}]
        (when-let [abort! (:abort! (.get inflight room-id))]
          (abort!)))
+
+     ;; A steering prompt for the in-flight turn: when the turn takes it
+     ;; (a provider that can't, or a turn already ending, doesn't), it moves
+     ;; from the queue into the history.
+     :provider/steer
+     (fn [{:keys [dispatch!]} {:keys [room-id prompt]}]
+       (when-let [steer! (:steer! (.get inflight room-id))]
+         (when (steer! {:text   (prompt-with-attachment-paths (:text prompt) (:images prompt))
+                        :images (:images prompt)})
+           (dispatch! {:type :agent/steered :room-id room-id :prompt prompt}))))
 
      ;; Abort the in-flight turn and drop its entry so its late resolution
      ;; can't dispatch turn-end into the replaced session (/new, /clear).

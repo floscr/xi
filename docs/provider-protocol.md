@@ -128,6 +128,19 @@ back as an error result). The call and the chat's tool block are separate:
 send `tool-start` and `tool-done` around it (the kit's `runTool` does), or
 let an SDK that streams them (Claude) send them.
 
+A message the user sends while the turn runs (Alt+Enter) arrives as
+
+```text
+← {type:"user", text, images?}
+```
+
+Give it to the model at the next opportunity: after the tool results of
+the current round, before the next request (the kit's loops do; the Claude
+provider pushes it into the CLI's input stream). Xi shows it in the chat
+once sent and does not repeat it in the next turn's `history`, so a program
+that ignores the frame loses the message; one arriving after `done` is
+Xi's to resend.
+
 The turn ends with
 
 ```text
@@ -170,6 +183,9 @@ Any request may use these:
 | --- | --- |
 | `{type:"lock", name}` → `{type:"locked", name}` | A named mutex shared by every request Xi runs at once. Wait for `locked`, send `{type:"unlock", name}` when done; it is released anyway when the program exits. Use it around a refresh-token rotation, or anything else two concurrent turns must not both do |
 | `{type:"log", level, message}` | A line in Xi's log |
+
+Xi sends a turn `tool-result`, `user` (a message sent during the turn) and
+`abort`; a program may ignore any frame it does not know.
 
 ## A provider in TypeScript
 

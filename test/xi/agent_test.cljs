@@ -398,3 +398,102 @@
     (is (= ["dlg-2"] (mapv :id (get-in state [:rooms "r" :ui :dialogs]))))
     (is (= [[:dialog/resolve {:dialog-id "dlg-1" :value false}]] effects))
     (is (= :aborted (:status (second (history state)))))))
+
+;; ── Steering (Alt+Enter: a prompt into the running turn) ─────────────────────
+
+(def ^:private steer-prompt {:text "left" :images nil :user "root" :steer? true})
+
+(deftest steer-while-busy-queues-and-hands-it-to-the-turn
+  (let [st (apply-events (with-room) {:type :prompt/submit :room-id "r" :text "go"})
+        {:keys [state effects]}
+        (events/handle-event all-handlers st
+                             {:type :prompt/submit :room-id "r" :text "left" :steer? true})]
+    (is (= 1 (count (history state))) "not in the history until the turn took it")
+    (is (= [steer-prompt] (get-in state [:rooms "r" :agent :queued])))
+    (is (= [[:provider/steer {:room-id "r" :prompt steer-prompt}]] effects))))
+
+(deftest steered-moves-the-prompt-from-the-queue-into-the-history
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "go"}
+                         {:type :agent/text-delta :room-id "r" :text "working"}
+                         {:type :prompt/submit :room-id "r" :text "left" :steer? true})
+        {:keys [state effects]}
+        (events/handle-event all-handlers st
+                             {:type :agent/steered :room-id "r" :prompt steer-prompt})]
+    (is (= [] (get-in state [:rooms "r" :agent :queued])))
+    (is (= {:kind :user :text "left" :images nil :user "root" :steered? true}
+           (last (history state))))
+    (is (true? (get-in state [:rooms "r" :agent :busy?])) "the turn goes on")
+    (is (empty? effects))
+    (testing "a prompt no longer queued is ignored"
+      (is (= state (:state (events/handle-event all-handlers state
+                                               {:type :agent/steered :room-id "r" :prompt steer-prompt})))))))
+
+(deftest a-steer-the-turn-did-not-take-drains-at-turn-end
+  ;; the provider answered false (the turn was already ending): the prompt
+  ;; stays queued and runs as the next turn, the flag dropped
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "go"}
+                         {:type :prompt/submit :room-id "r" :text "left" :steer? true})
+        {:keys [effects]} (events/handle-event all-handlers st {:type :agent/turn-end :room-id "r"})]
+    (is (= [[:app/dispatch {:type :prompt/submit :room-id "r"
+                            :text "left" :images [] :user "root"}]]
+           effects))))
+
+(deftest steer-while-idle-or-rewinding-is-a-plain-submit
+  (testing "idle: a new turn"
+    (let [{:keys [state effects]}
+          (events/handle-event all-handlers (with-room)
+                               {:type :prompt/submit :room-id "r" :text "left" :steer? true})]
+      (is (true? (get-in state [:rooms "r" :agent :busy?])))
+      (is (= :provider/start-turn (ffirst effects)))
+      (is (= [{:kind :user :text "left" :images nil :user "root"}] (history state)))))
+  (testing "rewinding: queued for after the cut, nothing to steer"
+    (let [st (-> (with-room)
+                 (assoc-in [:rooms "r" :agent :busy?] true)
+                 (assoc-in [:rooms "r" :agent :rewinding?] true))
+          {:keys [state effects]}
+          (events/handle-event all-handlers st
+                               {:type :prompt/submit :room-id "r" :text "left" :steer? true})]
+      (is (= [{:text "left" :images nil :user "root"}] (get-in state [:rooms "r" :agent :queued])))
+      (is (empty? effects)))))
+
+(deftest steering-needs-a-running-turn-and-no-open-dialog
+  (let [busy (apply-events (with-room) {:type :prompt/submit :room-id "r" :text "go"})]
+    (is (true? (agent/steerable? (state/get-room busy "r"))))
+    (is (false? (agent/steerable? (state/get-room (with-room) "r"))) "idle")
+    (testing "a permission ask holds the turn: the message queues, nothing is steered"
+      (let [st (apply-events busy {:type :ui/dialog-open :room-id "r"
+                                   :dialog {:id "dlg-1" :type :confirm :message "Edit /a?"
+                                            :call {:name "edit" :arguments {:path "/a"}}}})
+            {:keys [state effects]}
+            (events/handle-event all-handlers st
+                                 {:type :prompt/submit :room-id "r" :text "left" :steer? true})]
+        (is (false? (agent/steerable? (state/get-room st "r"))))
+        (is (= [{:text "left" :images nil :user "root"}] (get-in state [:rooms "r" :agent :queued])))
+        (is (empty? effects))))))
+
+(deftest queue-steer-sends-a-queued-prompt-into-the-turn
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "go"}
+                         {:type :prompt/submit :room-id "r" :text "a"}
+                         {:type :prompt/submit :room-id "r" :text "b"})
+        {:keys [state effects]}
+        (events/handle-event all-handlers st {:type :prompt/queue-steer :room-id "r" :index 1})
+        flagged {:text "b" :images nil :user "root" :steer? true}]
+    (is (= [{:text "a" :images nil :user "root"} flagged]
+           (get-in state [:rooms "r" :agent :queued]))
+        "it stays in place, flagged, until the turn took it")
+    (is (= [[:provider/steer {:room-id "r" :prompt flagged}]] effects))
+    (testing "once taken it leaves the queue for the history"
+      (let [st' (:state (events/handle-event all-handlers state
+                                             {:type :agent/steered :room-id "r" :prompt flagged}))]
+        (is (= [{:text "a" :images nil :user "root"}] (get-in st' [:rooms "r" :agent :queued])))
+        (is (= "b" (:text (last (history st')))))))
+    (testing "not while a dialog holds the turn, nor out of range"
+      (let [held (apply-events st {:type :ui/dialog-open :room-id "r"
+                                   :dialog {:id "d" :type :confirm :message "?"}})]
+        (is (empty? (:effects (events/handle-event all-handlers held
+                                                   {:type :prompt/queue-steer :room-id "r" :index 0}))))
+        (is (empty? (:effects (events/handle-event all-handlers st
+                                                   {:type :prompt/queue-steer :room-id "r" :index 5}))))))))

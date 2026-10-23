@@ -306,7 +306,7 @@
                    :buffer {:title "Events" :text text}})))
 
    :image/process
-   (fn [{:keys [dispatch!]} {:keys [room-id text images user event]}]
+   (fn [{:keys [dispatch!]} {:keys [room-id text images user event steer?]}]
      ;; Persist each attachment to disk so the agent's file tools and any
      ;; spawned subagents can reach it by path (they only see the inline base64
      ;; blocks otherwise). The path rides on each attachment map (:path) and is
@@ -331,8 +331,10 @@
                     (assoc event :images processed)
                     (cond-> {:type :prompt/submit :room-id room-id :text text
                              :images processed}
-                      ;; the sender survives the detour through the image fx
-                      user (assoc :user user))))))
+                      ;; the sender and the steer flag survive the detour
+                      ;; through the image fx
+                      user   (assoc :user user)
+                      steer? (assoc :steer? true))))))
 
    :models/fetch
    (fn [{:keys [dispatch!]} {:keys [room-id]}]

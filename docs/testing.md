@@ -46,7 +46,8 @@ prompt and would match otherwise).
 Steps: `{:text s}`, `{:thinking s}`, `{:tool name :args m}`, `{:sleep ms}`
 (abortable), `{:error s}` (reports a provider error, ends the turn),
 `{:usage m}`. Strings expand `{{tool-result}}` (last tool result),
-`{{prompt}}`, `{{cwd}}`, `{{user}}`.
+`{{steered}}` (the last message sent into the turn), `{{prompt}}`,
+`{{cwd}}`, `{{user}}`.
 
 What the fake does like a real provider:
 
@@ -63,12 +64,18 @@ What the fake does like a real provider:
   continues it). A resume id with no transcript answers `:resume-failed`,
   which re-runs the turn fresh.
 - **Abort** wakes a `{:sleep}` and ends the turn as aborted.
+- **Steering** (`:prompt/submit` with `:steer? true` while busy, Alt+Enter)
+  lands at the next step boundary: it wakes a `{:sleep}`, joins the
+  transcript as a user message, expands as `{{steered}}` and is logged
+  under `steered`. A turn that already ended refuses it, so it stays
+  queued.
 
 `XI_FAKE_LLM_LOG=<file>` appends one JSON line per turn: `provider`,
 `model`, `prompt`, `system`, `tools` (advertised names), `side?`, `user`,
 `cwd`, `session-id`, `resume-session-id`, `transcript` (prior messages of a
 resumed session), `history` (what the host replayed), `rule`, `tool-calls`
-(name, arguments, content, is-error) and `stop-reason`. Assert on what the
+(name, arguments, content, is-error), `steered` (messages sent into the
+turn) and `stop-reason`. Assert on what the
 model *saw* through it.
 
 Without the harness: `XI_FAKE_LLM=script.edn bun target/main.js prompt "hi"`.

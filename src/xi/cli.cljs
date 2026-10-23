@@ -966,6 +966,8 @@ See docs/guide/command-line.md for the full reference.")
                      (update :agent/session-init events/chain commands/in-flight-session-sync)
                      (update :prompt/submit events/chain commands/in-flight-session-sync)
                      (update :prompt/queue-remove events/chain commands/in-flight-session-sync)
+                     ;; a steered prompt left the queue: a restart must not resend it
+                     (update :agent/steered events/chain commands/in-flight-session-sync)
                      (update :agent/turn-end events/chain rm/turn-end-room-cleanup)
                      (assoc :client/disconnect
                             (events/chain rm/client-disconnect-cleanup

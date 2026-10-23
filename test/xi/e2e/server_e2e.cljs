@@ -13,6 +13,7 @@
 (def ^:private script
   {:rules [{:when {:prompt "hello"} :reply [{:text "hello "} {:text "over ws"}]}
            {:when {:prompt "slow"} :reply [{:text "a"} {:sleep 1500} {:text "b"}]}
+           {:when {:prompt "steerable"} :reply [{:text "a"} {:sleep 30000} {:text "heard {{steered}}"}]}
            {:when {:prompt "stuck"} :reply [{:text "waiting"} {:sleep 30000} {:text "never"}]}]
    :side [{:text "E2E Title"}]})
 
@@ -189,6 +190,31 @@
                                               (map :prompt (h/main-turns env))))
                                        (is (str/starts-with? (text-of client room-id from) "ab")
                                            "the queued prompt waited for the first to finish")
+                                       room-id)))))))
+                   (.then
+                    (fn [room-id]
+                      (testing "a message steered into a running turn lands in it"
+                        ;; Alt+Enter: the fake wakes from its sleep with the message
+                        (let [from (count @(:events client))
+                              since #(drop from @(:events client))]
+                          ((:send! client) {:type :prompt/submit :text "steerable"})
+                          (-> (h/await-event client #(and ((of-type :agent/text-delta room-id) %)
+                                                          (= "a" (:text %)))
+                                             {:from from})
+                              (.then (fn [_]
+                                       ((:send! client) {:type :prompt/submit :text "turn left" :steer? true})
+                                       (h/await-event client (of-type :agent/turn-end room-id)
+                                                      {:from from :timeout-ms 5000})))
+                              (.then (fn [_]
+                                       (is (= "aheard turn left" (text-of client room-id from)))
+                                       (is (= ["turn left"]
+                                              (map #(get-in % [:prompt :text])
+                                                   (filter (of-type :agent/steered room-id) (since))))
+                                           "the room saw the prompt move into the history")
+                                       (is (= 1 (count (filter (of-type :agent/turn-end room-id) (since))))
+                                           "one turn, nothing queued behind it")
+                                       (is (= ["turn left"] (:steered (last (h/main-turns env))))
+                                           "the model saw it")
                                        room-id)))))))
                    (.then
                     (fn [room-id]

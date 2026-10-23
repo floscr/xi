@@ -2971,6 +2971,32 @@ body {
   flex-shrink: 0;
 }
 
+/* Steering (xi.web.views/compose-box): while the turn can take a message,
+   holding Alt (data-alt-held, xi.web.key-hints) swaps the send arrow for the
+   steer icon. With an empty composer the button only shows while Alt is
+   held. */
+.compose-send-icon,
+.compose-steer-icon {
+  display: inline-flex;
+}
+
+.compose-steer-icon {
+  display: none;
+  color: var(--accent);
+}
+
+html[data-alt-held] .compose-send--steer .compose-send-icon {
+  display: none;
+}
+
+html[data-alt-held] .compose-send--steer .compose-steer-icon {
+  display: inline-flex;
+}
+
+html:not([data-alt-held]) .compose-send--alt-only {
+  display: none;
+}
+
 /* Anchored on .compose-box (NOT inside .compose-frame — the frame's
    backdrop-filter would make it the containing block and its overflow:hidden
    would clip the popover away), right-aligned above the composer. */
@@ -3028,6 +3054,11 @@ body {
 
 .queue-item-action {
   flex-shrink: 0;
+}
+
+/* Send this queued message into the running turn (xi.agent queue-steer). */
+.queue-item-steer {
+  color: var(--accent);
 }
 
 /* ---- Image attachment previews ---- */

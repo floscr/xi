@@ -2,6 +2,7 @@
   "Replicant view layer: pure (state → hiccup) over the same room state the
    TUI renders. Event handlers dispatch events; there is no view-local atom."
   (:require [clojure.string :as str]
+            [xi.agent :as agent]
             [xi.avatar :as avatar]
             [xi.buffers :as buffers]
             [xi.commands :as commands]
@@ -1842,7 +1843,10 @@
            [:span {:class ["slash-item-desc"]} description]]))
       commands)]))
 
-(defn- submit-compose! [dispatch! room-id session-id images draft-key draft skill-names]
+(defn- submit-compose!
+  "Send the composer's text and attachments. `:steer?` (Alt+Enter) asks for
+   the message to go into the running turn instead of the queue."
+  [dispatch! room-id session-id images draft-key draft skill-names & [{:keys [steer?]}]]
   (let [text (str/trim (or draft ""))
         [skill args] (when (empty? images) (skill-invocation text skill-names))]
     (when (or (seq text) (seq images))
@@ -1855,7 +1859,8 @@
 
         room-id
         (dispatch! (cond-> {:type :input/submit :room-id room-id :text text}
-                     (seq images) (assoc :images (vec images))))
+                     (seq images) (assoc :images (vec images))
+                     steer?       (assoc :steer? true)))
 
         :else
         (dispatch! (cond-> {:type :submit/pending :session-id session-id :text text}
@@ -1899,8 +1904,22 @@
                    :on {:click next!}}
           (icon/icon {:icon-name :arrow-down :size :sm})]]))))
 
+
+(defn- steer-icon
+  "Steering a message into the running turn: the send button's face while
+   Alt is held, the queue popover's steer button. Phosphor's hand-pointing
+   (MIT), inline: the framework's icon set has no hand. `size` :md or :sm."
+  ([] (steer-icon :md))
+  ([size]
+   [:svg {:class ["icon" (when (= :sm size) "icon-sm")] :xmlns "http://www.w3.org/2000/svg"
+          :viewBox "0 0 256 256" :fill "currentColor" :aria-hidden "true"}
+    [:path {:d "M196,88a27.86,27.86,0,0,0-13.35,3.39A28,28,0,0,0,144,74.7V44a28,28,0,0,0-56,0v80l-3.82-6.13A28,28,0,0,0,35.73,146l4.67,8.23C74.81,214.89,89.05,240,136,240a88.1,88.1,0,0,0,88-88V116A28,28,0,0,0,196,88Zm12,64a72.08,72.08,0,0,1-72,72c-37.63,0-47.84-18-81.68-77.68l-4.69-8.27,0-.05A12,12,0,0,1,54,121.61a11.88,11.88,0,0,1,6-1.6,12,12,0,0,1,10.41,6,1.76,1.76,0,0,0,.14.23l18.67,30A8,8,0,0,0,104,152V44a12,12,0,0,1,24,0v68a8,8,0,0,0,16,0V100a12,12,0,0,1,24,0v20a8,8,0,0,0,16,0v-4a12,12,0,0,1,24,0Z"}]]))
+
 (defn- queue-popover
-  [dispatch! room-id queued]
+  "The queued messages, each with: steer it into the running turn (only
+   while the turn can take one, xi.agent/steerable?), run it in a sub-agent,
+   remove it."
+  [dispatch! room-id queued steerable?]
   [:div {:class ["queue-popover"]}
    (map-indexed
     (fn [idx {:keys [text images sender]}]
@@ -1911,6 +1930,13 @@
           (if (seq t)
             t
             (str (count images) " image" (when (not= 1 (count images)) "s"))))]
+       (when steerable?
+         [:button {:class ["icon-btn" "icon-btn--sm" "queue-item-action" "queue-item-steer"]
+                   :title "Send into the running turn now" :aria-label "Send into the running turn now"
+                   :on {:click (fn [_]
+                                 (dispatch! {:type :prompt/queue-steer
+                                             :room-id room-id :index idx}))}}
+          (steer-icon :sm)])
        [:button {:class ["icon-btn" "icon-btn--sm" "queue-item-action"]
                  :title "Run in a sub-agent now" :aria-label "Run in a sub-agent now"
                  :on {:click (fn [_]
@@ -2022,11 +2048,12 @@
         cmd-open?   (seq cmd-matches)
         has-input?  (seq (str/trim (or draft "")))
         queued      (get-in room [:agent :queued])
-        new?        (nil? session-id)]
+        new?        (nil? session-id)
+        steerable?  (agent/steerable? room)]
     [:div {:class ["compose-box"]}
      ;; Anchored on .compose-box: the frame's backdrop-filter would clip it.
      (when (and queue-open? (seq queued) (not cmd-open?))
-       (queue-popover dispatch! room-id queued))
+       (queue-popover dispatch! room-id queued steerable?))
      (compose-image-strip dispatch! draft-key images)
      [:div {:class ["compose-frame"]}
       (when-not cmd-open?
@@ -2130,13 +2157,16 @@
                               (dispatch! {:type :compose/set-draft
                                           :draft-key draft-key :text nv}))
 
+                            ;; Alt+Enter steers: the message goes into the
+                            ;; running turn instead of the queue.
                             (= "Enter" (.-key e))
                             (do (.preventDefault e)
                                 (let [v (.. e -target -value)]
                                   (when (or (not busy?) (submittable-while-busy? (:commands cmd-ctx) v)
                                             (skill-invocation (str/trim v) skill-names))
                                     (submit-compose! dispatch! room-id session-id
-                                                     images draft-key v skill-names)))))))}}})]
+                                                     images draft-key v skill-names
+                                                     {:steer? (and steerable? (.-altKey e))})))))))}}})]
       (let [spinner-abort
             (when busy?
               [:button {:class ["icon-btn" "compose-spinner-abort"]
@@ -2148,11 +2178,19 @@
           [:div {:class ["compose-actions"]}
            (when offline? (offline-indicator))
            spinner-abort
-           (when (or has-input? (seq images))
-             [:button {:class ["icon-btn"]
-                       :on {:click (fn [_] (submit-compose! dispatch! room-id session-id
-                                                            images draft-key draft skill-names))}}
-              (icon/icon {:icon-name :arrow-up :size :md})])
+           ;; While the turn can be steered, holding Alt (data-alt-held,
+           ;; xi.web.key-hints) turns the send arrow into the steer icon, and
+           ;; an Alt+click steers like Alt+Enter.
+           (when (or has-input? (seq images) steerable?)
+             [:button {:class ["icon-btn" (when steerable? "compose-send--steer")
+                               (when-not (or has-input? (seq images)) "compose-send--alt-only")]
+                       :title (when steerable? "Send · Alt: into the running turn")
+                       :on {:click (fn [^js e]
+                                     (submit-compose! dispatch! room-id session-id
+                                                      images draft-key draft skill-names
+                                                      {:steer? (and steerable? (.-altKey e))}))}}
+              [:span {:class ["compose-send-icon"]} (icon/icon {:icon-name :arrow-up :size :md})]
+              (when steerable? [:span {:class ["compose-steer-icon"]} (steer-icon)])])
            [:button {:class ["icon-btn"]
                      :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
             (icon/icon {:icon-name :circle-x :size :md})]]
@@ -8584,6 +8622,7 @@
    ["Alt+Enter" "Palette, a project's New chat: type a prompt, start the chat in the background"]
    ["Tab" "Message box: expand the snippet word before the cursor"]
    ["Shift+Enter" "Message box: new line"]
+   ["Alt+Enter" "Message box, while the agent works: send into the running turn instead of the queue"]
    ["Ctrl+Enter" "On one of your messages: go back to before it and edit it"]])
 
 (defn- keys-row

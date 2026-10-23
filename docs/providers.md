@@ -66,7 +66,7 @@ prompt caching).
 The provider map is what `xi.agent` and the side-turn effects consume:
 
 ```clojure
-{:id :start-turn!   ; (fn [opts]) → {:promise :abort! :exited}
+{:id :start-turn!   ; (fn [opts]) → {:promise :abort! :exited :steer!}
  :list-models!      ; (fn []) → Promise<[id …]>
  :side-turns? :spec :manifest
  :store             ; {:rewind! …} for `transcripts: self` (xi.session.claude-store)
@@ -82,7 +82,10 @@ turn's `:tool-policy` (the rules engine) and registry
 :result-text :is-error :aborted :resume-failed :fatal-error`); a missing
 working directory resolves `{:cwd-missing true}` without starting the
 program. `:exited` settles when the program is gone, which for Claude means
-its CLI wrote everything; a rewind waits for it.
+its CLI wrote everything; a rewind waits for it. `:steer!` writes a `user`
+frame for a message sent during the turn (Alt+Enter) and answers whether
+the program could still take it; `xi.agent` moves the prompt from the queue
+into the history on `true` and leaves it queued otherwise.
 
 ## Routing
 

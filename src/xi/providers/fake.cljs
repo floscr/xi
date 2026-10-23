@@ -35,7 +35,12 @@
      {:usage m}            token usage merged into the turn's result
 
    Strings (text, thinking, error, and string leaves of :args) expand
-   {{tool-result}} (the last tool result), {{prompt}}, {{cwd}} and {{user}}.
+   {{tool-result}} (the last tool result), {{steered}} (the last message
+   sent during the turn), {{prompt}}, {{cwd}} and {{user}}.
+
+   A message steered into the turn (:steer!, Alt+Enter) lands at the next
+   step boundary: it wakes a {:sleep}, joins the transcript as a user message
+   and is logged under :steered.
 
    Sessions behave like the Claude provider's: main turns are written as a
    Claude-format transcript under the Claude projects dir (a turn's
@@ -197,8 +202,8 @@
                      (transcript-file config-dir cwd resume-session-id))
         transcript (when prior-file (read-transcript prior-file))
         sid        (if side? nil (or resume-session-id (str (random-uuid))))
-        flags      #js {:aborted false :wake nil}
-        !turn      (atom {:messages []
+        flags      #js {:aborted false :finished false :wake nil}
+        !turn      (atom {:messages [] :steered []
                           :blocks [] :calls [] :usage {:input_tokens 0 :output_tokens 0}})
         req        {:provider (or (:provider opts) (routing/provider-for-model specs model) id)
                     :model model :prompt prompt :system system
@@ -208,6 +213,7 @@
                                :transcript (or transcript [])
                                :history (some-> (:history opts) agent/history->messages vec)})
         vars       (fn [] {:tool-result (some-> @!turn :calls peek :content)
+                           :steered (some-> @!turn :steered peek)
                            :prompt prompt :cwd cwd :user user})
         flush!     (fn [extra]
                      (swap! !turn (fn [t]
@@ -259,6 +265,7 @@
          (fn [resolve]
            (letfn [(finish [stop-reason]
                      (let [aborted? (.-aborted flags)]
+                       (set! (.-finished flags) true)
                        (flush! (when (= "stop" stop-reason) {:stop_reason "end_turn"}))
                        (when sid
                          (append-transcript! (transcript-file config-dir cwd sid) sid cwd
@@ -266,6 +273,7 @@
                        (log! (assoc base-entry
                                     :rule (:rule @!turn)
                                     :tool-calls (:calls @!turn)
+                                    :steered (:steered @!turn)
                                     :stop-reason (if aborted? "aborted" stop-reason)))
                        (resolve (cond-> {:usage (:usage @!turn) :model model
                                          :aborted aborted? :done true}
@@ -326,7 +334,20 @@
      :exited  promise
      :abort!  (fn []
                 (set! (.-aborted flags) true)
-                (when-let [wake (.-wake flags)] (wake)))}))
+                (when-let [wake (.-wake flags)] (wake)))
+     ;; A message sent during the turn lands at the next step boundary: it
+     ;; wakes a sleep, joins the transcript as a user message and is the
+     ;; {{steered}} of the steps that follow.
+     :steer!  (fn [{:keys [text]}]
+                (if (.-finished flags)
+                  false
+                  (do (flush! nil)
+                      (swap! !turn (fn [t]
+                                     (-> t
+                                         (update :steered conj text)
+                                         (update :messages conj {:role "user" :content text}))))
+                      (when-let [wake (.-wake flags)] (wake))
+                      true)))}))
 
 (defn provider
   "The fake provider, registered under provider id `id`; `specs` are the real

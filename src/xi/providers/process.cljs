@@ -147,6 +147,18 @@
                                        results)}))
         (agent/history->messages history)))
 
+
+(defn- attachments
+  "The protocol's `images`: the attachments that carry data (a file resumed
+   from a transcript has only the path the prompt names,
+   xi.agent/prompt-with-attachment-paths)."
+  [images]
+  (when (some :data images)
+    (into [] (comp (filter :data)
+                   (map (fn [{:keys [media-type data]}]
+                          {:mediaType media-type :data data})))
+          images)))
+
 (defn turn-request
   "The `turn` request for xi.agent's start-turn! `opts`, with the turn's
    resolved tool `defs`."
@@ -159,12 +171,7 @@
                    :prompt (or prompt "")
                    :cwd    cwd
                    :tools  (if no-tools? [] defs))
-      ;; A file resumed from a transcript has no data, only the path the
-      ;; prompt names (xi.agent/prompt-with-attachment-paths).
-      (some :data images) (assoc :images (into [] (comp (filter :data)
-                                                        (map (fn [{:keys [media-type data]}]
-                                                               {:mediaType media-type :data data})))
-                                               images))
+      (attachments images) (assoc :images (attachments images))
       system             (assoc :system system)
       (and (:base-prompt? m) (not no-tools?))
       (assoc :basePrompt (system-prompt/build defs cwd))
@@ -192,9 +199,12 @@
     (= "resume-failed" failure) (assoc :resume-failed true)
     (= "fatal" failure)        (assoc :fatal-error true)))
 
+
 (defn start-turn!
   "Run one turn of the provider in manifest `m`. Returns {:promise :abort!
-   :exited}; the promise resolves (never rejects) with the result map."
+   :exited :steer!}; the promise resolves (never rejects) with the result
+   map. :steer! writes a `user` frame (a message sent during the turn) and
+   answers true, false once the program sent `done`."
   [m options opts]
   (let [cwd (or (:cwd opts) (.cwd js/process))]
     (if (cwd-missing? cwd)
@@ -252,7 +262,13 @@
            :abort!  (fn []
                       (reset! aborted? true)
                       ((:send! @h) {:type "abort"})
-                      (js/setTimeout (:kill! @h) 500))})))))
+                      (js/setTimeout (:kill! @h) 500))
+           :steer!  (fn [{:keys [text images]}]
+                      (if @done
+                        false
+                        (do ((:send! @h) (cond-> {:type "user" :text (or text "")}
+                                           (attachments images) (assoc :images (attachments images))))
+                            true)))})))))
 
 ;; ── Readings ─────────────────────────────────────────────────────────────────
 

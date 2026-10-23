@@ -101,9 +101,15 @@ across the top narrows the cards and lists to one
   open sub-agent row work the same, and their threads show under that
   sub-agent. The agent sees your questions in `list_subagents`.
 - **Queue messages.** A message sent while the agent works waits for the
-  turn to end; the number in the action row opens the queue. Its ▶ runs a
-  message in a [sub-agent](builtin-tools.md#sub-agents) right away instead,
-  × drops it.
+  turn to end; the number in the action row opens the queue. Its steer
+  button sends a message into the running turn (see Alt+Enter below), ▶
+  runs it in a [sub-agent](builtin-tools.md#sub-agents) right away instead,
+  × drops it. `Alt+Enter` (or Alt+click on send) sends the message into
+  the running turn instead: the agent reads it after its current tool call
+  and goes on with it in mind. It appears in the chat at that point; a
+  message the turn could no longer take stays in the queue. Holding Alt
+  turns the send button into the steer icon while that works: not while a
+  permission request waits, when the message queues as usual.
 - **Read what the agent did.** Tool calls and thinking are collapsed blocks.
   Open one in place (it stays open when you come back from another chat),
   or switch the appearance settings (gear in the sidebar footer) to keep
@@ -425,6 +431,7 @@ These keys belong to a control and are not in the keymap:
 | --- | --- |
 | `Ctrl/Cmd+k` | Command palette. Binding `:palette/open` to a modifier chord in `:global` (`"ctrl+x"`) makes that the palette's key instead, in text fields too, and frees `Ctrl+k` |
 | `Tab` (in the message box) | Expand the snippet word before the cursor: `c` becomes `continue`, `rec` becomes `in a recent change`. Anywhere else Tab moves focus as usual. |
+| `Alt+Enter` (in the message box, while the agent works) | Send the message into the running turn instead of the queue; holding Alt shows the steer icon on the send button. While the agent is idle, or a permission request waits, it sends like `Enter` |
 | `Ctrl+Enter` (on one of your messages) | Edit it in place: its attachments stay above the bubble with an × each, and `Ctrl+V` in the bubble adds a pasted image. Save goes back to before the message and sends the new text with them |
 | `↑`/`↓`, `Alt+k`/`Alt+j` or `Ctrl+p`/`Ctrl+n` (in the `/` command list) | Move through the matching commands; `Enter` or `Tab` runs the selected one |
 | `Tab` or `Enter` (in the palette, on a project) | Open that project's actions: new chat, git status, search its sessions, open its sessions |

@@ -453,8 +453,9 @@
 (defn- input-submit
   "Raw editor submission, routed to a command or a prompt. Pending images ride
    along via :image/process; an optional :model (web resubmissions) is applied
-   to the room first so the fork runs on it."
-  [st {:keys [room-id text images client-id model user]}]
+   to the room first so the fork runs on it; :steer? (Alt+Enter) asks for the
+   prompt to go into the running turn (xi.agent prompt-submit)."
+  [st {:keys [room-id text images client-id model user steer?]}]
   (when-let [room (state/get-room st room-id)]
     (let [model-change? (and model (not= model (get-in room [:agent :model])))
           st     (cond-> st
@@ -481,10 +482,12 @@
             {:state   (assoc-in st [:rooms room-id :ui :pending-images] [])
              :effects [[:image/process (cond-> {:room-id room-id :text prompt-text
                                                 :images images}
-                                         user (assoc :user user))]]}
+                                         user   (assoc :user user)
+                                         steer? (assoc :steer? true))]]}
             (cond-> {:effects [[:app/dispatch (cond-> {:type :prompt/submit :room-id room-id
                                                        :text prompt-text}
-                                                user (assoc :user user))]]}
+                                                user   (assoc :user user)
+                                                steer? (assoc :steer? true))]]}
               model-change? (assoc :state st))))
 
         :else nil))))
@@ -780,7 +783,8 @@
     {:effects [[:session/sync {:room-id room-id}]]}))
 
 (defn in-flight-session-sync
-  "Chained onto :agent/session-init, :prompt/submit and :prompt/queue-remove:
+  "Chained onto :agent/session-init, :prompt/submit, :prompt/queue-remove and
+   :agent/steered:
    while a turn is in flight, persist the session's in-flight snapshot (the
    interrupted marker and the prompt queue, xi.fx :session/mark-interrupted)
    so a hard restart mid-turn resumes the turn and keeps the queue; a normal

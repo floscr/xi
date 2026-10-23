@@ -803,3 +803,15 @@
                           :bogus 1})]
     (is (= {:kind :status :text "staged" :tone :warning}
            (last (history st))))))
+
+(deftest input-submit-carries-the-steer-flag
+  ;; Alt+Enter: the flag rides into :prompt/submit, through the image fx
+  ;; payload too; a command has no use for it
+  (let [st (with-room)]
+    (is (= [[:app/dispatch {:type :prompt/submit :room-id "r" :text "left" :steer? true}]]
+           (:effects (handle st {:type :input/submit :room-id "r" :text "left" :steer? true}))))
+    (is (true? (-> (handle st {:type :input/submit :room-id "r" :text "left"
+                               :images [{:data "x"}] :steer? true})
+                   :effects first second :steer?)))
+    (is (= [[:app/dispatch {:type :command/run :room-id "r" :name "model" :args "opus"}]]
+           (:effects (handle st {:type :input/submit :room-id "r" :text "/model opus" :steer? true}))))))
