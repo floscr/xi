@@ -1666,6 +1666,14 @@ body {
   max-width: 85%;
 }
 
+/* The page's accent selection wash vanishes on the accent fill: darken the
+   bubble instead, which keeps its white text at full contrast. */
+.post--user .post-body ::selection,
+.post--user .post-body::selection {
+  background: color-mix(in srgb, #000 35%, transparent);
+  color: inherit;
+}
+
 /* The sender's avatar on the bottom-right corner of a prompt bubble from
    another user on a shared server (last bubble of a run). It hangs half
    outside the bubble, so the post makes room for it. */
