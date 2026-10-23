@@ -3579,8 +3579,9 @@
    is the left ~20% of the viewport, not the very edge iOS reserves for its
    back gesture; that edge's native swipe is suppressed best-effort with a
    non-passive touchstart. Gated on horizontal dominance and a distance
-   threshold, ignored inside horizontally scrollable elements and while
-   selecting text."
+   threshold, ignored inside horizontally scrollable elements, while
+   selecting text, and while a window drawer is open: its swipe right closes
+   the drawer (install-right-edge-swipe!), not opens this."
   [state dispatch!]
   (let [thresh-px 60
         start     (atom nil)]
@@ -3619,6 +3620,7 @@
                       (> (js/Math.abs dx) (js/Math.abs dy)))
              (cond
                (and (not (:web/sidebar-open? @state))
+                    (not-any? #(wlayout/drawer-open? @state %) layout/sides)
                     (<= x open-zone) (>= dx thresh-px))
                (dispatch! {:type :sidebar/open})
 
