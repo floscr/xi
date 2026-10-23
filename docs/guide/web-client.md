@@ -375,6 +375,27 @@ page follows each poll; the refresh button asks for one now.
 An [extension](extensions-reference.md) can add accounts of its own to the
 page, for example the other logins of an account pool.
 
+## Camera
+
+**Share camera** in a chat's ⋮ menu (or the command palette) opens the
+`/camera` page: a live preview of this device's camera, shared with the chat.
+While the page is open, an extension tool that reads the camera
+([`xi.api.device/camera`](extensions-reference.md#xiapidevice)) gets its
+pictures from this device, so you can point a phone at a screen, a board or a
+beamer and have the agent look at it from your desk. The screen stays on while
+sharing. Go back to the chat and the camera stays on: a thumbnail in the
+corner shows what it sees, tap it for the page, or its × to stop. **Stop
+sharing** on the page turns it off too.
+
+The page needs an [`https`](https.md) address, and the browser asks for its
+camera permission the first time. On iOS, leaving Safari or locking the phone
+stops the camera; the page says so, and **Share camera** starts it again. **Use
+front camera** switches cameras.
+
+Every read still asks you in the chat, like a location read, unless a
+[rule](rules-reference.md) allows `{:tool :device :device "camera"}` for the
+extension.
+
 ## Install it on your phone
 
 Add the page to your home screen (Share → Add to Home Screen on iOS, Install

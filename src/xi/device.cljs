@@ -1,6 +1,6 @@
 (ns xi.device
-  "Ask a browser in a chat about its device: the clock and time zone, or a
-   location fix. The server half of a round trip:
+  "Ask a browser in a chat about its device: the clock and time zone, a
+   location fix, or a picture from its camera. The server half of a round trip:
 
      xi.api.device ─request!─▶ :device/ask ──:ws/send-to──▶ the web client
                                 (xi.ext.device)              :device/query
@@ -24,17 +24,35 @@
 
 (defonce ^:private seq-no (atom 0))
 
+(defn- web-clients-of
+  "`user`'s web clients, `[cid client]` pairs in id order; in `room-id` when
+   given, else anywhere."
+  [st room-id user]
+  (for [[cid c] (sort-by key (get-in st [:connection :clients]))
+        :when (and (or (nil? room-id) (= room-id (:room-id c)))
+                   (= "web" (:platform c))
+                   (= user (:user c)))]
+    [cid c]))
+
+(defn- first-where [pred clients]
+  (some (fn [[cid c]] (when (pred c) cid)) clients))
+
 (defn pick-client
   "The web client in `room-id` to ask: one of `user`'s (the turn's user) that
-   is visible, else any of theirs. nil when no browser of theirs is attached."
-  [st room-id user]
-  (let [mine (for [[cid c] (sort-by key (get-in st [:connection :clients]))
-                   :when (and (= room-id (:room-id c))
-                              (= "web" (:platform c))
-                              (= user (:user c)))]
-               [cid c])]
-    (first (or (seq (keep (fn [[cid c]] (when (:visible? c) cid)) mine))
-               (map first mine)))))
+   is visible, else any of theirs. nil when no browser of theirs is attached.
+
+   A `:camera` read prefers a browser of theirs that shares its camera (the
+   Camera page sets `:camera?` on its client): in the room first, then in any
+   room — the phone propped up at the beamer may well sit in another chat.
+   Without one it falls back to the visible browser like the other reads."
+  ([st room-id user] (pick-client st room-id user nil))
+  ([st room-id user what]
+   (let [mine (web-clients-of st room-id user)]
+     (or (when (= :camera what)
+           (or (first-where :camera? mine)
+               (first-where :camera? (web-clients-of st nil user))))
+         (first-where :visible? mine)
+         (ffirst mine)))))
 
 (defn- finish! [id]
   (when-let [p (get @pending id)]
@@ -43,7 +61,7 @@
     p))
 
 (defn request!
-  "Ask `client-id` for `what` (:clock or :location) with `opts` →
+  "Ask `client-id` for `what` (:clock, :location or :camera) with `opts` →
    Promise of the browser's answer map. `dispatch!` is the app's own;
    rejects on the browser's error, its departure or after `timeout-ms`."
   [dispatch! {:keys [client-id what opts timeout-ms]}]
@@ -84,5 +102,6 @@
 (defn turn-target
   "The client a tool call in `room-id` asks, per pick-client and the room's
    turn user."
-  [st room-id]
-  (pick-client st room-id (state/turn-user st room-id)))
+  ([st room-id] (turn-target st room-id nil))
+  ([st room-id what]
+   (pick-client st room-id (state/turn-user st room-id) what)))

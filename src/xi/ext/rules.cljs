@@ -200,8 +200,9 @@
       (str "Network request — approve?\n\nHost: " host "\n\n" command)
 
       (= :device tool)
-      (if (= "location" (:device req))
-        "Read this device's location from your browser — approve?"
+      (case (:device req)
+        "location" "Read this device's location from your browser — approve?"
+        "camera"   "Take pictures with this device's camera from your browser — approve?"
         "Read this device's clock and time zone from your browser — approve?")
 
       (= :mcp tool)

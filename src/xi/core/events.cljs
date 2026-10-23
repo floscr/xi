@@ -49,15 +49,19 @@
   {:state (update-in st [:connection :clients] dissoc client-id)})
 
 (defn- client-update
-  "Per-client metadata update: visibility, and the buffer the client shows
+  "Per-client metadata update: visibility, the buffer the client shows
    (`:buffer`, :chat or a buffer id — buffer presence, folded into the room's
-   :members by the room manager). Connection-level: keyed by client-id, no
-   room state, never broadcast."
-  [st {:keys [client-id visible?] :as ev}]
+   :members by the room manager), and whether it shares its camera
+   (`:camera?`, the web client's Camera page; xi.device prefers it for a
+   camera read). Connection-level: keyed by client-id, no room state, never
+   broadcast."
+  [st {:keys [client-id visible? camera?] :as ev}]
   (when (get-in st [:connection :clients client-id])
     {:state (cond-> st
               (some? visible?)
               (assoc-in [:connection :clients client-id :visible?] visible?)
+              (some? camera?)
+              (assoc-in [:connection :clients client-id :camera?] camera?)
               (contains? ev :buffer)
               (assoc-in [:connection :clients client-id :buffer] (or (:buffer ev) :chat)))}))
 

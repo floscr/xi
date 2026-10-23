@@ -692,9 +692,9 @@
      :action {:type :ask :options [:yes :no :always]}}]
 
    ;; Reading the user's device from their browser (xi.api.device): the clock
-   ;; and time zone, or a location fix. Every read asks; [a]lways persists a
-   ;; session allow-rule pinned to extension + what was read, so a clock grant
-   ;; never covers the location.
+   ;; and time zone, a location fix, or pictures from its camera. Every read
+   ;; asks; [a]lways persists a session allow-rule pinned to extension + what
+   ;; was read, so a clock grant never covers the location or the camera.
    ::device-confirm
    [{:match  {:tool :device}
      :action {:type :ask :options [:yes :no :always]}}]

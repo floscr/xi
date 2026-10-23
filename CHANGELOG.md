@@ -2,6 +2,14 @@
 
 What changed in each Xi release, newest first.
 
+## Unreleased
+
+### Added
+
+- Camera
+  - Share a device's camera with a chat from the web client's ⋮ menu (`/camera`): a live preview, the screen stays on
+  - Extensions read pictures from it with `xi.api.device/camera`, one or a burst; a read lands on the sharing device
+
 ## 0.5.0 - 2026-10-22
 
 ### Changed

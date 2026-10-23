@@ -170,8 +170,8 @@
       ;; to browsers; the user extensions themselves load after the built-ins
       ;; (xi.ext.user/install!, called in xi.cli next to mcp/install!)
       user-ext/server-extension
-      ;; asks a chat's browser for its clock / location (xi.device), for
-      ;; xi.api.device
+      ;; asks a chat's browser for its clock / location / camera (xi.device),
+      ;; for xi.api.device
       device/extension
       mcp/create
       ;; registry-only: tracks processes spawned by clj's `process` namespace
@@ -210,5 +210,6 @@
       ;; the /usage page (readings polled by xi.server.usage), plus its
       ;; dashboard card
       usage-web/extension
-      ;; answers the server's clock / location queries (xi.device)
+      ;; answers the server's clock / location / camera queries (xi.device)
+      ;; and has the Camera page that shares a device's camera with a chat
       device-web/extension]))

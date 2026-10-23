@@ -27,6 +27,21 @@
     (is (nil? (device/pick-client st "r3" "alice"))))
   (is (= "c2" (device/turn-target st "r1")) "the turn user is whoever sent the last prompt"))
 
+(deftest a-camera-read-prefers-the-browser-that-shares-its-camera
+  (let [sharing (assoc-in st [:connection :clients "c1" :camera?] true)]
+    (is (= "c1" (device/pick-client sharing "r1" "alice" :camera))
+        "the hidden phone on the Camera page beats the visible laptop")
+    (is (= "c2" (device/pick-client sharing "r1" "alice" :clock))
+        "other reads still go to the visible browser")
+    (is (= "c1" (device/turn-target sharing "r1" :camera))))
+  (testing "a camera shared from another chat of theirs"
+    (let [elsewhere (assoc-in st [:connection :clients "c5" :camera?] true)]
+      (is (= "c5" (device/pick-client elsewhere "r1" "alice" :camera)))
+      (is (= "c4" (device/pick-client elsewhere "r1" "bob" :camera))
+          "never another user's camera")))
+  (testing "nobody shares: the visible browser, like the other reads"
+    (is (= "c2" (device/pick-client st "r1" "alice" :camera)))))
+
 (defn- capture []
   (let [sent (atom [])]
     [sent (fn [ev] (swap! sent conj ev))]))
@@ -76,5 +91,8 @@
     (is (= :ask (get-in (rules/first-match defaults/default-rules req) [:action :type])))
     (is (rules/matches? {:match {:tool :device :device "location"}} req))
     (is (not (rules/matches? {:match {:tool :device :device "clock"}} req)))
+    (is (= :ask (get-in (rules/first-match defaults/default-rules (assoc req :device "camera"))
+                        [:action :type]))
+        "the camera asks like the rest")
     (is (not (rules/matches? {:match {:device "clock"}} {:tool :net :host "x"}))
         "other requests read nothing")))
