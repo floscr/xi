@@ -336,6 +336,12 @@ body {
     padding-bottom: calc(var(--size-2) + var(--quick-cmd-h)
                          + var(--size-10) + var(--size-2));
   }
+  /* In a window (views/pane-frame) the timeline sits in .pane-body, not after
+     the topbar, and ends at the composer's top: clear just the float row and
+     its gap, which overlay the timeline's bottom. */
+  .pane-body > .timeline.timeline--float-footer {
+    padding-bottom: calc(var(--size-2) + var(--size-10) + var(--size-2));
+  }
 }
 
 /* ---- Selector menu (full-width dropdown below the topbar: models, skills) ---- */
