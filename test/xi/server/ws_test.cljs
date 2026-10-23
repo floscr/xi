@@ -32,3 +32,17 @@
     (is (= ["0.0.0.0"] (with-xi-host "  " #(ws/resolve-hosts "")))))
   (testing "values are trimmed"
     (is (= ["127.0.0.1" "100.64.0.2"] (with-xi-host nil #(ws/resolve-hosts " 100.64.0.2 "))))))
+
+(deftest api-images-test
+  (testing "JSON images become prompt attachments"
+    (is (= [{:data "aGk=" :media-type "image/png"}
+            {:data "aGk=" :media-type "application/pdf" :name "a.pdf"}]
+           (ws/api-images
+            (clj->js [{:data "aGk=" :media_type "image/png"}
+                      {:data "aGk=" :media_type "application/pdf" :name "a.pdf"}])))))
+  (testing "entries without data or media type are dropped"
+    (is (= [] (ws/api-images (clj->js [{:data "aGk="} {:media_type "image/png"}
+                                       {:data "" :media_type "image/png"} nil "x"])))))
+  (testing "anything but an array is no images"
+    (is (nil? (ws/api-images nil)))
+    (is (nil? (ws/api-images #js {:data "aGk="})))))

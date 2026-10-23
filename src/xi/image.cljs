@@ -181,3 +181,20 @@
         (fs/writeFileSync file buf))
       file)
     (catch :default _e nil)))
+
+(defn process-attachments!
+  "Persist prompt attachments {:data base64 :media-type :name?} to the uploads
+   dir, each gaining the :path the provider prompt references
+   (xi.agent/prompt-with-attachment-paths); images are first resized to fit the
+   API pixel limits."
+  [attachments]
+  (mapv (fn [{:keys [media-type] :as att}]
+          (if (str/starts-with? (or media-type "") "image/")
+            (let [img (ensure-within-limits att)]
+              (if-let [p (persist-image! img)]
+                (assoc img :path p)
+                img))
+            (if-let [p (persist-file! att)]
+              (assoc att :path p)
+              att)))
+        attachments))

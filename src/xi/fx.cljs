@@ -314,17 +314,7 @@
      ;; keeps the plain text. Images are additionally resized to fit the API
      ;; pixel limits; other file types (PDF, zip, text, …) are stored verbatim
      ;; and reach the model only via their on-disk path.
-     (let [processed
-           (->> images
-                (mapv (fn [{:keys [media-type] :as att}]
-                        (if (str/starts-with? (or media-type "") "image/")
-                          (let [img (image/ensure-within-limits att)]
-                            (if-let [p (image/persist-image! img)]
-                              (assoc img :path p)
-                              img))
-                          (if-let [p (image/persist-file! att)]
-                            (assoc att :path p)
-                            att)))))]
+     (let [processed (image/process-attachments! images)]
        ;; :event (e.g. /subagent's :subagent/spawn) receives the processed
        ;; attachments instead of a :prompt/submit
        (dispatch! (if event

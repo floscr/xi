@@ -168,6 +168,7 @@ JSON, every field optional:
 | Field | Does |
 | --- | --- |
 | `prompt` | The first message; with it, the agent starts at once |
+| `images` | Attachments for the first message, shown in it like pasted ones: `[{"data": "<base64>", "media_type": "image/png"}]`; a non-image file also takes a `name` |
 | `cwd` | The directory to work in; default the server's |
 | `model` | A model; default the server's |
 

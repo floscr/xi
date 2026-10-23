@@ -49,6 +49,7 @@
             [xi.ext.diff.git :as diff-git]
             [xi.ext.user.guard :as user-guard]
             [xi.fx :as fx]
+            [xi.image :as image]
             [xi.server.files :as files]
             [xi.server.room-manager :as rm]
             [xi.server.shadow-relay :as shadow-relay]
@@ -74,6 +75,23 @@
 
 (def ^:private uuid-re
   #"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+(defn api-images
+  "The `images` of a POST /api/rooms body — a JS array of
+   {data: base64, media_type, name?} — as prompt attachments (xi.agent shape);
+   entries without a string data and media type are dropped."
+  [arr]
+  (when (array? arr)
+    (into []
+          (keep (fn [^js o]
+                  (when (some? o)
+                    (let [data (aget o "data")
+                          mt   (aget o "media_type")
+                          nm   (aget o "name")]
+                      (when (and (string? data) (seq data) (string? mt) (seq mt))
+                        (cond-> {:data data :media-type mt}
+                          (string? nm) (assoc :name nm)))))))
+          arr)))
 
 (defn resolve-hosts
   "Addresses to listen on: `host` (--host), else XI_HOST, each comma-separated,
@@ -873,9 +891,10 @@
                      (if (or (:aborted-at sm) (:interrupted-at sm))
                        "error" "complete")
                      "unknown"))))
-             ;; POST /api/rooms {prompt?, cwd?, model?} creates a clientless
-             ;; room (optionally starting a turn) and returns its web URL. Auth:
-             ;; the client-key as Authorization: Bearer or X-Xi-Client-Key.
+             ;; POST /api/rooms {prompt?, images?, cwd?, model?} creates a
+             ;; clientless room (optionally starting a turn) and returns its
+             ;; web URL. Auth: the client-key as Authorization: Bearer or
+             ;; X-Xi-Client-Key.
              handle-api!
              (fn [^js req pathname]
                (let [headers (.-headers req)
@@ -918,6 +937,7 @@
                          (.then
                           (fn [^js body]
                             (let [prompt (some-> (aget body "prompt") str)
+                                  images (api-images (aget body "images"))
                                   cwd    (some-> (aget body "cwd") str)
                                   model  (some-> (aget body "model") str)
                                   room-id (fresh-room-id)
@@ -926,8 +946,11 @@
                                   session-id (:id session)
                                   host (or (.get headers "host") (str "localhost:" port))]
                               (dispatch! {:type :room/create :room-id room-id :room room})
-                              (when (seq prompt)
-                                (dispatch! {:type :prompt/submit :room-id room-id :text prompt}))
+                              (when (or (seq prompt) (seq images))
+                                (dispatch! (cond-> {:type :prompt/submit :room-id room-id
+                                                    :text (not-empty prompt)}
+                                             (seq images)
+                                             (assoc :images (image/process-attachments! images)))))
                               (js/Response. (js/JSON.stringify
                                              #js {:room-id    room-id
                                                   :session-id session-id
