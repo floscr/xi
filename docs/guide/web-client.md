@@ -19,7 +19,7 @@ marked as live.
 ## From another device
 
 The server listens on every network interface, so a phone on the same Wi-Fi
-or a Tailscale network reaches it at `http://<your-machine>:7474`.
+or a Tailscale network reaches it at `http://<your-machine>:1414`.
 
 The first time a new browser connects it shows a **four-digit pairing code**.
 Approve it from a browser that is already paired (a banner appears there), or

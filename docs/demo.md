@@ -2,7 +2,7 @@
 
 A throwaway xi server the **agent can drive in Chrome to self-test the web UI
 without ever touching the real active session**. It runs on its own port
-(**7476**) with `HOME` redirected at a gitignored `.demo-home/` tree seeded with
+(**1416**) with `HOME` redirected at a gitignored `.demo-home/` tree seeded with
 fake sessions, so it never sees or mutates `~/.config/xi` or `~/.claude`.
 
 Everything xi reads derives from `$HOME` — session metadata
@@ -13,10 +13,10 @@ all of it into the sandbox in one shot, with **no code changes**.
 ## Quick start
 
 ```bash
-bb demo            # seed .demo-home + start the demo server (tmux session xi-demo, :7476)
+bb demo            # seed .demo-home + start the demo server (tmux session xi-demo, :1416)
 ```
 
-Then open `http://localhost:7476`. The server runs with `--no-pairing`, so
+Then open `http://localhost:1416`. The server runs with `--no-pairing`, so
 any browser is admitted without a pairing code. It binds loopback plus
 `XI_HOST` (if set), so keep that a trusted address: whoever reaches the port
 drives an agent with your Claude login. The seeded demo key (`bb demo:key`)
@@ -30,14 +30,14 @@ blocks) straight from disk.
 
 | Task            | What it does                                                        |
 |-----------------|--------------------------------------------------------------------|
-| `bb demo`       | (Re)seed `.demo-home` and start the demo server on :7476           |
+| `bb demo`       | (Re)seed `.demo-home` and start the demo server on :1416           |
 | `bb demo:seed`  | Rebuild `.demo-home` only (no server)                              |
 | `bb demo:restart` | Re-seed and restart the server (pick up server-side code changes) |
-| `bb demo:stop`  | Stop the `xi-demo` tmux session (and reap a leaked :7476 server)   |
+| `bb demo:stop`  | Stop the `xi-demo` tmux session (and reap a leaked :1416 server)   |
 | `bb demo:logs`  | Tail the demo server window                                        |
 | `bb demo:key`   | Print the client key + `localStorage.setItem(...)` snippet         |
 
-`bb check` also reports :7476 and the `xi-demo` session alongside the real ones.
+`bb check` also reports :1416 and the `xi-demo` session alongside the real ones.
 
 The demo reuses the **already-compiled `target/main.js`** from the main watch
 (`bb dev` / `bb serve`); it does not run its own shadow-cljs watch. If you change
@@ -92,10 +92,10 @@ live turns enabled):
 ## Agent usage
 
 To self-test the xi web UI, use the demo server — **never** the real server on
-:7474 unless the user explicitly says so:
+:1414 unless the user explicitly says so:
 
-1. `bb demo` (starts :7476, seeds data)
-2. Open `http://localhost:7476`.
+1. `bb demo` (starts :1416, seeds data)
+2. Open `http://localhost:1416`.
 3. Drive the UI. Nothing here can affect the user's real sessions.
 
 ## Customizing the seed
@@ -118,7 +118,7 @@ thinking rows, each group showing its header rows), `chat-super` (with
 must never leak real sessions.
 
 To capture them via the Chrome DevTools MCP: emulate `390x844x3,mobile,touch`
-(iPhone size, 3× DPR), navigate to `http://localhost:7474/?demo=<view>`, and
+(iPhone size, 3× DPR), navigate to `http://localhost:1414/?demo=<view>`, and
 take a full-page screenshot. The color scheme stays on `auto`, so emulating
 light/dark switches the theme.
 
@@ -126,5 +126,5 @@ light/dark switches the theme.
 
 A third, separate setup: the web client replays a recorded tape of server
 frames, with no server at all, for the home page's live examples. Tapes are
-recorded headlessly against a fake-LLM server on :7479 (`bb tour:record
+recorded headlessly against a fake-LLM server on :1419 (`bb tour:record
 <tour>`, HOME `/tmp/xi-tour-home`). See [site/tours/README.md](../site/tours/README.md).

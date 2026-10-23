@@ -119,7 +119,7 @@
              "XI_FAKE_LLM"     script
              "XI_FAKE_LLM_LOG" log
              ;; tripwires: anything that reaches past the fake, or for a
-             ;; server on the default port (the real one on :7474), hits a
+             ;; server on the default port (the real one on :1414), hits a
              ;; closed port; start-server! and scenarios pass --port
              "OLLAMA_BASE_URL" "http://127.0.0.1:9"
              "XI_PORT"         "9"}

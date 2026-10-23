@@ -33,7 +33,7 @@
                   "localhost")))
           (def config {:session "xi"
                        :windows [["watch" "bb watch:all"]]
-                       :print   ["Web: http://localhost:7474"]})
+                       :print   ["Web: http://localhost:1414"]})
           ;; Persist the headless server's stdout+stderr to a logfile so a
           ;; crash trace survives a `bb serve:restart` (the tmux pane scrollback
           ;; is overwritten on restart, and there is no other log). Logs go to
@@ -60,8 +60,8 @@
                                                      (logged "bun target/main.js server --headless" serve-log))]]
                              :env-file ".env"})
           (def pa-serve-config {:session "xi-pa"
-                                :windows [["server" "bun target/main.js server --headless --agent root --port 7475"]]})
-          ;; Isolated demo server (port 7476). HOME is redirected at .demo-home
+                                :windows [["server" "bun target/main.js server --headless --agent root --port 1415"]]})
+          ;; Isolated demo server (port 1416). HOME is redirected at .demo-home
           ;; (built by scripts/demo-seed.mjs) so it never sees the real active
           ;; session — see docs/demo.md. Reuses the target/main.js compiled by
           ;; the main watch (bb dev / bb serve). --no-pairing: any browser gets in
@@ -78,9 +78,9 @@
                             :windows [["server" (str "HOME=" demo-home
                                                      " XDG_DATA_HOME=" demo-home "/.local/share"
                                                      " bun target/main.js server --headless --no-pairing --host " demo-host
-                                                     " --port 7476")]]
-                            :print ["Demo web: http://localhost:7476"]})
-          ;; Site tour recording server (port 7479): HOME at /tmp/xi-tour-home
+                                                     " --port 1416")]]
+                            :print ["Demo web: http://localhost:1416"]})
+          ;; Site tour recording server (port 1419): HOME at /tmp/xi-tour-home
           ;; (built by scripts/tour-seed.mjs; outside the repo so Xi's own
           ;; AGENTS.md isn't loaded) and the scripted fake LLM of one tour, so a
           ;; recorded turn is deterministic and needs no credentials. See
@@ -104,13 +104,13 @@
                                       " XI_CWD=" tour-home "/acme-web"
                                       " XI_FAKE_LLM=" (System/getProperty "user.dir")
                                       "/site/tours/" tour "/fake-llm.edn"
-                                      " bun target/main.js server --headless --port 7479")]]
-             :print [(str "Tour " tour ": http://localhost:7479")]})
-          ;; Reap leaked dev :7474 headless servers. `td/*` only manage the tmux
+                                      " bun target/main.js server --headless --port 1419")]]
+             :print [(str "Tour " tour ": http://localhost:1419")]})
+          ;; Reap leaked dev :1414 headless servers. `td/*` only manage the tmux
           ;; session, and the systemd xi-serve unit uses KillMode=process, so
           ;; detached/orphaned `bun target/main.js server --headless` processes
-          ;; leak across restarts and keep :7474 occupied. The personal-agent
-          ;; (--port 7475), demo (--port 7476) and system xi-agent
+          ;; leak across restarts and keep :1414 occupied. The personal-agent
+          ;; (--port 1415), demo (--port 1416) and system xi-agent
           ;; (--agent root) servers all carry --port/--agent and are
           ;; deliberately excluded.
           ;; The `--headless$` end-anchor matches ONLY the dev serve cmdline
@@ -132,11 +132,11 @@
           (defn reap-stray-serve! []
             (reap! "serve" "target/main.js server --headless$"))
           ;; The demo server leaks the same way (tmux session gone, bun still
-          ;; holding :7476), so a demo:restart's fresh server can't bind.
+          ;; holding :1416), so a demo:restart's fresh server can't bind.
           (defn reap-stray-demo! []
-            (reap! "demo" "target/main.js server --headless .*--port 7476$"))
+            (reap! "demo" "target/main.js server --headless .*--port 1416$"))
           (defn reap-stray-tour! []
-            (reap! "tour" "target/main.js server --headless --port 7479$"))
+            (reap! "tour" "target/main.js server --headless --port 1419$"))
           ;; Compile + run a :node-test build (autorun). Prints one line when
           ;; every test passes, else only the FAIL/ERROR blocks + summary
           ;; (exit 1); compile errors print the full output. `--full` streams
@@ -309,8 +309,8 @@
    :task (shell "bun target/main.js server --headless --agent root")}
 
   serve:personal
-  {:doc "Start tmux personal-agent serve session (port 7475)"
-   :task (do (td/start (assoc pa-serve-config :print [(str "Web: http://" (host-ip) ":7475")]))
+  {:doc "Start tmux personal-agent serve session (port 1415)"
+   :task (do (td/start (assoc pa-serve-config :print [(str "Web: http://" (host-ip) ":1415")]))
              (td/attach pa-serve-config))}
 
   serve:personal:stop
@@ -319,16 +319,16 @@
 
   serve:personal:restart
   {:doc "Restart tmux personal-agent serve session"
-   :task (td/restart (assoc pa-serve-config :print [(str "Web: http://" (host-ip) ":7475")]))}
+   :task (td/restart (assoc pa-serve-config :print [(str "Web: http://" (host-ip) ":1415")]))}
 
   serve
   {:doc "Start tmux serve session (stops the dev session — both run the shadow watch)"
    :task (do (stop-dev-watch!)
-             (td/start (assoc serve-config :print [(str "Web: http://" (host-ip) ":7474")]))
+             (td/start (assoc serve-config :print [(str "Web: http://" (host-ip) ":1414")]))
              (td/attach serve-config))}
 
   serve:stop
-  {:doc "Stop tmux serve session (also reaps leaked headless :7474 servers and orphaned shadow watches)"
+  {:doc "Stop tmux serve session (also reaps leaked headless :1414 servers and orphaned shadow watches)"
    :task (do (td/stop serve-config)
              (reap-stray-serve!)
              (reap-stray-shadow!))}
@@ -415,12 +415,12 @@
                              " — applies to new connections (restart the server to drop live ones).")))))}
 
   serve:restart
-  {:doc "Restart tmux serve session (stops the dev session, reaps leaked headless :7474 servers and orphaned shadow watches first)"
+  {:doc "Restart tmux serve session (stops the dev session, reaps leaked headless :1414 servers and orphaned shadow watches first)"
    :task (do (stop-dev-watch!)
              (td/stop serve-config)
              (reap-stray-serve!)
              (reap-stray-shadow!)
-             (td/start (assoc serve-config :print [(str "Web: http://" (host-ip) ":7474")])))}
+             (td/start (assoc serve-config :print [(str "Web: http://" (host-ip) ":1414")])))}
 
   serve:await-build
   {:doc "Block until the shadow watch writes a fresh target/main.js (max 180s) — the serve session's server window runs this before starting bun"
@@ -450,12 +450,12 @@
    :task (shell "bun" "scripts/demo-seed.mjs")}
 
   demo
-  {:doc "Seed + start the isolated demo server (port 7476, HOME=.demo-home)"
+  {:doc "Seed + start the isolated demo server (port 1416, HOME=.demo-home)"
    :task (do (shell "bun" "scripts/demo-seed.mjs")
              (td/start demo-config))}
 
   demo:stop
-  {:doc "Stop the demo server tmux session (reaps a leaked :7476 server)"
+  {:doc "Stop the demo server tmux session (reaps a leaked :1416 server)"
    :task (do (td/stop demo-config) (reap-stray-demo!))}
 
   demo:restart
@@ -474,7 +474,7 @@
    :task (shell "bun" "scripts/tour-seed.mjs")}
 
   tour
-  {:doc "Seed + (re)start the site-tour recording server: port 7479, HOME=/tmp/xi-tour-home, the fake LLM of site/tours/<tour>/ (default desk). `bb tour <tour>`"
+  {:doc "Seed + (re)start the site-tour recording server: port 1419, HOME=/tmp/xi-tour-home, the fake LLM of site/tours/<tour>/ (default desk). `bb tour <tour>`"
    :task (let [tour (or (first *command-line-args*) "desk")]
            (td/stop (tour-config tour))
            (reap-stray-tour!)
@@ -489,15 +489,15 @@
            (shell "bun" "scripts/tour-seed.mjs")
            (td/start (tour-config tour))
            (loop [n 0]
-             (when-not (try (.close (java.net.Socket. "127.0.0.1" 7479)) true
+             (when-not (try (.close (java.net.Socket. "127.0.0.1" 1419)) true
                             (catch Exception _ false))
-               (when (> n 60) (throw (ex-info "tour server did not come up on :7479" {})))
+               (when (> n 60) (throw (ex-info "tour server did not come up on :1419" {})))
                (Thread/sleep 500)
                (recur (inc n))))
            (shell "bun" "scripts/tour-record.mjs" tour))}
 
   tour:stop
-  {:doc "Stop the site-tour recording server (reaps a leaked :7479 server)"
+  {:doc "Stop the site-tour recording server (reaps a leaked :1419 server)"
    :task (do (td/stop (tour-config "desk")) (reap-stray-tour!))}
 
   tour:logs
@@ -527,7 +527,7 @@
    :task (release/run *command-line-args*)}
 
   package:serve
-  {:doc "Try the npm package like a user gets it: pack it, install the tarball into dist/try and run the installed xi as a foreground headless server (Ctrl-C stops it; port 7477, isolated HOME in dist/try/home). `--port N` changes the port, `--no-build` reuses the existing tarball."
+  {:doc "Try the npm package like a user gets it: pack it, install the tarball into dist/try and run the installed xi as a foreground headless server (Ctrl-C stops it; port 1417, isolated HOME in dist/try/home). `--port N` changes the port, `--no-build` reuses the existing tarball."
    :task (apply shell "bun" "scripts/try-package.mjs" *command-line-args*)}
 
   package:docker
@@ -600,9 +600,9 @@
   check
   {:doc "Inspect all Xi processes (ports, server + shadow procs, tmux pane logs) AND print agent guidance: what runs where + which bb task to use. Run before starting/stopping anything."
    :task (do
-           (println "── Listening ports (7474 main · 7475 personal · 7476 demo · 4322 site · 8100 dev-http · 9630 shadow) ──")
+           (println "── Listening ports (1414 main · 1415 personal · 1416 demo · 4322 site · 8100 dev-http · 9630 shadow) ──")
            (shell {:continue true} "bash" "-c"
-                  "ss -tlnp 2>/dev/null | grep -E ':(7474|7475|7476|4322|8100|9630)\\b' || echo '  none listening'")
+                  "ss -tlnp 2>/dev/null | grep -E ':(1414|1415|1416|4322|8100|9630)\\b' || echo '  none listening'")
            (println)
            (println "── Headless server processes (bun) ──")
            (shell {:continue true} "bash" "-c"
@@ -621,7 +621,7 @@
            (println "=== xi-pa session (bb serve:personal — personal agent) ===")
            (td/status pa-serve-config)
            (td/logs pa-serve-config {:lines 40})
-           (println "=== xi-demo session (bb demo — isolated seed data, port 7476) ===")
+           (println "=== xi-demo session (bb demo — isolated seed data, port 1416) ===")
            (td/status demo-config)
            (td/logs demo-config {:lines 20})
            (println "=== xi-site session (bb site:dev — docs site, port 4322) ===")
@@ -633,16 +633,16 @@
            (println "  no `npx shadow-cljs ...`). Only the bb tasks manage processes so the")
            (println "  tmux sessions stay consistent. Map of what runs where:")
            (println)
-           (println "  port 7474  main server      session xi-serve  bb serve   / serve:restart / serve:stop")
-           (println "  port 7475  personal agent   session xi-pa     bb serve:personal[:restart|:stop]")
-           (println "  port 7476  demo (seed data)  session xi-demo   bb demo / demo:restart / demo:stop")
-           (println "  port 7479  site tours       session xi-tour   bb tour [name] / tour:stop")
+           (println "  port 1414  main server      session xi-serve  bb serve   / serve:restart / serve:stop")
+           (println "  port 1415  personal agent   session xi-pa     bb serve:personal[:restart|:stop]")
+           (println "  port 1416  demo (seed data)  session xi-demo   bb demo / demo:restart / demo:stop")
+           (println "  port 1419  site tours       session xi-tour   bb tour [name] / tour:stop")
            (println "  port 4322  docs site        session xi-site   bb site:dev / site:stop / site:logs")
            (println "  shadow watch (main+web)     session xi-serve  auto-compiles on save; no manual build")
            (println "  standalone watch (no srv)   session xi        bb dev / dev:restart / dev:stop")
            (println "  (xi and xi-serve both run the shadow watch — starting/restarting one stops the other)")
            (println)
-           (println "  - port 7474 already listening? Don't start a server — use http://localhost:7474.")
+           (println "  - port 1414 already listening? Don't start a server — use http://localhost:1414.")
            (println "  - changed server-side cljs (xi.server/core/agent/ext/provider)? bb serve:restart.")
            (println "  - changed web client cljs? Just refresh the browser (hot-reload).")
            (println "  - need logs? `bb serve:logs` (/tmp/xi-serve.log, survives restarts),")

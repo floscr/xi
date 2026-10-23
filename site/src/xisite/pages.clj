@@ -220,7 +220,7 @@ xi server
   [:div.stage-window
    [:div.stage-bar
     [:span.stage-dots [:i] [:i] [:i]]
-    [:span.stage-url "localhost:7474"]
+    [:span.stage-url "localhost:1414"]
     (button/button {:variant :ghost :size :sm :icon-left :refresh :class "stage-replay"
                     :attrs {:type "button" :hidden true}}
                    "Replay")]

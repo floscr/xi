@@ -27,7 +27,7 @@
 
    WS upgrades with a cross-host Origin header are refused — browsers attach
    Origin and WebSockets are not subject to CORS, so without this any webpage
-   could open ws://localhost:7474.
+   could open ws://localhost:1414.
 
    Incoming room events get :room-id forced to the sender's joined room —
    clients can't address rooms they're not in. Sockets live in the
@@ -62,8 +62,8 @@
             [xi.util :as util]
             [xi.wire :as wire]))
 
-(def DEFAULT_PORT 7474)
-(def DEFAULT_TLS_PORT 7443)
+(def DEFAULT_PORT 1414)
+(def DEFAULT_TLS_PORT 1443)
 
 (def DEFAULT_HOST
   "Address the server binds: all interfaces, so localhost, 127.0.0.1, a
@@ -1064,7 +1064,7 @@
                             (.delete sockets cid)))}}
              _ (set! (.-websocket opts) (shadow-relay/wrap-websocket (.-websocket opts)))
              ;; TLS is served on a second port sharing the handlers (Bun binds
-             ;; one protocol per port); 7474 stays plain ws://.
+             ;; one protocol per port); 1414 stays plain ws://.
              tls-port (or (some-> (aget js/process.env "XI_TLS_PORT") js/parseInt)
                           DEFAULT_TLS_PORT)
              servers (mapv #(js/Bun.serve (js/Object.assign #js {:hostname %} opts))

@@ -427,7 +427,7 @@ the tool ctx's turn user, else the room's, else the process' own), and the
   polls `~/.config/xi/clients.edn` every 2s so `xi clients approve` works
   from a shell. Cross-host `Origin` headers are refused at upgrade
   (hostnames only, ports ignored, so the dev-http page on :8100 can open
-  :7474). Keys: `~/.config/xi/client-key` (local TUI, implicitly trusted),
+  :1414). Keys: `~/.config/xi/client-key` (local TUI, implicitly trusted),
   `clients.edn` (entries may carry `:user`, see [Users](#users)),
   `pending-clients.edn`, all mode 0600. The web client's key
   lives in `localStorage` (`xi-client-key`).

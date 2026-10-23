@@ -2871,14 +2871,14 @@
 
 (defn- ws-url
   "WS server URL: same origin as the page (port omitted behind a reverse
-   proxy), except shadow dev-http (8100) maps to 7474. ?host/?port override."
+   proxy), except shadow dev-http (8100) maps to 1414. ?host/?port override."
   []
   (let [params (js/URLSearchParams. (.-search js/window.location))
         proto  (if (= "https:" js/location.protocol) "wss://" "ws://")
         host   (or (.get params "host") js/location.hostname)
         page-port (let [p js/location.port]
                     (cond
-                      (= p "8100") "7474"  ; shadow dev-http → real WS port
+                      (= p "8100") "1414"  ; shadow dev-http → real WS port
                       (= p "")     nil     ; standard 80/443 → same-origin
                       :else        p))
         port   (or (.get params "port") page-port)]

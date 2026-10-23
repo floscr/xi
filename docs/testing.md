@@ -96,7 +96,7 @@ fresh git repo with `README.md` and an `AGENTS.md` holding
 `E2E-PROJECT-INSTRUCTIONS`), the script and the log. The child env drops
 every `XI_*` variable and provider credential of the calling shell; it points
 `OLLAMA_BASE_URL` and `XI_PORT` at port 9, so nothing leaks to a real
-model or to the developer's own server on :7474.
+model or to the developer's own server on :1414.
 
 | Helper | Does |
 | --- | --- |

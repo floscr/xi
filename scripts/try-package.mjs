@@ -5,7 +5,7 @@
 //
 //   bun scripts/try-package.mjs [--port N] [--no-build]     (or: bb package:serve)
 //
-//   --port N     port to listen on (default 7477; dev 7474 · personal 7475 · demo 7476)
+//   --port N     port to listen on (default 1417; dev 1414 · personal 1415 · demo 1416)
 //   --no-build   reuse the tarball already in dist/ instead of rebuilding it
 //
 // State lives under dist/try (gitignored): the install in dist/try/node_modules
@@ -24,7 +24,7 @@ const home = join(trial, "home");
 
 const args = process.argv.slice(2);
 const portAt = args.indexOf("--port");
-const port = portAt >= 0 ? args[portAt + 1] : "7477";
+const port = portAt >= 0 ? args[portAt + 1] : "1417";
 if (!/^\d+$/.test(port ?? "")) {
   console.error("--port needs a number");
   process.exit(2);

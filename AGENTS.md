@@ -6,12 +6,12 @@ Personal coding harness in ClojureScript + Bun.
 
 > **Before starting, stopping, restarting, or debugging ANY process** (compile,
 > shadow-cljs watch, server), run `bb check`. It reports what's running where
-> (ports 7474 main · 7476 demo · 4322 docs site · 8100 dev-http · 9630 shadow,
+> (ports 1414 main · 1416 demo · 4322 docs site · 8100 dev-http · 9630 shadow,
 > bun servers, shadow watches, and the `xi` / `xi-serve` / `xi-demo` /
 > `xi-site` tmux sessions) and prints which `bb` task manages each. **Never start
 > services by hand** (`bun target/main.js …`, `npx shadow-cljs …`) **and never
 > `kill` them by PID** — that orphans processes outside tmux and has left stuck
-> servers holding :7474 before. Only the `bb` tasks start/stop/restart.
+> servers holding :1414 before. Only the `bb` tasks start/stop/restart.
 
 - **A shadow-cljs watch is usually running** (`bb dev` / `bb serve`) and
   recompiles both the `main` and `web` targets on save. The two are exclusive
@@ -47,8 +47,8 @@ Personal coding harness in ClojureScript + Bun.
 - **Never run `xi` / `bun target/main.js` from the agent** — the TUI needs an
   interactive terminal. Compile and let the user test. `xi prompt "…"`
   (one-shot, no TUI) is safe.
-- **Web UI self-tests use the isolated demo server** (`bb demo`, :7476,
-  `HOME=.demo-home` with fake sessions) — not the real :7474 unless the user
+- **Web UI self-tests use the isolated demo server** (`bb demo`, :1416,
+  `HOME=.demo-home` with fake sessions) — not the real :1414 unless the user
   asks. It runs with `--no-pairing`, so just open it and drive it via the
   chrome-devtools tools. See
   [docs/demo.md](docs/demo.md).

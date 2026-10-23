@@ -183,12 +183,12 @@ Settings that belong to the machine rather than to you:
 | Variable | Default | Does |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | — | The Claude provider: an API key instead of the Claude login. |
-| `XI_PORT` | `7474` | The port the server listens on and clients connect to. |
+| `XI_PORT` | `1414` | The port the server listens on and clients connect to. |
 | `XI_HOST` | all interfaces | Addresses the server binds, comma-separated. Loopback is always included. |
 | `XI_CWD` | the current directory | The directory a chat starts in. |
 | `XI_USER` | `root` | The user this process acts as; `--user` wins. See [Users](server.md#users). |
 | `XI_THEME_MODE` | `dark` | `light` or `dark` for the terminal's code blocks. An extension can set it live; see the [extension reference](extensions-reference.md). |
-| `XI_TLS_PORT` | `7443` | The HTTPS port, when a certificate is configured. |
+| `XI_TLS_PORT` | `1443` | The HTTPS port, when a certificate is configured. |
 | `XI_TLS_CERT`, `XI_TLS_KEY` | `~/.config/xi/tls/xi.crt`, `xi.key` | Certificate and key. Setting either turns HTTPS on. |
 | `XI_ICON` | `desktop` | The home-screen icon variant: `desktop`, `personal` or `green`. |
 | `XI_TREESITTER_DIR` | bundled | Where the tree-sitter runtime and grammars for [file outlines](reading-code.md) are. |

@@ -125,7 +125,7 @@ const start =
 must(
   docker([
     "run", "-d", "--name", name,
-    "-p", `${port}:7474`,
+    "-p", `${port}:1414`,
     "-v", `${volume}:/home/bun`,
     "-v", `${tarball}:/pkg.tgz:ro`,
     ...(process.env.ANTHROPIC_API_KEY ? ["-e", "ANTHROPIC_API_KEY"] : []),

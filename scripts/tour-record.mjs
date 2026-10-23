@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /*
  * Record a site tour headlessly: connect to the tour server (`bb tour <tour>`,
- * port 7479) as a web client, play the client's side from
+ * port 1419) as a web client, play the client's side from
  * site/tours/<tour>/record.mjs and capture every frame both ways, then bake
  * the tape (scripts/tour-bake.mjs).
  *
@@ -39,7 +39,7 @@ const encode = (m) =>
   JSON.stringify(["^ ", ...Object.entries(m).flatMap(([k, v]) => ["~:" + k, value(v)])]);
 
 // ── record ───────────────────────────────────────────────────────────────────
-const ws = new WebSocket("ws://127.0.0.1:7479");
+const ws = new WebSocket("ws://127.0.0.1:1419");
 const t0 = performance.now();
 const now = () => Math.round(performance.now() - t0);
 const frames = [];
@@ -92,7 +92,7 @@ const visit = async (sid) => {
 
 await new Promise((resolve, reject) => {
   ws.addEventListener("open", resolve);
-  ws.addEventListener("error", () => reject(new Error("no tour server on :7479 — run `bb tour " + tour + "`")));
+  ws.addEventListener("error", () => reject(new Error("no tour server on :1419 — run `bb tour " + tour + "`")));
 });
 send({ type: ":auth/hello", "client-key": KEY, "client-name": "Linux (web)", platform: "web" });
 await until('"~:auth/ok"');

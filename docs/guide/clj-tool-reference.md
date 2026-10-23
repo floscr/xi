@@ -74,7 +74,7 @@ default `rm` of git-tracked content allows that exact command.
 | `(git "log" "-5")` | Git without a dialog, for ordinary repository subcommands. Refused here, with the reason, and left to `sh` (which asks): `push`, `clean`, `-c`, `-C`, `--git-dir`, `-p`, `config` writes, `rebase -x`, `merge -s`, `--ext-diff`, `--output`, `--no-index`, `--upload-pack`, `--template`, `bisect run`, `submodule foreach`, aliases and tools (`difftool`, `hook`, …). Another directory of the same repository: `(sh {:dir "sub"} "git" …)`. |
 | `(curl url opts)` | `{:status :headers :body}`; `http(s)` only; follows redirects; opts `{:method :headers :body :max-time}` |
 | `(jq filter input)` | jq over a JSON string or Clojure data; returns data, `{:raw true}` returns text. `{:args […]}` adds output flags (`-S`, `--arg n v`, `--indent 2`, …), not file-reading ones (`-f`, `--rawfile`, `--slurpfile`, `-L`). jq sees only the allowed environment variables. |
-| `(ports)` `(ports 7474)` | Listening sockets as `{:proto :addr :port :process :pid}` |
+| `(ports)` `(ports 1414)` | Listening sockets as `{:proto :addr :port :process :pid}` |
 
 `babashka.http-client` is there too, required as `http`, with `get`, `head`,
 `post`, `put`, `patch`, `delete` and `request`. Each returns `{:status
@@ -153,7 +153,7 @@ still gets its own dialog.
 | `(process/list)` | This chat's processes |
 | `(process/stop pid)` | Terminate one |
 | `(process/poll-until "cmd" {:until :exit-zero :interval-ms 5000 :timeout-ms 120000})` | Rerun a command until it succeeds, or until its output matches `:pattern` (`:stdout-matches`, `:stdout-not-matches`) |
-| `(process/poll-url "http://localhost:7476" {:status 200 :interval-ms 5000 :timeout-ms 120000})` | Probe an http(s) URL until it answers with `:status` (a number or a set; default any 2xx). `{:met? :attempts :status}`; `:status` is `nil` while nothing is listening. No shell, so no approval |
+| `(process/poll-url "http://localhost:1416" {:status 200 :interval-ms 5000 :timeout-ms 120000})` | Probe an http(s) URL until it answers with `:status` (a number or a set; default any 2xx). `{:met? :attempts :status}`; `:status` is `nil` while nothing is listening. No shell, so no approval |
 
 The command is a literal shell line, approved like a `bash` command. A
 trailing `&` is ignored; the process is detached anyway. `wait` and

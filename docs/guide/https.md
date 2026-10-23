@@ -21,8 +21,8 @@ certificate:
 
 | Port | Protocol | Used by |
 | --- | --- | --- |
-| `7474` (`XI_PORT`) | `http://` and `ws://` | The terminal client and anything already paired |
-| `7443` (`XI_TLS_PORT`) | `https://` and `wss://` | Browsers and the phone |
+| `1414` (`XI_PORT`) | `http://` and `ws://` | The terminal client and anything already paired |
+| `1443` (`XI_TLS_PORT`) | `https://` and `wss://` | Browsers and the phone |
 
 It looks for `XI_TLS_CERT` and `XI_TLS_KEY`, else
 `~/.config/xi/tls/xi.crt` and `xi.key`. The web client connects with the
@@ -46,7 +46,7 @@ List every name and address a device might use. A name that is not in the
 certificate fails with "not private". Restart the server and check:
 
 ```sh
-curl --cacert "$(mkcert -CAROOT)/rootCA.pem" https://my-desktop:7443/ -o /dev/null -w '%{http_code}\n'
+curl --cacert "$(mkcert -CAROOT)/rootCA.pem" https://my-desktop:1443/ -o /dev/null -w '%{http_code}\n'
 ```
 
 ## Trust the certificate on a device
@@ -75,5 +75,5 @@ Install a certificate → CA certificate, then pick the file.
 4. Settings → General → About → Certificate Trust Settings → turn the mkcert
    root on. This step is easy to miss; without it you still get "not
    private". If the root is not listed, restart the phone.
-5. Open `https://my-desktop:7443` in Safari. It should load with no warning.
+5. Open `https://my-desktop:1443` in Safari. It should load with no warning.
 6. Add it to the home screen from that page, and pair once.

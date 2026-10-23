@@ -110,7 +110,7 @@ changelog, and you run the release.
 ## Testing a package
 
 ```bash
-bb package:serve               # pack, install the tarball, run it on :7477 (Ctrl-C stops)
+bb package:serve               # pack, install the tarball, run it on :1417 (Ctrl-C stops)
 bb package:serve --port 7490   # another port
 bb package:serve --no-build    # reuse the tarball already in dist/
 ```
@@ -118,7 +118,7 @@ bb package:serve --no-build    # reuse the tarball already in dist/
 `scripts/try-package.mjs` runs the package the way a user gets it: it packs
 (`bb package`), installs the tarball into a fresh `dist/try`, and runs the
 installed `xi server --headless` in the foreground — no tmux, and nothing
-else (dev :7474, personal :7475, demo :7476) is touched. `HOME` and
+else (dev :1414, personal :1415, demo :1416) is touched. `HOME` and
 `XDG_DATA_HOME` point at `dist/try/home`, so your `~/.config/xi` and sessions
 are not used: pairing starts fresh and Claude auth is not shared (set
 `ANTHROPIC_API_KEY` to send prompts). `dist/try/home` survives between runs;

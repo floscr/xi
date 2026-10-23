@@ -3,7 +3,7 @@
 
    A lease is a JSON file `{pid room session boot label acquired-at
    touched-at}` created atomically (`open 'wx'`), so every Xi process on the
-   machine (:7474, :7475, standalone TUIs) sees the same holder. The owner is
+   machine (:1414, :1415, standalone TUIs) sees the same holder. The owner is
    its session — stable across server restarts — falling back to {:pid :room}
    for callers without one (a room key alone isn't unique across processes).
 

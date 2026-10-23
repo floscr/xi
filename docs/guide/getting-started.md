@@ -50,7 +50,7 @@ xi server
 ```
 
 This opens the terminal client as before and also serves the web client at
-[http://localhost:7474](http://localhost:7474). Open it on the same machine
+[http://localhost:1414](http://localhost:1414). Open it on the same machine
 and you see the chat you just started, still streaming. Reply from either
 side; the other follows.
 

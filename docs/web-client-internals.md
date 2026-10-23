@@ -20,7 +20,7 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
  ws-transport (forward local events → [:ws/send])   Replicant ← views.cljs
    │ WebSocket, transit event maps (xi.wire)
    ▼
- xi server (:7474) — rooms, agent, sessions
+ xi server (:1414) — rooms, agent, sessions
 ```
 
 - The browser merges the same handler maps the server uses (`core-handlers`

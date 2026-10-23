@@ -569,7 +569,7 @@
 
 (defn- ports-fn
   "(ports) → every listening TCP/UDP socket as {:proto :addr :port :process
-   :pid}; (ports 7474) filters to that port."
+   :pid}; (ports 1414) filters to that port."
   [opts]
   (fn ports*
     ([] (ports* nil))
@@ -1100,7 +1100,7 @@
         "babashka.fs as `fs` on path strings — (fs/exists? p) (fs/directory? p) "
         "(fs/delete-tree d) (fs/create-dirs d) (fs/list-dir d) (fs/glob root pat) "
         "(fs/copy-tree a b) (fs/move a b) (fs/parent p) (fs/file-name p) … "
-        "(ports) / (ports 7474) → listening sockets as {:proto :addr :port :process :pid} "
+        "(ports) / (ports 1414) → listening sockets as {:proto :addr :port :process :pid} "
         "(jq \".foo[]\" json-or-data) → parsed result, no tmp file (opts {:raw true}) "
         "(git \"status\" \"--short\") → stdout string (pre-approved for ordinary "
         "repository subcommands; push, clean, -c/-C, config writes, rebase -x "
@@ -1886,7 +1886,7 @@
    "dirname"  "(dirname p)"
    "touch"    "(touch f)"
    "date"     "(now)"
-   "ss"       "(ports) / (ports 7474) → listening sockets as data"
+   "ss"       "(ports) / (ports 1414) → listening sockets as data"
    "netstat"  "(ports)"
    "lsof"     "(ports) — for listening sockets"
    "wc"       "(count (str/split-lines (cat f)))"
@@ -2537,7 +2537,7 @@
        "- HTTP: (curl url) → {:status :headers :body}, or babashka.http-client "
        "as `http` (http/get http/post … with :headers :form-params "
        ":follow-redirects :throw :as :bytes).\n"
-       "- Ports: (ports) / (ports 7474) → {:proto :addr :port :process :pid} "
+       "- Ports: (ports) / (ports 1414) → {:proto :addr :port :process :pid} "
        "maps (no ss/lsof needed).\n"
        "- JSON: the pre-approved (jq filter json-or-data) pipes to jq on stdin "
        "(no tmp file) and parses the result to Clojure data; or the "
@@ -2570,7 +2570,7 @@
        "(process/poll-until \"cmd\" {:until :exit-zero|:stdout-matches|"
        ":stdout-not-matches :pattern \"re\" :interval-ms 5000 :timeout-ms "
        "120000}) reruns cmd until the condition holds. For a dev server or "
-       "URL: (process/poll-url \"http://localhost:7476\" {:status 200 "
+       "URL: (process/poll-url \"http://localhost:1416\" {:status 200 "
        ":interval-ms 1000 :timeout-ms 45000}) — :status is a number or a set "
        "(default any 2xx), no shell and no approval needed → "
        "{:met? :attempts :status}. NEVER (sleep n) to wait a process out.\n"

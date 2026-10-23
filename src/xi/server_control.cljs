@@ -17,8 +17,8 @@
 (defn kind
   "When bash command line `cmd` runs a server-control task, :restart or :stop;
    else nil. A substring test, since a shell line can't be taken apart — argv
-   executors use `argv-kind`. Matches the :7474 xi-serve tasks only —
-   serve:personal:* (:7475) don't contain these substrings, so they run
+   executors use `argv-kind`. Matches the :1414 xi-serve tasks only —
+   serve:personal:* (:1415) don't contain these substrings, so they run
    normally."
   [cmd]
   (let [cmd (str cmd)]
@@ -44,15 +44,15 @@
   (case kind
     :restart
     (str "Server restart initiated in the background (detached via setsid). "
-         "Your WebSocket connection to :7474 will drop momentarily — this is "
+         "Your WebSocket connection to :1414 will drop momentarily — this is "
          "EXPECTED and means the restart is working, NOT a failure or a "
-         "permission error. A fresh server will be listening on :7474 within "
+         "permission error. A fresh server will be listening on :1414 within "
          "~15s (it waits for the watch's fresh build) and this turn will "
          "auto-resume. Do not retry the command; "
          "confirm it's back with `bb check` or by reloading the page.")
     :stop
     (str "Server stop initiated in the background (detached). Your connection "
-         "to :7474 will drop — this is EXPECTED, NOT a failure. The server "
+         "to :1414 will drop — this is EXPECTED, NOT a failure. The server "
          "will stay down until it's started again with `bb serve`.")))
 
 (defn- spawn-detached!

@@ -10,6 +10,10 @@ What changed in each Xi release, newest first.
   - Share a device's camera with a chat from the web client's ⋮ menu (`/camera`): a live preview, the screen stays on
   - Extensions read pictures from it with `xi.api.device/camera`, one or a burst; a read lands on the sharing device
 
+### Changed
+
+- The default port is now 1414 (ξ is the 14th Greek letter), HTTPS 1443. Set `XI_PORT=7474` to keep the old one; browsers pair again on the new port
+
 ## 0.5.0 - 2026-10-22
 
 ### Changed

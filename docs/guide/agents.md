@@ -18,7 +18,7 @@ it creates are kept apart from your coding chats.
 
 ```sh
 xi --agent research              # terminal
-xi server --headless --agent research --port 7475
+xi server --headless --agent research --port 1415
 xi prompt --agent research "what changed in Bun 1.3?"
 ```
 

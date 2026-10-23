@@ -11,7 +11,7 @@ xi server              # server + a terminal client in the same process
 xi server --headless   # server only; join from elsewhere
 ```
 
-The server listens on port 7474 (`--port` or `XI_PORT` change it) and on
+The server listens on port 1414 (`--port` or `XI_PORT` change it) and on
 every network interface, so other devices on your LAN or your Tailscale
 network can reach it. Loopback is always included.
 
@@ -24,7 +24,7 @@ A terminal joins with:
 ```sh
 xi join              # the most recent chat
 xi create            # a new chat
-xi join host:7474    # a server elsewhere
+xi join host:1414    # a server elsewhere
 ```
 
 A plain `xi` in a directory joins a running local server on its own; pass
@@ -150,7 +150,7 @@ more than a day earlier waits until you open it.
 Another program can start a chat without a client attached:
 
 ```sh
-curl -sX POST http://localhost:7474/api/rooms \
+curl -sX POST http://localhost:1414/api/rooms \
   -H "Authorization: Bearer $(cat ~/.config/xi/client-key)" \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"Run the tests and fix what fails","cwd":"/home/me/my-app"}'
@@ -158,7 +158,7 @@ curl -sX POST http://localhost:7474/api/rooms \
 
 ```json
 {"room-id": "r-…", "session-id": "01a0…", "cwd": "/home/me/my-app",
- "url": "http://localhost:7474/chat/01a0…"}
+ "url": "http://localhost:1414/chat/01a0…"}
 ```
 
 The key goes in `Authorization: Bearer <key>` or `X-Xi-Client-Key`; any
@@ -178,7 +178,7 @@ URL to watch, or to continue the chat.
 ## HTTPS
 
 Over plain HTTP an iPhone forgets a home-screen app's pairing on most
-launches. Give the server a certificate and it serves `https://` on port 7443
+launches. Give the server a certificate and it serves `https://` on port 1443
 as well:
 
 ```sh

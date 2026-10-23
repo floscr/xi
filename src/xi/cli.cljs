@@ -28,7 +28,7 @@
      --model M        override the default model
      --session SID    resume the saved session with this id on launch
                       (standalone, join, or create)
-     --port N         WS port (server/join/create; default 7474)
+     --port N         WS port (server/join/create; default 1414)
      --host ADDR,...  server bind addresses (default 0.0.0.0; XI_HOST)
      --headless       server only, no local TUI
      --user ID        the user this process acts as (default root / XI_USER);
@@ -249,7 +249,7 @@ USAGE
   xi help                    Show this help (also --help, -h).
 
 FLAGS
-  --port N                   Override the default port (7474). All modes.
+  --port N                   Override the default port (1414). All modes.
   --host ADDR[,ADDR]         server: bind addresses (default 0.0.0.0, all interfaces;
                              loopback is always bound too).
   --model NAME               Override the default model.

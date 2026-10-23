@@ -20,12 +20,12 @@ autopilot would act (click Allow before it does, for example).
 ## Record
 
 ```sh
-bb tour:record desk     # fresh server on :7479 + record + bake → site/public/tours/desk.json
+bb tour:record desk     # fresh server on :1419 + record + bake → site/public/tours/desk.json
 bb tour:stop            # stop the recording server
 ```
 
 `bb tour <tour>` starts the server alone (HOME `/tmp/xi-tour-home`, the
-tour's fake LLM), for poking at it in a browser on `http://localhost:7479`.
+tour's fake LLM), for poking at it in a browser on `http://localhost:1419`.
 
 Changed only `steps.json`? Re-bake the last recording:
 `bun scripts/tour-bake.mjs /tmp/xi-tour-desk-raw.json desk`.

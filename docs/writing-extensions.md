@@ -148,7 +148,7 @@ Canonical example: `src/xi/ext/usage/web.cljs`.
    "not available"? `touch` the new file and its requirer.
 2. `bb test` (tests in `test/xi/ext/my_thing_test.cljs`, auto-discovered).
 3. Server-side changes: `bb serve:restart`. Web half: browser refresh.
-4. Web half: test in browser at `http://localhost:7474` — nav items, deep
+4. Web half: test in browser at `http://localhost:1414` — nav items, deep
    link, reload, back/forward, console clean, chat regression.
 5. TUI can't be agent-tested — compile and say so. `xi prompt "…"` is safe
    for one-shot tool checks.
