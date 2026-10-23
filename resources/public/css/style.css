@@ -5131,11 +5131,12 @@ code a:hover,
 .sidebar-section-chevron svg { width: 12px; height: 12px; }
 .sidebar-section[data-collapsed] .sidebar-section-chevron { transform: rotate(-90deg); }
 
-/* Workspace tab bar across the top of the app (views/workspace-bar), styled
-   like browser tabs: a recessed strip, the selected tab in the sidebar's
-   colour and open at the bottom so it runs into the page below, thin
-   dividers between the others. All first; the + makes a new workspace. One
-   row that scrolls sideways on a narrow screen. */
+/* Workspace tab bar across the top of the app (views/workspace-bar): a
+   recessed strip, the selected tab lifted with an underline, thin dividers
+   between the others. The selected tab stays closed at the bottom: below the
+   bar sit the sidebar and the page in different colours, so a tab running
+   into them only fits above the sidebar. All first; the + makes a new
+   workspace. One row that scrolls sideways on a narrow screen. */
 .ws-bar {
   position: relative;
   flex-shrink: 0;
@@ -5147,11 +5148,12 @@ code a:hover,
   scrollbar-width: none;
   background: color-mix(in srgb, var(--sidebar-bg) 86%, #000);
 }
-/* The bottom line, drawn under the tabs so the selected one covers it (a
-   scrolling bar clips a tab reaching over its own border). */
+/* The bottom line, drawn over the tabs (a scrolling bar clips a border of
+   its own under them). */
 .ws-bar::after {
   content: "";
   position: absolute;
+  z-index: 2;
   inset: auto 0 0 0;
   border-top: var(--border-0);
   pointer-events: none;
@@ -5206,14 +5208,18 @@ code a:hover,
   .ws-tab:hover { color: var(--fg-0); }
 }
 .ws-tab:focus-visible { outline: 2px solid var(--accent-500); outline-offset: -2px; }
-/* Side borders only: a top or bottom line would double the bar's edges. */
 .ws-tab--active {
-  background: var(--sidebar-bg);
+  background: color-mix(in srgb, var(--fg-0) 6%, transparent);
   color: var(--fg-0);
-  box-shadow: inset 1px 0 0 var(--ws-tab-edge), inset -1px 0 0 var(--ws-tab-edge);
 }
-.ws-bar > .ws-tab--active:first-child { box-shadow: inset -1px 0 0 var(--ws-tab-edge); }
-.ws-bar { --ws-tab-edge: color-mix(in srgb, var(--fg-0) 12%, transparent); }
+.ws-tab--active::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: var(--fg-0);
+}
 .ws-tab--add { padding: 0 var(--size-2); opacity: 0.7; }
 .ws-tab--add:hover { opacity: 1; }
 /* The × that closes a tab: a bare icon on every tab but All. */
