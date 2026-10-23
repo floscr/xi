@@ -360,6 +360,35 @@
                     (nodes x))))
           (nodes hiccup))))
 
+(defn- classed?
+  "Whether some node of `hiccup` has class `cls`."
+  [hiccup cls]
+  (boolean (some (fn [x] (and (vector? x) (map? (second x))
+                              (let [c (:class (second x))]
+                                (if (coll? c) (some #{cls} c) (= cls c)))))
+                 (tree-seq #(or (vector? %) (seq? %)) seq hiccup))))
+
+(deftest a-spawn-call-hides-behind-its-row
+  (let [chat-view @#'views/chat-view
+        keys-of   (fn [h] (into #{} (keep (fn [x] (when (and (vector? x) (map? (second x)))
+                                                    (:replicant/key (second x)))))
+                                (tree-seq #(or (vector? %) (seq? %)) seq h)))
+        state     {:web/route {:session-id "s"}
+                   :active-room "r1"
+                   :rooms {"r1" {:id "r1" :session {:id "s"}
+                                 :history [{:kind :user :text "go"}
+                                           {:kind :tool-call :id "c1" :tool "spawn_subagent"
+                                            :status :done :arguments {:task "t"}}]
+                                 :ui {:dialogs [{:id "d1" :type :confirm :sub-id "sub1"
+                                                 :message "Sub-agent “w”: allow `git`?"}]}
+                                 :ext {:subagents {:agents [{:id "sub1" :call-id "c1" :anchor 1
+                                                             :status :running :label "w"}]}}}}}
+        h         (chat-view state (fn [_]))]
+    (is (contains? (keys-of h) "sa-2") "the row, after the call")
+    (is (not (contains? (keys-of h) "h-1")) "the spawn call itself")
+    (is (classed? h "subagent-row--ask") "its ask shows on the row")
+    (is (not (classed? h "post--dialog")) "and not as a bubble in the chat")))
+
 (deftest subagent-rows-follow-the-block-rules
   (let [chat-view @#'views/chat-view
         child     {:id "sub1" :anchor 2 :status :done :expanded? true :label "worker"
@@ -372,15 +401,10 @@
                                  :ext {:subagents {:agents [child]}}}}}
         in-pane   (assoc-in state [:rooms "r1" :ui :active-buffer] "sub1")
         open?     (fn [st k] (first (post-details-open (chat-view st (fn [_])) k)))]
-    (testing "the card in the chat"
-      (is (= [false] (post-details-open (chat-view state (fn [_])) "sae-0"))
-          "tool blocks start collapsed by default")
-      (is (true? (open? (assoc state :web/appearance {:tool-blocks :open}) "sae-0"))
-          "the Tool blocks setting opens them")
-      (is (true? (open? (assoc state :web/appearance {:tool-blocks-except ["read"]}) "sae-0"))
-          "a tool switched on in the Tool blocks list starts the other way")
-      (is (true? (open? (assoc state :web/block-open {"s" {"sa-sub1-0" true}}) "sae-0"))
-          "the user's toggle is remembered under the session"))
+    (testing "the chat shows a one-line row, not the child's blocks"
+      (let [h (chat-view state (fn [_]))]
+        (is (classed? h "subagent-row"))
+        (is (nil? (post-details-open h "sae-0")))))
     (testing "the sub-agent in a window"
       (is (= [false] (post-details-open (chat-view in-pane (fn [_])) "sv-0")))
       (is (true? (open? (assoc in-pane :web/appearance {:tool-blocks :open}) "sv-0")))

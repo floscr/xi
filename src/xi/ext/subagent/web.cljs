@@ -3,15 +3,14 @@
 
    The server broadcasts every room-scoped :subagent/* event to the room's
    clients; this ext registers the shared pure state handlers so those
-   broadcasts build the [:ext :subagents] state on the client, which the
-   Sub-agents panel (xi.web.views) renders live below the conversation.
+   broadcasts build the [:ext :subagents] state on the client, which
+   xi.web.views renders live: a row where each was spawned, the composer's
+   Agents popover and the sidebar view.
 
    The turn itself only ever runs server-side, so the :subagent/start effect
    the spawn handler emits is a no-op here."
   (:require [xi.ext.subagent.handlers :as h]
-            [xi.ext.subagent.threads :as threads]
-            [xi.web.appearance :as appearance]
-            [xi.web.layout :as wlayout]))
+            [xi.ext.subagent.threads :as threads]))
 
 (def ^:private ext-id h/ext-id)
 
@@ -56,38 +55,6 @@
         gone?              (assoc-in [:state :rooms room-id :ui :active-buffer] :chat)
         (not (:remote? ev)) (assoc :effects [[:ws/send ev]])))))
 
-(defn- turn-end
-  "The shared turn-end, plus: with answers set to open in a window
-   (appearance :subagent-answers :pane), a finished background child of the
-   chat on screen shows in the right sidebar (xi.web.layout) without taking
-   focus; the chat keeps a marker row (xi.web.views/subagent-marker-post)."
-  [st {:keys [room-id sub-id] :as ev}]
-  (when-let [res ((:subagent/turn-end h/handlers) st ev)]
-    (let [st' (or (:state res) st)]
-      (cond-> res
-        (and (= :pane (:subagent-answers (appearance/effective-in st')))
-             (not (h/inline-sub? sub-id))
-             (= room-id (:id (:room (wlayout/room-ctx st')))))
-        (update :effects (fnil conj [])
-                [:app/dispatch {:type :layout/open-view :view sub-id :where :right}])))))
-
-(defn- spawn
-  "The shared spawn, plus: a thread this client just started (its first
-   turn; the ask carried our :client-id, xi.ext.subagent.threads/ask) shows
-   in the right sidebar at once when answers are set to open in a window
-   (appearance :subagent-answers :pane), without taking focus, so the answer
-   streams there while the chat keeps the thread card."
-  [st {:keys [room-id sub-id thread client-id] :as ev}]
-  (when-let [res (h/spawn st ev)]
-    (let [st' (or (:state res) st)]
-      (cond-> res
-        (and thread (= thread sub-id)
-             client-id (= client-id (get-in st [:connection :client-id]))
-             (= :pane (:subagent-answers (appearance/effective-in st')))
-             (= room-id (:id (:room (wlayout/room-ctx st')))))
-        (update :effects (fnil conj [])
-                [:app/dispatch {:type :layout/open-view :view sub-id :where :right}])))))
-
 (defn- reply
   "A reply to a sub-agent (a steer while it runs) runs server-side: send the
    user's, apply the server's echo (which every client of the room gets)."
@@ -122,8 +89,6 @@
                       (when-not (:remote? ev)
                         {:effects [[:ws/send ev]]}))
                     :subagent/dismiss dismiss
-                    :subagent/spawn spawn
-                    :subagent/turn-end turn-end
                     :subagent/reply reply
                     ;; A sidebar row's button (xi.web.views/session-buffer-rows):
                     ;; roomless, by session — the server finds the live room

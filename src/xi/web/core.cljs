@@ -389,7 +389,7 @@
         res    (ws-transport/dialog-response st ev)]
     (if-not dialog
       res
-      (let [{:keys [type message text options]} dialog
+      (let [{:keys [type message text options sub-id]} dialog
             history  (vec (:history room))
             tool-idx (when (= :confirm type) (dlg/permission-tool-index dialog history 0))]
         (update res :state update-in [:web/resolved-dialogs room-id] (fnil conj [])
@@ -400,6 +400,7 @@
                          :value   value
                          :label   (views/dialog-decision-label type options value)}
                   reason   (assoc :reason reason)
+                  sub-id   (assoc :sub-id sub-id)
                   tool-idx (assoc :tool-id (:id (nth history tool-idx)))))))))
 
 (defn- dialog-answer
@@ -407,17 +408,18 @@
    the events views/dialog-post's buttons dispatch."
   [st {:keys [room-id dialog-id value]}]
   (let [room (get-in st [:rooms room-id])]
-    (when-let [{:keys [type message text options]}
+    (when-let [{:keys [type message text options sub-id]}
                (some #(when (= dialog-id (:id %)) %) (get-in room [:ui :dialogs]))]
       {:effects [[:app/dispatch {:type :web/dialog-resolved
                                  :room-id room-id
                                  :dialog-id dialog-id
-                                 :entry {:key     dialog-id
-                                         :anchor  (count (:history room))
-                                         :message (or message text)
-                                         :type    type
-                                         :value   value
-                                         :label   (views/dialog-decision-label type options value)}}]
+                                 :entry (cond-> {:key     dialog-id
+                                                 :anchor  (count (:history room))
+                                                 :message (or message text)
+                                                 :type    type
+                                                 :value   value
+                                                 :label   (views/dialog-decision-label type options value)}
+                                          sub-id (assoc :sub-id sub-id))}]
                  [:app/dispatch {:type :ui/dialog-response
                                  :room-id room-id :dialog-id dialog-id :value value}]
                  [:app/dispatch {:type :ui/dialog-close

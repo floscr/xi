@@ -72,44 +72,45 @@ across the top narrows the cards and lists to one
   reads the call and the conversation and says what
   the call does, why the agent wants it and the risk. The answer appears
   under the tool block and stays there after you decide.
-- **Sub-agents in the chat.** When the agent (or `/subagent`) starts
-  [sub-agents](builtin-tools.md#sub-agents), they appear as a post right
-  where that happened, one folded row each like a collapsed run of tool
-  calls: its status, label, step count with the latest tool, and running
-  time. Open a row for its output, or stop it; its tool and thinking
-  blocks start open or collapsed like the chat's own
-  ([Appearance](#appearance)). The post scrolls away with
-  the conversation. When a sub-agent finishes, its answer appears as a post
-  where the conversation was by then, with buttons to open it as a chat of
-  its own, keep it as a session or dismiss it (or, with **Sub-agent
-  answers** set to "In a window" in [Appearance](#appearance), in a
-  [window](#windows) at the right, and the chat keeps a one-line marker
-  that opens it). A finished sub-agent is saved
-  as a session of its own, hidden from your chats and deleted with the chat.
-  The chat keeps the link, so its posts and Open as chat work after a
-  restart. **Keep as session** lists it with your other chats; so does the
-  same button on top of the sub-agent's chat. The answer post has a reply
-  field: a reply continues the sub-agent's own conversation, and its answer
-  streams into that post under your reply. The sub-agent stays in this chat;
-  it does not become a chat of its own. While a sub-agent runs, its card
-  (opened) and its window have the same field: the message goes into its
-  running turn. A stopped sub-agent has no answer post; its card keeps the
-  reply field.
+- **Sub-agents in the chat.** When the agent (or `/subagent`) starts a
+  [sub-agent](builtin-tools.md#sub-agents), one row stands where that
+  happened, in place of the spawn call: its label, status, running time and
+  one line of what it does (the latest tool, its answer's first line, or
+  "needs you"). Sub-agents started together (a commit plan per repo) share
+  one row with their count and how many finished. Click a row to open the
+  sub-agent in the right sidebar ([Windows](#windows)), laid out like a
+  chat: its task, its tool and thinking blocks (open or collapsed like the
+  chat's own, [Appearance](#appearance)), its answer, and a composer with
+  image attachments. The window bar holds its actions (Open as chat, Keep
+  as session, Dismiss). A shared row opens their list there; pick one, and
+  its **‹** link goes back to the list. While a sub-agent runs, the
+  composer shows a spinner and Stop, and a message goes into its running
+  turn; once it finished, a message continues its own conversation. The
+  sub-agent stays in this chat; it does not become a chat of its own.
+- **Agents button.** The action row's **Agents** button lists every
+  sub-agent of the chat, under the message that started it; the amber count
+  is how many wait on you. Pick one to open it in the right sidebar.
+- **A sub-agent's permission requests** show in its sidebar view, not in
+  the chat: its row says "needs you" and the Agents button counts it.
+  **Allow all** on a shared row's list answers every request of that group.
+  The sub-agent waits until you answer, and stopping it denies them.
+- **Saved sub-agents.** A finished sub-agent is saved as a session of its
+  own, hidden from your chats and deleted with the chat. The chat keeps the
+  link, so its row, its answer and **Open as chat** work after a restart.
+  **Keep as session** lists it with your other chats; so does the same
+  button on top of the sub-agent's chat.
 - **Ask about any block.** Hover a message, tool call or thinking block and
   click the ⚡ button at its right edge. On a phone, tap the block (or
   long-press a tool header); for a code block or your own message, it is in
   the block's menu. A field opens under the block with suggested questions.
   The question goes to a [sub-agent](builtin-tools.md#sub-agents) that gets
   the block and the conversation; its answer streams in under the block,
-  where you can reply, collapse the thread, or close it. Blocks inside an
-  open sub-agent row work the same, and their threads show under that
-  sub-agent. The agent sees your questions in `list_subagents`.
+  where you can reply, collapse the thread, or close it. Blocks in a
+  sub-agent's sidebar view work the same, and their threads show there.
+  The agent sees your questions in `list_subagents`.
   **Select text** in a block with the mouse and the ⚡ button moves to the
   end of the selection: the question is then about that text, quoted in
-  the field and in the thread. With **Sub-agent answers** set to "In a
-  window" ([Appearance](#appearance)), a question you ask opens its
-  sub-agent in the right sidebar right away, so you watch the answer there
-  while the chat keeps the thread.
+  the field and in the thread.
 - **Queue messages.** A message sent while the agent works waits for the
   turn to end; the number in the action row opens the queue. Its steer
   button sends a message into the running turn (see Alt+Enter below), ▶
@@ -276,14 +277,10 @@ eight windows; the chat appears in one of them at most.
 - **On a phone** (and any window under 1024px wide), the main area shows
   the focused window alone; its pill switches what it shows. A sidebar is a
   drawer over the chat: open it with its toggle action, from a sub-agent's
-  "Show in a window", or by swiping in from the right edge; tap the dimmed
+  row, or by swiping in from the right edge; tap the dimmed
   chat, swipe right or toggle again to close it.
-- **Sub-agents.** "Show in a window" on a sub-agent row or answer puts it
-  in the right sidebar. With **Sub-agent answers** set to "In a window"
-  ([Appearance](#appearance)), a finished sub-agent opens there on its
-  own, without taking focus, and the chat shows a marker row instead of
-  the answer post; a question you ask about a block opens there as soon
-  as it starts.
+- **Sub-agents.** A sub-agent's row in the chat, or its entry under the
+  Agents button, opens it in the right sidebar.
 - **Undo.** Every change of the arrangement or the sizes can be taken back
   (`:layout/undo`, the palette's "Undo window change") and redone
   (`:layout/redo`), like Emacs' winner mode: the last fifty changes of the
@@ -479,9 +476,7 @@ sources),
 a tool row shows next to the tool name: a per-tool summary such as the
 command, the path or the pattern, or every argument as `key=value`), and
 **super collapsed** (a run of two or more collapsed tool and thinking rows
-shows as one summary line with a step count instead of its header rows) and
-**sub-agent answers** (a finished sub-agent's answer as a post in the chat,
-or in a [window](#windows) at the right).
+shows as one summary line with a step count instead of its header rows).
 
 ### Color themes
 

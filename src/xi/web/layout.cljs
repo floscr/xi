@@ -18,6 +18,7 @@
   (:require [xi.buffers :as buffers]
             [xi.core.state :as state]
             [xi.layout :as layout]
+            [xi.web.subagents :as sav]
             [xi.web.user-state :as user-state]))
 
 (def resize-step
@@ -28,14 +29,16 @@
 ;; ── Reading ──────────────────────────────────────────────────────────────────
 
 (defn view-open?
-  "Can `room` show `view`: the chat, an empty pane, one of its buffers, or
-   one of its sub-agents (xi.web.views/subagent-view)."
+  "Can `room` show `view`: the chat, an empty pane, one of its buffers, one
+   of its sub-agents (xi.web.views/subagent-view) or a batch of them
+   (subagent-group-view, while its first child is there)."
   [room view]
-  (boolean
-   (or (= buffers/chat view)
-       (= :empty view)
-       (contains? (get-in room [:ui :buffers]) view)
-       (some #(= view (:id %)) (get-in room [:ext :subagents :agents])))))
+  (let [agent-id (or (sav/group-view-id view) view)]
+    (boolean
+     (or (= buffers/chat view)
+         (= :empty view)
+         (contains? (get-in room [:ui :buffers]) view)
+         (some #(= agent-id (:id %)) (get-in room [:ext :subagents :agents]))))))
 
 (defn room-ctx
   "The joined room the chat page shows: {:key session-id :room :path}, nil

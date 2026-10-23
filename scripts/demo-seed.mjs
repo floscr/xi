@@ -213,6 +213,70 @@ const blocksExt = () =>
     ...(b.rules ? { rules: b.rules, "text-form": b.textForm } : {}),
   }]))) } }) + "\n";
 
+// ── sub-agents (xi.ext.subagent) ─────────────────────────────────────────────
+// Saved children ride in the `.ext.edn` sidecar without their history
+// (xi.ext.subagent.handlers/saved-child). Two spawn_subagent calls, a batch
+// spawned at one anchor (like commit-all's) and a later spawn; `anchor` is the
+// room history's length at spawn (entries: user, text, call, call, text, user,
+// text, text, user, call, text).
+const spawnCall = (id, label, task) =>
+  toolUse(id, "mcp__xi-tools__spawn_subagent", { label, task });
+
+const reviewAnswer = `**1 blocking:** \`refresh-token!\` (\`session.ts:88\`) can resolve after \`logout!\` and write the old token back.
+
+- \`expiresAt\` is seconds on one side, ms on the other (\`auth.ts:41\`)
+- the retry loop has no cap`;
+
+const commitRepos = [
+  ["acme-web", "I proposed 4 commits; nothing is left out of the plan."],
+  ["acme-api", "I proposed 2 commits. I left `.env.local` out: it holds local secrets."],
+  ["acme-infra", "I proposed 1 commit, the Terraform provider bump."],
+  ["design-tokens", "I proposed 3 commits: the palette, the spacing scale, the build script."],
+  ["docs", null],
+  ["mobile", "I proposed 2 commits: the safe-area fix and its snapshot tests."],
+];
+
+const subagentsLines = (cwd, sid) => [
+  userMsg(cwd, sid, "Review the auth refactor PR, and in parallel find out how other harnesses show sub-agents.", mins(40)),
+  asstMsg(cwd, sid, [
+    text("I'll hand both off so this chat stays free."),
+    spawnCall("tu_sa1", "Review auth refactor PR", "Review PR #412 (auth refactor). Focus on session handling and token refresh."),
+    spawnCall("tu_sa2", "Research: sub-agent UIs", "Find how 4-5 other coding harnesses show parallel sub-agents in their chat UI."),
+  ], mins(39)),
+  userBlocks(cwd, sid, [
+    toolResult("tu_sa1", "Spawned sub-agent sa-review."),
+    toolResult("tu_sa2", "Spawned sub-agent sa-research."),
+  ], mins(39)),
+  asstMsg(cwd, sid, [text("While those run: the session store keeps one refresh promise per user, so the race is likely there.")], mins(38)),
+  userMsg(cwd, sid, "Commit everything in all my repos, one sub-agent per repo.", mins(30)),
+  asstMsg(cwd, sid, [text("6 repos have changes, so I'm starting 6 commit-plan agents.")], mins(29)),
+  asstMsg(cwd, sid, [text("The review is back: one blocking finding. `refresh-token!` can resolve after `logout!` and write the old token back. Should I fix it?")], mins(25)),
+  userMsg(cwd, sid, "Yes, fix it, and have a sub-agent write a regression test.", mins(20)),
+  asstMsg(cwd, sid, [spawnCall("tu_sa3", "Regression test for refresh/logout race", "Write a test that reproduces refresh-token! resolving after logout!. It must fail on master.")], mins(19)),
+  userBlocks(cwd, sid, [toolResult("tu_sa3", "Spawned sub-agent sa-test.")], mins(19)),
+  asstMsg(cwd, sid, [text("The fix is in, and the test agent is on it.")], mins(18)),
+];
+
+const subagentsExt = () => {
+  const at = (m) => Date.now() - mins(m);
+  const child = (id, label, task, status, result, start, secs, extra) => ({
+    id, label, task, status: kw(status), result, started: at(start), ended: at(start) + secs * 1000,
+    ...extra,
+  });
+  return edn({ subagents: { agents: [
+    child("sa-review", "Review auth refactor PR", "Review PR #412 (auth refactor). Focus on session handling and token refresh.",
+          "done", reviewAnswer, 39, 123, { anchor: 3, "call-id": "tu_sa1" }),
+    child("sa-research", "Research: sub-agent UIs", "Find how 4-5 other coding harnesses show parallel sub-agents in their chat UI.",
+          "stopped", null, 39, 250, { anchor: 4, "call-id": "tu_sa2" }),
+    ...commitRepos.map(([repo, result], i) =>
+      child(`sa-commit-${repo}`, `Commit plan: /home/demo/${repo}`, `Propose a commit plan for /home/demo/${repo}.`,
+            result ? "done" : "error", result, 29, 12 + i * 7, { anchor: 7 })),
+    child("sa-test", "Regression test for refresh/logout race", "Write a test that reproduces refresh-token! resolving after logout!. It must fail on master.",
+          "done", "Added `refresh-after-logout` to `session.test.ts`; it fails on master and passes with the fix.", 19, 38,
+          { anchor: 10, "call-id": "tu_sa3" }),
+  ] } }) + "\n";
+};
+
 /**
  * Each seed: { cwd, name, model, ageMins, lines(cwd, sid) => transcript objs,
  * ext?() => the session's .ext.edn text }
@@ -288,6 +352,14 @@ const seeds = [
     ageMins: 15,
     lines: blocksLines,
     ext: blocksExt,
+  },
+  {
+    cwd: "/home/demo/acme-web",
+    name: "Sub-agents",
+    model: "claude-opus-4-6",
+    ageMins: 18,
+    lines: subagentsLines,
+    ext: subagentsExt,
   },
   {
     // A long chat for profiling the web timeline (render cost grows with length).

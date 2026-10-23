@@ -9,6 +9,7 @@
             [xi.error-info :as error-info]
             [xi.ext.subagent.handlers :as sa]
             [xi.ext.subagent.threads :as sa-threads]
+            [xi.web.subagents :as sav]
             [xi.core.state :as state]
             [xi.markdown.hiccup :as md]
             [xi.markdown.diff :as md-diff]
@@ -1954,11 +1955,12 @@
 
 (defn- floating-actions
   "Action row inside .compose-frame (icon pills on mobile, a labeled bar on
-   desktop): prompt-nav, Projects, Snippets, Commands, and the queue count
+   desktop): prompt-nav, Projects, Snippets, Commands, then at the right
+   `agents` (the Agents button, views/agents-button) and the queue count
    that toggles the queue popover."
-  [dispatch! room-id pa? prompt-nav nav-ctx scrolled-up? queued]
+  [dispatch! room-id pa? prompt-nav nav-ctx scrolled-up? queued agents]
   (let [qcount (count queued)]
-    (when (or (not pa?) (pos? qcount))
+    (when (or (not pa?) (pos? qcount) (seq agents))
       [:div {:class ["float-actions"]}
      (when-not pa?
        [:div {:class ["fgroup"]}
@@ -1976,13 +1978,16 @@
                   :on {:click (fn [_] (dispatch! {:type :palette/open-commands}))}}
          (icon/icon {:icon-name :terminal :size :sm})
          [:span {:class ["qc-label"]} "Commands"]]])
-     (when (pos? qcount)
+     (when (or (pos? qcount) (seq agents))
        [:div {:class ["queue-float"]}
         [:div {:class ["fgroup"]}
-         [:button {:class ["quick-cmd" "queue-num"]
-                   :title "Queued messages" :aria-label "Queued messages"
-                   :on {:click (fn [_] (dispatch! {:type :queue/toggle-popover}))}}
-          (str qcount)]]])])))
+         agents
+         (when (pos? qcount)
+           [:button {:class ["quick-cmd" "queue-num"]
+                     :title "Queued messages" :aria-label "Queued messages"
+                     :replicant/key "queue-num"
+                     :on {:click (fn [_] (dispatch! {:type :queue/toggle-popover}))}}
+            (str qcount)])]])])))
 
 (defn- offline-indicator
   "Wifi-off glyph beside the send button while disconnected (inline SVG; the
@@ -2040,7 +2045,7 @@
                   (compose-status-pct weekly)
                   [:span {:class ["compose-status-dim"]} " week"]))])])))
 
-(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? queue-open? prompt-nav nav-ctx scrolled-up? offline? cmd-ctx status]
+(defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? queue-open? prompt-nav nav-ctx scrolled-up? offline? cmd-ctx status agents]
   (let [room-id  (:id room)
         cmd-query (when (and (not pa?) (string? draft) (str/starts-with? draft "/"))
                     (subs draft 1))
@@ -2059,7 +2064,7 @@
      [:div {:class ["compose-frame"]}
       (when-not cmd-open?
         (floating-actions dispatch! room-id pa? prompt-nav nav-ctx scrolled-up?
-                          queued))
+                          queued agents))
       (when cmd-open?
         (command-suggestions dispatch! room-id draft-key cmd-matches
                              (min (or cmd-selected 0) (dec (count cmd-matches)))))
@@ -2379,10 +2384,12 @@
   "A pending dialog as an assistant-side bubble. Answering logs the decision
    into :web/resolved-dialogs and drops the live dialog in one render, then
    forwards the response and a :ui/dialog-close (the mirrored core handler is
-   what clears it on other clients)."
+   what clears it on other clients). A sub-agent's asks (:sub-id) are
+   answered in its view instead (subagent-asks)."
   [dispatch! state room history inline-ids]
   (when-let [{:keys [id type message text options] :as live-dialog}
-             (first (remove (comp inline-ids :id) (get-in room [:ui :dialogs])))]
+             (first (remove #(or (inline-ids (:id %)) (:sub-id %))
+                            (get-in room [:ui :dialogs])))]
     (let [room-id (:id room)
           answer! (fn [value]
                     (dispatch! {:type :web/dialog-resolved
@@ -3677,10 +3684,16 @@
         active  (get buffers active-buffer)
         sub     (when-not active
                   (some #(when (= active-buffer (:id %)) %) sub-agents))
+        batch   (when-let [first-id (sav/group-view-id active-buffer)]
+                  (when-let [a (some #(when (= first-id (:id %)) %) sub-agents)]
+                    (filter #(= (:anchor a) (:anchor %)) sub-agents)))
+        batch?  (some? batch)
         kind    (cond active (buffers/kind active-buffer active)
-                      sub    :subagent)
+                      (or sub batch?) :subagent)
         label   (cond active (buffers/label active-buffer active)
                       sub    (or (:label sub) (:task sub) "Sub-agent")
+                      batch? (str (or (sav/shared-label (map sav/label batch)) "Sub-agents")
+                                  " ×" (count batch))
                       (= :empty active-buffer) "Pick a view"
                       :else  "Chat")
         menu-id (or (:menu-id opts) "buffer-menu")
@@ -3716,7 +3729,7 @@
        :class "sidebar-more-menu buffer-menu"
        :attrs {:replicant/key menu-id}}
       (item {:id "chat" :icon (message-circle-icon) :title "Chat"
-             :active? (not (or active sub)) :people (people-of :chat)
+             :active? (not (or active sub batch?)) :people (people-of :chat)
              :on-click #(switch! :chat)})
       (for [[id buf] (buffers/ordered buffers)
             :let [title (buffers/label id buf)]]
@@ -4218,9 +4231,12 @@
   "A sub-agent's buttons, on its row, its result and its view: stop while it
    runs, then open as chat (the session it was saved as when it finished),
    keep that session as a regular one, and dismiss. Icons by default;
-   `{:text? true}` renders the titles instead (the result's footer)."
+   `{:text? true}` renders the titles instead, `{:window? false}` leaves
+   out Show in a window (it is in one already), `{:stop? false}` Stop (its
+   composer has it)."
   ([dispatch! room-id child] (subagent-actions dispatch! room-id child nil))
-  ([dispatch! room-id {:keys [id status session-id upgraded?]} {:keys [text?]}]
+  ([dispatch! room-id {:keys [id status session-id upgraded?]}
+    {:keys [text? window? stop?] :or {window? true stop? true}}]
   (let [btn (fn [cls title ev icon]
               [:button {:class [cls] :title title :replicant/key cls
                         :on {:click (fn [e]
@@ -4228,15 +4244,18 @@
                                       (dispatch! ev))}}
                (if text? title icon)])]
     (if (= :running status)
-      (list (btn "subagent-window" "Show in a window"
-                 {:type :layout/open-view :view id :where :right :focus? true}
-                 (pane-icon :dock-right))
-            (btn "subagent-stop" "Stop sub-agent"
-                 {:type :subagent/abort :room-id room-id :sub-id id}
-                 (icon/icon {:icon-name :circle-x :size :sm})))
-      (list (btn "subagent-window" "Show in a window"
-                 {:type :layout/open-view :view id :where :right :focus? true}
-                 (pane-icon :dock-right))
+      (list (when window?
+              (btn "subagent-window" "Show in a window"
+                   {:type :layout/open-view :view id :where :right :focus? true}
+                   (pane-icon :dock-right)))
+            (when stop?
+              (btn "subagent-stop" "Stop sub-agent"
+                   {:type :subagent/abort :room-id room-id :sub-id id}
+                   (icon/icon {:icon-name :circle-x :size :sm}))))
+      (list (when window?
+              (btn "subagent-window" "Show in a window"
+                   {:type :layout/open-view :view id :where :right :focus? true}
+                   (pane-icon :dock-right)))
             (btn "subagent-open" "Open as chat"
                  (if session-id
                    {:type :route/navigate :page :chat :session-id session-id}
@@ -4455,212 +4474,224 @@
    history))
 
 
-(defn- subagent-reply
-  "The reply field of a sub-agent (:subagent/reply,
-   xi.ext.subagent.handlers/reply): while it runs the text steers its turn,
-   finished it continues its own conversation, as a child of this chat
-   rather than a chat of its own."
-  [dispatch! room-id {:keys [id status]} input-id]
-  (let [running? (= :running status)
-        send!    (fn [_]
-                   (when-let [el (.getElementById js/document input-id)]
-                     (when-not (str/blank? (.-value el))
-                       (dispatch! {:type :subagent/reply :room-id room-id :sub-id id
-                                   :text (.-value el)})
-                       (set! (.-value el) ""))))]
-    [:div {:class ["diff-thread-reply" "subagent-reply"] :replicant/key "reply"}
-     (form/form-textarea-auto
-      {:placeholder (if running? "Steer this sub-agent…" "Reply to this sub-agent…")
-       :max-rows    6
-       :class       "diff-thread-input"
-       :attrs       {:id input-id :on {:keydown (enter-submits send!)}}})
-     (button/button {:variant :ghost :size :sm :class "diff-thread-send"
-                     :attrs {:aria-label (if running? "Send into its turn" "Send reply")}
-                     :on-click send!}
-                    (if running?
-                      (steer-icon :sm)
-                      (icon/icon {:icon-name :arrow-up :size :sm})))]))
+(defn- subagent-open-event
+  "Show `view` (a sub-agent id or a batch's sav/group-view) in the right
+   sidebar and focus it."
+  [view]
+  {:type :layout/open-view :view view :where :right :focus? true})
 
+(defn- subagent-state-mark
+  "A sub-agent's state (sav/state-of) at the head of its rows: the spinner
+   while it runs, else a dot."
+  [st]
+  (if (= :running st)
+    (spinner)
+    [:span {:class ["subagent-dot" (str "subagent-dot--" (name st))]}]))
 
-(defn- answer-post?
-  "Whether finished sub-agent `child` gets its answer post where it ended
-   (subagent-result-post / -marker-post). A stopped one without replies has
-   no answer: its card is its only panel and takes the reply field."
-  [{:keys [ended-anchor status exchanges]}]
-  (boolean (and ended-anchor (or (not= :stopped status) (seq exchanges)))))
+(defn- subagent-tool-row
+  "A sub-agent row dressed exactly as a tool block's header (tool-post:
+   .tool-call-block > .tool-call-toggle): the spinner in the chevron's slot
+   while it runs, `action` and `label` like a tool's name and argument, then
+   a muted `summary`, `meta` and ✕ when it failed. A click opens it in the
+   right sidebar (`view`) instead of expanding."
+  [dispatch! {:keys [view running? ask? error? action label summary meta ask-sub]}]
+  [:div (cond-> {:class ["post" "post--tool" "post--subagent-row"]}
+          ask-sub (assoc :data-ask-sub ask-sub))
+   [:div {:class ["tool-call-block" (when ask? "subagent-row--ask")]}
+    [:button {:class ["tool-call-toggle" "subagent-row"] :type "button"
+              :title "Open in the sidebar"
+              :on {:click (fn [_] (dispatch! (subagent-open-event view)))}}
+     [:span {:class (cond-> ["tool-call-toggle-icon"]
+                      running? (conj "tool-call-toggle-icon--running"))}
+      (if running? (spinner) (icon/icon {:icon-name :chevron-right :size :sm}))]
+     [:span {:class ["tool-call-toggle-label"]}
+      [:span {:class ["tool-call-action"]} action]
+      (when (seq label) (str " " label))]
+     (when (seq summary)
+       [:span {:class ["subagent-row-summary"]} summary])
+     (when meta
+       [:span {:class ["subagent-row-dur"]} meta])
+     (when error?
+       [:span {:class ["tool-call-status" "tool-call-status--error"] :title "Failed"}
+        (icon/icon {:icon-name :x :size :sm})])]]])
 
-(defn- subagent-child
-  "One sub-agent as a viewer super-group (<details>, the summary row of a
-   folded tool run): status, label, its step count with the newest tool,
-   duration and actions. Children start shut (opt-in `:expanded?`, so N
-   streaming agents don't re-render on every delta); open, the history lists
-   as viewer rows (subagent-items) — text as posts, tool and thinking blocks
-   as headers that open or stay shut per the appearance. `ctx` is a
-   subagent-block-ctx."
-  [dispatch! {:keys [room-id cwd app] :as ctx}
-   {:keys [id label task status history expanded?] :as child}]
-  (let [open?  (boolean expanded?)
-        status (or status :running)
-        {n :count :keys [latest error-count]}
-        (viewer-group/summarize (keep #(block-info % cwd (:tool-args app)) history))]
-    [:details {:class ["viewer-tool-group" "viewer-tool-group--super"
-                       "subagent-card" (str "subagent-card--" (name status))]
-               :replicant/key id
-               :data-sub-id id
-               :data-ask-sub id
-               :open open?}
-     [:summary {:class ["viewer-group-summary" "subagent-strip"]
-                :on {:click (fn [^js e]
-                              (.preventDefault e)
-                              (dispatch! {:type :subagent/toggle-child
-                                          :room-id room-id :sub-id id}))}}
-      [:span {:class ["tool-call-toggle-icon"]}
-       (icon/icon {:icon-name :chevron-right :size :sm})]
-      (if (= :running status)
-        [:span {:class ["tool-call-running"]} (spinner)]
-        [:span {:class ["subagent-status" (str "subagent-status--" (name status))]}
-         (get subagent-status-label status (name status))])
-      [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
-      (when (pos? n)
-        [:span {:class ["viewer-group-latest"]}
-         [:span {:class ["viewer-group-count"]} (viewer-group/count-label n)]
-         (when latest
-           (list " · " [:span {:class ["tool-call-action"]} (:name latest)]))])
-      (when (pos? error-count)
-        [:span {:class ["tool-call-status" "tool-call-status--error"]
-                :title (str error-count (if (= 1 error-count) " error" " errors"))}
-         (icon/icon {:icon-name :x :size :sm})])
-      (when-let [d (subagent-duration child)]
-        [:span {:class ["subagent-card-dur"]} d])
-      (subagent-actions dispatch! room-id child)]
-     (when open?
-       [:div {:class ["viewer-group-rows" "subagent-rows"]}
-        (when (seq task)
-          [:div {:class ["subagent-task"]} task])
-        (if (seq history)
-          ;; Posts sit directly in the rows box so the group's hairline
-          ;; dividers (.post + .post) apply.
-          (map :node (subagent-items dispatch! ctx "sae-" true child))
-          [:div {:class ["subagent-empty"]}
-           (cond (= :running status) "No output yet."
-                 (:session-id child) "Its work is in its own session: open it as a chat."
-                 :else               "No output.")])
-        ;; without an answer post below, steer or continue it from here
-        (when-not (answer-post? child)
-          (subagent-reply dispatch! room-id child (str "subagent-card-reply-" id)))])]))
+(defn- subagent-row
+  "A sub-agent where it was spawned, in place of its spawn_subagent call: a
+   tool-block header (subagent-tool-row) with its label, a one-line summary
+   (sav/summary) and its running time. A click opens it in the right
+   sidebar (subagent-view)."
+  [dispatch! asks {:keys [id] :as child}]
+  (let [st (sav/state-of asks child)]
+    (subagent-tool-row dispatch!
+                       {:view     id
+                        :ask-sub  id
+                        :running? (= :running st)
+                        :ask?     (= :ask st)
+                        :error?   (= :error st)
+                        :action   "Sub-agent"
+                        :label    (sav/label child)
+                        :summary  (if (= :ask st) "needs you" (sav/summary asks child))
+                        :meta     (subagent-duration child)})))
 
-(defn- subagents-post
-  "The sub-agents spawned at one point of the conversation (`anchor`, the
-   children's :anchor), as a timeline post: a card per child
-   (subagent-child, `ctx` its subagent-block-ctx), which carries its own
-   status and actions, followed by the question threads on it or its blocks
-   (`threads-of`: sub-id → thread cards); several get a head with the
-   count, how many still run and × for the finished ones. Scrolls away with
-   the chat."
-  [dispatch! room-id ctx anchor agents threads-of]
-  (let [n        (count agents)
-        running  (count (filter #(= :running (:status %)) agents))
-        finished (remove #(= :running (:status %)) agents)
-        cards    (mapcat (fn [c] (cons (subagent-child dispatch! ctx c)
-                                       (threads-of (:id c))))
-                         agents)]
-    [:div {:class ["post" "post--assistant" "post--subagents"]
-           :replicant/key (str "sa-" anchor)}
-     (if (= 1 n)
-       [:div {:class ["post-body" "subagents-single"]} cards]
-       [:div {:class ["post-body" "subagents-panel"]}
-        [:div {:class ["subagents-head"]}
+(defn- need-you [n]
+  (str n (if (= 1 n) " needs you" " need you")))
+
+(defn- subagent-batch-row
+  "The sub-agents spawned at one anchor (a commit-all style batch) as one
+   tool-block header: their count and shared label (sav/shared-label), how
+   many wait on you or failed, and how many finished. A click opens the
+   batch view (subagent-group-view) in the right sidebar."
+  [dispatch! asks children]
+  (let [{:keys [ask finished error total]} (sav/counts asks children)
+        done? (= finished total)]
+    (subagent-tool-row dispatch!
+                       {:view     (sav/group-view (:id (first children)))
+                        :running? (and (zero? ask) (not done?))
+                        :ask?     (pos? ask)
+                        :error?   (and done? (pos? error))
+                        :action   (str "Sub-agents ×" total)
+                        :label    (sav/shared-label (map sav/label children))
+                        :summary  (cond (pos? ask)   (need-you ask)
+                                        (pos? error) (str error " failed"))
+                        :meta     (str finished "/" total)})))
+
+(defn- subagent-asks
+  "A sub-agent's pending permission asks (xi.subagent/confirm-fn) atop its
+   view, answered like the chat's own (:web/dialog-answer)."
+  [dispatch! state room-id asks]
+  (when (seq asks)
+    [:div {:class ["subagent-asks"] :replicant/key "sv-asks"}
+     (for [{:keys [id diff] :as d} asks]
+       [:div {:class ["subagent-ask"] :replicant/key id}
+        [:div {:class ["subagent-ask-msg"]} (sav/ask-text d)]
+        (diff-preview dispatch! diff id (contains? (:web/md-diff-code state) id))
+        [:div {:class ["tool-call-permission-actions"]}
+         (confirm-buttons d
+                          (fn [value] (dispatch! {:type :web/dialog-answer :room-id room-id
+                                                  :dialog-id id :value value}))
+                          #(dispatch! {:type :deny-reason/start :room-id room-id :dialog-id id}))]])]))
+
+(defn- room-sub-agents
+  "The room's sub-agents that list as such (not a block's Explain / Ask)."
+  [room]
+  (remove #(sa/inline-sub? (:id %)) (get-in room [:ext :subagents :agents])))
+
+(defn- show-in-pane!
+  "Show `view` in window `pane-id`, else in the right sidebar."
+  [dispatch! pane-id view]
+  (dispatch! (if pane-id
+               {:type :layout/set-view :pane-id pane-id :view view}
+               (subagent-open-event view))))
+
+(defn- subagent-group-view
+  "A batch (sav/batch-of) in a window: its children, the ones waiting on you
+   first, and Allow all for their asks; a row shows that child in the same
+   window, whose view links back here."
+  [dispatch! room pane-id children]
+  (let [room-id (:id room)
+        asks    (sav/asks-by-sub (get-in room [:ui :dialogs]))
+        prefix  (sav/shared-label (map sav/label children))
+        {:keys [finished total]} (sav/counts asks children)
+        rank    {:ask 0 :running 1}
+        pending (filter #(= :confirm (:type %)) (mapcat #(get asks (:id %)) children))]
+    [:div {:class ["file-tab" "subagent-view" "subagent-group-view"]
+           :replicant/key (str "subagent-group-" (:id (first children)))}
+     [:div {:class ["subagent-group-list"]}
+      [:div {:class ["subagent-group-head"]}
+       [:span (str finished " of " total " finished")]
+       (when (seq pending)
+         (button/button {:variant :primary :size :sm :class "subagent-allow-all"
+                         :on-click (fn [_]
+                                     (doseq [{:keys [id]} pending]
+                                       (dispatch! {:type :web/dialog-answer :room-id room-id
+                                                   :dialog-id id :value true})))}
+                        (str "Allow all " (count pending))))]
+      (for [c (sort-by #(get rank (sav/state-of asks %) 2) children)
+            :let [st (sav/state-of asks c)]]
+        [:button {:class ["subagent-group-item" (str "subagent-group-item--" (name st))]
+                  :replicant/key (:id c)
+                  :on {:click (fn [_] (show-in-pane! dispatch! pane-id (:id c)))}}
+         (subagent-state-mark st)
+         [:span {:class ["subagent-group-title"]} (sav/child-title prefix (sav/label c))]
+         [:span {:class ["subagent-group-dur"]} (subagent-duration c)]
+         [:span {:class ["subagent-group-summary"]} (sav/summary asks c)]])]]))
+
+(defn- agents-popover-item
+  [open! asks prefix {:keys [id] :as child}]
+  (let [st (sav/state-of asks child)]
+    [:button {:class ["agents-pop-item" (str "agents-pop-item--" (name st))]
+              :replicant/key id
+              :on {:click (fn [e] (open! e id))}}
+     (subagent-state-mark st)
+     [:span {:class ["agents-pop-label"]} (sav/child-title prefix (sav/label child))]
+     [:span {:class ["agents-pop-dur"]} (subagent-duration child)]
+     [:span {:class ["agents-pop-summary"]} (sav/summary asks child)]]))
+
+(defn- agents-popover-batch
+  [open! asks children]
+  (let [{:keys [ask finished error total] :as n} (sav/counts asks children)
+        prefix (sav/shared-label (map sav/label children))
+        asking (filter #(= :ask (sav/state-of asks %)) children)]
+    [:button {:class ["agents-pop-item" (str "agents-pop-item--" (if (pos? ask) "ask" "batch"))]
+              :replicant/key (str "batch-" (:id (first children)))
+              :on {:click (fn [e] (open! e (sav/group-view (:id (first children)))))}}
+     (subagent-state-mark (sav/batch-state n))
+     [:span {:class ["agents-pop-label"]} (str (or prefix "Sub-agents") " ×" total)]
+     [:span {:class ["agents-pop-dur"]} (str finished "/" total)]
+     [:span {:class ["agents-pop-summary"]}
+      (if (pos? ask)
+        (need-you ask)
+        (str finished " of " total " finished" (when (pos? error) (str " · " error " failed"))))]
+     (when (seq asking)
+       [:span {:class ["agents-pop-chips"]}
+        (for [c asking]
+          [:span {:class ["agents-pop-chip"] :replicant/key (:id c)}
+           (sav/child-title prefix (sav/label c))])])]))
+
+(defn- agents-button
+  "The composer bar's Agents button (floating-actions) while the room has
+   sub-agents, with how many wait on you; its popover lists them by the
+   prompt that spawned them (sav/by-turn), a batch as one entry. A pick opens
+   it in the right sidebar."
+  [dispatch! room history children]
+  (when (seq children)
+    (let [asks  (sav/asks-by-sub (get-in room [:ui :dialogs]))
+          {:keys [ask running total]} (sav/counts asks children)
+          open! (fn [e view] (close-popover! e) (dispatch! (subagent-open-event view)))]
+      (list
+       [:button (merge {:class ["quick-cmd" "agents-btn"]
+                        :title "Sub-agents" :aria-label "Sub-agents"
+                        :replicant/key "agents-btn"}
+                       (popover/trigger-attrs "agents-popover"))
+        (messages-icon)
+        [:span {:class ["qc-label"]} "Agents"]
+        [:span {:class ["agents-btn-count"]} total]
+        (when (pos? ask)
+          [:span {:class ["agents-btn-ask"] :title (need-you ask)} ask])]
+       (popover/popover-content
+        {:id    "agents-popover"
+         :side  :top
+         :align :end
+         :class "agents-popover"
+         :attrs {:replicant/key "agents-popover"}}
+        [:div {:class ["agents-pop-head"]}
          (messages-icon)
-         [:span {:class ["subagents-title"]} "Sub-agents"]
-         [:span {:class ["subagents-count"]} n]
+         [:span {:class ["agents-pop-title"]} "Sub-agents"]
+         [:span {:class ["agents-pop-count"]} total]
+         [:span {:class ["agents-pop-spacer"]}]
          (when (pos? running)
-           [:span {:class ["subagents-running"]} (spinner) (str running " running")])
-         (when (seq finished)
-           [:button {:class ["subagents-clear"]
-                     :title "Dismiss finished sub-agents"
-                     :on {:click (fn [e]
-                                   (.stopPropagation e)
-                                   (doseq [c finished]
-                                     (dispatch! {:type :subagent/dismiss
-                                                 :room-id room-id :sub-id (:id c)})))}}
-            (icon/icon {:icon-name :x :size :sm})])]
-        [:div {:class ["subagents-list"]} cards]])]))
-
-
-
-(defn- subagent-exchanges
-  "A replied-to sub-agent's answers (:exchanges) as a thread: the task's
-   answer, then each reply with its own, the last streaming while it runs."
-  [{:keys [exchanges history]}]
-  (let [last-i (dec (count exchanges))]
-    (map-indexed
-     (fn [i {:keys [question answer status]}]
-       (let [status (or status :running)]
-         (answer-turn {:key          (str "x-" i)
-                       :question     question
-                       :text         (or answer
-                                         (when (and (= i last-i) (= :running status))
-                                           (sa/final-text history)))
-                       :status       status
-                       :history      history
-                       :answer-class "subagent-answer"})))
-     exchanges)))
-
-(defn- subagent-result-post
-  "A finished sub-agent's answer where the conversation was when it ended
-   (its :ended-anchor): the final text, else why there is none; once replied
-   to, the exchanges. A reply field continues it."
-  [dispatch! room-id {:keys [id label task status result exchanges] :as child}]
-  (let [status (or status :done)]
-    [:div {:class ["post" "post--assistant" "post--subagent-result"]
-           :replicant/key (str "sar-" id)
-           :data-ask-sub id}
-     [:div {:class ["post-body" "subagent-result" (str "subagent-result--" (name status))]}
-      [:div {:class ["subagent-strip"]}
-       (if (= :running status)
-         (spinner)
-         (messages-icon))
-       [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
-       (when-let [d (subagent-duration child)]
-         [:span {:class ["subagent-card-dur"]} d])
-       [:span {:class ["subagent-status" (str "subagent-status--" (name status))]}
-        (get subagent-status-label status (name status))]]
-      [:div {:class ["subagent-result-body" "post-content"]}
-       (cond
-         (seq exchanges) (subagent-exchanges child)
-         (seq result)    (render-md result)
-         :else
-         [:div {:class ["subagent-empty"]}
-          (case status
-            :stopped "Stopped before it answered."
-            :error   "Failed without an answer."
-            "No textual output.")])]
-      (subagent-reply dispatch! room-id child (str "subagent-reply-" id))
-      [:div {:class ["subagent-result-foot"]}
-       (subagent-actions dispatch! room-id child {:text? true})]]]))
-
-(defn- subagent-marker-post
-  "What stands in for a finished sub-agent's answer when answers open in a
-   window (appearance :subagent-answers :pane): one row with its status,
-   label and duration; a click shows it in the right sidebar."
-  [dispatch! _room-id {:keys [id label task status] :as child}]
-  (let [status (or status :done)]
-    [:div {:class ["post" "post--assistant" "post--subagent-marker"]
-           :replicant/key (str "sar-" id)
-           :data-ask-sub id}
-     [:button {:class ["subagent-marker"]
-               :title "Show the answer in a window"
-               :on {:click (fn [_] (dispatch! {:type :layout/open-view :view id
-                                               :where :right :focus? true}))}}
-      (if (= :running status) (spinner) (messages-icon))
-      [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
-      (when-let [d (subagent-duration child)]
-        [:span {:class ["subagent-card-dur"]} d])
-      [:span {:class ["subagent-status" (str "subagent-status--" (name status))]}
-       (get subagent-status-label status (name status))]
-      [:span {:class ["subagent-marker-open"]}
-       "Open" (icon/icon {:icon-name :arrow-right :size :sm})]]]))
-
+           [:span {:class ["agents-pop-running"]} (spinner) (str running " running")])
+         (when (pos? ask)
+           [:span {:class ["agents-btn-ask"] :title (need-you ask)} ask])]
+        [:div {:class ["agents-pop-list"]}
+         (for [{:keys [index prompt batches]} (sav/by-turn history children)]
+           (list
+            [:div {:class ["agents-pop-turn"] :replicant/key (str "turn-" index)}
+             (or prompt "Before the first prompt")]
+            (for [b batches]
+              (if (next b)
+                (agents-popover-batch open! asks b)
+                (agents-popover-item open! asks nil (first b))))))])))))
 
 (defn- quick-replies-row
   "One-tap reply chips for the last assistant response (xi.quick-replies); a
@@ -4766,44 +4797,163 @@
        (map :node run)))
    (partition-by :group? items)))
 
+
+(defn- flatten-children
+  "Hiccup children with nested seqs spliced in, as Replicant flattens them."
+  [xs]
+  (mapcat #(if (seq? %) (flatten-children %) [%]) xs))
+
+
+(defn- timeline-content
+  "The .timeline-content div without nil children. Replicant keeps a nil child
+   as a slot, and when keyed siblings shift past one (an answered permission
+   ask moving on to the next tool block) it removes that slot as a node and
+   throws; render! then rebuilds the whole page and the chat jumps to the top
+   and back."
+  [& children]
+  (into [:div {:class ["timeline-content"]}]
+        (remove nil?)
+        (flatten-children children)))
+
+(defn- subagent-back
+  "A batch member's link back to its batch view (subagent-group-view)."
+  [dispatch! pane-id batch]
+  (let [prefix (sav/shared-label (map sav/label batch))]
+    [:button {:class ["subagent-back"]
+              :title "Back to the batch"
+              :on {:click (fn [_] (show-in-pane! dispatch! pane-id
+                                                 (sav/group-view (:id (first batch)))))}}
+     (icon/icon {:icon-name :chevron-left :size :sm})
+     (str (or prefix "Sub-agents") " ×" (count batch))]))
+
+(defn- subagent-compose
+  "The composer under a sub-agent's view: the chat's compose box without its
+   action row and status line. Attach, the field (Enter sends
+   :subagent/reply, which steers it while it runs), the spinner and Stop
+   while it runs. Draft and images keep under `subagent:<id>` like a chat's."
+  [dispatch! state room-id {:keys [id status]}]
+  (let [running? (= :running status)
+        dkey     (str "subagent:" id)
+        draft    (get-in state [:web/drafts dkey])
+        images   (get-in state [:web/compose-images dkey])
+        input-id (str "subagent-compose-" id)
+        file-id  (str input-id "-file")
+        abort!   (fn [_] (dispatch! {:type :subagent/abort :room-id room-id :sub-id id}))
+        send!    (fn [_]
+                   (let [^js el (.getElementById js/document input-id)
+                         text   (str/trim (or (some-> el .-value) draft ""))]
+                     (when (seq text)
+                       (dispatch! (cond-> {:type :subagent/reply :room-id room-id :sub-id id
+                                           :text text}
+                                    (seq images) (assoc :images (vec images))))
+                       (when el (set! (.-value el) ""))
+                       (dispatch! {:type :compose/clear-draft :draft-key dkey})
+                       (when (seq images)
+                         (dispatch! {:type :compose/clear-images :draft-key dkey})))))]
+    [:div {:class ["compose-dock" "subagent-compose"] :replicant/key "sv-compose"}
+     [:div {:class ["compose-box"]}
+      (compose-image-strip dispatch! dkey images)
+      [:div {:class ["compose-frame"]}
+       [:div {:class ["compose-input-row"]}
+        [:button {:class ["icon-btn" "compose-attach-btn"] :type "button"
+                  :on {:click (fn [_] (some-> (.getElementById js/document file-id) (.click)))}}
+         (icon/icon {:icon-name :image :size :md})]
+        [:input {:id file-id :type "file" :multiple true :style {:display "none"}
+                 :on {:change (fn [^js e]
+                                (add-files! dispatch! dkey (array-seq (.. e -target -files)))
+                                (set! (.. e -target -value) ""))}}]
+        [:div {:class ["compose-input-wrapper"]}
+         (form/form-textarea-auto
+          {:placeholder (if running? "Steer…" "Reply…")
+           :value       (or draft "")
+           :max-rows    6
+           :attrs {:id input-id
+                   :replicant/on-render (fn [{:replicant/keys [^js node]}]
+                                          (sync-compose-draft! node dkey draft))
+                   :on {:input (fn [^js e]
+                                 (dispatch! {:type :compose/set-draft :draft-key dkey
+                                             :text (.. e -target -value)}))
+                        :paste (fn [^js e] (handle-compose-paste! dispatch! dkey e))
+                        ;; iOS Return (no Enter keydown), see compose-box
+                        :beforeinput (fn [^js e]
+                                       (when (= "insertLineBreak" (.-inputType e))
+                                         (.preventDefault e)
+                                         (send! e)))
+                        :keydown (enter-submits send!)}}})]
+        [:div {:class ["compose-actions"]}
+         (when running?
+           [:button {:class ["icon-btn" "compose-spinner-abort"] :aria-label "Stop sub-agent"
+                     :on {:click abort!}}
+            (spinner)])
+         (when (or (not running?) (seq draft))
+           [:button {:class ["icon-btn"] :aria-label (if running? "Send into its turn" "Send reply")
+                     :on {:click send!}}
+            (if running?
+              (steer-icon)
+              (icon/icon {:icon-name :arrow-up :size :md}))])
+         (when running?
+           [:button {:class ["icon-btn"] :aria-label "Stop sub-agent" :on {:click abort!}}
+            (icon/icon {:icon-name :circle-x :size :md})])]]]]]))
+
 (defn- subagent-view
-  "A sub-agent in place of the chat, opened from its sidebar or buffer-menu
-   row: its task and history as a read-only timeline under a header with its
-   status and actions. The rows follow the chat's block rules (subagent-items,
-   folded like the timeline by group-viewer-items). Its id stands in the
-   room's :active-buffer though it names no buffer
+  "A sub-agent in a window (the right sidebar its row opens) or in place of
+   the chat, laid out like the chat: its pending asks (subagent-asks), task
+   and history as the chat's timeline, the question threads on its blocks,
+   then its composer (subagent-compose). The window bar (or the topbar)
+   names it and carries its actions (subagent-bar-items). The rows follow
+   the chat's block rules (subagent-items, folded like the timeline by
+   group-viewer-items) and can be asked about. Its id stands in the room's
+   :active-buffer though it names no buffer
    (xi.web.router/buffer-open-event)."
-  [state dispatch! room {:keys [id label task status history session-id] :as child}]
+  [state dispatch! room {:keys [id task status history result session-id] :as child}]
   (let [room-id (:id room)
         status  (or status :running)
         ctx     (subagent-block-ctx state room (get-in room [:session :id]))
+        asks    (get (sav/asks-by-sub (get-in room [:ui :dialogs])) id)
+        threads (filter #(= id (get-in % [:node :sub-id]))
+                        (sa-threads/threads (get-in room [:ext :subagents :agents])))
+        compose (let [c (:web/thread-compose state)]
+                  (when (and (= room-id (:room-id c)) (= id (get-in c [:node :sub-id]))) c))
         post    (fn [k entry]
                   (with-post-key k (entry->post dispatch! (assoc entry :room-id room-id
                                                                  :cwd (:cwd ctx)))))]
     [:div {:class ["file-tab" "subagent-view"] :replicant/key (str "subagent-view-" id)}
-     [:div {:class ["file-tab-header"]}
-      [:span {:class ["subagent-status" (str "subagent-status--" (name status))]}
-       (when (= :running status) (spinner))
-       (get subagent-status-label status (name status))]
-      [:span {:class ["subagent-card-label"]} (or label task "sub-agent")]
-      (when-let [d (subagent-duration child)]
-        [:span {:class ["subagent-card-dur"]} d])
-      (subagent-actions dispatch! room-id child)]
      ;; --sub: never the chat's timeline for xi.web.core's scroll follow
      [:div {:class ["timeline" "timeline--sub"]}
-      [:div {:class ["timeline-content"]}
+      (timeline-content
+       (subagent-asks dispatch! state room-id asks)
        (when (seq task) (post "sv-task" {:kind :user :text task}))
        (group-viewer-items
         {:super?     (:super-collapsed? (:app ctx))
          :block-open (:block-open ctx)
          :toggle-fn  (fn [k] (remember-open dispatch! (:session-key ctx) k))}
-        (subagent-items dispatch! ctx "sv-" false child))
-       (when (empty? history)
+        (subagent-items dispatch! ctx "sv-" true child))
+       ;; A reloaded chat keeps its children without their history
+       ;; (sa/saved-child): the answer stands for it.
+       (when (and (empty? history) (seq result))
+         (post "sv-result" {:kind :text :text result}))
+       (when (and (empty? history) (empty? result))
          [:div {:class ["subagent-empty"] :replicant/key "sv-empty"}
           (cond session-id            "Promoted to its own session: open it as a chat."
                 (= :running status)   "No output yet."
                 :else                 "No output.")])
-       (subagent-reply dispatch! room-id child (str "subagent-view-reply-" id))]]]))
+       (map thread-post (thread-cards dispatch! state room-id threads compose))
+       (ask-hover-button dispatch! room-id))]
+     (subagent-compose dispatch! state room-id child)]))
+
+(defn- subagent-bar-items
+  "What a window bar (pane-header, `pane-id`) or the topbar (nil) shows for
+   sub-agent `sub` beside its pill: a batch member's link back to its batch
+   (subagent-back) and its actions (subagent-actions; Show in a window only
+   outside a sidebar)."
+  [dispatch! room pane-id side sub]
+  (let [batch (sav/batch-of (:history room) (room-sub-agents room) (:id sub))]
+    (list
+     (when (next batch) (subagent-back dispatch! pane-id batch))
+     (when pane-id
+       [:span {:class ["pane-header-spacer"] :replicant/key "sa-spacer"}])
+     [:span {:class ["subagent-bar-actions"] :replicant/key "sa-actions"}
+      (subagent-actions dispatch! (:id room) sub {:window? (not side) :stop? false})])))
 
 (defn- viewed-room
   "The active room only when its session id matches the route: mid-switch
@@ -4844,21 +4994,7 @@
      :resuming? resuming?
      :loading?  (and resuming? (empty? history))}))
 
-(defn- flatten-children
-  "Hiccup children with nested seqs spliced in, as Replicant flattens them."
-  [xs]
-  (mapcat #(if (seq? %) (flatten-children %) [%]) xs))
 
-(defn- timeline-content
-  "The .timeline-content div without nil children. Replicant keeps a nil child
-   as a slot, and when keyed siblings shift past one (an answered permission
-   ask moving on to the next tool block) it removes that slot as a node and
-   throws; render! then rebuilds the whole page and the chat jumps to the top
-   and back."
-  [& children]
-  (into [:div {:class ["timeline-content"]}]
-        (remove nil?)
-        (flatten-children children)))
 
 (defn- chat-ctx
   "What every part of the chat page reads: the room in view, its history,
@@ -4974,22 +5110,22 @@
                      ;; answer time; ones tagged :tool-id render inside their
                      ;; tool block instead (resolved-by-tool).
                      by-anchor (group-by :anchor resolved-list)
+                     ;; A sub-agent's answered asks (:sub-id) live in its view.
                      ritems    (fn [p] (map (fn [e] {:key (str "rdlg-" (:key e))
                                                      :group? false
                                                      :node (resolved-dialog-post (:key e) e)})
-                                            (remove :tool-id (get by-anchor p))))
+                                            (remove #(or (:tool-id %) (:sub-id %))
+                                                    (get by-anchor p))))
                      agents    (get-in room [:ext :subagents :agents])
                      ;; Sub-agents (`sub-agents`, the inline Explain/Ask ones
-                     ;; left out) post where they were spawned and, once done,
-                     ;; their result where the chat was by then; both anchored
-                     ;; by history length like the dialogs above, after their
-                     ;; spawn call once the history is rebuilt (sa-threads).
+                     ;; left out) post one row per anchor where they were
+                     ;; spawned, after their spawn call once the history is
+                     ;; rebuilt (sa-threads); the call itself hides behind it.
                      by-spawn  (group-by #(sa-threads/anchor-of entries %) sub-agents)
-                     by-end    (group-by #(sa-threads/ended-anchor-of entries %)
-                                         (filter answer-post? sub-agents))
-                     sa-ctx    (subagent-block-ctx state room sid)
-                     ;; Question threads on blocks follow their block: a room
-                     ;; entry's in the timeline, a sub-agent's under its card.
+                     spawned   (into #{} (keep :call-id) sub-agents)
+                     asks      (sav/asks-by-sub (get-in room [:ui :dialogs]))
+                     ;; Question threads on the room's blocks follow their
+                     ;; block; a sub-agent's are in its view (subagent-view).
                      compose   (let [c (:web/thread-compose state)]
                                  (when (= (:id room) (:room-id c)) c))
                      threads   (sa-threads/threads agents)
@@ -4999,27 +5135,18 @@
                      by-block  (group-by (comp after-pos :node) (remove sub-node? threads))
                      compose-p (when (and compose (not (sub-node? compose)))
                                  (after-pos (:node compose)))
-                     by-sub    (group-by #(get-in % [:node :sub-id]) (filter sub-node? threads))
-                     threads-of (fn [sub-id]
-                                  (cards-at (get by-sub sub-id)
-                                            (when (= sub-id (get-in compose [:node :sub-id]))
-                                              compose)))
                      titems    (fn [p]
                                  (map (fn [card] {:key (str "thr-" (get-in card [1 :replicant/key]))
                                                   :group? false
                                                   :node (thread-post card)})
                                       (cards-at (get by-block p) (when (= p compose-p) compose))))
                      sitems    (fn [p]
-                                 (concat
-                                  (when-let [as (seq (get by-spawn p))]
-                                    [{:key (str "sa-" p) :group? false
-                                      :node (subagents-post dispatch! (:id room) sa-ctx p as
-                                                            threads-of)}])
-                                  (map (fn [c] {:key (str "sar-" (:id c)) :group? false
-                                                :node (if (= :pane (:subagent-answers app))
-                                                        (subagent-marker-post dispatch! (:id room) c)
-                                                        (subagent-result-post dispatch! (:id room) c))})
-                                       (get by-end p))))
+                                 (when-let [as (seq (get by-spawn p))]
+                                   [{:key (str "sa-" p) :group? false
+                                     :node (with-post-key (str "sa-" p)
+                                             (if (next as)
+                                               (subagent-batch-row dispatch! asks as)
+                                               (subagent-row dispatch! asks (first as))))}]))
                      ;; Extension posts (xi.web.timeline-posts), e.g. agent
                      ;; blocks after their tool call, which they stand in for.
                      xposts    (timeline-posts/items state dispatch! room entries)
@@ -5050,7 +5177,6 @@
                            (sort (filter #(< % start)
                                          (distinct (concat (keys by-anchor)
                                                            (keys by-spawn)
-                                                           (keys by-end)
                                                            (keys by-xpost))))))
                    (mapcat
                     (fn [p]
@@ -5059,7 +5185,11 @@
                        (ritems p)
                        (sitems p)
                        (xitems p)
-                       (when (and (< p total) (not (replaced? p (nth entries p))))
+                       (when (and (< p total) (not (replaced? p (nth entries p)))
+                                  ;; a spawn_subagent call whose row stands in for it
+                                  (not (and (= :tool-call (:kind (nth entries p)))
+                                            (spawned (:id (nth entries p)))
+                                            (not (perm-hosts p)))))
                          (let [entry (nth entries p)
                                ;; A tool awaiting Allow/Deny stays open and out of
                                ;; any viewer group.
@@ -5193,7 +5323,8 @@
                           (false? (:web/connected? state))
                           (slash-ctx state)
                           (compose-status dispatch! model
-                                          (get-in state [:lobby :claude-usage])))))]))
+                                          (get-in state [:lobby :claude-usage]))
+                          (agents-button dispatch! room history sub-agents))))]))
 
 ;; ── Windows (xi.layout, xi.web.layout) ───────────────────────────────────────
 
@@ -5211,13 +5342,17 @@
         viewers  (buffers/viewers room)
         people   (fn [v] (sb/room-people state (get viewers v)))
         ev!      (fn [ev] (dispatch! (assoc ev :pane-id id)))
-        several? (> (count (layout/main-panes layout)) 1)]
+        several? (> (count (layout/main-panes layout)) 1)
+        sub      (when-not (contains? buffers view)
+                   (some #(when (= view (:id %)) %) sub-agents))]
     [:div {:class ["pane-header"]}
      (buffer-menu dispatch! room-id view buffers sub-agents people
                   {:menu-id (str "pane-menu-" id)
                    :class   "pane-pill"
                    :switch! (fn [v] (ev! {:type :layout/set-view :view v}))})
-     [:span {:class ["pane-header-spacer"]}]
+     (if sub
+       (subagent-bar-items dispatch! room id side sub)
+       [:span {:class ["pane-header-spacer"]}])
      (if side
        (pane-button "Back into the main area"
                     #(dispatch! {:type :layout/undock :side side}) (pane-icon :undock))
@@ -5264,7 +5399,9 @@
   [state dispatch! {:keys [room buffers sub-agents] :as ctx} layout pane-id view]
   (let [buffer (get buffers view)
         kind   (when buffer (buffers/kind view buffer))
-        sub    (when-not buffer (some #(when (= view (:id %)) %) sub-agents))]
+        sub    (when-not buffer (some #(when (= view (:id %)) %) sub-agents))
+        batch  (when-let [first-id (sav/group-view-id view)]
+                 (seq (sav/batch-of (:history room) sub-agents first-id)))]
     (case kind
       :diff
       (diff-tab-view dispatch! state (:id room) buffer)
@@ -5288,6 +5425,9 @@
 
         sub
         (subagent-view state dispatch! room sub)
+
+        batch
+        (subagent-group-view dispatch! room pane-id batch)
 
         (and layout (= :empty view))
         (empty-pane dispatch! ctx layout pane-id)
@@ -5429,6 +5569,10 @@
         (buffer-menu dispatch! (:id room) active-buf buffers sub-agents
                      (let [viewers (buffers/viewers room)]
                        (fn [id] (sb/room-people state (get viewers id))))))
+      (when-not split?
+        (when-let [sub (and (not (contains? buffers active-buf))
+                            (some #(when (= active-buf (:id %)) %) sub-agents))]
+          (subagent-bar-items dispatch! room nil nil sub)))
       (overflow-menu dispatch! state (when room {:mode :room :room-id (:id room)}))]
      (if split?
        (layout-view state dispatch! ctx windows)
@@ -8588,12 +8732,7 @@
       "Tool arguments"
       "Next to the tool name: a per-tool summary (the command, the path, the pattern) or every argument"
       (appearance-choice dispatch! :tool-args (:tool-args app)
-                         [[:summary "Summary"] [:all "All"]]))
-     (appearance-row
-      "Sub-agent answers"
-      "A finished sub-agent's answer as a post in the chat, or in a window at the right (the chat keeps a one-line marker)"
-      (appearance-choice dispatch! :subagent-answers (:subagent-answers app)
-                         [[:inline "In the chat"] [:pane "In a window"]]))]))
+                         [[:summary "Summary"] [:all "All"]]))]))
 
 (defn- theme-draft-footer
   "An open theme draft's Delete / Cancel / Save under the Theme pane."

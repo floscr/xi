@@ -153,9 +153,10 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   right-edge swipe toggles it, `install-right-edge-swipe!`). DOM scoping:
   the chat's timeline is `.timeline:not(.timeline--sub)` (`chat-timeline`;
   a sub-agent pane's shares the class), and `active-scroller` looks inside
-  `.pane--focused` first. Appearance `:subagent-answers :pane` swaps a
-  finished sub-agent's result post for a marker row and the web half of the
-  subagent extension opens it in the right sidebar on `:subagent/turn-end`.
+  `.pane--focused` first. Besides buffers and sub-agent ids, a view can
+  name a batch of sub-agents spawned at one anchor: `sa-group:<first-id>`
+  (`xi.web.subagents/group-view`), which `view-open?` keeps while that
+  child exists and `pane-view` renders as `subagent-group-view`.
 - **Terminals** (`xi.web.terminal`): a `:terminal` buffer mounts an xterm.js
   instance (vendored, loaded by `<script>` on first use) on its host div,
   keyed by term id. I/O bypasses the app: `onData` / `onResize` go out

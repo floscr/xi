@@ -130,25 +130,6 @@
     (is (nil? (:selection (spawn-of (t/ask (base-state) {:room-id "r1" :question "why?" :node node}))))
         "no selection: a question about the block")))
 
-(deftest a-thread-this-client-asked-opens-in-the-sidebar
-  (let [spawn (get-in sa-web/extension [:handlers :subagent/spawn])
-        st    (-> (base-state)
-                  (assoc-in [:connection :client-id] "c1")
-                  (assoc :active-room "r1"
-                         :web/route {:page :chat :session-id "s1"}
-                         :web/appearance {:subagent-answers :pane}))
-        ev    {:type :subagent/spawn :remote? true :room-id "r1" :sub-id "ask-1" :thread "ask-1"
-               :client-id "c1" :task "Ask about #3: why?" :prompt "p"}
-        open  (fn [res] (some (fn [[fx e]] (when (and (= :app/dispatch fx) (= :layout/open-view (:type e))) e))
-                              (:effects res)))]
-    (is (= {:type :layout/open-view :view "ask-1" :where :right} (open (spawn st ev))))
-    (is (= "ask-1" (:id (first (room-agents (:state (spawn st ev)))))) "the shared spawn applied")
-    (is (nil? (open (spawn st (assoc ev :client-id "c2")))) "another client's question")
-    (is (nil? (open (spawn st (dissoc ev :client-id)))) "the agent's own sub-agent")
-    (is (nil? (open (spawn (assoc st :web/appearance {:subagent-answers :inline}) ev)))
-        "answers inline: the thread card under the block")
-    (is (nil? (open (spawn st (assoc ev :thread "ask-0")))) "a follow-up turn")))
-
 (deftest a-follow-up-keeps-the-thread-and-its-answers
   (let [node (t/entry-node live-history 2)
         st   (with-agents (base-state)

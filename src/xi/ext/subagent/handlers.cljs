@@ -4,7 +4,7 @@
    Shared by both halves: the node ext (xi.ext.subagent — tools, gate, the
    turn-running :subagent/start effect) and the web ext (xi.ext.subagent.web —
    registers just these handlers so the mirrored :subagent/* broadcasts build
-   the Sub-agents panel state client-side).
+   the sub-agents' state client-side).
 
    State is room-scoped, so it rides in :room/joined snapshots and mirrors to
    every client:
@@ -224,8 +224,8 @@
 
 (defn inline-sub?
   "A sub-agent whose answer renders where it was asked (a tool block's
-   Explain, the diff viewer's Ask / Modify) instead of in the Sub-agents
-   panel."
+   Explain, the diff viewer's Ask / Modify) instead of as a sub-agent row
+   (xi.web.views/subagent-row)."
   [sub-id]
   (boolean (some #(prefixed? sub-id %) [explain-prefix ask-prefix modify-prefix])))
 
@@ -492,7 +492,7 @@
 ;; It spawns an ordinary sub-agent whose id is derived from the tool call's
 ;; (explain-<call-id>), so the block finds its explanation in the mirrored
 ;; :agents list — streaming while it runs, kept after the ask is answered —
-;; with no extra state. The Sub-agents panel hides these (inline-sub?).
+;; with no extra state. The chat's sub-agent rows and Agents list skip these (inline-sub?).
 
 
 (defn dismiss
