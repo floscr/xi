@@ -62,7 +62,12 @@
                        :fx   (fn [v] [[:cache/recent-commands {:commands v}]])}
    :recent-skills     {:path :web/recent-skills :default []
                        :coerce vec
-                       :fx   (fn [v] [[:cache/recent-skills {:skills v}]])}})
+                       :fx   (fn [v] [[:cache/recent-skills {:skills v}]])}
+   ;; the user's own workspaces (xi.workspace); no cache, the tabs paint once
+   ;; connected. The selected tab is the window's own (xi.web.workspaces).
+   :workspaces        {:path :workspace/user :default []
+                       :coerce vec
+                       :fx   (fn [_] [])}})
 
 (defn- wire-value
   "State value → the vector/scalar the server's validators expect."

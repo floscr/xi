@@ -46,6 +46,7 @@
             [xi.web.timeline-posts :as timeline-posts]
             [xi.blocks :as blocks]
             [xi.web.viewer-group :as viewer-group]
+            [xi.workspace :as workspace]
             [ui.icon :as icon]
             [ui.alert :as alert]
             [ui.form :as form]
@@ -5474,25 +5475,74 @@
                              (dispatch! {:type :draft-chat/discard :id id}))}}
       (icon/icon {:icon-name :x :size :sm})]]))
 
+(defn- workspace-menu-items
+  "Context-menu / palette rows that put project `path` in or out of each of
+   the user's workspaces (xi.workspace), plus one that starts a new workspace
+   with it. Config-defined workspaces are not editable here."
+  [dispatch! state path]
+  (-> (for [{:keys [id label dirs]} (filter #(= :user (:source %)) (workspace/workspaces state))
+            :let [in? (boolean (some #{path} dirs))]]
+        {:label    (str (if in? "Remove from " "Add to ") label)
+         :icon     (if in? :x :layers)
+         :on-click (fn [_] (dispatch! {:type :workspace/toggle-dir :id id :dir path}))})
+      vec
+      (conj {:label    "New workspace with this project…"
+             :icon     :plus
+             :on-click (fn [_] (dispatch! {:type :workspace/edit-open :mode :create :dir path}))})))
+
+(defn- workspace-add-row
+  "The \"Add project…\" row of a user-defined workspace: opens the palette's
+   project list, where a pick joins the workspace (:workspace-add). `variant`
+   is \"project-card\" (the projects page) or \"sidebar\"."
+  [dispatch! variant]
+  (let [open! (fn [_] (dispatch! {:type :palette/open-projects :action :workspace-add}))]
+    (if (= variant "sidebar")
+      (sidebar/sidebar-menu-item
+       {:icon-name :plus
+        :class     "sidebar-row"
+        :attrs     {:replicant/key "ws-add-project" :data-flip "ws-add-project"
+                    :data-nav "ws-add-project"}
+        :on-click  open!}
+       "Add project…")
+      [:div {:class ["project-card" "project-card--add"]
+             :replicant/key "ws-add-project"
+             :on {:click open!}}
+       [:div {:class ["project-card-icon"]} (icon/icon {:icon-name :plus :size :sm})]
+       [:div {:class ["project-card-info"]}
+        [:span {:class ["project-card-name"]} "Add a project to this workspace"]]])))
+
+(defn- project-menu-items
+  "ui.context-menu entries of a project card."
+  [dispatch! state path]
+  (into [{:label "New chat" :icon :plus
+          :on-click (fn [_] (dispatch! {:type :projects/new-session :cwd path}))}
+         {:label "Open sessions" :icon :list
+          :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd path}))}
+         {:type :separator}]
+        (workspace-menu-items dispatch! state path)))
+
 (defn project-dir-card
-  [dispatch! path dirty? current?]
-  [:div {:class ["project-card" "project-card--dir"
-                 (when current? "project-card--current")]
-         :replicant/key (str "dir-" path)
-         :data-nav (str "dir:" path)
-         :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd path}))}}
-   [:div {:class ["project-card-icon" (when dirty? "project-card-icon--dirty")]}
-    (icon/icon {:icon-name :folder :size :sm})
-    (when dirty? [:span {:class ["project-dirty-dot"]}])]
-   [:div {:class ["project-card-info"]}
-    [:span {:class ["project-card-name"]} (shorten-path path)]
-    [:span {:class ["project-card-path"]} path]]
-   [:button {:class ["project-card-action"]
-             :title "New chat"
-             :on {:click (fn [^js e]
-                           (.stopPropagation e)
-                           (dispatch! {:type :projects/new-session :cwd path}))}}
-    (icon/icon {:icon-name :plus :size :sm})]])
+  [dispatch! state path dirty? current?]
+  (context-menu/context-menu-trigger
+   {:items (project-menu-items dispatch! state path)
+    :class "project-card-trigger"
+    :attrs {:replicant/key (str "dir-" path)}}
+   [:div {:class ["project-card" "project-card--dir"
+                  (when current? "project-card--current")]
+          :data-nav (str "dir:" path)
+          :on {:click (fn [_] (dispatch! {:type :projects/select-dir :cwd path}))}}
+    [:div {:class ["project-card-icon" (when dirty? "project-card-icon--dirty")]}
+     (icon/icon {:icon-name :folder :size :sm})
+     (when dirty? [:span {:class ["project-dirty-dot"]}])]
+    [:div {:class ["project-card-info"]}
+     [:span {:class ["project-card-name"]} (shorten-path path)]
+     [:span {:class ["project-card-path"]} path]]
+    [:button {:class ["project-card-action"]
+              :title "New chat"
+              :on {:click (fn [^js e]
+                            (.stopPropagation e)
+                            (dispatch! {:type :projects/new-session :cwd path}))}}
+     (icon/icon {:icon-name :plus :size :sm})]]))
 
 
 (defn- session-matches?
@@ -5588,10 +5638,11 @@
         ;; The lobby broadcast only carries a capped recent list; the full
         ;; list is fetched on demand (:sessions/all) when this view opens.
         ;; Fall back to the capped list for an instant paint while it loads.
-        sessions   (or (:web/all-sessions state)
-                       (get-in state [:lobby :sessions]))
+        ws         (workspace/selected state)
+        sessions   (workspace/filter-sessions ws (or (:web/all-sessions state)
+                                                     (get-in state [:lobby :sessions])))
         connected? (:web/connected? state)
-        orphans    (orphan-rooms state sessions)
+        orphans    (orphan-rooms (workspace/scope state) sessions)
         sessions   (filter-sessions sessions query content? matches)
         orphans    (filter-sessions orphans query content? matches)]
     [:div {:class ["container"] :replicant/key "all-sessions"}
@@ -5667,8 +5718,11 @@
 
 
 (defn recent-projects
+  "The five most recently used project directories, within the selected
+   workspace (xi.workspace)."
   [state]
-  (let [room-cwds (->> (get-in state [:lobby :rooms]) (keep :cwd))
+  (let [state     (workspace/scope state)
+        room-cwds (->> (get-in state [:lobby :rooms]) (keep :cwd))
         sess-cwds (->> (get-in state [:lobby :sessions])
                        (filter :cwd)
                        (sort-by palette/session-time #(compare %2 %1))
@@ -5698,27 +5752,28 @@
 (defn- projects-view
   "/projects: every project directory, the live rooms and All sessions."
   [state dispatch!]
-  (let [dirs       (:web/project-dirs state)
+  (let [ws         (workspace/selected state)
+        dirs       (workspace/filter-dirs ws (:web/project-dirs state))
         raw-query  (get-in state [:web/search :home])
         query      (str/lower-case (str/trim (or raw-query "")))
         content?   (boolean (get-in state [:web/content-search :home]))
         matches    (get-in state [:web/content-matches :home])
         content-active? (and content? (seq query))
         matched-sessions (when content-active?
-                           (->> (get-in state [:lobby :sessions])
+                           (->> (get-in (workspace/scope state) [:lobby :sessions])
                                 (filter #(contains? (or matches #{}) (:session-id %)))))
         dirs       (if (seq query)
                      (filter #(str/includes? (str/lower-case %) query) dirs)
                      dirs)
         loading?   (:web/projects-loading? state)
-        rooms      (get-in state [:lobby :rooms])
+        rooms      (get-in (workspace/scope state) [:lobby :rooms])
         connected? (:web/connected? state)
         ;; Active rooms without a known project
         orphans    (filter (fn [r] (:session-id r)) rooms)]
     [:div {:class ["container"] :replicant/key "projects"}
      [:div {:class ["topbar"]}
       (menu-button dispatch!)
-      [:div {:class ["topbar-title"]} "Projects"]
+      [:div {:class ["topbar-title"]} (if ws (str "Projects · " (:label ws)) "Projects")]
       (offline-badge state)
       (home-topbar-actions state dispatch!)
       (overflow-menu dispatch! state)]
@@ -5771,13 +5826,17 @@
             (empty-state/empty-state {} [:p "No matching projects."])
             (let [dirty (:web/project-dirty state)]
               (for [d dirs]
-                (project-dir-card dispatch! d (contains? dirty d) false))))]])]]))
+                (project-dir-card dispatch! state d (contains? dirty d) false))))
+          (when (and (= :user (:source ws)) (not (seq query)))
+            (workspace-add-row dispatch! "project-card"))]])]]))
 
 (defn composer-projects
   "The dashboard composer's project choices: recently used first, then every
-   known project directory."
+   known project directory, within the selected workspace."
   [state]
-  (vec (distinct (concat (recent-projects state) (:web/project-dirs state)))))
+  (vec (distinct (concat (recent-projects state)
+                         (workspace/filter-dirs (workspace/selected state)
+                                                (:web/project-dirs state))))))
 
 (defn composer-cwd
   "The project the dashboard composer starts a chat in: the user's pick
@@ -6087,6 +6146,73 @@
 (def ^:private mac?
   (boolean (re-find #"Mac|iPhone|iPad" (or (some-> js/navigator .-platform) ""))))
 
+(defn- workspace-bar*
+  "The workspace tab bar across the top of the app, above the sidebar and the
+   chat (xi.workspace): All first, then config.edn's and the user's own
+   workspaces, a + for a new one. Shown once there is a workspace, never for
+   a personal agent. Badges count the chats that need attention in the other
+   tabs; a user tab's context menu renames or removes it."
+  [state dispatch!]
+  (let [wss (workspace/workspaces state)]
+    (when (and (seq wss) (not (get-in state [:lobby :agent-id])))
+      (let [sel    (workspace/selected-id state)
+            badges (sb/workspace-attention state wss)
+            tab    (fn [{:keys [id label source]}]
+                     (let [active? (= id sel)
+                           n       (get badges id 0)]
+                       [:button {:class ["ws-tab" (when active? "ws-tab--active")]
+                                 :replicant/key (str "tab-" id)
+                                 :type "button"
+                                 :role "tab"
+                                 :aria-selected (str active?)
+                                 :title (case source
+                                          :config (str label " · defined in config.edn")
+                                          :user   (str label " · right-click to rename or remove")
+                                          label)
+                                 :on {:click (fn [_] (dispatch! {:type :workspace/select :id id}))}}
+                        [:span {:class ["ws-tab-label"]} label]
+                        (when (and (pos? n) (not active?))
+                          [:span {:class ["ws-tab-badge"]} n])]))]
+        [:div {:class ["ws-bar"] :role "tablist" :aria-label "Workspaces"
+               :replicant/key "ws-bar"}
+         (tab {:id workspace/all-id :label "All"})
+         (for [{:keys [id source] :as ws} wss]
+           (if (= :user source)
+             (context-menu/context-menu-trigger
+              {:items [{:label "Rename…" :icon :edit
+                        :on-click (fn [_] (dispatch! {:type :workspace/edit-open :mode :rename :id id}))}
+                       {:label "Remove workspace" :icon :trash :variant :danger
+                        :on-click (fn [_] (dispatch! {:type :workspace/remove :id id}))}]
+               :class "ws-tab-trigger"
+               :attrs {:replicant/key id}}
+              (tab ws))
+             (tab ws)))
+         [:button {:class ["ws-tab" "ws-tab--add"]
+                   :type "button"
+                   :title "New workspace"
+                   :aria-label "New workspace"
+                   :on {:click (fn [_] (dispatch! {:type :workspace/edit-open :mode :create}))}}
+          (icon/icon {:icon-name :plus :size :sm})]]))))
+
+;; {:sig :html} memo of the bar: its badges walk the whole lobby, and the root
+;; re-renders on every streamed token.
+(def ^:private workspace-bar-cache (atom nil))
+
+(defn- workspace-bar
+  [state dispatch!]
+  (let [sig    [(:lobby state)
+                (:web/response-counts state)
+                (:web/watched state)
+                (:workspace/selected state)
+                (:workspace/user state)
+                (get-in state [:web/route :session-id])]
+        cached @workspace-bar-cache]
+    (if (and cached (= (:sig cached) sig))
+      (:html cached)
+      (let [html (workspace-bar* state dispatch!)]
+        (reset! workspace-bar-cache {:sig sig :html html})
+        html))))
+
 (defn- sidebar-search
   [dispatch!]
   [:button {:class ["sidebar-search-trigger"]
@@ -6130,6 +6256,7 @@
         render?  (or open? wide?)
         pa?      (get-in state [:lobby :agent-id])
         projects (when (and render? (not pa?)) (recent-projects state))
+        ws       (workspace/selected state)
         {:keys [recent hidden earlier]} (when render? (sidebar-session-groups state))
         ext-groups (when render?
                      (sb/extension-groups state (:web/sidebar-groups state)))
@@ -6143,7 +6270,7 @@
      ;; Keyed by render? so the closed drawer holds no card list and a fresh
      ;; one is built on open (a hidden list accumulated stale spinner nodes).
      (sidebar/sidebar-content
-      {:attrs {:style {:padding-top "max(var(--size-2), env(safe-area-inset-top))"}
+      {:attrs {:style {:padding-top "max(var(--size-2), var(--safe-top))"}
                :replicant/key (str "sidebar-content-" render?)}}
       (when render?
         (list
@@ -6159,7 +6286,9 @@
            (section {:id :projects :label "Projects"}
              (let [dirty (:web/project-dirty state)]
                (for [p projects]
-                 (project-dir-card dispatch! p (contains? dirty p) (= p route-dir))))
+                 (project-dir-card dispatch! state p (contains? dirty p) (= p route-dir))))
+             (when (= :user (:source ws))
+               (workspace-add-row dispatch! "sidebar"))
              (sidebar/sidebar-menu-item
               {:icon-name :layout-dashboard
                :class     "sidebar-row"
@@ -6224,6 +6353,10 @@
                         :title    (str/join " · " (map :label cleanups))
                         :on-click #(run! (comp dispatch! :event) cleanups)})
            items (->> (cond-> cleanup-items
+                        (not pa?)   (conj :separator
+                                          {:label    "New workspace…"
+                                           :icon     :layers
+                                           :on-click #(dispatch! {:type :workspace/edit-open :mode :create})})
                         standalone? (conj :separator
                                           {:label    "Reload"
                                            :icon     :refresh
@@ -6262,6 +6395,8 @@
                 (:web/sidebar-collapsed state)
                 (:web/draft-chats state)
                 (:web/project-dirty state)
+                (:workspace/selected state)
+                (:workspace/user state)
                 (:web/theme-mode state)
                 (:web/nav-items state)
                 (mapv #(nav-badge state %) (:web/nav-items state))
@@ -6365,7 +6500,8 @@
    ;; :list — the framework icon set has no :folder-open; an unknown name
    ;; renders no icon at all.
    [{:icon :list :label "Open sessions"
-     :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd cwd}))}]))
+     :on-click (fn [_] (dispatch! {:type :projects/select-dir :cwd cwd}))}]
+   (workspace-menu-items dispatch! state cwd)))
 
 (defn- palette-project-actions
   [state dispatch! cwd]
@@ -6471,6 +6607,77 @@
                                            :model m :room-id (:id room)}))}
             m)))])))
 
+
+(defn- with-shortcut
+  "cmd/command-item `opts` plus a keycap badge of the key bound to the row's
+   `action` (xi.keys id) or `event` (xi.web.keymap/event-shortcut)."
+  [opts state {:keys [action event]}]
+  (if-let [s (or (some->> action (keymap/shortcut state))
+                 (some->> event (keymap/event-shortcut state)))]
+    (assoc opts :shortcut (keycaps s))
+    opts))
+
+(defn- palette-workspace-page
+  "Workspaces (xi.workspace) as a palette sub-page: All and every workspace,
+   the selected one checked, then New workspace."
+  [state dispatch!]
+  (let [sel  (workspace/selected-id state)
+        wss  (workspace/workspaces state)
+        item (fn [{:keys [id label source dirs]}]
+               (cmd/command-item
+                {:icon        (if (= id sel) :check :layers)
+                 :value       (str "workspace " label)
+                 :description (case source
+                                :config "config.edn"
+                                :user   (str (count dirs) (if (= 1 (count dirs)) " project" " projects"))
+                                "everything")
+                 :on-click    (fn [_] (dispatch! {:type :workspace/select :id id}))}
+                label))]
+    [:div {:replicant/key :workspace-page}
+     (apply cmd/command-group {:heading "Workspaces"}
+       (item {:id workspace/all-id :label "All"})
+       (map item wss))
+     (cmd/command-group {}
+       (cmd/command-item
+        (with-shortcut {:icon :plus
+                        :value "new workspace create"
+                        :on-click (fn [_] (dispatch! {:type :workspace/edit-open :mode :create}))}
+          state {:action :workspace/new})
+        "New workspace…"))]))
+
+(defn- palette-workspace-items
+  "The main palette's Workspaces rows: switch and create, and for one of the
+   user's own workspaces when it is selected, add a project, rename, remove."
+  [state dispatch!]
+  (let [ws   (workspace/selected state)
+        own? (= :user (:source ws))
+        row  (fn [opts action label]
+               (cmd/command-item (with-shortcut opts state {:action action}) label))]
+    (cond-> []
+      (seq (workspace/workspaces state))
+      (conj (row {:icon :layers
+                  :value (str "switch workspace tab " (str/join " " (map :label (workspace/workspaces state))))
+                  :on-click (fn [_] (dispatch! {:type :palette/open-workspaces}))}
+                 :workspace/switch "Switch workspace…"))
+      :always
+      (conj (row {:icon :plus
+                  :value "new workspace create"
+                  :on-click (fn [_] (dispatch! {:type :workspace/edit-open :mode :create}))}
+                 :workspace/new "New workspace…"))
+      own?
+      (conj (row {:icon :folder
+                  :value (str "add project to workspace " (:label ws))
+                  :on-click (fn [_] (dispatch! {:type :palette/open-projects :action :workspace-add}))}
+                 nil (str "Add project to " (:label ws) "…"))
+            (row {:icon :edit
+                  :value (str "rename workspace " (:label ws))
+                  :on-click (fn [_] (dispatch! {:type :workspace/rename-current}))}
+                 :workspace/rename (str "Rename workspace " (:label ws) "…"))
+            (row {:icon :trash
+                  :value (str "remove delete workspace " (:label ws))
+                  :on-click (fn [_] (dispatch! {:type :workspace/remove-current}))}
+                 :workspace/delete (str "Remove workspace " (:label ws)))))))
+
 (defn- palette-theme-page
   "Color themes (xi.web.theme) as a palette sub-page: Default, the built-ins
    and the user's themes, the active one checked; picking one applies it
@@ -6532,15 +6739,25 @@
    the project's file finder with the same action (palette-keydown reads
    `data-palette-drill`)."
   [state dispatch! {:keys [action]}]
-  (let [dirs   (:web/project-dirs state)
+  (let [ws     (workspace/selected state)
+        ;; adding to a workspace: every project, the recently used ones
+        ;; (whatever tab is selected) first, not just the configured list
+        dirs   (if (= action :workspace-add)
+                 (vec (distinct (concat (recent-projects (workspace/unscoped state))
+                                        (:web/project-dirs state))))
+                 (:web/project-dirs state))
         dkey   (draft-key state)
         select (fn [d short]
                  (case action
-                   :insert {:type :projects/picker-insert :path d :draft-key dkey}
+                   :insert        {:type :projects/picker-insert :path d :draft-key dkey}
+                   :workspace-add {:type :workspace/toggle-dir :id (:id ws) :dir d :close-palette? true}
                    {:type :palette/drill :cwd d :label short :reopen? true}))]
     (if (empty? dirs)
       [:div {:class ["command-loading"]} (spinner)]
-      (apply cmd/command-group {:heading (if (= action :insert) "Insert project path" "Projects")}
+      (apply cmd/command-group {:heading (case action
+                                           :insert        "Insert project path"
+                                           :workspace-add (str "Add to " (:label ws))
+                                           "Projects")}
         (for [d dirs
               :let [short (shorten-path d)]]
           (cmd/command-item
@@ -6952,14 +7169,6 @@
 (def ^:private palette-quick-keys
   "sfghlqweryiotzcvbm")
 
-(defn- with-shortcut
-  "cmd/command-item `opts` plus a keycap badge of the key bound to the row's
-   `action` (xi.keys id) or `event` (xi.web.keymap/event-shortcut)."
-  [opts state {:keys [action event]}]
-  (if-let [s (or (some->> action (keymap/shortcut state))
-                 (some->> event (keymap/event-shortcut state)))]
-    (assoc opts :shortcut (keycaps s))
-    opts))
 
 (defn- palette-search-toggle
   "Full-text vs. names-only toggle at the right edge of the search page's
@@ -7012,6 +7221,7 @@
                                      new-chat-page? (str "Prompt for a new chat in "
                                                          (:label palette-page) "…")
                                      (= :theme (:kind palette-page)) "Switch color theme…"
+                                     (= :workspaces (:kind palette-page)) "Switch workspace…"
                                      palette-page "Filter actions…"
                                      :else        "Type a command or search…")
                       :attrs {:replicant/key "cmdk"
@@ -7077,6 +7287,7 @@
        (case (:kind palette-page)
          :model          (palette-model-page state dispatch!)
          :theme          (palette-theme-page state dispatch!)
+         :workspaces     (palette-workspace-page state dispatch!)
          :skill          (palette-skill-page state dispatch!)
          :commits        (palette-commits-page state dispatch! palette-page)
          :files          (palette-files-page state dispatch!)
@@ -7164,6 +7375,9 @@
                                                            :on-click (fn [_] (dispatch! (:event item)))}
                                              state item)
                            (:label item))))))
+     (when-not pa?
+       (apply cmd/command-group {:heading "Workspaces"}
+         (palette-workspace-items state dispatch!)))
      (when (seq project-dirs)
        (apply cmd/command-group {:heading "Projects"}
          (map
@@ -8181,6 +8395,56 @@
      :failed  "No suggestions this time. ↻ More tries again"
      (when stats (rename/stats-line stats)))])
 
+(defn- workspace-dialog
+  "Name a new workspace or rename one (:workspace/editor, xi.web.workspaces)."
+  [state dispatch!]
+  (when-let [{:keys [mode label dir]} (:workspace/editor state)]
+    (let [close! (fn [] (dispatch! {:type :workspace/edit-close}))
+          blank? (str/blank? label)
+          save!  (fn [] (when-not blank? (dispatch! {:type :workspace/edit-save})))]
+      (dialog/dialog-overlay
+       {:on-close close!
+        :attrs {:replicant/key "workspace-dialog"}}
+       (dialog/dialog-panel {:class "workspace-dialog"}
+         (dialog/dialog-header {}
+           [:h3 (if (= mode :rename) "Rename workspace" "New workspace")]
+           [:button {:class ["icon-btn" "icon-btn--sm"]
+                     :title "Close"
+                     :on {:click (fn [_] (close!))}}
+            (icon/icon {:icon-name :x :size :md})])
+         (dialog/dialog-body {:class "workspace-body"}
+           (form/form-input
+            {:value label
+             :placeholder "Workspace name"
+             :attrs {:value label
+                     :maxlength workspace/max-label
+                     :aria-label "Workspace name"
+                     :replicant/on-mount (fn [{:replicant/keys [^js node]}]
+                                           (.focus node)
+                                           (.select node))
+                     :on {:input   (fn [^js e]
+                                     (dispatch! {:type :workspace/edit-set
+                                                 :label (.. e -target -value)}))
+                          ;; Escape here, else the compose layer's Escape only
+                          ;; leaves the field
+                          :keydown (fn [^js e]
+                                     (case (.-key e)
+                                       "Enter"  (do (.preventDefault e) (save!))
+                                       "Escape" (do (.preventDefault e) (close!))
+                                       nil))}}})
+           [:p {:class ["workspace-hint"]}
+            (if dir
+              (str "Starts with " (shorten-path dir) ". Add more projects from a project's menu.")
+              "Add projects from a project's menu, or with the Add project row of its tab.")])
+         (dialog/dialog-footer {}
+           [:span {:class ["flex-1"]}]
+           (button/button {:variant :ghost :size :sm :on-click (fn [_] (close!))}
+             "Cancel")
+           (button/button {:variant :primary :size :sm
+                           :disabled blank?
+                           :on-click (fn [_] (save!))}
+             (if (= mode :rename) "Save" "Create"))))))))
+
 (defn- rename-dialog
   "Rename a session (:web/rename, xi.web.rename). Suggestions start with the
    dialog and fill in under the field; Tab cycles them into it."
@@ -8415,28 +8679,34 @@
             "Done")))))))
 
 (defn root-view
+  "The app shell: the workspace bar (when there are workspaces) across the
+   top, the sidebar layout below it."
   [state dispatch! pages]
   (let [open? (boolean (:web/sidebar-open? state))
-        page  (get-in state [:web/route :page])]
-    (apply sidebar/sidebar-layout
-           {:class "sidebar-layout--floating"
-            :attrs (cond-> {:style {:height "100%"}}
-                     open? (assoc :data-sidebar-open true))}
-           (recent-sidebar state dispatch!)
-           (sidebar/sidebar-overlay {:on-click (fn [_] (dispatch! {:type :sidebar/close}))})
-           (sidebar/sidebar-layout-main
-            {:attrs {:style {:min-height "0"}}}
-            (if-let [page-view (get pages page)]
-              (page-view state dispatch!)
-              (case page
-                :chat (chat-view state dispatch!)
-                :git-status (git-status-view state dispatch!)
-                (home-view state dispatch!))))
-           (command-palette state dispatch!)
-           (appearance-dialog state dispatch!)
-           (keys-dialog state dispatch!)
-           (rename-dialog state dispatch!)
-           (auth-request-banner state dispatch!)
-           (auth-overlay state)
-           ;; extension overlays (xi.web.overlays), over every page
-           (overlays/views state dispatch!))))
+        page  (get-in state [:web/route :page])
+        bar   (workspace-bar state dispatch!)]
+    [:div {:class ["app-shell" (when bar "app-shell--ws")]}
+     bar
+     (apply sidebar/sidebar-layout
+            {:class "sidebar-layout--floating"
+             :attrs (cond-> {:style {:flex "1 1 0" :min-height "0"}}
+                      open? (assoc :data-sidebar-open true))}
+            (recent-sidebar state dispatch!)
+            (sidebar/sidebar-overlay {:on-click (fn [_] (dispatch! {:type :sidebar/close}))})
+            (sidebar/sidebar-layout-main
+             {:attrs {:style {:min-height "0"}}}
+             (if-let [page-view (get pages page)]
+               (page-view state dispatch!)
+               (case page
+                 :chat (chat-view state dispatch!)
+                 :git-status (git-status-view state dispatch!)
+                 (home-view state dispatch!))))
+            (command-palette state dispatch!)
+            (appearance-dialog state dispatch!)
+            (keys-dialog state dispatch!)
+            (rename-dialog state dispatch!)
+            (workspace-dialog state dispatch!)
+            (auth-request-banner state dispatch!)
+            (auth-overlay state)
+            ;; extension overlays (xi.web.overlays), over every page
+            (overlays/views state dispatch!))]))

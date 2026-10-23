@@ -38,6 +38,7 @@
             [xi.web.threads :as threads]
             [xi.web.theme :as theme]
             [xi.web.user-state :as user-state]
+            [xi.web.workspaces :as workspaces]
             [xi.web.cache :as cache]
             [xi.web.dashboard :as dashboard]
             [xi.web.demo :as demo]
@@ -1175,6 +1176,7 @@
          dashboard/handlers
          rename/handlers
          threads/handlers
+         workspaces/handlers
          {:room/new              room-new
           :home/start            home-start
           :home/set-cwd          (fn [st {:keys [cwd]}] {:state (assoc st :web/home-cwd cwd)})
@@ -2114,6 +2116,7 @@
    :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
    :cache/model-list (fn [_ {:keys [models at]}] (cache/save-model-list! models at))
    :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
+   :cache/window-workspace  (fn [_ m] (cache/save-window-workspace! m))
    :cache/layouts (fn [_ {:keys [layouts]}] (cache/save-layouts! layouts))
    :cache/sidebar-buffers-open (fn [_ {:keys [session-ids]}] (cache/save-sidebar-buffers-open! session-ids))
    :cache/appearance (fn [_ {:keys [settings]}] (cache/save-appearance! settings))
@@ -2781,6 +2784,7 @@
   [st]
   [(:lobby st) (:web/sidebar-collapsed st) (:web/draft-chats st)
    (:web/sidebar-buffers-open st) (:web/sidebar-open? st)
+   (:workspace/selected st) (:workspace/user st)
    (get-in st [:web/route :session-id]) (get-in st [:web/route :page])])
 
 (defn- compose-caret
@@ -3123,6 +3127,22 @@
   (keymap/register-action! {:id :themes/pick :event {:type :palette/open-themes}})
   (keymap/register-action! {:id :projects/open
                             :event {:type :route/navigate :page :home}})
+  ;; workspaces (xi.web.workspaces); rename / delete act on the selected tab,
+  ;; and only when it is one of the user's own
+  (let [own-selected? (fn [st] (some #(= (:workspace/selected st) (:id %)) (:workspace/user st)))]
+    (keymap/register-action! {:id :workspace/switch :event {:type :palette/open-workspaces}})
+    (keymap/register-action! {:id :workspace/new :event {:type :workspace/edit-open :mode :create}})
+    (keymap/register-action! {:id :workspace/rename :when own-selected?
+                              :event {:type :workspace/rename-current}})
+    (keymap/register-action! {:id :workspace/delete :when own-selected?
+                              :event {:type :workspace/remove-current}}))
+  (keymap/register-action! {:id :workspace/next :event {:type :workspace/next}})
+  (keymap/register-action! {:id :workspace/prev :event {:type :workspace/prev}})
+  (keymap/register-action! {:id :workspace/other :event {:type :workspace/other}})
+  (doseq [n (range 1 10)]
+    (keymap/register-action! {:id (keyword "workspace" (str "tab-" n))
+                              :event {:type :workspace/tab :n n}}))
+  (keymap/register-action! {:id :workspace/tab-last :event {:type :workspace/tab :n :last}})
   ;; Vim's Ctrl+O / Ctrl+I over the browser history; back only while the app
   ;; owns an entry to return to, so it never leaves Xi.
   (keymap/register-action! {:id :nav/back
@@ -3230,11 +3250,13 @@
                                      (keymap/blur-active!)))})
   (keymap/register-action! {:id :dialog/close
                             :when (fn [st] (boolean (or (:web/appearance-open? st)
-                                                        (:web/keys-open? st))))
+                                                        (:web/keys-open? st)
+                                                        (:workspace/editor st))))
                             :run (fn [st dispatch! _]
-                                   (dispatch! {:type (if (:web/keys-open? st)
-                                                       :keys/close
-                                                       :appearance/close)}))})
+                                   (dispatch! {:type (cond
+                                                       (:workspace/editor st) :workspace/edit-close
+                                                       (:web/keys-open? st)   :keys/close
+                                                       :else                  :appearance/close)}))})
   (keymap/register-action! {:id :lightbox/close :event {:type :lightbox/close}})
   (keymap/register-action! {:id :keys/show :event {:type :keys/show}})
   ;; Back to the chat; the buffer stays open. Not while an open <dialog> (the

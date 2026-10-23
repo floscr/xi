@@ -55,7 +55,9 @@ The home page (`/`) starts chats and shows cards.
 
 **Customize dashboard** in the ⋮ menu switches cards on and off.
 [Extensions](extensions-reference.md#browser-halves) can add cards. **All
-projects** in the sidebar opens the project list (`/projects`).
+projects** in the sidebar opens the project list (`/projects`). The tab bar
+across the top narrows the cards and lists to one
+[workspace](workspaces.md).
 
 ## What you can do
 
@@ -494,7 +496,9 @@ Your themes are per [user](#what-follows-you), up to twenty.
 These choices belong to your [user](server.md#users), not to the browser:
 the theme and your color themes, the appearance settings, which sidebar
 groups are collapsed, which home cards you switched off, the
-model new chats start with, and your recently used commands and skills. So do
+model new chats start with, your [workspaces](workspaces.md) (not the
+selected tab, which is each window's own), and your recently used commands
+and skills. So do
 the chats you have read (the unread dots), the chats you hid from Recent and
 the ones you pinned to it: the same chat can be unread for you and read for a
 colleague, and hidden or pinned for one of you only. What an

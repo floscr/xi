@@ -42,6 +42,17 @@
                               :demo-extensions ["notes.cljs"]
                               :agents {"root" {:tools ["fetch"]}}
                               :trusted-mcp-servers ["chrome"]}))))
+  (testing ":workspaces is validated and normalized, absent unless set"
+    (let [err (fn [data] (:error (cfg/parse-config {:type :xi/config :version 1 :workspaces data})))]
+      (is (re-find #":workspaces must be a vector" (err {})))
+      (is (re-find #":workspaces entries" (err [{:id :a}])))
+      (is (re-find #"distinct" (err [{:id :a :dirs ["~/a"]} {:id :a :dirs ["~/b"]}]))))
+    (is (not (contains? (cfg/parse-config {:type :xi/config :version 1}) :workspaces)))
+    (is (not (contains? (cfg/parse-config {:type :xi/config :version 1 :workspaces []}) :workspaces)))
+    (is (= [{:id "penpot" :label "Penpot" :dirs ["~/Code/penpot*"]}]
+           (:workspaces (cfg/parse-config {:type :xi/config :version 1
+                                           :workspaces [{:id :penpot :label "Penpot"
+                                                         :dirs ["~/Code/penpot*"]}]})))))
   (testing ":projects is validated and normalized"
     (is (= {:browse [{:dir "~/Code" :depth 2 :git? true}]
             :repos ["~/.config/dotfiles"]

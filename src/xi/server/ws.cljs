@@ -246,7 +246,9 @@
                                        rooms)))
         counts   (session/count-session-responses
                   (into [] (keep :session-id) sessions)
-                  {:personal-agent? (some? agent-id)})]
+                  {:personal-agent? (some? agent-id)})
+        ;; config.edn's dynamic workspaces (xi.workspace), dirs expanded
+        wspaces  (when-not agent-id (user-config/workspaces))]
     (cond-> {:type       :lobby/state
              :rooms      rooms
              :sessions   sessions
@@ -257,6 +259,7 @@
              :started-at server-started-at}
       model    (assoc :model model)
       agent-id (assoc :agent-id agent-id)
+      (seq wspaces) (assoc :workspaces wspaces)
       ;; what the user-extension loader did (xi.ext.user/report)
       (:user-ext/report st) (assoc :extension-report (:user-ext/report st))
       ;; The sidebar ring's reading, plus when the usage poll last ran so a

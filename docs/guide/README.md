@@ -69,6 +69,7 @@ lines; each page line is `- [Title](file.md) — one-line hook`.
 
 **Everyday use**
 - [Projects](projects.md) — how Xi finds your projects, per-project prompt and snippets
+- [Workspaces](workspaces.md) — tabs that narrow the web client to a set of projects, yours or from the config
 - [Project instructions](project-instructions.md) — `AGENTS.md`: which files load, and how the agent learns about the ones in subdirectories
 - [Built-in tools](builtin-tools.md) — every tool the agent has out of the box, and which ones ask first
 - [How the agent reads code](reading-code.md) — large files arrive as a syntax-tree outline; the agent asks for the code it needs

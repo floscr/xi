@@ -4,11 +4,15 @@
    onto every client) into the Recent / Hidden / Earlier display groups and a
    flat navigation order, plus the per-session live-status enrichment both
    surfaces render. Kept surface-neutral (no hiccup, no ANSI) so the TUI and
-   web agree on grouping and ALT+j/k order."
+   web agree on grouping and ALT+j/k order.
+
+   The groups read the lobby through xi.workspace/scope, so a selected
+   workspace tab narrows every list built here."
   (:require [xi.core.state :as cstate]
             [xi.palette :as palette]
             [xi.session.recent :as recent]
-            [xi.user-state :as user-state]))
+            [xi.user-state :as user-state]
+            [xi.workspace :as workspace]))
 
 (defn format-relative-time [t]
   (let [ms (cond (number? t) t
@@ -144,7 +148,8 @@
    reachable however old it is (the server sends every flagged session,
    however old)."
   [state {:keys [where limit] :as group}]
-  (let [sessions (get-in state [:lobby :sessions])
+  (let [state    (workspace/scope state)
+        sessions (get-in state [:lobby :sessions])
         ;; a live room hides its saved session from the lobby list, so rooms
         ;; the list leaves out come first: they are what is open right now
         live     (filter where (orphan-rooms state sessions))
@@ -172,7 +177,8 @@
    top, then busy agents, then most-recently-visited. Shared by the rendered
    sidebar and ALT+j/k keyboard navigation so both agree on order."
   [state]
-  (let [dismissed-ids (->> (get-in state [:lobby :sessions])
+  (let [state    (workspace/scope state)
+        dismissed-ids (->> (get-in state [:lobby :sessions])
                            (filter :dismissed?)
                            (map :session-id)
                            set)
@@ -252,6 +258,18 @@
     (let [skip (conj visited cur)]
       (when-let [sid (first (remove skip others))]
         {:sid sid :visited (conj skip sid)}))))
+
+(defn workspace-attention
+  "{workspace-id n}: how many chats of each workspace (xi.workspace) need
+   attention — waiting on a dialog, failed, finished with unread output or
+   running (`active-cards`) — across the whole lobby, whichever tab is
+   selected. The tab bar's badges."
+  [state workspaces]
+  (let [{:keys [recent hidden earlier]} (sidebar-session-groups (workspace/unscoped state))
+        cards (active-cards (concat recent hidden earlier))]
+    (into {workspace/all-id (count cards)}
+          (map (fn [ws] [(:id ws) (count (filter #(workspace/member? ws (:cwd %)) cards))]))
+          workspaces)))
 
 (defn sidebar-session-order
   "Flattened session-ids as shown in the drawer sidebar

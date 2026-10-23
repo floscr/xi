@@ -154,7 +154,7 @@
    a standalone process keeps its own (xi.ext.user)."
   [st ev]
   (let [lobby (select-keys ev [:rooms :sessions :read :profiles :user-ids :agent-id :started-at :claude-usage :model
-                               :buffers :usage-at])
+                               :buffers :usage-at :workspaces])
         prev  (get-in st [:lobby :claude-usage])]
     {:state (cond-> (assoc st :lobby (cond-> lobby
                                        (and prev (not (:claude-usage lobby)))

@@ -241,6 +241,23 @@ the navigation ones fit together.
 | `:skills/search` | Search skills | web |
 | `:themes/pick` | Change color theme | web |
 | `:projects/open` | All projects | web |
+| `:workspace/switch` | Switch workspace | web |
+| `:workspace/new` | New workspace | web |
+| `:workspace/rename` | Rename the current workspace | web |
+| `:workspace/delete` | Remove the current workspace | web |
+| `:workspace/next` | Next workspace tab | web |
+| `:workspace/prev` | Previous workspace tab | web |
+| `:workspace/other` | Back to the previously selected workspace | web |
+| `:workspace/tab-1` | Workspace tab 1 (All) | web |
+| `:workspace/tab-2` | Workspace tab 2 | web |
+| `:workspace/tab-3` | Workspace tab 3 | web |
+| `:workspace/tab-4` | Workspace tab 4 | web |
+| `:workspace/tab-5` | Workspace tab 5 | web |
+| `:workspace/tab-6` | Workspace tab 6 | web |
+| `:workspace/tab-7` | Workspace tab 7 | web |
+| `:workspace/tab-8` | Workspace tab 8 | web |
+| `:workspace/tab-9` | Workspace tab 9 | web |
+| `:workspace/tab-last` | Last workspace tab | web |
 | `:nav/back` | Back to the previous page | web |
 | `:nav/forward` | Forward to the next page | web |
 | `:chat/hide` | Hide this chat from Recent | web |

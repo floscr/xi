@@ -416,6 +416,7 @@ fs.writeFileSync(
     ` :demo-extensions [${demoExtensions.map((e) => JSON.stringify(e)).join(" ")}]\n` +
     ` :extensions [${extensions.map((e) => JSON.stringify(e)).join(" ")}]\n` +
     ' :keys {:web {:mode/navigate {"b" :block/next "B" :block/prev}}}\n' +
+    ' :workspaces [{:id :web :label "Web" :dirs ["/home/demo/acme-web"]}]\n' +
     ' :users {"root"  {:name "Demo"}\n' +
     '         "alice" {:name "Alice"}}}\n',
 );

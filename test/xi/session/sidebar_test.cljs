@@ -48,6 +48,27 @@
     (testing "cards carry the live indicators like every other group"
       (is (every? #(contains? % :active?) cards)))))
 
+(deftest a-selected-workspace-narrows-every-group
+  (let [state (-> (with-sessions [{:session-id "p" :cwd "/c/penpot/app" :timestamp 3}
+                                  {:session-id "h" :cwd "/c/home" :timestamp 2 :favorite? true}
+                                  {:session-id "n" :timestamp 1}])
+                  (assoc-in [:lobby :rooms] [{:session-id "live" :cwd "/c/penpot" :busy? true}])
+                  (assoc-in [:lobby :workspaces] [{:id "penpot" :label "Penpot" :dirs ["/c/penpot"]}])
+                  (assoc :workspace/user [{:id "w-1" :label "Home" :dirs ["/c/home"]}]))
+        ids   (fn [st] (->> (sb/sidebar-session-groups st) vals (apply concat) (mapv :session-id) sort))]
+    (is (= ["h" "live" "n" "p"] (ids state)) "All shows everything, live rooms included")
+    (is (= ["live" "p"] (ids (assoc state :workspace/selected "penpot"))))
+    (is (= ["h"] (ids (assoc state :workspace/selected "w-1"))))
+    (is (= ["h" "live" "n" "p"] (ids (assoc state :workspace/selected "gone"))) "an unknown id is All")
+    (is (= [] (mapv :session-id (:cards (sb/extension-group (assoc state :workspace/selected "penpot")
+                                                            favorites-group))))
+        "extension groups are scoped too")
+    (is (= ["h"] (mapv :session-id (:cards (sb/extension-group state favorites-group)))))
+    (testing "the tab badges count attention across workspaces, whatever is selected"
+      (is (= {"all" 1 "penpot" 1 "w-1" 0}
+             (sb/workspace-attention (assoc state :workspace/selected "w-1")
+                                     [{:id "penpot" :dirs ["/c/penpot"]} {:id "w-1" :dirs ["/c/home"]}]))))))
+
 (deftest extension-group-without-limit-lists-everything
   (let [state (with-sessions (for [i (range 8)] {:session-id (str i) :starred? true :timestamp i}))]
     (is (= 8 (count (:cards (sb/extension-group state {:id :s :label "S" :where :starred?})))))))

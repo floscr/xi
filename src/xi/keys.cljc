@@ -246,6 +246,24 @@
    :skills/search           {:label "Search skills" :surface #{:web}}
    :themes/pick             {:label "Change color theme" :surface #{:web}}
    :projects/open           {:label "All projects" :surface #{:web}}
+   ;; workspaces (xi.workspace): no default keys
+   :workspace/switch        {:label "Switch workspace" :surface #{:web}}
+   :workspace/new           {:label "New workspace" :surface #{:web}}
+   :workspace/rename        {:label "Rename the current workspace" :surface #{:web}}
+   :workspace/delete        {:label "Remove the current workspace" :surface #{:web}}
+   :workspace/next          {:label "Next workspace tab" :surface #{:web}}
+   :workspace/prev          {:label "Previous workspace tab" :surface #{:web}}
+   :workspace/other         {:label "Back to the previously selected workspace" :surface #{:web}}
+   :workspace/tab-1         {:label "Workspace tab 1 (All)" :surface #{:web}}
+   :workspace/tab-2         {:label "Workspace tab 2" :surface #{:web}}
+   :workspace/tab-3         {:label "Workspace tab 3" :surface #{:web}}
+   :workspace/tab-4         {:label "Workspace tab 4" :surface #{:web}}
+   :workspace/tab-5         {:label "Workspace tab 5" :surface #{:web}}
+   :workspace/tab-6         {:label "Workspace tab 6" :surface #{:web}}
+   :workspace/tab-7         {:label "Workspace tab 7" :surface #{:web}}
+   :workspace/tab-8         {:label "Workspace tab 8" :surface #{:web}}
+   :workspace/tab-9         {:label "Workspace tab 9" :surface #{:web}}
+   :workspace/tab-last      {:label "Last workspace tab" :surface #{:web}}
    :nav/back                {:label "Back to the previous page" :surface #{:web}}
    :nav/forward             {:label "Forward to the next page" :surface #{:web}}
    :chat/hide               {:label "Hide this chat from Recent" :surface #{:web}}

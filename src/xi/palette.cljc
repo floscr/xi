@@ -5,7 +5,8 @@
    two palettes stay in lock-step instead of drifting.
 
    Both surfaces store the server's lobby mirror under [:lobby ...], so the
-   `recent-sessions` / session-sorting helpers work identically on either.")
+   `recent-sessions` / session-sorting helpers work identically on either."
+  (:require [xi.workspace :as workspace]))
 
 ;; ── Recent sessions (Chats) ──────────────────────────────────────────────────
 
@@ -23,7 +24,8 @@
    (they must also survive the cut however old, see xi.session.recent), then
    rooms with a running agent, then by most-recently visited."
   [state]
-  (let [rooms (get-in state [:lobby :rooms])
+  (let [state (workspace/scope state)
+        rooms (get-in state [:lobby :rooms])
         busy? (fn [s] (boolean (some (fn [r] (and (= (:session-id r) (:session-id s))
                                                   (:busy? r)))
                                      rooms)))]

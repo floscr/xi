@@ -387,6 +387,27 @@
 (defn save-sidebar-collapsed! [groups]
   (store-set! sidebar-collapsed-key (vec groups)))
 
+;; ── Workspace tab of this window ──────────────────────────────────────────────
+;; {:selected id :chats {workspace-id session-id}} (xi.web.workspaces). In
+;; sessionStorage, not localStorage: each browser window keeps its own tab and
+;; focused chats across reloads, and no window follows another.
+
+(def ^:private window-workspace-key "xi/workspace")
+
+(defn load-window-workspace []
+  (try
+    (when-let [raw (.getItem js/sessionStorage window-workspace-key)]
+      (let [{:keys [selected chats]} (transit/read reader raw)]
+        {:selected (when (string? selected) selected)
+         :chats    (if (map? chats) chats {})}))
+    (catch :default _ nil)))
+
+(defn save-window-workspace! [{:keys [selected chats]}]
+  (try
+    (.setItem js/sessionStorage window-workspace-key
+              (transit/write writer {:selected selected :chats (or chats {})}))
+    (catch :default _ nil)))
+
 ;; ── Window layouts ────────────────────────────────────────────────────────────
 ;; {session-id layout} of the chats split into windows (xi.web.layout); the
 ;; per-user store's instant cache, like the appearance.
@@ -467,7 +488,8 @@
   [base route]
   (let [sid    (:session-id route)
         cached (load-room sid)
-        models (load-model-list)]
+        models (load-model-list)
+        wspace (load-window-workspace)]
     (cond-> (assoc base :web/route route
                         :web/watched (load-watched)
                         ;; Frozen for the session: the order the quick-command
@@ -492,7 +514,10 @@
                         ;; whose UI state the values above are (see load-cached-user)
                         :web/cached-user (load-cached-user))
       (load-lobby) (assoc :lobby (load-lobby))
-      cached       (assoc-in [:web/cache sid] cached))))
+      cached       (assoc-in [:web/cache sid] cached)
+      ;; this window's workspace tab and focused chats (xi.web.workspaces)
+      wspace       (assoc :workspace/selected (:selected wspace)
+                          :workspace/chats (:chats wspace)))))
 
 (def ^:private persist-on
   "Event types after which the cache is refreshed. :history/append is excluded

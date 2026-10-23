@@ -28,7 +28,8 @@
    extension's entry may also hold `:session-flags`, which the lobby turns into
    more flags the same way (see `session-flags`)."
   (:require [clojure.string :as str]
-            [xi.layout :as layout]))
+            [xi.layout :as layout]
+            [xi.workspace :as workspace]))
 
 (def reserved-flags
   "Session flags an extension may not set: the lobby and the sidebar compute
@@ -186,6 +187,9 @@
    ;; most-recent-first command / skill names for the quick bar and palette
    :recent-commands  {:valid? (fn [v] (bounded-strings? v 20 100))}
    :recent-skills    {:valid? (fn [v] (bounded-strings? v 20 100))}
+   ;; the user's own workspaces, [{:id :label :dirs}] (xi.workspace); the
+   ;; selected tab is each browser window's own (xi.web.workspaces)
+   :workspaces       {:valid? workspace/valid-user-workspaces?}
    ;; Server-kept like :ext: the lobby carries each user's own copy
    ;; (xi.server.ws), so a client neither reads nor writes these.
    ;; {session-id seen-response-count}: a chat is unread past its count

@@ -10,7 +10,8 @@
       :projects   {:browse […] :repos […]}      ; project dirs (xi.projects)
       :users      {\"alice\" {:name \"Alice\" :avatar \"https://…/a.png\" :meta {:team \"ops\"}}} ; who exists (see below)
       :trusted-mcp-servers [\"chrome\" \"shop/browser\"]  ; MCP servers that never ask (xi.mcp.trust)
-      :keys       {:global {\"alt+n\" :chat/new}}}       ; keyboard shortcuts (xi.keys)
+      :keys       {:global {\"alt+n\" :chat/new}}        ; keyboard shortcuts (xi.keys)
+      :workspaces [{:id :penpot :dirs [\"~/Code/penpot*\"]}]} ; web sidebar tabs (xi.workspace)
 
    `:users` declares users by id (xi.util/user-id slugs), each with an optional
    display `:name`, an `:avatar` (an http(s) image URL; without one the web UI
@@ -39,9 +40,11 @@
             [clojure.string :as str]
             [xi.avatar :as avatar]
             [xi.keys :as xkeys]
+            [xi.paths :as paths]
             [xi.projects :as projects]
             [xi.user-state :as user-state]
             [xi.util :as util]
+            [xi.workspace :as workspace]
             ["node:fs" :as fs]
             ["node:path" :as node-path]))
 
@@ -73,7 +76,7 @@
 
 (def ^:private config-file-keys
   #{:type :version :extensions :demo-extensions :agents :projects :users
-    :trusted-mcp-servers :keys :providers})
+    :trusted-mcp-servers :keys :providers :workspaces})
 
 (defn- providers-error
   "→ nil when `providers` is a well-formed `:providers` vector, else why not.
@@ -148,17 +151,20 @@
 (defn parse-config
   "Validate parsed config-file `data` (nil = unparseable) →
    `{:extensions #{…} :demo-extensions #{…} :agents {…} :projects {…}
-   :keys {…}}` (empty / defaults when absent; `:projects` per
-   `xi.projects/parse-spec`, `:keys` per `xi.keys/config-error` and only
-   present when set) or `{:error msg}`.
+   :keys {…} :workspaces […]}` (empty / defaults when absent; `:projects` per
+   `xi.projects/parse-spec`, `:keys` per `xi.keys/config-error` and
+   `:workspaces` per `xi.workspace/parse-config`, the last two only present
+   when set) or `{:error msg}`.
    Mirrors xi.rules.store/parse-rules-config: the file must be a map tagged
    `:type :xi/config` with the current `:version` and only known keys."
   [data]
   (let [shape   (str "{:type " CONFIG_FILE_TYPE " :version " CONFIG_FILE_VERSION
                      " :extensions [...] :demo-extensions [...] :agents {...} :projects {...}"
-                     " :users {...} :trusted-mcp-servers [...] :keys {...} :providers [...]}")
+                     " :users {...} :trusted-mcp-servers [...] :keys {...} :providers [...]"
+                     " :workspaces [...]}")
         unknown (when (map? data) (remove config-file-keys (keys data)))
-        spec    (when (map? data) (projects/parse-spec (:projects data)))]
+        spec    (when (map? data) (projects/parse-spec (:projects data)))
+        wspaces (when (map? data) (workspace/parse-config (:workspaces data)))]
     (cond
       (nil? data)
       {:error "not valid EDN"}
@@ -211,6 +217,9 @@
       (:error spec)
       {:error (:error spec)}
 
+      (:error wspaces)
+      {:error (:error wspaces)}
+
       :else
       (cond-> {:extensions          (set (:extensions data))
                :demo-extensions     (set (:demo-extensions data))
@@ -219,7 +228,8 @@
                :users               (or (:users data) {})
                :trusted-mcp-servers (set (:trusted-mcp-servers data))}
         (contains? data :keys)      (assoc :keys (:keys data))
-        (contains? data :providers) (assoc :providers (vec (:providers data)))))))
+        (contains? data :providers) (assoc :providers (vec (:providers data)))
+        (seq wspaces)               (assoc :workspaces wspaces)))))
 
 (def PROJECTS_FILE_NAME
   "The optional file next to the config file whose content (a bare map) is the
@@ -253,6 +263,15 @@
            (with-projects-file file)))
       {:extensions #{} :demo-extensions #{} :agents {} :projects projects/default-spec
        :users {} :trusted-mcp-servers #{}})))
+
+(defn workspaces
+  "config.edn's `:workspaces` (`xi.workspace/parse-config`) with `~` expanded
+   in every dir, so the web client can match them against session cwds; []
+   when the file is missing, invalid (projects-spec reports that) or sets
+   none."
+  []
+  (->> (:workspaces (read-config))
+       (mapv (fn [w] (update w :dirs #(mapv paths/expand-home %))))))
 
 (defn projects-spec
   "The validated `:projects` spec (`xi.projects/parse-spec`): project dirs and

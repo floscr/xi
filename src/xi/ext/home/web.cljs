@@ -33,7 +33,7 @@
   (let [dirty (:web/project-dirty state)]
     [:div {:class ["project-list" "dash-list"]}
      (for [p (views/recent-projects state)]
-       (views/project-dir-card dispatch! p (contains? dirty p) false))]))
+       (views/project-dir-card dispatch! state p (contains? dirty p) false))]))
 
 (def extension
   {:id :home

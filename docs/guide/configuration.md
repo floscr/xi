@@ -36,6 +36,7 @@ an old file wrong.
 | `:agents` | Profiles for `xi --agent <id>`: a fixed tool set and prompt. | [Agent profiles](agents.md), keys below |
 | `:keys` | Keyboard shortcuts: bind, rebind or remove keys per layer, for both clients or one. | [Keyboard shortcuts](keyboard.md#changing-keys), keys below |
 | `:providers` | The model providers to run, in model-picker order, with their options. Without it every bundled provider runs. | [Providers](providers.md), keys below |
+| `:workspaces` | Workspace tabs for the web client's sidebar that every user sees: a set of project directories each, `*` allowed. | [Workspaces](workspaces.md), keys below |
 
 Xi reads the file when it needs it (listing projects, starting a chat,
 loading extensions), so most edits apply without a restart. `/ext reload`
@@ -60,6 +61,16 @@ The project list can also live in its own file,
 when `config.edn` has no `:projects` key, so a `config.edn` that is a symlink
 into a checkout can still get a generated project list. A `:projects` in
 `config.edn` wins; a file that isn't valid EDN makes the whole config invalid.
+
+### `:workspaces`
+
+A vector of workspaces, shown as tabs before the user's own.
+
+| Key | Default | Does |
+| --- | --- | --- |
+| `:id` | — | Keyword or string, unique in the list; `:all` is reserved for the root tab. |
+| `:label` | the id | The tab's text. |
+| `:dirs` | — | One or more directories; `~` expands. A chat belongs when its directory is one of them or below one. `*` matches one path name, so `~/code/penpot-*` matches every sibling starting with `penpot-`. |
 
 ### `:users`
 
