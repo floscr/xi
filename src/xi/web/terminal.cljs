@@ -407,10 +407,30 @@
        (not (or (.-shiftKey e) (.-altKey e) (.-metaKey e)))
        (not= "v" (str/lower-case (.-key e)))))
 
+(defn- dispose! [term-id]
+  (when-let [{:keys [^js term ^js observer]} (get @instances term-id)]
+    (swap! instances dissoc term-id)
+    (swap! replaying disj term-id)
+    (send! {:type :terminal/detach :term-id term-id})
+    (.disconnect observer)
+    (.dispose term)))
+
+;; Replicant calls on-unmount only on the node it removes, not on its
+;; descendants: a view swapped out above the host (a sidebar visit) leaves its
+;; xterm behind on a detached node. Mounting drops those, and an instance of
+;; this term id on another node (one still leaving), so the host never stays
+;; empty.
+(defn- drop-stale! [^js node term-id]
+  (doseq [[tid {^js n :node}] @instances
+          :when (or (not (.-isConnected n))
+                    (and (= tid term-id) (not (identical? n node))))]
+    (dispose! tid)))
+
 (defn- mount! [^js node term-id hints?]
   (-> (load-lib!)
       (.then
        (fn [_]
+         (when (.-isConnected node) (drop-stale! node term-id))
          (when (and (.-isConnected node) (not (contains? @instances term-id)))
            (let [Terminal (.-Terminal js/globalThis)
                  FitAddon (.. js/globalThis -FitAddon -FitAddon)
@@ -445,13 +465,11 @@
              (when-not @skip-mount-focus? (.focus term))))))
       (.catch #(js/console.error "[terminal]" %))))
 
-(defn- unmount! [term-id]
-  (when-let [{:keys [^js term ^js observer]} (get @instances term-id)]
-    (swap! instances dissoc term-id)
-    (swap! replaying disj term-id)
-    (send! {:type :terminal/detach :term-id term-id})
-    (.disconnect observer)
-    (.dispose term)))
+(defn- unmount!
+  "Only the instance on `node`: another host may have taken `term-id` over."
+  [^js node term-id]
+  (when (identical? node (get-in @instances [term-id :node]))
+    (dispose! term-id)))
 
 (defn reattach!
   "Attach on-screen terminal `term-id` again (it was gone and restarted)."
@@ -569,5 +587,5 @@
               :replicant/on-update (fn [{:replicant/keys [node]}]
                                      (retheme! term-id node)
                                      (set-hints-on! term-id hints?))
-              :replicant/on-unmount (fn [_] (unmount! term-id))}])
+              :replicant/on-unmount (fn [{:replicant/keys [node]}] (unmount! node term-id))}])
      (toolbar dispatch! buffer state)]))
