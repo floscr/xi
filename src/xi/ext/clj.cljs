@@ -377,9 +377,9 @@
                         {}))
 
         ;; Server control would kill the server hosting this agent: run detached.
-        (server-control/kind (str/join " " argv))
-        (server-control/run-detached!
-         (str/join " " argv)
+        (server-control/argv-kind argv)
+        (server-control/run-argv-detached!
+         argv
          (if-let [d (:dir m)] (resolve-dir opts d) (opts-cwd opts)))
 
         :else
@@ -1440,8 +1440,7 @@
    patterns, server control) was decided by the rules engine before this."
   [args {:keys [cwd room-id]}]
   (let [runner (rules-store/task-runner args cwd)
-        argv   (tasks/task-argv runner (:task args) (:args args))
-        cmd    (str/join " " argv)]
+        argv   (tasks/task-argv runner (:task args) (:args args))]
     (cond
       (nil? argv)
       (js/Promise.resolve
@@ -1451,8 +1450,8 @@
                             "run_task: no bb.edn, package.json or deno.json found from this directory")}]
         :is-error true})
 
-      (server-control/kind cmd)
-      (js/Promise.resolve (server-control/tool-result cmd cwd))
+      (server-control/argv-kind argv)
+      (js/Promise.resolve (server-control/argv-tool-result argv cwd))
 
       :else (run-task-in-worker argv room-id cwd))))
 

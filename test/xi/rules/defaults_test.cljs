@@ -111,6 +111,13 @@
   (testing "the rule is command-scoped, so clj confirms that exact command"
     (is (rules/arg-scoped? (rules/first-match defaults/default-rules
                                               {:tool :sh :cli "bb" :command "bb serve:restart"}))))
+  (testing "an argv shell-out that only mentions the task gets the plain
+            extension-sh ask, which the user's rules can allow"
+    (let [m (rules/first-match defaults/default-rules
+                               {:tool :sh :cli "kb" :extension "kb"
+                                :command "kb add --body run bb serve:restart"})]
+      (is (nil? (get-in m [:action :guard])))
+      (is (= [:yes :no :always] (get-in m [:action :options])))))
   (testing "other bb tasks and the personal server's tasks don't match"
     (is (nil? (rules/first-match defaults/default-rules {:tool :task :command "bb test"})))
     (is (nil? (rules/first-match defaults/default-rules
@@ -496,7 +503,7 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 47 (count defaults/default-rules))))
+    (is (= 48 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes

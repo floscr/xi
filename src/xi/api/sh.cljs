@@ -87,8 +87,8 @@
                      ;; exists after a first write
                      (when (= dir (paths/extension-data-dir (:extension ctx)))
                        (fs/mkdirSync dir #js {:recursive true}))
-                     (if (server-control/kind cmd)
-                       (server-control/run-detached! cmd dir)
+                     (if (server-control/argv-kind argv)
+                       (server-control/run-argv-detached! argv dir)
                        (-> (spawn! ctx argv dir)
                            (.then (fn [{:keys [exit out err] :as r}]
                                     (if (zero? exit)

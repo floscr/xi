@@ -4,9 +4,10 @@
 
    Run inline they would kill the server mid-command: the agent's own turn dies
    with a severed connection instead of a result. So every executor that can
-   run them — the bash tool, run_task, clj's (sh …) — checks `kind` first
-   and hands the command to `run-detached!`, which returns an explicit result
-   immediately and runs the command a moment later under setsid, so it
+   run them checks first — the bash tool with `kind`, the argv executors
+   (run_task, clj's (sh …), xi.api.sh) with `argv-kind` — and hands the command
+   to `run-detached!` / `run-argv-detached!`, which return an explicit result
+   immediately and run the command a moment later under setsid, so it
    survives the server it kills.
 
    Whether they may run at all is policy: the `server-control` default rule
@@ -14,15 +15,28 @@
   (:require [clojure.string :as str]))
 
 (defn kind
-  "When `cmd` runs a server-control task, :restart or :stop; else nil. Matches
-   the :7474 xi-serve tasks only — serve:personal:* (:7475) don't contain these
-   substrings, so they run normally."
+  "When bash command line `cmd` runs a server-control task, :restart or :stop;
+   else nil. A substring test, since a shell line can't be taken apart — argv
+   executors use `argv-kind`. Matches the :7474 xi-serve tasks only —
+   serve:personal:* (:7475) don't contain these substrings, so they run
+   normally."
   [cmd]
   (let [cmd (str cmd)]
     (cond
       (str/includes? cmd "serve:restart") :restart
       (str/includes? cmd "serve:stop")    :stop
       :else nil)))
+
+(defn argv-kind
+  "`kind` for an argv (clj's sh, xi.api.sh, run_task): only when the program is
+   bb and its task — the first non-flag argument — is serve:restart or
+   serve:stop, so an argument merely mentioning them runs normally."
+  [argv]
+  (when (re-find #"(?:^|/)bb$" (str (first argv)))
+    (case (first (remove #(str/starts-with? (str %) "-") (rest argv)))
+      "serve:restart" :restart
+      "serve:stop"    :stop
+      nil)))
 
 (defn result-text
   "What the agent is told after a detached server-control run."
@@ -41,18 +55,38 @@
          "to :7474 will drop — this is EXPECTED, NOT a failure. The server "
          "will stay down until it's started again with `bb serve`.")))
 
-(defn run-detached!
-  "Spawn `cmd` detached (setsid, after a short delay so the caller's result
-   gets out first) in `cwd`, and return the result text for its kind."
-  [cmd cwd]
+(defn- spawn-detached!
+  "setsid the `bash -c` invocation `args`, after a short delay so the caller's
+   result gets out first."
+  [args cwd]
   (js/Bun.spawn
-   #js ["setsid" "bash" "-c" (str "sleep 0.3; " cmd)]
+   (clj->js (into ["setsid" "bash" "-c"] args))
    #js {:cwd (or cwd (.cwd js/process))
-        :stdin "ignore" :stdout "ignore" :stderr "ignore"})
+        :stdin "ignore" :stdout "ignore" :stderr "ignore"}))
+
+(defn run-detached!
+  "Run bash command line `cmd` detached in `cwd` → the result text for its kind."
+  [cmd cwd]
+  (spawn-detached! [(str "sleep 0.3; " cmd)] cwd)
   (result-text (kind cmd)))
+
+(defn run-argv-detached!
+  "Run `argv` detached in `cwd` → the result text for its kind. The argv goes
+   to the shell as positional parameters, never re-parsed."
+  [argv cwd]
+  (spawn-detached! (into ["sleep 0.3; exec \"$@\"" "bash"] argv) cwd)
+  (result-text (argv-kind argv)))
+
+(defn- as-tool-result [text]
+  {:content [{:type "text" :text text}]
+   :is-error false})
 
 (defn tool-result
   "`run-detached!` wrapped as a tool result map."
   [cmd cwd]
-  {:content [{:type "text" :text (run-detached! cmd cwd)}]
-   :is-error false})
+  (as-tool-result (run-detached! cmd cwd)))
+
+(defn argv-tool-result
+  "`run-argv-detached!` wrapped as a tool result map."
+  [argv cwd]
+  (as-tool-result (run-argv-detached! argv cwd)))

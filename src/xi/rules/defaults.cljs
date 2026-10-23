@@ -67,6 +67,13 @@
    xi.server-control/kind."
   #"serve:(?:restart|stop)")
 
+(def ^:private sh-server-control-re
+  "`server-control-re` for argv shell-outs (clj's sh, xi.api.sh), whose
+   `:command` is the joined argv: only when the program is bb, so an argument
+   that mentions the task (a note, a commit message) doesn't ask. A superset of
+   xi.server-control/argv-kind, so nothing runs detached unasked."
+  #"^(?:\S*/)?bb\s.*serve:(?:restart|stop)")
+
 ;; ── Script / inline-code execution (script-exec) ─────────────────────────────
 ;;
 ;; Every pattern is anchored at the command's first token (an optional path
@@ -653,7 +660,9 @@
    ;; executors run an approved one detached so the agent's own turn gets a
    ;; result.
    ::server-control
-   [{:match  {:tool #{:bash :task :sh} :command server-control-re}
+   [{:match  {:tool #{:bash :task} :command server-control-re}
+     :action {:type :ask :options [:yes :no] :guard :always}}
+    {:match  {:tool :sh :command sh-server-control-re}
      :action {:type :ask :options [:yes :no] :guard :always}}]
 
    ;; External MCP servers are third-party code: a call to a server that isn't
