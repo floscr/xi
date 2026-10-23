@@ -1955,6 +1955,15 @@ body {
 .markdown p:last-child,
 .post-content p:last-child { margin-bottom: 0; }
 
+/* Code blocks sit a little further from the text than paragraphs do, the
+   same gap above and below (it collapses with the paragraph's margin). */
+.markdown .md-code-block {
+  margin: calc(var(--paragraph-space) * 1.5) 0;
+}
+
+.markdown .md-code-block:first-child { margin-top: 0; }
+.markdown .md-code-block:last-child { margin-bottom: 0; }
+
 /* Key link styling to `.markdown` (the root of every md/render output), not
    just `.post-content`: assistant text posts render as .post-body > .markdown
    with no .post-content wrapper, so a .post-content-only rule left their links
