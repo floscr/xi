@@ -2315,6 +2315,7 @@ body {
 .post--status { padding: var(--size-1) 0; }
 .status-alert .alert-body { white-space: pre-wrap; }
 .post--status-slim .status-alert { padding: var(--size-2) var(--size-4); }
+.status-alert-actions { display: flex; flex-wrap: wrap; gap: var(--size-1); }
 .status-alert-action { margin-top: var(--size-1); }
 .status-alert-rows {
   display: grid;

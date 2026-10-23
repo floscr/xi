@@ -31,7 +31,8 @@
    variant), :icon and :rows [{:label :text :tone}] for a richer one there, :text
    staying the full plain rendering. An :action {:id :label :command :args}
    (from :ui/status, until :ui/status-action-expire drops it) is a web button
-   that runs that slash command; with :url instead it opens that page."
+   that runs that slash command; with :url instead it opens that page. A
+   :goto {:label :session-id} is a web button opening that session's chat."
   (:require [clojure.string :as str]
             [xi.buffers :as buffers]
             [xi.core.state :as state]
@@ -531,7 +532,7 @@
   (when (state/get-room st room-id)
     {:state (append-history st room-id
                             (merge (status-entry text)
-                                   (select-keys ev [:title :detail :tone :icon :rows :action])))}))
+                                   (select-keys ev [:title :detail :tone :icon :rows :action :goto])))}))
 
 (defn- ui-status-action-expire
   "Drop the :action whose :id is `action-id` from the room's status lines —

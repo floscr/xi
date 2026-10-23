@@ -48,8 +48,9 @@ Your own terminal git is not covered.
   the room shows a status line (`⏳ git index is held by "<room>" (staged: …)
   — waiting… To unlock: commit or unstage there, or run /release.`). In the
   web client that line has a **Release** button running `/release`; it is
-  dropped once the wait ends. Once it's free the op runs (`🔓 git index
-  acquired after Ns`).
+  dropped once the wait ends. When the holder is a session of the same Xi
+  process, a **Go to session** button opens its chat. Once it's free the op
+  runs (`🔓 git index acquired after Ns`).
 - **Read-only and ref-only git never waits**: `status`, `diff`, `log`,
   `show`, `blame`, `stash list`, `branch`, `tag`, `fetch`, `push`, … (see
   `NON_LOCKING` in `xi.git-lock`).

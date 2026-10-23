@@ -1106,8 +1106,9 @@
   "A :status history entry as a ui.alert. Plain entries are a slim neutral
    banner of :text; entries with a :title (shape in the xi.commands ns doc) show
    :tone, :icon, :detail and :rows, :text being the TUI's rendering. An
-   :action adds a button running its slash command, or opening its :url."
-  [dispatch! {:keys [text title detail rows tone icon action room-id]}]
+   :action adds a button running its slash command, or opening its :url; a
+   :goto one opening a session's chat."
+  [dispatch! {:keys [text title detail rows tone icon action goto room-id]}]
   (let [rows   (when (seq rows)
                  (into [:span {:class ["status-alert-rows"]}]
                        (mapcat (fn [{:keys [label text tone]}]
@@ -1126,7 +1127,15 @@
                      :on-click (fn [_] (dispatch! (cond-> {:type :web/command :room-id room-id
                                                            :name (:command action)}
                                                     (:args action) (assoc :args (:args action)))))}
-                    (:label action))))]
+                    (:label action))))
+        goto   (when goto
+                 (button/button
+                  {:variant :secondary :size :sm :class "status-alert-action"
+                   :on-click (fn [_] (dispatch! {:type :route/navigate :page :chat
+                                                 :session-id (:session-id goto)}))}
+                  (:label goto)))
+        buttons (when (or goto button)
+                  [:span {:class ["status-alert-actions"]} goto button])]
     [:div {:class (cond-> ["post" "post--assistant" "post--status"]
                     (not title) (conj "post--status-slim"))}
      (apply alert/alert {:variant tone :title title
@@ -1134,7 +1143,7 @@
                          ;; a tone the alert's variant picks its own icon
                          :icon-name (or icon (when-not tone :info))
                          :class "status-alert" :attrs {:role "status"}}
-            (remove nil? (if title [detail rows button] [text button])))]))
+            (remove nil? (if title [detail rows buttons] [text buttons])))]))
 
 (defn- block-action-card
   "A message an agent block's Send / Submit posted for the user

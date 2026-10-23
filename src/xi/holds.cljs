@@ -99,6 +99,13 @@
         (lease/mark-idle! path owner)
         nil)))
 
+(defn- holder-session
+  "The holder's session id when this process serves it — another Xi process's
+   session can't be opened from here."
+  [lease]
+  (when (= (:pid lease) js/process.pid)
+    (some-> (:session lease) str not-empty)))
+
 (defn- acquire-key!
   "Wait for `key`'s lease. → Promise<nil (acquired / nothing to hold) | error text>."
   [hold key {:keys [room-id get-state dispatch!]} own]
@@ -116,9 +123,12 @@
             :on-wait    (fn [holder]
                           (vreset! waiting? true)
                           (status! dispatch! room-id
-                                   (str "⏳ " label " is held by "
-                                        (lease/describe-holder holder) (detail)
-                                        " — waiting… To unlock: " (:hint hold) ".")
+                                   (cond-> {:text (str "⏳ " label " is held by "
+                                                       (lease/describe-holder holder) (detail)
+                                                       " — waiting… To unlock: " (:hint hold) ".")}
+                                     (holder-session holder)
+                                     (assoc :goto {:label "Go to session"
+                                                   :session-id (holder-session holder)}))
                                    ;; /release force-releases every hold on the cwd
                                    {:id action-id :label "Release" :command "release"}))})
           (.then
