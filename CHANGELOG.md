@@ -9,6 +9,8 @@ What changed in each Xi release, newest first.
 - Camera
   - Share a device's camera with a chat from the web client's ⋮ menu (`/camera`): a live preview, the screen stays on
   - Extensions read pictures from it with `xi.api.device/camera`, one or a burst; a read lands on the sharing device
+- Palette menus for extension dialogs
+  - `xi.api.dialog/select` with `{:menu? true}` shows a long list as a filterable Cmd+K page, opened as the dialog arrives
 
 ### Changed
 

@@ -40,6 +40,19 @@
                         @opened))))
         (.finally done))))
 
+(deftest select-as-a-menu-keeps-descriptions
+  (async done
+    (-> (dialog/select (ctx :design) "Which tab?"
+                       [{:label "Docs" :value "p1" :description "http://a/" :evil 1}]
+                       {:menu? true})
+        (.then (fn [_]
+                 (is (= {:type    :select
+                         :menu?   true
+                         :message "[extension design] Which tab?"
+                         :options [{:label "Docs" :value "p1" :description "http://a/"}]}
+                        (:dialog (first @opened))))))
+        (.finally done))))
+
 (deftest confirm-is-a-boolean-and-opts-pick-the-room
   (async done
     (-> (dialog/confirm (dissoc (ctx :design) :room-id) "Sure?" {:room-id "r1"})

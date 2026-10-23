@@ -2409,12 +2409,19 @@
           [:div {:class ["dialog-actions"]}
            (case type
              ;; A select resolves nil when dismissed (xi.api.dialog), like
-             ;; Esc in the TUI's build-select-dialog.
+             ;; Esc in the TUI's build-select-dialog. A :menu? one picks in
+             ;; the palette (palette-dialog-page).
              :select
              (concat
-              (for [{:keys [label value]} options]
-                [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                          :on {:click (fn [_] (answer! value))}} label])
+              (if (:menu? live-dialog)
+                [[:button {:class ["confirm-btn" "confirm-btn--allow"]
+                           :on {:click (fn [_] (dispatch! {:type :palette/open-dialog
+                                                           :room-id room-id
+                                                           :dialog-id id}))}}
+                  (str "Choose… (" (count options) ")")]]
+                (for [{:keys [label value]} options]
+                  [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                            :on {:click (fn [_] (answer! value))}} label]))
               [(button/button
                 {:variant :ghost :size :sm
                  :on-click (fn [_] (answer! nil))}
@@ -7216,6 +7223,28 @@
                 :on-click (fn [_] (dispatch! (select rel)))}
                rel))))))))
 
+(defn- palette-dialog-page
+  "A pending :menu? select dialog (xi.api.dialog/select) as a palette page:
+   its options in order, picking one answers it. Empty once it is answered."
+  [state dispatch! {:keys [room-id dialog-id]}]
+  (if-let [{:keys [message options]}
+           (some #(when (= dialog-id (:id %)) %)
+                 (get-in state [:rooms room-id :ui :dialogs]))]
+    [:div {:replicant/key [:dialog-page dialog-id]}
+     (apply cmd/command-group {:heading (str/replace message #"^\[extension [^\]]+\]\s*" "")}
+       (map
+        (fn [{:keys [label value description]}]
+          (cmd/command-item
+           (cond-> {:icon     :chevron-right
+                    :value    (str label " " description)
+                    :on-click (fn [_] (dispatch! {:type :web/dialog-answer
+                                                  :room-id room-id
+                                                  :dialog-id dialog-id
+                                                  :value value}))}
+             description (assoc :description description))
+           label))
+        options))]
+    [:div {:class ["command-empty"]} "Already answered"]))
 (defn- pin-palette-items!
   "Keep the `.command-item--pinned` row selectable under any filter: after each
    ui-runtime.js filter pass, un-hide the row and its group, sink the group
@@ -7341,6 +7370,7 @@
                                                          (:label palette-page) "…")
                                      (= :theme (:kind palette-page)) "Switch color theme…"
                                      (= :workspaces (:kind palette-page)) "Switch workspace…"
+                                     (= :dialog (:kind palette-page)) "Filter…"
                                      palette-page "Filter actions…"
                                      :else        "Type a command or search…")
                       :attrs {:replicant/key "cmdk"
@@ -7418,6 +7448,7 @@
          :commands       (palette-commands-page state dispatch!)
          :search         (palette-search-page state dispatch!)
          :new-chat       (palette-new-chat-page state dispatch! palette-page)
+         :dialog         (palette-dialog-page state dispatch! palette-page)
          (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
            (palette-project-actions state dispatch! (:cwd palette-page)))))
 

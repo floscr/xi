@@ -260,6 +260,10 @@ tool call. Not a rules request.
 | `(alert ctx "Done.")` | nil |
 | `(form ctx "Title" [{:name "msg" :label "Message"}])` | `{"msg" "…"}`, nil on cancel |
 
+A `select` option may carry a `:description`. `{:menu? true}` in the opts
+shows the options in the web client as a filterable Cmd+K palette page,
+opened as the dialog arrives, for lists too long for buttons.
+
 The text is shown prefixed with the extension's id. A dialog waits for an
 answer even while no client is connected, and shows when one joins; only in
 `xi prompt` mode does it resolve to its safe default at once.

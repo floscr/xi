@@ -401,6 +401,27 @@
                   reason   (assoc :reason reason)
                   tool-idx (assoc :tool-id (:id (nth history tool-idx)))))))))
 
+(defn- dialog-answer
+  "Answer a live dialog from outside its bubble (the palette's :dialog page):
+   the events views/dialog-post's buttons dispatch."
+  [st {:keys [room-id dialog-id value]}]
+  (let [room (get-in st [:rooms room-id])]
+    (when-let [{:keys [type message text options]}
+               (some #(when (= dialog-id (:id %)) %) (get-in room [:ui :dialogs]))]
+      {:effects [[:app/dispatch {:type :web/dialog-resolved
+                                 :room-id room-id
+                                 :dialog-id dialog-id
+                                 :entry {:key     dialog-id
+                                         :anchor  (count (:history room))
+                                         :message (or message text)
+                                         :type    type
+                                         :value   value
+                                         :label   (views/dialog-decision-label type options value)}}]
+                 [:app/dispatch {:type :ui/dialog-response
+                                 :room-id room-id :dialog-id dialog-id :value value}]
+                 [:app/dispatch {:type :ui/dialog-close
+                                 :room-id room-id :dialog-id dialog-id}]]})))
+
 (defn- deny-reason-submit
   [st _]
   (when-let [{:keys [room-id dialog-id text]} (:web/deny-reason st)]
@@ -1738,6 +1759,17 @@
                                                      :web/palette-drilling? true)
                                     :effects [[:palette/reset-filter nil]
                                               [:palette/reopen nil]]})
+          ;; A pending :select dialog with :menu? (xi.api.dialog/select) as a
+          ;; palette page; picking a row answers it (:web/dialog-answer).
+          :palette/open-dialog   (fn [st {:keys [room-id dialog-id]}]
+                                   {:state (assoc st :web/palette-page {:kind :dialog
+                                                                       :room-id room-id
+                                                                       :dialog-id dialog-id}
+                                                     :web/palette-open? true
+                                                     :web/palette-drilling? true)
+                                    :effects [[:palette/reset-filter nil]
+                                              [:palette/reopen nil]]})
+          :web/dialog-answer     dialog-answer
           :buffer/pending-clear  (fn [st _] {:state (dissoc st :web/pending-buffer)})
           :buffer/viewed         (fn [st {:keys [session-id buffer-id] :as ev}]
                                    {:state (assoc-in st [:web/buffer-access session-id buffer-id]
@@ -2270,6 +2302,19 @@
           (when-let [ev (router/buffer-open-event (:room-id event) (:room event) buffer-id)]
             (dispatch! ev)))
         (dispatch! {:type :buffer/pending-clear})))))
+
+(defn- menu-dialog-tap
+  "Open the palette on a :menu? select dialog (xi.api.dialog/select) as it
+   arrives in the chat on screen; its bubble's button reopens it."
+  [dispatch!]
+  (fn [event state]
+    (when (= :ui/dialog-open (:type event))
+      (let [room-id (:room-id event)
+            dialog  (last (get-in state [:rooms room-id :ui :dialogs]))]
+        (when (and (:menu? dialog)
+                   (= room-id (:id (state/active-room state))))
+          (dispatch! {:type :palette/open-dialog
+                      :room-id room-id :dialog-id (:id dialog)}))))))
 
 (defn- view-sync-tap
   "Keep the URL on the chat's current view (xi.web.router/view-change). The
@@ -3775,6 +3820,7 @@
     (add-tap! (fill-url-tap dispatch!))
     (add-tap! (pending-submit-tap dispatch!))
     (add-tap! (pending-buffer-tap dispatch!))
+    (add-tap! (menu-dialog-tap dispatch!))
     (add-tap! (view-sync-tap dispatch!))
     (add-tap! (wlayout/tap dispatch!))
     (add-tap! (prefetch/tap dispatch!))

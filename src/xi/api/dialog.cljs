@@ -56,7 +56,7 @@
 
 (defn- option [o]
   (if (map? o)
-    (select-keys o [:label :value])
+    (select-keys o [:label :value :description])
     {:label (str o) :value o}))
 
 (defn confirm
@@ -68,12 +68,15 @@
 
 (defn select
   "Pick one of `options` → Promise of its :value, nil when dismissed. An option
-   is {:label :value} or a plain value (shown with str)."
+   is {:label :value} or a plain value (shown with str), with an optional
+   :description. `{:menu? true}` in opts shows a long list in the web client
+   as a filterable Cmd+K palette page instead of a wall of buttons."
   ([ctx message options] (select ctx message options nil))
   ([ctx message options opts]
    (if (empty? options)
      (js/Promise.reject (ex-info "xi.api.dialog: select needs options" {}))
-     (open! ctx opts {:type :select :message message :options (mapv option options)}))))
+     (open! ctx opts (cond-> {:type :select :message message :options (mapv option options)}
+                       (:menu? opts) (assoc :menu? true))))))
 
 (defn alert
   "A message with an OK button → Promise<nil> once dismissed."
