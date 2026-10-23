@@ -1,12 +1,11 @@
 (ns xi.ext.user.web
-  "The dashboard card for user extensions that failed to load or aren't
-   enabled: the server's loader report (xi.ext.user/report), which arrives on
+  "The dashboard card for user extensions that failed to load: the rejected
+   part of the server's loader report (xi.ext.user/report), which arrives on
    :lobby/state as :user-ext/report. Hidden while there is nothing to fix."
   (:require [clojure.string :as str]))
 
 (defn- problems? [state]
-  (let [{:keys [rejected skipped]} (:user-ext/report state)]
-    (or (seq rejected) (seq skipped))))
+  (seq (:rejected (:user-ext/report state))))
 
 (defn- basename [path]
   (last (str/split (str path) #"/")))
@@ -17,12 +16,9 @@
    [:span {:class ["ext-report-detail"]} detail]])
 
 (defn- report-card [state _dispatch!]
-  (let [{:keys [rejected skipped]} (:user-ext/report state)]
-    [:div {:class ["ext-report"]}
-     (for [{:keys [file error]} rejected]
-       (row file (basename file) [:span {:class ["ext-report-error"]} error]))
-     (for [file skipped]
-       (row file file "Not enabled: list it under :extensions in config.edn"))]))
+  [:div {:class ["ext-report"]}
+   (for [{:keys [file error]} (:rejected (:user-ext/report state))]
+     (row file (basename file) [:span {:class ["ext-report-error"]} error]))])
 
 (def extension
   {:id :user-extensions
@@ -30,7 +26,7 @@
    [{:id          :user-extensions/report
      :title       "Extensions"
      :icon        :alert-triangle
-     :description "User extensions that were rejected or aren't enabled"
+     :description "User extensions that were rejected"
      :order       5
      :size        :wide
      :when        problems?
