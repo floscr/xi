@@ -109,6 +109,46 @@
   (is (nil? (t/ask (base-state) {:room-id "r1" :question " " :node {:index 0 :kind :user}})))
   (is (nil? (t/ask (base-state) {:room-id "r1" :question "q" :node (t/agent-node "nope")}))))
 
+(deftest asking-about-a-selection
+  (let [node (t/entry-node live-history 3)
+        ev   (spawn-of (t/ask (base-state) {:room-id "r1" :question "why?" :client-id "c1"
+                                            :selection "  a record now. " :node node}))]
+    (is (= "a record now." (:selection ev)))
+    (is (= "c1" (:client-id ev)) "the asking client, whose browser shows the thread")
+    (is (str/includes? (:prompt ev) "text they selected in one block of it, #3"))
+    (is (str/includes? (:prompt ev) "## The selected text\n```\na record now.\n```"))
+    (testing "the child keeps the selection"
+      (is (= "a record now."
+             (:selection (first (room-agents (:state ((:subagent/spawn h/handlers) (base-state) ev))))))))
+    (testing "a follow-up quotes the first turn's selection"
+      (let [st  (with-agents (base-state)
+                  [{:id "ask-1" :thread "ask-1" :node node :question "why?" :selection "a record now."
+                    :status :done :result "because" :started 1}])
+            ev2 (spawn-of (t/ask st {:room-id "r1" :thread "ask-1" :question "sure?"}))]
+        (is (= "a record now." (:selection ev2)))
+        (is (str/includes? (:prompt ev2) "## The selected text\n```\na record now.\n```"))))
+    (is (nil? (:selection (spawn-of (t/ask (base-state) {:room-id "r1" :question "why?" :node node}))))
+        "no selection: a question about the block")))
+
+(deftest a-thread-this-client-asked-opens-in-the-sidebar
+  (let [spawn (get-in sa-web/extension [:handlers :subagent/spawn])
+        st    (-> (base-state)
+                  (assoc-in [:connection :client-id] "c1")
+                  (assoc :active-room "r1"
+                         :web/route {:page :chat :session-id "s1"}
+                         :web/appearance {:subagent-answers :pane}))
+        ev    {:type :subagent/spawn :remote? true :room-id "r1" :sub-id "ask-1" :thread "ask-1"
+               :client-id "c1" :task "Ask about #3: why?" :prompt "p"}
+        open  (fn [res] (some (fn [[fx e]] (when (and (= :app/dispatch fx) (= :layout/open-view (:type e))) e))
+                              (:effects res)))]
+    (is (= {:type :layout/open-view :view "ask-1" :where :right} (open (spawn st ev))))
+    (is (= "ask-1" (:id (first (room-agents (:state (spawn st ev)))))) "the shared spawn applied")
+    (is (nil? (open (spawn st (assoc ev :client-id "c2")))) "another client's question")
+    (is (nil? (open (spawn st (dissoc ev :client-id)))) "the agent's own sub-agent")
+    (is (nil? (open (spawn (assoc st :web/appearance {:subagent-answers :inline}) ev)))
+        "answers inline: the thread card under the block")
+    (is (nil? (open (spawn st (assoc ev :thread "ask-0")))) "a follow-up turn")))
+
 (deftest a-follow-up-keeps-the-thread-and-its-answers
   (let [node (t/entry-node live-history 2)
         st   (with-agents (base-state)

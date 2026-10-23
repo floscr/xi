@@ -8117,6 +8117,18 @@ code a:hover,
 .thread-compose .diff-thread-foot { align-items: flex-end; }
 .thread-compose .diff-thread-chips { flex-wrap: wrap; }
 
+/* The text a thread is about: a selection in its block (xi.web.threads). */
+.thread-quote {
+  margin: 0;
+  padding: var(--size-1) var(--size-2);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  color: var(--fg-1);
+  font-size: var(--font-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* One Ask button per timeline, moved to the hovered block by
    xi.web.threads; touch screens use the block menu instead. */
 .ask-hover {
@@ -8141,6 +8153,8 @@ code a:hover,
 }
 .ask-hover.is-visible { opacity: 1; pointer-events: auto; }
 .ask-hover:hover { color: var(--accent); border-color: var(--accent); }
+/* on a selection: clicking it must not take the selection away */
+.ask-hover { user-select: none; -webkit-user-select: none; }
 @media (min-width: 1100px) {
   /* in the content's side padding, clear of the posts and the scrollbar */
   .ask-hover { right: calc(4px - var(--size-4)); }

@@ -71,9 +71,26 @@
         (update :effects (fnil conj [])
                 [:app/dispatch {:type :layout/open-view :view sub-id :where :right}])))))
 
+(defn- spawn
+  "The shared spawn, plus: a thread this client just started (its first
+   turn; the ask carried our :client-id, xi.ext.subagent.threads/ask) shows
+   in the right sidebar at once when answers are set to open in a window
+   (appearance :subagent-answers :pane), without taking focus, so the answer
+   streams there while the chat keeps the thread card."
+  [st {:keys [room-id sub-id thread client-id] :as ev}]
+  (when-let [res (h/spawn st ev)]
+    (let [st' (or (:state res) st)]
+      (cond-> res
+        (and thread (= thread sub-id)
+             client-id (= client-id (get-in st [:connection :client-id]))
+             (= :pane (:subagent-answers (appearance/effective-in st')))
+             (= room-id (:id (:room (wlayout/room-ctx st')))))
+        (update :effects (fnil conj [])
+                [:app/dispatch {:type :layout/open-view :view sub-id :where :right}])))))
+
 (defn- reply
-  "A reply to a finished sub-agent runs server-side: send the user's, apply
-   the server's echo (which every client of the room gets)."
+  "A reply to a sub-agent (a steer while it runs) runs server-side: send the
+   user's, apply the server's echo (which every client of the room gets)."
   [st ev]
   (if (:remote? ev)
     (h/reply st ev)
@@ -105,6 +122,7 @@
                       (when-not (:remote? ev)
                         {:effects [[:ws/send ev]]}))
                     :subagent/dismiss dismiss
+                    :subagent/spawn spawn
                     :subagent/turn-end turn-end
                     :subagent/reply reply
                     ;; A sidebar row's button (xi.web.views/session-buffer-rows):

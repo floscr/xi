@@ -29,21 +29,28 @@
     (number? index)
     (t/entry-node (:history (state/get-room st room-id)) index)))
 
-(defn- compose-open [st {:keys [room-id] :as ev}]
+(defn- compose-open
+  "Open the composer on the block `ev` names; `:selection` is text the user
+   selected in it, which the question is then about."
+  [st {:keys [room-id selection] :as ev}]
   (when-let [node (node-of st room-id ev)]
-    {:state (-> st
-                (dissoc :web/thread-menu :web/code-menu :web/bubble-menu)
-                (assoc :web/thread-compose {:room-id room-id :node node}))}))
+    (let [sel (some-> selection str/trim not-empty)]
+      {:state (-> st
+                  (dissoc :web/thread-menu :web/code-menu :web/bubble-menu)
+                  (assoc :web/thread-compose
+                         (cond-> {:room-id room-id :node node}
+                           sel (assoc :selection sel))))})))
 
 (defn- ask [room-id m]
   [:ws/send (merge {:type :subagent/ask :room-id room-id} m)])
 
 (defn- compose-submit [st {:keys [text]}]
-  (let [{:keys [room-id node]} (:web/thread-compose st)
+  (let [{:keys [room-id node selection]} (:web/thread-compose st)
         q (some-> text str/trim not-empty)]
     (when (and room-id q)
       {:state   (dissoc st :web/thread-compose)
-       :effects [(ask room-id {:node node :question q})]})))
+       :effects [(ask room-id (cond-> {:node node :question q}
+                                selection (assoc :selection selection)))]})))
 
 (defn- reply [_st {:keys [room-id thread text]}]
   (when-let [q (some-> text str/trim not-empty)]
@@ -102,20 +109,53 @@
 
 (defn- show-hover-button!
   "Move the timeline's Ask button (views/ask-hover-button) to block `el`,
-   centred on its first line, and name the block in its data attributes. Its
-   top is relative to the .timeline-content holding both, so it scrolls with
-   the block."
-  [^js el]
-  (when-let [content (.closest el ".timeline-content")]
-    (when-let [btn (.querySelector content ":scope > .ask-hover")]
-      (let [top (- (first-line-center el)
-                   (/ (.-offsetHeight btn) 2)
-                   (.-top (.getBoundingClientRect content)))
-            ds  (.-dataset btn)]
-        (set! (.. btn -style -top) (str (max 0 top) "px"))
-        (set! (.-askIndex ds) (or (.getAttribute el "data-ask-index") ""))
-        (set! (.-askSub ds) (or (.getAttribute el "data-ask-sub") ""))
-        (.add (.-classList btn) "is-visible")))))
+   centred on its first line (or at viewport `y`: the end of a selection),
+   and name the block in its data attributes, with the `selection` text the
+   question is about. Its top is relative to the .timeline-content holding
+   both, so it scrolls with the block."
+  ([el] (show-hover-button! el nil))
+  ([^js el {:keys [y selection]}]
+   (when-let [content (.closest el ".timeline-content")]
+     (when-let [btn (.querySelector content ":scope > .ask-hover")]
+       (let [top (- (or y (first-line-center el))
+                    (/ (.-offsetHeight btn) 2)
+                    (.-top (.getBoundingClientRect content)))
+             ds  (.-dataset btn)]
+         (set! (.. btn -style -top) (str (max 0 top) "px"))
+         (set! (.-askIndex ds) (or (.getAttribute el "data-ask-index") ""))
+         (set! (.-askSub ds) (or (.getAttribute el "data-ask-sub") ""))
+         (set! (.-askSelection ds) (or selection ""))
+         (.add (.-classList btn) "is-visible"))))))
+
+;; ── Selections ───────────────────────────────────────────────────────────────
+
+(defn- block-selection
+  "What the user has selected inside one block of the timeline: {:el the
+   block :text :y the viewport y of the selection's last line}. nil when
+   nothing is selected, the selection spans blocks, or it is in a user
+   bubble."
+  []
+  (when-let [sel (.getSelection js/window)]
+    (when (and (not (.-isCollapsed sel)) (pos? (.-rangeCount sel)))
+      (let [text  (str/trim (.toString sel))
+            el-of (fn [^js n]
+                    (some-> (if (instance? js/Element n) n (some-> n .-parentElement))
+                            (.closest block-selector)))
+            a     (el-of (.-anchorNode sel))
+            f     (el-of (.-focusNode sel))]
+        (when (and (seq text) a (identical? a f)
+                   (.closest a ".timeline-content")
+                   (not (.closest a ".post--user")))
+          (let [rects (.getClientRects (.getRangeAt sel 0))
+                n     (.-length rects)
+                last  (when (pos? n) (.item rects (dec n)))]
+            {:el a :text text
+             :y  (when last (+ (.-top last) (/ (.-height last) 2)))}))))))
+
+(defn- selection-pending?
+  "Is the Ask button on a selection (show-hover-button! with one)?"
+  []
+  (boolean (some-> (.querySelector js/document ".ask-hover") .-dataset .-askSelection not-empty)))
 
 (defn- hide-hover-buttons! []
   (doseq [btn (array-seq (.querySelectorAll js/document ".ask-hover.is-visible"))]
@@ -138,6 +178,13 @@
                                         (hide-hover-buttons!))
                                       hide-grace-ms))))
 
+(defn- drop-selection!
+  "The selection is gone: the Ask button stops asking about it and hides."
+  []
+  (when-let [btn (.querySelector js/document ".ask-hover")]
+    (set! (.-askSelection (.-dataset btn)) ""))
+  (hide-soon!))
+
 (defn- open-menu! [dispatch! ^js e ^js el]
   (let [{:keys [index sub-id]} (block-ref el)]
     (dispatch! {:type    :thread/menu-open
@@ -151,9 +198,11 @@
 
 (defn attach-listeners!
   "Delegated document listeners, once: a mouse pointer over a block shows
-   the Ask button there; a touch tap, or a touch long-press (contextmenu), on a
-   block opens its menu. Right-click with a mouse keeps the browser's menu.
-   `dispatch-ref` holds the app's dispatch!."
+   the Ask button there; text selected with the mouse inside a block moves
+   it to the selection's end, where it asks about that text, and keeps it
+   there until the selection is gone; a touch tap, or a touch long-press
+   (contextmenu), on a block opens its menu. Right-click with a mouse keeps
+   the browser's menu. `dispatch-ref` holds the app's dispatch!."
   [dispatch-ref]
   (when-not @attached?
     (reset! attached? true)
@@ -166,8 +215,18 @@
                          (.closest t block-selector))]
              (cond
                (.closest t ".ask-hover") (cancel-hide!)
+               ;; the Ask stays on the selection while there is one
+               (and (selection-pending?) (block-selection)) (cancel-hide!)
                block (do (cancel-hide!) (show-hover-button! block))
                :else (hide-soon!)))))))
+    (.addEventListener
+     js/document "pointerup"
+     (fn [^js e]
+       (when (and (= "mouse" (.-pointerType e))
+                  (not (some-> (.-target e) (.closest ".ask-hover"))))
+         (if-let [{:keys [el text y]} (block-selection)]
+           (do (cancel-hide!) (show-hover-button! el {:y y :selection text}))
+           (when (selection-pending?) (drop-selection!))))))
     (let [handle (fn [^js e skip]
                    (let [t (.-target e)]
                      (when (and (views/tap-opens-context-menu?)

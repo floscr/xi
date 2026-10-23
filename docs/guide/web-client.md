@@ -104,6 +104,12 @@ across the top narrows the cards and lists to one
   where you can reply, collapse the thread, or close it. Blocks inside an
   open sub-agent row work the same, and their threads show under that
   sub-agent. The agent sees your questions in `list_subagents`.
+  **Select text** in a block with the mouse and the ⚡ button moves to the
+  end of the selection: the question is then about that text, quoted in
+  the field and in the thread. With **Sub-agent answers** set to "In a
+  window" ([Appearance](#appearance)), a question you ask opens its
+  sub-agent in the right sidebar right away, so you watch the answer there
+  while the chat keeps the thread.
 - **Queue messages.** A message sent while the agent works waits for the
   turn to end; the number in the action row opens the queue. Its steer
   button sends a message into the running turn (see Alt+Enter below), ▶
@@ -270,7 +276,8 @@ eight windows; the chat appears in one of them at most.
   in the right sidebar. With **Sub-agent answers** set to "In a window"
   ([Appearance](#appearance)), a finished sub-agent opens there on its
   own, without taking focus, and the chat shows a marker row instead of
-  the answer post.
+  the answer post; a question you ask about a block opens there as soon
+  as it starts.
 - **Undo.** Every change of the arrangement or the sizes can be taken back
   (`:layout/undo`, the palette's "Undo window change") and redone
   (`:layout/redo`), like Emacs' winner mode: the last fifty changes of the

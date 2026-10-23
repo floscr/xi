@@ -40,6 +40,16 @@
     (is (nil? (run (base-state) {:type :thread/compose-open :room-id "r1" :index 9}))
         "a gone block opens nothing")))
 
+(deftest a-selection-rides-with-the-question
+  (let [open (fn [sel] (:state (run (base-state) {:type :thread/compose-open :room-id "r1"
+                                                   :index 1 :selection sel})))
+        st   (open " a ")]
+    (is (= "a" (:selection (:web/thread-compose st))))
+    (is (= [[:ws/send {:type :subagent/ask :room-id "r1" :question "why?" :selection "a"
+                       :node {:index 1 :kind :tool-call :call-id "t1" :hint "read"}}]]
+           (:effects (run st {:type :thread/compose-submit :text "why?"}))))
+    (is (nil? (:selection (:web/thread-compose (open "  ")))) "blank: about the block")))
+
 (deftest replies-and-collapse
   (is (= [[:ws/send {:type :subagent/ask :room-id "r1" :thread "ask-1" :question "and?"}]]
          (:effects (run (base-state) {:type :thread/reply :room-id "r1" :thread "ask-1" :text "and?"}))))

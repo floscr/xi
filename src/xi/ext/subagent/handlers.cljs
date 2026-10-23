@@ -270,8 +270,9 @@
    started it), like answered dialogs. Clients apply the same mirrored event
    to the same history, so the anchor agrees everywhere.
 
-   The event's :call-id / :node / :thread / :question go onto the child as
-   they are (see the ns doc), :system / :parent-context? too, for `reply`.
+   The event's :call-id / :node / :thread / :question / :selection go onto
+   the child as they are (see the ns doc), :system / :parent-context? too,
+   for `reply`.
 
    Emits the :subagent/start effect — the node build runs the turn; the web
    build registers a no-op for it (the turn only ever runs server-side).
@@ -286,16 +287,17 @@
                          :history []
                          :started (.now js/Date)
                          :anchor  (count (:history room))}
-                        (select-keys ev [:call-id :node :thread :question
+                        (select-keys ev [:call-id :node :thread :question :selection
                                          :system :parent-context?]))]
       {:state   (update-in st [:rooms room-id :ext ext-id :agents]
                            (fnil conj []) child)
        :effects [(start-effect room child (or prompt task) images)]})))
 
 (defn reply
-  "Continue finished sub-agent `sub-id` with the user's `text`: the same
-   child runs another turn on its own conversation, still a child of the
-   room, not a chat of its own. The node effect resumes the session it was
+  "Continue sub-agent `sub-id` with the user's `text`. While it runs, the
+   text steers its turn (:subagent/steer, `steered` once taken). Finished,
+   the same child runs another turn on its own conversation, still a child
+   of the room, not a chat of its own. The node effect resumes the session it was
    saved as (:resume); sessionless providers replay :history, the task
    first. The prompt joins the history as a :user entry and :exchanges
    (see the ns doc). :ended-anchor stays until the turn ends, so the result

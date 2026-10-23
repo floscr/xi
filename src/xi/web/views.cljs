@@ -3062,13 +3062,14 @@
    (diff-ask-card) and questions on chat blocks (block-thread-card).
    `turns` [{:question :sub-id}], `children` the matching sub-agents (nil
    until the server echoes the spawn); :on-reply gets the reply text;
-   :label names what the thread is about; :actions are extra head buttons;
+   :label names what the thread is about, :quote the text it is about
+   (under the head); :actions are extra head buttons;
    :draft / :on-draft keep the reply field's text in state; :transcript?
    shows every text block of a turn instead of only the last. The files
    the children changed step by step (thread-changes) under the head:
    :rev / :on-rev the shown change. :ask is a pending ask of theirs to
    answer in the card (thread-ask)."
-  [dispatch! state room-id {:keys [key turns children collapsed? label input-id actions
+  [dispatch! state room-id {:keys [key turns children collapsed? label quote input-id actions
                                     on-reply on-toggle on-close draft on-draft transcript?
                                     rev on-rev ask]}]
   (let [running (some (fn [[t c]] (when (or (nil? c) (= :running (:status c))) t))
@@ -3106,6 +3107,8 @@
         (button/button {:variant :ghost :size :sm :attrs {:aria-label "Close thread"}
                         :on-click (fn [_] (on-close))}
                        (icon/icon {:icon-name :x :size :sm}))]
+       (when quote
+         [:blockquote {:class ["thread-quote"]} quote])
        (when-let [mods (not-empty (sa/modifications children))]
          (thread-changes dispatch! state mods rev on-rev))
        (map (partial ask-turn transcript?) turns children)
@@ -4253,6 +4256,7 @@
                 :rev        (get-in state [:web/thread-rev id])
                 :on-rev     #(dispatch! {:type :thread/rev :thread id :rev %})
                 :label      (node-label node)
+                :quote      (some-> (:selection (first turns)) (sa/clip 280))
                 :input-id   (str "thread-reply-" id)
                 :on-reply   #(dispatch! {:type :thread/reply :room-id room-id :thread id :text %})
                 :on-toggle  #(dispatch! {:type :thread/toggle :thread id})
@@ -4266,8 +4270,9 @@
 
 (defn- thread-composer
   "The question field of a new thread on a block (:web/thread-compose,
-   xi.web.threads), with one-tap questions for the block's kind."
-  [dispatch! {:keys [node]}]
+   xi.web.threads), with one-tap questions for the block's kind; a
+   `selection` (text selected in the block) is quoted above the field."
+  [dispatch! {:keys [node selection]}]
   (let [input-id "thread-compose-input"
         close!   (fn [] (dispatch! {:type :thread/compose-close}))
         submit!  (fn [text] (dispatch! {:type :thread/compose-submit :text text}))
@@ -4282,8 +4287,10 @@
       (button/button {:variant :ghost :size :sm :attrs {:aria-label "Cancel"}
                       :on-click (fn [_] (close!))}
                      (icon/icon {:icon-name :x :size :sm}))]
+     (when selection
+       [:blockquote {:class ["thread-quote"]} (sa/clip selection 280)])
      (form/form-textarea-auto
-      {:placeholder "Ask about this block…"
+      {:placeholder (if selection "Ask about the selected text…" "Ask about this block…")
        :max-rows    6
        :class       "diff-thread-input"
        :attrs       {:id input-id
@@ -4299,7 +4306,8 @@
                                        (enter! e)))}}})
      [:div {:class ["diff-thread-foot"]}
       [:div {:class ["diff-thread-chips"]}
-       (for [q (sa-threads/suggestions (when (sa-threads/entry-node? node) (:kind node)))]
+       (for [q (sa-threads/suggestions (cond selection                     :selection
+                                             (sa-threads/entry-node? node) (:kind node)))]
          (chip/chip {:on-click (fn [_] (submit! q)) :attrs {:replicant/key q}} q))]
       [:span {:class ["diff-thread-spacer"]}]
       (button/button {:variant :primary :size :sm :attrs {:aria-label "Send"} :class "diff-thread-send"
@@ -4372,12 +4380,16 @@
   [dispatch! room-id]
   [:button {:class ["ask-hover"] :type "button" :replicant/key "tl-ask-hover"
             :title "Ask a sub-agent about this block" :aria-label "Ask about this block"
-            :on {:click (fn [^js e]
+            ;; mousedown would collapse the selection the button may be on
+            :on {:mousedown (fn [^js e] (.preventDefault e))
+                 :click (fn [^js e]
                           (let [ds (.. e -currentTarget -dataset)]
-                            (dispatch! {:type    :thread/compose-open
-                                        :room-id room-id
-                                        :index   (some-> (.-askIndex ds) not-empty parse-long)
-                                        :sub-id  (not-empty (.-askSub ds))})))}}
+                            (dispatch! (cond-> {:type    :thread/compose-open
+                                                :room-id room-id
+                                                :index   (some-> (.-askIndex ds) not-empty parse-long)
+                                                :sub-id  (not-empty (.-askSub ds))}
+                                         (not-empty (.-askSelection ds))
+                                         (assoc :selection (.-askSelection ds))))))}}
    (icon/icon {:icon-name :zap :size :sm})])
 
 (defn- subagent-block-ctx

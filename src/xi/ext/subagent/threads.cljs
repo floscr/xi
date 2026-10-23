@@ -170,8 +170,8 @@
        vec))
 
 (defn suggestions
-  "One-tap questions for a block of `kind` (a node's :kind, or nil for a
-   whole sub-agent)."
+  "One-tap questions for a block of `kind` (a node's :kind, nil for a whole
+   sub-agent, :selection for text selected in a block)."
   [kind]
   (case kind
     :user      ["How was this handled?" "What came of this?"]
@@ -179,16 +179,21 @@
     :tool-call ["What did this do?" "Why was this run?" "What could this break?"]
     :thinking  ["Summarize this reasoning" "Is this reasoning sound?"]
     :error     ["What went wrong?" "How do I fix this?"]
+    :selection ["Explain this" "Why?" "Is this right?"]
     ["Summarize the result" "How did it get there?"]))
 
 (defn ask-prompt
   "The prompt of a question about the block at `addr` (`text`, its
-   transcript text). `earlier` ([{:question :answer}]) is the thread so far,
-   so a follow-up reads in context."
-  [{:keys [question addr text earlier sub-id]}]
-  (str "The user is reading this conversation and asks about one block of it, "
+   transcript text), or about `selection`, text the user selected in it.
+   `earlier` ([{:question :answer}]) is the thread so far, so a follow-up
+   reads in context."
+  [{:keys [question addr text selection earlier sub-id]}]
+  (str "The user is reading this conversation and asks about "
+       (if selection "text they selected in one block of it, " "one block of it, ")
        addr ".\n\n"
        "## The block (" addr ")\n```\n" text "\n```\n\n"
+       (when selection
+         (str "## The selected text\n```\n" selection "\n```\n\n"))
        (when (seq earlier)
          (str "## Earlier in this thread\n"
               (str/join "\n\n" (map (fn [{q :question a :answer}]
@@ -206,16 +211,23 @@
 
 ;; ── Handlers (node ext; the web forwards the user's events) ──────────────────
 
+(def ^:private selection-chars 4000)
+
 (defn ask
-  "Ask `question` about `node`, or follow up in `thread` (whose first turn's
-   node wins). Pure and a no-op on state, like h/explain-call: the spawn goes
-   out as an :app/dispatch so it is broadcast and mirrored like any
-   sub-agent. nil without a question or when the block is gone."
-  [st {:keys [room-id node question thread]}]
+  "Ask `question` about `node` (or about `selection`, text the user selected
+   in it: quoted in the prompt and kept on the child), or follow up in
+   `thread` (whose first turn's node and selection win). Pure and a no-op on
+   state, like h/explain-call: the spawn goes out as an :app/dispatch so it
+   is broadcast and mirrored like any sub-agent; it carries the asking
+   `client-id`, so that client's browser can show the thread at once. nil
+   without a question or when the block is gone."
+  [st {:keys [room-id node question thread selection client-id]}]
   (let [q      (some-> question str/trim not-empty)
         agents (h/agents st room-id)
         turns  (when thread (thread-turns agents thread))
         node   (or (:node (first turns)) node)
+        sel    (or (:selection (first turns))
+                   (some-> selection str/trim not-empty (h/clip selection-chars)))
         found  (when (and q node) (resolve-node st room-id node))]
     (when found
       (let [sub-id  (h/ask-sub-id)
@@ -224,19 +236,22 @@
                                     {:question (:question c) :answer a}))
                           turns)]
         {:effects [[:app/dispatch
-                    {:type     :subagent/spawn
-                     :room-id  room-id
-                     :sub-id   sub-id
-                     :label    (h/default-label q)
-                     :task     (str "Ask about " (address node) ": " q)
-                     :node     node
-                     :thread   (if (seq turns) thread sub-id)
-                     :question q
-                     :prompt   (ask-prompt {:question q
-                                            :addr     (address node)
-                                            :text     (:text found)
-                                            :earlier  earlier
-                                            :sub-id   (:sub-id node)})}]]}))))
+                    (cond-> {:type     :subagent/spawn
+                             :room-id  room-id
+                             :sub-id   sub-id
+                             :label    (h/default-label q)
+                             :task     (str "Ask about " (address node) ": " q)
+                             :node     node
+                             :thread   (if (seq turns) thread sub-id)
+                             :question q
+                             :prompt   (ask-prompt {:question  q
+                                                    :addr      (address node)
+                                                    :text      (:text found)
+                                                    :selection sel
+                                                    :earlier   earlier
+                                                    :sub-id    (:sub-id node)})}
+                      sel       (assoc :selection sel)
+                      client-id (assoc :client-id client-id))]]}))))
 
 (defn close
   "Close `thread`: its turns hide (:closed?, still saved and linked) and
