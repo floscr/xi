@@ -505,7 +505,7 @@ xi server
      [:div.wrap
       [:div
        [:h2 "Install Xi"]
-       [:p "One package, one command. Bring a Claude login, a ChatGPT plan, an OpenCode key or a local Ollama."]]
+       [:p "Bring a Claude login, a ChatGPT plan, an OpenCode key or a local Ollama."]]
       (button/button {:variant :primary :size :lg :href "/docs/getting-started/"
                       :icon-right :arrow-right}
                      "Getting started")]])))

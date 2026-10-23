@@ -1,7 +1,7 @@
 # Tutorial: a tool
 
 Give the agent a `notes_add` tool that appends a line to a notes file, and a
-`/notes` command that shows the file. Fifteen minutes, one file.
+`/notes` command that shows the file.
 
 ## What you build
 

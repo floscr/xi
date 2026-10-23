@@ -12,7 +12,8 @@ rules and the page list are in [README.md](README.md).
    background, recaps, "Also useful" lists and repeated explanations. Link to
    the page that explains a thing instead of explaining it again.
 3. **No marketing talk.** No "powerful", "seamless", "simply", "just",
-   "easily", no selling the feature. State what it does.
+   "easily", no selling the feature, no effort claims ("ten minutes, one
+   package"). State what it does.
 
 ## Mechanics
 

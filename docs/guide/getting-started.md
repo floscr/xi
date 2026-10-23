@@ -1,16 +1,13 @@
 # Getting started
 
-Install Xi, run it in a project, and open the same chat in your browser. Ten
-minutes, one package.
+Install Xi, run it in a project, and open the same chat in your browser.
 
 ## What you need
 
 - **Bun** 1.3 or newer. Xi runs on Bun, not Node. Install it from
   [bun.sh](https://bun.sh).
-- **A model.** Claude with your Claude Code login or `ANTHROPIC_API_KEY`, GPT
-  on a ChatGPT plan, OpenCode, or local models in Ollama. See
-  [Models](models.md); the first Claude message installs the Claude Agent
-  SDK, which takes a few seconds.
+- **A provider.** Use your favorite AI provider with Xi, by subscription or
+  API. See [Providers](providers.md).
 
 ## Install
 
