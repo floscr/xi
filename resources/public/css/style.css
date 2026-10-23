@@ -7932,6 +7932,7 @@ code a:hover,
 .subagents-running ~ .subagents-clear { margin-left: var(--size-2); }
 
 .subagents-clear,
+.subagent-window,
 .subagent-dismiss,
 .subagent-stop,
 .subagent-upgrade,
