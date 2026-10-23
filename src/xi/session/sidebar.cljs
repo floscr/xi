@@ -45,10 +45,11 @@
 
 (defn session-status
   "Enrich a session map with live indicator flags derived from app state:
-   :active? (has a live room), :busy?, :has-dialog? (needs response),
-   :error? (last turn failed), :unread? (more responses than last watched),
-   :buffers (its open diffs / files, see session-buffers). Centralizes the
-   logic shared by every session listing so indicators aren't computed twice.
+   :active? (has a live room, or is the chat in view while connected),
+   :busy?, :has-dialog? (needs response), :error? (last turn failed),
+   :unread? (more responses than last watched), :buffers (its open diffs /
+   files, see session-buffers). Centralizes the logic shared by every session
+   listing so indicators aren't computed twice.
 
    :unread? relies on the web-only :web/response-counts / :web/watched slices;
    on surfaces that don't track them (the TUI) it degrades to false."
@@ -62,7 +63,8 @@
         ;; ahead wins, so a read on any device sticks.
         seen    (max (get-in state [:lobby :read sid] 0)
                      (get-in state [:web/watched sid] 0))
-        room    (some (fn [r] (when (= (:session-id r) sid) r)) rooms)]
+        room    (some (fn [r] (when (= (:session-id r) sid) r)) rooms)
+        viewed? (and sid (= sid (get-in state [:web/route :session-id])))]
     (merge
      ;; the user's extension flags (e.g. :favorite?), which an extension's
      ;; sidebar groups and session menu items key on
@@ -73,8 +75,10 @@
       :timestamp   (or (:last-accessed s) (:timestamp s))
       :dismissed?  (boolean (:dismissed? s))
       :pinned?     (boolean (:pinned? s))
-      :current?    (and sid (= sid (get-in state [:web/route :session-id])))
-      :active?     (boolean room)
+      :current?    viewed?
+      ;; The chat in view shows as live before its join round-trip lands:
+      ;; visiting it is what opens the room.
+      :active?     (boolean (or room (and viewed? (:web/connected? state))))
       :busy?       (boolean (:busy? room))
       :has-dialog? (boolean (:has-dialog? room))
       :error?      (boolean (:error? room))

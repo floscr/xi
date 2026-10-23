@@ -193,6 +193,16 @@
       (is (= ["alice"]
              (mapv :id (:people (first (sb/orphan-rooms state [])))))))))
 
+(deftest the-chat-in-view-shows-live-before-its-room-lands
+  (let [state (assoc (lobby profiles []) :web/route {:page :chat :session-id "s1"})]
+    (is (true? (:active? (sb/session-status (assoc state :web/connected? true)
+                                            {:session-id "s1"}))))
+    (is (false? (:active? (sb/session-status state {:session-id "s1"})))
+        "not while disconnected: no join is going out")
+    (is (false? (:active? (sb/session-status (assoc state :web/connected? true)
+                                             {:session-id "s2"})))
+        "other chats still need a room")))
+
 (deftest active-cards-most-urgent-first
   (let [cards [{:session-id "idle"}
                {:session-id "run1" :busy? true}
