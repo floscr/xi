@@ -19,6 +19,7 @@
             [xi.dialog :as dlg]
             [xi.diff :as diff]
             [xi.web.diff-state :as diff-state]
+            [xi.web.diff-jump :as diff-jump]
             [xi.ext.core :as ext]
             [xi.ext.subagent.handlers :as sa]
             [xi.config :as config]
@@ -594,6 +595,26 @@
 (defn- diff-show-all
   [st {:keys [filename]}]
   {:state (diff-state/assoc-view st :expanded (conj (diff-state/expanded st) filename))})
+
+(defn- diff-jump-to
+  "A click on an inline code chip of a reply: show the diff line it names
+   (xi.web.diff-jump) — select it in that buffer's view, unfold and fully
+   show its file, switch there and scroll to it. Nothing when no open diff
+   has it."
+  [st {:keys [text]}]
+  (when-let [room (state/active-room st)]
+    (when-let [{:keys [buffer-id filename sel-idx]}
+               (diff-jump/target room text (:web/diff-layout st))]
+      {:state (diff-state/update-view-of
+               st [(:id room) buffer-id]
+               (fn [slot]
+                 (-> slot
+                     (dissoc :intent)
+                     (assoc :sel {:anchor sel-idx :head sel-idx})
+                     (update :collapsed (fnil disj #{}) filename)
+                     (update :expanded (fnil conj #{}) filename))))
+       :effects [[:app/dispatch {:type :ui/buffer-switch :room-id (:id room) :buffer-id buffer-id}]
+                 [:diff/reveal-selection {}]]})))
 
 (defn- diff-toggle-all
   [st {:keys [filenames]}]
@@ -1522,6 +1543,7 @@
           :diff/clear-selection  diff-clear-selection
           :diff/toggle-file      diff-toggle-file
           :diff/show-all         diff-show-all
+          :diff/jump             diff-jump-to
           :diff/toggle-all       diff-toggle-all
           :diff/intent           diff-intent
           :diff/draft            diff-draft
@@ -2011,6 +2033,17 @@
           (repaint-closed-drawer! (:web/wide? s) (:web/sidebar-open? s))))))
    :nav/back     router/back-effect
    :nav/forward  (fn [_ _] (.forward js/history))
+   ;; After :diff/jump: the selected line is in the DOM once the buffer
+   ;; renders; the scroll waits one more frame for remembered-scroll's
+   ;; restore so it isn't overwritten.
+   :diff/reveal-selection
+   (fn [_ _]
+     (letfn [(attempt [n]
+               (if-let [^js node (.querySelector js/document ".diff-tab .diff-view .diff-line--selected")]
+                 (js/requestAnimationFrame
+                  #(.scrollIntoView node #js {:block "center" :behavior "smooth"}))
+                 (when (pos? n) (js/requestAnimationFrame #(attempt (dec n))))))]
+       (attempt 60)))
    :projects/sync-textarea
    (fn [_ {:keys [text]}]
      (when-let [^js el (.querySelector js/document ".compose-input-wrapper textarea")]
@@ -2815,6 +2848,39 @@
            (when-let [node (code-node e)]
              (when (open! e node)
                (.preventDefault e)))))))))
+
+(defonce ^:private diff-jump-attached? (atom false))
+
+(defn- diff-jump-chip
+  "The inline code chip of an agent post under a pointer event; nil in user
+   bubbles, links, code blocks and editors."
+  [^js e]
+  (when-let [^js node (some-> (.-target e) (.closest "code.md-code"))]
+    (when (and (.closest node ".post--assistant")
+               (not (.closest node "pre, a, .post--user, .bubble-edit-textarea")))
+      node)))
+
+(defn- attach-diff-jump-listener!
+  "Inline code in a reply naming a line of an open diff jumps there on a
+   mouse click (:diff/jump, xi.web.diff-jump; a touch tap keeps the copy
+   menu). Hovering marks a chip that resolves (md-code--jump)."
+  [state-atom]
+  (when-not @diff-jump-attached?
+    (reset! diff-jump-attached? true)
+    (let [resolves? (fn [^js node]
+                      (let [st @state-atom]
+                        (some? (some-> (state/active-room st)
+                                       (diff-jump/target (.-textContent node) (:web/diff-layout st))))))]
+      (.addEventListener js/document "mouseover"
+                         (fn [^js e]
+                           (when-let [node (diff-jump-chip e)]
+                             (.toggle (.-classList node) "md-code--jump" (resolves? node)))))
+      (.addEventListener js/document "click"
+                         (fn [^js e]
+                           (when-not (views/tap-opens-context-menu?)
+                             (when-let [node (diff-jump-chip e)]
+                               (when-let [d @dispatch-ref]
+                                 (d {:type :diff/jump :text (.-textContent node)})))))))))
 
 (defonce ^:private file-link-attached? (atom false))
 
@@ -3860,6 +3926,7 @@
     (views/install-pointer-type-tracker!)
     (attach-code-copy-listener!)
     (attach-file-link-listener!)
+    (attach-diff-jump-listener! state)
     (threads/attach-listeners! dispatch-ref)
     ;; :web/wide? mirrors the >=1024px breakpoint at which style.css docks the sidebar.
     (let [mql (.matchMedia js/window "(min-width: 1024px)")]

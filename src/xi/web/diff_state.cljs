@@ -35,6 +35,12 @@
 (defn assoc-view [st & kvs]
   (update-view st #(apply assoc % kvs)))
 
+(defn update-view-of
+  "`(apply f slot args)` on the slot of view `k` (a view-key), which need not
+   be in front: a jump prepares the view it is about to switch to."
+  [st k f & args]
+  (apply update-in st [:web/diff-views k] f args))
+
 (defn dissoc-view [st & ks]
   (update-view st #(apply dissoc % ks)))
 

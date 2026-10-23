@@ -149,6 +149,12 @@ across the top narrows the cards and lists to one
   edit, even in yolo mode. Permission asks show in the thread. Once a
   thread's sub-agents have edited files, **‹ ›** at the top of the thread
   step through their changes, one diff at a time.
+- **From a reply into the diff.** While the chat has a diff buffer, inline
+  code in the agent's replies that names something in it is a link: click
+  `reference-updates` to see the line defining it (else the first changed
+  line mentioning it), `src/app.cljs:12` to see that line. The diff opens on
+  that line, selected, so Ask / Explain / Modify are right there. A chip
+  that points nowhere does nothing.
 - **Read Markdown changes as Markdown.** A diff of a Markdown file (an edit,
   a permission ask, the diff buffer, Git status) is shown rendered: changed
   paragraphs, list items, and code blocks get a red (removed) or green

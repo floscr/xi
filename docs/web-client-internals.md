@@ -221,6 +221,18 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   (`xi.web.diff-state`, `:web/diff-views`), threads carry their `:view`, and
   `:scroll-key` remembers each view's scroll position, so every diff buffer
   is as you left it after switching away.
+  **Jump from a reply**: a mouse click on an inline code chip of an agent
+  post (delegated listener `attach-diff-jump-listener!`; a touch tap keeps
+  the copy menu) dispatches `:diff/jump {:text}`. `xi.web.diff-jump/target`
+  resolves the chip against the room's diff buffers (front first) in the
+  viewer's layout: a `path:line` chip exactly, a symbol by its definition,
+  else a changed mention; the handler selects that `:sel-idx` in the target
+  view's slot (`diff-state/update-view-of`), unfolds and fully shows its
+  file, switches to the buffer, and `:diff/reveal-selection` scrolls the
+  selected line into view once it is in the DOM. Hover sets `md-code--jump`
+  on a chip that resolves. No prompt is involved; the show_diff user
+  extension's result text only asks the agent to write names and
+  `path:line`.
 - **Rendered Markdown diffs**: a `.md` diff (tool result / ask preview via
   `tool-diff-view`, diff buffer and Git status via `diff-rows-view`'s
   `:md-code` opt) renders through `xi.markdown.diff`: per hunk, the old side

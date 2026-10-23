@@ -2005,6 +2005,10 @@ body {
   opacity: 0.6;
 }
 
+/* A chip of an agent reply that names a line of an open diff (xi.web.diff-jump):
+   clicking it shows that line in the diff viewer. */
+.md-code--jump { cursor: pointer; }
+
 /* Hover: a hairline in the kind's hue as an inset shadow, so it adds no
    width and the wrapped line doesn't reflow. */
 @media (hover: hover) {
