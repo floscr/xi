@@ -440,6 +440,56 @@
              (:defaults (store/parse-rules-config
                          {:type :xi/rules :version 1 :defaults [:xi.rules.defaults/plan-mode]})))))))
 
+(deftest parse-rules-config-expands-dir
+  ;; :dir is a prefix of the absolute cwd, so a `~/…` spec only matches once
+  ;; the home directory is filled in.
+  (let [home  (fs/realpathSync (os/homedir))
+        rule  {:match {:tool :sh :dir "~/code/app" :task {"bb" "build"}}
+               :action {:type :allow}}
+        [r]   (:rules (store/parse-rules-config {:type :xi/rules :version 1 :rules [rule]}))
+        req   {:tool :sh :effective-cwd (str home "/code/app/sub")
+               :runner-task {:runner "bb" :task "build"}}]
+    (is (= (str home "/code/app") (get-in r [:match :dir])))
+    (is (rules/matches? (rules/canonical r) req))
+    (testing "absolute and ~user specs stay as written"
+      (is (= "/srv/x" (get-in (first (:rules (store/parse-rules-config
+                                                {:type :xi/rules :version 1
+                                                 :rules [{:match {:dir "/srv/x"}}]})))
+                              [:match :dir])))
+      (is (= "~bob/x" (get-in (first (:rules (store/parse-rules-config
+                                                {:type :xi/rules :version 1
+                                                 :rules [{:match {:dir "~bob/x"}}]})))
+                              [:match :dir]))))))
+
+(deftest dir-rules-cannot-be-escaped
+  ;; A :dir allow covers that directory and below only: `..` out of it, a
+  ;; sibling sharing its name as a prefix and a symlink inside it pointing
+  ;; elsewhere all run somewhere else and must not match.
+  (let [root    (fs/realpathSync (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-dir-rule-")))
+        allowed (node-path/join root "allowed")
+        _       (doseq [d ["allowed/sub" "allowed-evil" "outside"]]
+                  (fs/mkdirSync (node-path/join root d) #js {:recursive true}))
+        _       (fs/symlinkSync (node-path/join root "outside") (node-path/join allowed "link"))
+        ruleset (:rules (store/parse-rules-config
+                         {:type :xi/rules :version 1
+                          :rules [{:match {:tool :sh :dir (str allowed "/")}
+                                   :action {:type :allow}}]}))
+        hit?    (fn [cwd]
+                  (some? (rules/first-match
+                          ruleset
+                          (store/enrich-request {:tool :sh :cli "bb" :command "bb build"
+                                                 :effective-cwd cwd}
+                                                ruleset))))]
+    (try
+      (is (hit? allowed))
+      (is (hit? (node-path/join allowed "sub")))
+      (is (hit? (str allowed "/sub/../sub")))
+      (is (not (hit? (str allowed "/../outside"))))
+      (is (not (hit? (str allowed "/sub/../../outside"))))
+      (is (not (hit? (node-path/join root "allowed-evil"))))
+      (is (not (hit? (node-path/join allowed "link"))))
+      (finally (fs/rmSync root #js {:recursive true :force true})))))
+
 (deftest extensions-moved-to-the-config-file
   ;; User extensions are enabled in config.edn now; a rules file still naming
   ;; them fails closed with a pointer instead of silently ignoring the list.

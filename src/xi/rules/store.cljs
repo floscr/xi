@@ -99,6 +99,17 @@
 
 (def ^:private rules-file-keys #{:type :version :rules :defaults})
 
+(defn- expand-match-dir
+  "A rule with its `:dir` (`~/…` or absolute) in canonical form: home
+   expanded, `..` and symlinks resolved. xi.rules/match-dir compares it with
+   the canonical cwd (`:real-cwd`), so both sides must be in that form."
+  [rule]
+  (let [k (if (contains? rule :on-block) :on-block :match)
+        d (get-in rule [k :dir])]
+    (if (and (string? d) (or (= d "~") (str/starts-with? d "~/") (path/isAbsolute d)))
+      (assoc-in rule [k :dir] (paths/real-resolve "/" d))
+      rule)))
+
 (defn parse-rules-config
   "Validate parsed rules-file `data` → {:rules :defaults} (defaults expanded
    via defaults/expand) or {:error msg}."
@@ -148,9 +159,9 @@
 
       :else
       (try
-        {:rules    (vec (:rules data))
+        {:rules    (mapv expand-match-dir (:rules data))
          :defaults (when (contains? data :defaults)
-                     (defaults/expand (:defaults data)))}
+                     (mapv expand-match-dir (defaults/expand (:defaults data))))}
         (catch :default e
           {:error (ex-message e)})))))
 
@@ -593,6 +604,8 @@
                       (tasks/project-file (:effective-cwd req)
                                           (or (:runner runner-task) (:runner req))))]
     (cond-> req
+      (and (:effective-cwd req) (rules/needs-real-cwd? ruleset))
+      (assoc :real-cwd (paths/real-resolve (:effective-cwd req) "."))
       resolved (assoc :resolved-path resolved)
       (home-collapse resolved) (assoc :resolved-home-path (home-collapse resolved))
       (and (= :sh (:tool req)) (:argv req) (rules/needs-resolved-path? ruleset))

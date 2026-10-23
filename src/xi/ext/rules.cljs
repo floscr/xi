@@ -145,7 +145,7 @@
      "- :path     regex (partial, re-find) or glob string (full; * one segment, ** any, ? one char)\n"
      "- :command  regex (re-find) or string (substring) over the bash command / clj code\n"
      "- :repo     git-root path suffix of the target/effective cwd, e.g. \"config/dotfiles\"\n"
-     "- :dir      absolute path prefix of the effective cwd (~ expanded)\n"
+     "- :dir      the cwd is this dir or below it (~ expanded, .. and symlinks resolved)\n"
      "- :mcp-server / :mcp-tool  string/glob for mcp__<server>__<tool> calls\n\n"
      "`:action` types:\n"
      "- {:type :allow}                    force-allow, skip the remaining gates\n"

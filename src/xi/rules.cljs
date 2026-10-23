@@ -21,7 +21,7 @@
                                          ; every literal operand of a :sh command
                :command #\"\\brm\\b\"       ; regex OR substring on the bash command
                :repo \"config/dotfiles\"  ; substring of the effective repo root
-               :dir  \"~/code/projects\"   ; prefix of the effective cwd (store expands ~)
+               :dir  \"~/code/projects\"   ; the cwd is this dir or below it (both resolved)
                :mcp-server \"context7\"   ; MCP server id (glob/exact)
                :mcp-tool   \"*\"           ; MCP tool name (glob/exact)
                :when {:mode :plan}       ; submap match against room ext state
@@ -114,16 +114,22 @@
     (string? spec) (str/includes? (str s) spec)
     :else          false))
 
-(defn- match-prefix
-  "Dir spec: the effective cwd must start with the (already expanded) prefix.
-   Regex specs fall back to re-find."
-  [spec s]
-  (cond
-    (nil? spec)    true
-    (nil? s)       false
-    (regexp? spec) (boolean (re-find spec (str s)))
-    (string? spec) (str/starts-with? (str s) spec)
-    :else          false))
+(defn- match-dir
+  "Dir spec against the call's working directory: `:real-cwd` (the store's
+   canonical form, `..` and symlinks resolved, so `<dir>/../x` or a link
+   inside `<dir>` can't pass for it), else `:effective-cwd`. A string spec is
+   that directory or anything under it, on a path boundary (`/a/b` doesn't
+   cover `/a/bc`); a regex is re-found."
+  [spec req]
+  (let [s (or (:real-cwd req) (:effective-cwd req))]
+    (cond
+      (nil? spec)    true
+      (nil? s)       false
+      (regexp? spec) (boolean (re-find spec (str s)))
+      (string? spec) (let [d (str/replace spec #"/+$" "")
+                           s (str s)]
+                       (or (= s d) (str/starts-with? s (str d "/"))))
+      :else          false)))
 
 (defn- match-name
   "MCP server/tool spec: regex → re-find, glob/exact string → full match."
@@ -427,7 +433,7 @@
          (match-path*      (:path m)       req)
          (match-command    (:command m)    (:command req))
          (match-substring  (:repo m)       (:repo req))
-         (match-prefix     (:dir m)        (:effective-cwd req))
+         (match-dir        (:dir m)        req)
          (match-name       (:mcp-server m) (:mcp-server req))
          (match-name       (:mcp-tool m)   (:mcp-tool req))
          (match-when       (:when m)       (:state req))
@@ -580,6 +586,12 @@
    the task a call runs and populate `:runner-task`."
   [rules]
   (boolean (some #(some-> (canonical %) :match :task) rules)))
+
+(defn needs-real-cwd?
+  "True when any rule carries a `:dir` matcher, so the store should
+   canonicalize the working directory into `:real-cwd`."
+  [rules]
+  (boolean (some #(some-> (canonical %) :match :dir) rules)))
 
 (defn needs-extension-data?
   "True when any rule carries an `:extension-data` matcher."
