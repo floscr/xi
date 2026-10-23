@@ -5,7 +5,9 @@
    …]), asked each time the menu opens, where `block` is {:text :path :line
    :lang :diff-path} — :path when the block belongs to a tool call or diff
    naming a file (:line for a diff line), :lang for a fenced code block. Its
-   entries show below the core ones.
+   entries show below the core ones; one with `:header? true` is also a
+   button in a file's header (diff, file buffer), asked with {:path}
+   (xi.web.views/file-header-actions).
 
    The registry holds fns, so it lives outside the app state (like
    xi.web.palette-items); built-in web halves register at init, user web

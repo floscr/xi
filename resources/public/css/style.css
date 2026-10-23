@@ -3817,6 +3817,18 @@ code a:hover,
 }
 .diff-file-header .md-diff-toggle { margin-left: auto; font-weight: 400; }
 
+/* Extension buttons of a file header (xi.web.views/file-header-actions):
+   right-aligned, before the Rendered ⇄ Code toggle. */
+.file-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  margin-left: auto;
+  flex-shrink: 0;
+  font-weight: 400;
+}
+.diff-file-header .file-header-actions + .md-diff-toggle { margin-left: 0; }
+
 /* Same body as the markdown file viewer (.file-tab-md): the page font and
    size, not the monospace of the code boxes / diff view it sits in. */
 .md-diff {

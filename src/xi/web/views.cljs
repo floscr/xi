@@ -2648,6 +2648,20 @@
                   :on-click #(dispatch! event)}))
           (block-menu/items {:path path} state))))
 
+(defn- file-header-actions
+  "The extensions' file menu entries marked `:header? true`
+   (xi.web.block-menu), as buttons in a file header."
+  [dispatch! state path]
+  (when-let [items (seq (filter :header? (block-menu/items {:path path} state)))]
+    [:span {:class ["file-header-actions"]}
+     (for [{:keys [label icon event]} items]
+       (button/button {:variant :ghost :size :sm :icon-left (or icon :chevron-right)
+                       :attrs {:type "button" :replicant/key label}
+                       :on-click (fn [^js e]
+                                   (.stopPropagation e)
+                                   (dispatch! event))}
+                      label))]))
+
 (defn file-header
   "A file's header with the file menu on right-click / long-press
    (file-menu-items). The trigger is the outermost element (`:class`), so a
@@ -2747,6 +2761,8 @@
                  [:span {:class ["diff-file-status"
                                  (str "diff-file-status--" (name status))]}
                   status-label])
+               (when-not (= status :deleted)
+                 (file-header-actions dispatch! state filename))
                (when md-body
                  (md-diff-toggle dispatch! md-key md-code?))])
              (when (and md-body (not md-code?) (not folded?))
@@ -3376,7 +3392,8 @@
     ;; data-file-path: the code-block menu offers the file to extensions
     [:div {:class ["file-tab"] :data-file-path path}
      (file-header dispatch! state path {:class "file-tab-header" :view? false :abs-path abs-path}
-                  [:span {:class ["file-tab-path"]} path])
+                  [:span {:class ["file-tab-path"]} path]
+                  (file-header-actions dispatch! state path))
      (if (contains? md-diff/markdown-exts ext)
        [:div {:class ["file-tab-md"]}
         [:div {:class ["post-content"]} (md/render text)]]
