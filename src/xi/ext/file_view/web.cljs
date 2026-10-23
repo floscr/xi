@@ -5,13 +5,18 @@
    active room-id and forwards it to the server, which reads the file and
    installs the :file buffer via the generic :ui/buffer-set broadcast. The
    buffer install + switch are handled by the core handlers, so no extra web
-   handler is needed here.")
+   handler is needed here. An :anchor (a link's #fragment) stays here: the
+   buffer scrolls to that heading once it shows."
+  (:require [xi.web.heading-anchor :as heading-anchor]))
 
 (def extension
   {:id       :file-view
    :handlers {:file/open
-              (fn [st {:keys [remote?] :as ev}]
+              (fn [st {:keys [remote? path anchor] :as ev}]
                 (when-not remote?
-                  {:effects [[:ws/send (-> ev
-                                           (assoc :room-id (:active-room st))
-                                           (dissoc :event/id :event/ts))]]}))}})
+                  {:effects (cond-> [[:ws/send (-> ev
+                                                   (assoc :room-id (:active-room st))
+                                                   (dissoc :event/id :event/ts :anchor))]]
+                              anchor (conj [:file/reveal-anchor {:path path :anchor anchor}]))}))}
+   :fx       {:file/reveal-anchor
+              (fn [_ {:keys [path anchor]}] (heading-anchor/reveal-in-file! path anchor))}})

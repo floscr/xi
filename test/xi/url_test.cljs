@@ -57,3 +57,22 @@
     (is (nil? (url/relative-file-link "/r/a.md" "#heading")))
     (is (nil? (url/relative-file-link "/r/a.md" "")))
     (is (nil? (url/relative-file-link "/r/a.md" nil)))))
+
+(deftest link-fragment-test
+  (is (= "token-updater" (url/link-fragment "resolver.md#token-updater")))
+  (is (= "top" (url/link-fragment "a.md:4#top")))
+  (is (= "x y" (url/link-fragment "#x%20y")))
+  (is (nil? (url/link-fragment "a.md")))
+  (is (nil? (url/link-fragment "a.md#")))
+  (is (nil? (url/link-fragment nil))))
+
+(deftest heading-slugs-test
+  (testing "GitHub's anchor rules"
+    (is (= ["token-updater"] (url/heading-slugs ["Token updater"])))
+    (is (= ["whats-new-in-v2"] (url/heading-slugs ["What's new in v2?"])))
+    (is (= ["xiurl--slugs"] (url/heading-slugs ["`xi.url` — slugs"])))
+    (is (= ["snake_case-and-kebab-case"] (url/heading-slugs [" snake_case and kebab-case "])))
+    (is (= ["über-größe"] (url/heading-slugs ["Über Größe"]))))
+  (testing "repeated headings are numbered"
+    (is (= ["setup" "setup-1" "usage" "setup-2"]
+           (url/heading-slugs ["Setup" "Setup" "Usage" "Setup"])))))

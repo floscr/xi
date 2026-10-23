@@ -70,6 +70,37 @@
                       (when i (subs base-path 0 (inc i))))]
             (normalize-path (str dir path))))))))
 
+(defn link-fragment
+  "The decoded #fragment of `href` (`a.md#setup` → \"setup\"), or nil."
+  [href]
+  (when (string? href)
+    (let [i (str/index-of href "#")]
+      (when i
+        (let [frag (decode (subs href (inc i)))]
+          (when-not (str/blank? frag) frag))))))
+
+(defn- drop-slug-junk
+  "Drop what a GitHub heading anchor leaves out: all but letters, digits,
+   `_`, `-` and spaces."
+  [s]
+  #?(:cljs (.replace s (js/RegExp. "[^\\p{L}\\p{M}\\p{N}\\p{Pc} -]" "gu") "")
+     :clj  (str/replace s #"[^\p{L}\p{M}\p{N}\p{Pc} -]" "")))
+
+(defn heading-slugs
+  "GitHub's anchor ids for headings with these texts, in document order:
+   lower-cased, punctuation dropped, spaces as `-`, a repeated slug suffixed
+   `-1`, `-2`, …."
+  [texts]
+  (first
+   (reduce (fn [[slugs seen] text]
+             (let [base (-> (str/lower-case (str/trim (or text "")))
+                            drop-slug-junk
+                            (str/replace " " "-"))
+                   n    (get seen base 0)
+                   slug (if (pos? n) (str base "-" n) base)]
+               [(conj slugs slug) (assoc seen base (inc n) slug 1)]))
+           [[] {}] texts)))
+
 (defn url-at
   "If a bare http(s):// URL begins at index `idx` in `s`, returns
    `[url end]` where `end` is the exclusive end index after GFM-style

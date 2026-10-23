@@ -38,6 +38,7 @@
             [xi.web.overlays :as overlays]
             [xi.web.clipboard :as clipboard]
             [xi.web.dashboard :as dashboard]
+            [xi.web.heading-anchor :as heading-anchor]
             [xi.web.theme :as ctheme]
             [xi.web.keymap :as keymap]
             [xi.web.rename :as rename]
@@ -3272,18 +3273,26 @@
 
 (defn open-linked-file!
   "Document click handler (xi.web.core): a relative link to a text file opens
-   that file in a buffer instead of a dead browser tab. It resolves against
-   the file the link sits in (the nearest data-file-path: file buffer, Write
-   tool block), else stays relative for the server to resolve against the
-   room's cwd."
+   that file in a buffer instead of a dead browser tab, at the heading its
+   #fragment names. It resolves against the file the link sits in (the
+   nearest data-file-path: file buffer, Write tool block, diffed file), else
+   stays relative for the server to resolve against the room's cwd. A bare
+   #fragment scrolls to that heading of the same markdown."
   [dispatch! ^js e]
   ;; target=_blank: a link of rendered markdown (xi.markdown.hiccup)
   (when-let [a (some-> (.-target e) (.closest "a[href][target=_blank]"))]
-    (let [base (some-> (.closest a "[data-file-path]") (.getAttribute "data-file-path"))]
-      (when-let [target (url/relative-file-link base (.getAttribute a "href"))]
-        (when (viewable-file? target)
-          (.preventDefault e)
-          (dispatch! {:type :file/open :path target}))))))
+    (let [href     (.getAttribute a "href")
+          fragment (url/link-fragment href)
+          file-el  (.closest a "[data-file-path]")
+          base     (some-> file-el (.getAttribute "data-file-path"))]
+      (if (str/starts-with? href "#")
+        (do (.preventDefault e)
+            (heading-anchor/reveal! (or file-el (.closest a ".post-content")) fragment))
+        (when-let [target (url/relative-file-link base href)]
+          (when (viewable-file? target)
+            (.preventDefault e)
+            (dispatch! (cond-> {:type :file/open :path target}
+                         fragment (assoc :anchor fragment)))))))))
 
 (defn- file-tab-view
   [dispatch! state {:keys [path abs-path text]}]

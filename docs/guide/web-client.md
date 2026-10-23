@@ -175,8 +175,9 @@ across the top narrows the cards and lists to one
 A chat can hold views next to its conversation: the diffs you opened
 (`/diff`, the Git status entry, a commit from `/commits` or `/log`), the files you
 opened from a code block, the file finder or a link to a file in a message or
-viewed markdown file (relative to the chat's directory or that file; a
-`:line` suffix is ignored), the system prompt (`/prompt`),
+viewed markdown file or diff (relative to the chat's directory or that file; a
+`:line` suffix is ignored, a `#heading` scrolls a markdown file to that
+heading), the system prompt (`/prompt`),
 terminals (`/term`) and the review canvas (`/canvas-review`).
 These are its **buffers**. Each file and each diff source is its own buffer,
 so opening a second file keeps the first; opening the same one again
