@@ -62,6 +62,13 @@
     (is (empty? (:effects (handle st {:type :cwd/agents-files :client-id "c1"})))
         "no cwd, no lookup")))
 
+(deftest file-exists-replies-to-the-asking-client
+  (let [st (server-state-with-room)]
+    (is (= [[:file/exists-reply {:client-id "c1" :cwd "/y" :path "src/a.cljs"}]]
+           (:effects (handle st {:type :file/exists :client-id "c1" :cwd "/y" :path "src/a.cljs"}))))
+    (is (empty? (:effects (handle st {:type :file/exists :client-id "c1" :cwd "/y"})))
+        "no path, no lookup")))
+
 (deftest session-peek-replies-to-the-asking-client
   (let [st (server-state-with-room)]
     (is (= [[:session/peek-reply {:client-id "c1" :session-id "s1"}]]

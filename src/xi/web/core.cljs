@@ -24,6 +24,7 @@
             [xi.config :as config]
             [xi.naming :as naming]
             [xi.quick-replies :as quick-replies]
+            [xi.session-links :as session-links]
             [xi.util :as util]
             [xi.web.answer-nav :as answer-nav]
             [xi.web.appearance :as appearance]
@@ -1250,15 +1251,33 @@
                                                                         :x x :y y})})
           :bubble/menu-close     (fn [st _] {:state (dissoc st :web/bubble-menu)})
           ;; Floating Copy button for a tapped code block (attach-code-copy-listener!).
+          ;; Inline code naming a file (xi.session-links/code-path, no tool
+          ;; block path) is probed on the server; :file/exists-result below
+          ;; adds View file to the open menu when it is there.
           :code/menu-open        (fn [st {:keys [text path line lang diff-path diff-text x y
-                                                 ask-index ask-sub file?]}]
-                                   {:state (assoc st :web/code-menu {:text text :path path :line line :lang lang
+                                                 ask-index ask-sub file? dir?]}]
+                                   (let [probe (when-not path
+                                                 (session-links/code-path (str/trim (or text ""))))
+                                         cwd   (view-cwd st)]
+                                     (cond-> {:state (assoc st :web/code-menu
+                                                            (cond-> {:text text :path path :line line :lang lang
                                                                      :diff-path diff-path
                                                                      :diff-text diff-text
                                                                      :ask-index ask-index
                                                                      :ask-sub ask-sub
                                                                      :file? file?
-                                                                     :x x :y y})})
+                                                                     :dir? dir?
+                                                                     :x x :y y}
+                                                              probe (assoc :probe probe)))}
+                                       (and probe cwd)
+                                       (assoc :effects [[:ws/send {:type :file/exists :cwd cwd
+                                                                   :path (:path probe)}]]))))
+          :file/exists-result    (fn [st {:keys [path exists?]}]
+                                   (let [probe (get-in st [:web/code-menu :probe])]
+                                     (when (and exists? probe (= path (:path probe)))
+                                       {:state (update st :web/code-menu
+                                                       #(cond-> (assoc % :path path)
+                                                          (:line probe) (assoc :line (:line probe))))})))
           :code/menu-close       (fn [st _] {:state (dissoc st :web/code-menu)})
           :code/menu-split       (fn [st _]
                                    (when (:web/code-menu st)
@@ -2670,6 +2689,7 @@
                                          :path path
                                          :x (.-clientX e)
                                          :y (.-clientY e)}
+                                  (.hasAttribute node "data-file-dir") (assoc :dir? true)
                                   holder (assoc :diff-path (.getAttribute holder "data-diff-path")
                                                 :diff-text (.getAttribute holder "data-diff-text"))
                                   ask-index (assoc :ask-index ask-index)

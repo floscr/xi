@@ -386,3 +386,27 @@
     (testing "a pane keeps its key while its role changes"
       (let [ks (keys-of (layout/split split "p1" :col :empty))]
         (is (every? ks ["split-row-p1" "slot-p1" "split-col-p1" "fill-p3" "pane-p3"]))))))
+
+;; ── welcome card (launch-header) ─────────────────────────────────────────────
+
+(deftest launch-header-file-menus
+  (let [launch-header @#'views/launch-header
+        attrs-of (fn [hiccup pred]
+                   (keep (fn [x] (when (and (vector? x) (map? (second x)) (pred (second x)))
+                                   (second x)))
+                         (tree-seq #(or (vector? %) (seq? %)) seq hiccup)))
+        hiccup   (launch-header {:model "m" :cwd "/p"
+                                 :agents-files ["/home/u/AGENTS.md" "/p/AGENTS.md"]
+                                 :dispatch! (fn [_])})
+        rows     (attrs-of hiccup :data-file-path)]
+    (testing "the cwd is a directory trigger of the file menu"
+      (is (= ["true"] (keep :data-file-dir rows)))
+      (is (= "/p" (:data-file-path (first (filter :data-file-dir rows))))))
+    (testing "each instruction file is a file trigger"
+      (is (= ["/home/u/AGENTS.md" "/p/AGENTS.md"]
+             (keep :data-file-path (remove :data-file-dir rows)))))))
+
+(deftest agents-file-label-test
+  (is (= "AGENTS.md" (views/agents-file-label "/p" "/p/AGENTS.md")))
+  (is (= "/home/u/AGENTS.md" (views/agents-file-label "/p" "/home/u/AGENTS.md")))
+  (is (= "/p/AGENTS.md" (views/agents-file-label nil "/p/AGENTS.md"))))

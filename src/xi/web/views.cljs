@@ -565,11 +565,14 @@
    of the file menu for `path`: `.file-path` + data-file-path, opened on
    right-click or touch long-press (data-long-press, the ui runtime) by the
    delegated listener in xi.web.core (file-path-menu); a tap keeps the row's
-   own action (toggle)."
-  [attrs path]
-  (-> attrs
-      (update :class conj "file-path")
-      (assoc :data-file-path path :data-long-press "true")))
+   own action (toggle). `:dir?` marks a directory (data-file-dir): its menu
+   finds a file in it instead of viewing it."
+  ([attrs path] (file-row-attrs attrs path nil))
+  ([attrs path {:keys [dir?]}]
+   (cond-> (-> attrs
+               (update :class conj "file-path")
+               (assoc :data-file-path path :data-long-press "true"))
+     dir? (assoc :data-file-dir "true"))))
 
 (defn- tool-diff-view
   "An edit/write tool's diff for `path`: the rendered markdown diff with a
@@ -3707,10 +3710,19 @@
    [:text {:x "0" :y "100%" :textLength launch-logo-width :lengthAdjust "spacing"}
     text]])
 
+(defn agents-file-label
+  "An instruction file's path as the welcome card shows it: relative to
+   `cwd` when inside it, else as given."
+  [cwd path]
+  (if (and cwd (str/starts-with? path (str cwd "/")))
+    (subs path (inc (count cwd)))
+    path))
+
 (defn- launch-header
   "Welcome card at the top of every chat's timeline (logo, model, cwd,
    AGENTS.md files). Ordinary timeline content. For a virtual room the caller
-   fills model and agents-files from the pending room."
+   fills model and agents-files from the pending room. The cwd and each
+   instruction file open the file menu (file-row-attrs)."
   [{:keys [model cwd agents-files pa? dispatch!]}]
   [:div {:class ["launch-header"]}
    [:div {:class ["launch-hero"]}
@@ -3731,13 +3743,19 @@
          (list
           [:dt {:replicant/key "cwd-k"} "cwd"]
           [:dd {:replicant/key "cwd-v"}
-           [:span {:class ["launch-value"] :title cwd} cwd]]))
+           [:span (file-row-attrs {:class ["launch-value" "launch-value--menu"] :title cwd}
+                                  cwd {:dir? true})
+            cwd]]))
        (when-let [files (seq agents-files)]
          (list
           [:dt {:replicant/key "agents-k"} "Loaded"]
-          [:dd {:replicant/key "agents-v"}
-           [:span {:class ["launch-value"]}
-            (str (count files) " AGENTS.md file" (when (> (count files) 1) "s"))]]))]])
+          (into [:dd {:replicant/key "agents-v"}]
+                (map (fn [path]
+                       [:span (file-row-attrs {:class ["launch-value" "launch-value--menu" "launch-file"]
+                                               :title path :replicant/key path}
+                                              path)
+                        (agents-file-label cwd path)]))
+                files)))]])
    [:div {:class ["launch-footer"]}
     "Type /help for the full list of commands."]])
 
@@ -3844,12 +3862,17 @@
    naming a file (file-row-attrs): the file header's entries
    (file-menu-items), View diff on an edit result (xi.diff/tool-diff->unified,
    no server round-trip) and Ask about this (the long-press that opens it
-   would otherwise ask, xi.web.threads). Opened by the delegated listener in
-   xi.web.core like code-copy-menu."
-  [dispatch! state room-id {:keys [path diff-path diff-text x y ask-index ask-sub]}]
+   would otherwise ask, xi.web.threads). A directory (`dir?`, the welcome
+   card's cwd) gets Find file instead of View file. Opened by the delegated
+   listener in xi.web.core like code-copy-menu."
+  [dispatch! state room-id {:keys [path dir? diff-path diff-text x y ask-index ask-sub]}]
   (let [close!  (fn [] (dispatch! {:type :code/menu-close}))
         unified (some->> diff-text (diff/tool-diff->unified diff-path))
         extra   (cond-> []
+                  dir?
+                  (conj {:label    "Find file"
+                         :icon     :search
+                         :on-click #(dispatch! {:type :palette/open-file-finder :cwd path})})
                   unified
                   (conj {:label    "View diff"
                          :icon     :code
@@ -3875,7 +3898,7 @@
                                           (on-click))}}
                    (icon/icon {:icon-name icon :size :sm})
                    [:span label]]))
-           (file-menu-items dispatch! state path {:extra extra}))]))
+           (file-menu-items dispatch! state path {:extra extra :view? (not dir?)}))]))
 
 (defn- code-copy-menu
   "Floating menu for a tapped code block: Copy, Split lines (a multi-line

@@ -304,3 +304,33 @@
                                           (throw (js/Error. (str (.-message e) "; files: "
                                                                  (pr-str (session-files env))))))))))
                    (.finally (:stop! server2))))))))))
+
+(deftest file-exists-answers-the-code-menu-probe
+  ;; the web's code menu asks before offering View file on inline code
+  ;; (xi.web.core :code/menu-open); resolution matches the file viewer's
+  (async done
+    (with-server! profiles/minimal done
+      (fn [env server]
+        (let [sub (h/path env "sub")]
+          (fs/mkdirSync sub)
+          (-> (h/connect! server)
+              (.then
+               (fn [client]
+                 (let [ask (fn [cwd path]
+                             (let [from (count @(:events client))]
+                               ((:send! client) {:type :file/exists :cwd cwd :path path})
+                               (h/await-event client #(and ((of-type :file/exists-result) %)
+                                                           (= path (:path %)))
+                                              {:from from})))]
+                   (-> (ask (:project env) "README.md")
+                       (.then (fn [ev]
+                                (is (true? (:exists? ev)) "a file under the cwd")
+                                (ask (:project env) "nope.md")))
+                       (.then (fn [ev]
+                                (is (false? (:exists? ev)) "a missing file")
+                                (ask sub "README.md")))
+                       (.then (fn [ev]
+                                (is (true? (:exists? ev)) "relative to the cwd's git root, like the file viewer")
+                                (ask (:project env) ".")))
+                       (.then (fn [ev]
+                                (is (false? (:exists? ev)) "a directory is not a file")))))))))))))

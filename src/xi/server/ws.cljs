@@ -133,7 +133,7 @@
   #{:client/update :user-state/set :session/counts :session/peek :sessions/all :models/web-list
     :tools/web-list
     :cwd/agents-files :session/content-search :session/web-search
-    :diff/web-load :commits/web-load :files/web-list :file/web-read
+    :diff/web-load :commits/web-load :files/web-list :file/web-read :file/exists
     :dismissed/toggle :pinned/toggle :session/delete :session/mark-read
     :session/rename :session/suggest-name
     :session/buffer-close
@@ -685,6 +685,11 @@
       (fn [_ {:keys [client-id cwd path]}]
         (send! client-id (wire/encode (assoc (files/read-file path cwd)
                                              :type :file/web-read-result))))
+
+      :file/exists-reply
+      (fn [_ {:keys [client-id cwd path]}]
+        (send! client-id (wire/encode (assoc (files/exists path cwd)
+                                             :type :file/exists-result))))
 
       :files/web-tree-reply
       (fn [_ {:keys [client-id cwd]}]

@@ -108,11 +108,13 @@ projects** in the sidebar opens the project list (`/projects`).
   them open.
 - **Review changes.** An edit shows a diff where it happened. Right-click (or
   long-press) a code block to copy it, open the file, or open the diff as a
-  buffer (below). Right-click (or long-press) the header row of a tool block
-  that names a file, or the bar above a rendered Markdown diff, to open the
-  file, copy its path, open the diff, or ask about the block. In a diff
-  buffer, right-click a file's header to open that
-  file or copy its path.
+  buffer (below); inline code naming a file that exists under the cwd
+  (`src/a.cljs:12`) offers to open it too. Right-click (or long-press) the
+  header row of a tool block that names a file, or the bar above a rendered
+  Markdown diff, to open the file, copy its path, open the diff, or ask about
+  the block. In a diff buffer, right-click a file's header to open that file
+  or copy its path. The welcome card's cwd and instruction files have the
+  same menu: find a file in the cwd, open an instruction file.
 - **Diff buffer.** The bar above a diff picks its source, its renderer
   (**git**, or **difftastic** for structural changes: what changed within a
   line is highlighted, the code's own colors are dimmed) and its layout:

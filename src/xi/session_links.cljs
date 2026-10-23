@@ -26,9 +26,19 @@
 (def ^:private code-path-re
   #"^(?:~|\.{1,2})?/?[\w@.+-]+(?:/[\w@.+-]+)*\.[A-Za-z0-9]{1,10}(?::\d+(?::\d+)?)?$")
 
-(defn- code-path? [s]
+(defn code-path? [s]
   (and (re-matches code-path-re s)
        (or (str/includes? s "/") (re-find #":\d+(?::\d+)?$" s))))
+
+(defn code-path
+  "Path-like inline code as {:path :line}: `src/x.cljs:12` → {:path
+   \"src/x.cljs\" :line 12}; nil for anything else (code-path?). The web's
+   code menu probes the server with it (:file/exists) before offering to
+   open the file."
+  [s]
+  (when (and (string? s) (code-path? s))
+    {:path (url/relative-file-link nil s)
+     :line (some-> (re-find #":(\d+)(?::\d+)?$" s) second parse-long)}))
 
 (defn text-files
   "File paths in markdown text: relative or absolute markdown link targets and

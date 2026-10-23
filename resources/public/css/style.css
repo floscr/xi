@@ -5472,6 +5472,17 @@ code a:hover,
   text-decoration: underline;
 }
 
+/* the cwd and the instruction files: right-click / long-press opens the file menu */
+.launch-value--menu {
+  cursor: context-menu;
+}
+
+.launch-file {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .launch-footer {
   padding: var(--size-3) var(--size-5);
   border-top: var(--border-0);

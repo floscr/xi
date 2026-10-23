@@ -327,6 +327,13 @@
   [_st {:keys [client-id cwd path]}]
   {:effects [[:file/web-read-reply {:client-id client-id :cwd cwd :path path}]]})
 
+(defn- file-exists
+  "Roomless: whether a path inline code names is a file under `cwd`, for the
+   web's code menu (xi.web.core :code/menu-open)."
+  [_st {:keys [client-id cwd path]}]
+  (when (string? path)
+    {:effects [[:file/exists-reply {:client-id client-id :cwd cwd :path path}]]}))
+
 (defn- files-web-tree
   "Roomless: flat list of the project's files for the web fuzzy file finder,
    relative to the room's cwd (git-tracked when available)."
@@ -536,6 +543,7 @@
    :files/web-list         files-web-list
    :files/web-tree         files-web-tree
    :file/web-read          file-web-read
+   :file/exists            file-exists
    :dismissed/toggle       dismissed-toggle
    :pinned/toggle          pinned-toggle
    :session/delete         session-delete
