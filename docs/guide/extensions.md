@@ -101,6 +101,7 @@ API, `xi.api.*`:
 | Namespace | For |
 | --- | --- |
 | `xi.api.fs` | Read, write and list files; the extension's own data directory |
+| `xi.api.store` | Keep plain data under keys of your own, saved under the extension's id |
 | `xi.api.sh` | Run a program |
 | `xi.api.http` | Make an HTTP request |
 | `xi.api.mcp` | Call an MCP server's tool |

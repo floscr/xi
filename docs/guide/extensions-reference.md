@@ -195,6 +195,35 @@ the extension's id; with nobody to answer an ask, it is refused.
 Relative paths resolve against the chat's directory inside a tool call, and
 against the data directory elsewhere. `~` works.
 
+### `xi.api.store`
+
+A key-value store of the extension's own: each entry is a file
+`<data-dir>/store/<key>.edn`, so it outlives restarts, reloads and closed
+chats. Not a rules request; an extension only ever reaches its own entries.
+
+| Function | Does |
+| --- | --- |
+| `(get ctx key)` | The stored value, or nil |
+| `(put! ctx key value)` | Store `value`; nil removes the entry |
+| `(delete! ctx key)` | Remove the entry |
+| `(keys ctx)` | The stored keys, as sorted strings |
+
+Keys are strings or simple keywords of letters, digits, `.`, `_` and `-`
+(no leading dot); `:plan` and `"plan"` are the same entry. Values are plain
+data: maps, vectors, sets, lists, strings, numbers, keywords, symbols,
+booleans, nil, uuids and dates; anything else rejects. Calls on one key run
+in order, so a `get` sees every `put!` made before it, and an entry is
+replaced whole. To keep data per chat, put the session id in the key
+(`(str "plan-" session-id)`).
+
+```clojure
+(ns visits (:require [xi.api.promise :as p] [xi.api.store :as store]))
+
+(defn- count-visit! [ctx]
+  (-> (store/get ctx :visits)
+      (p/then #(store/put! ctx :visits (inc (or % 0))))))
+```
+
 ### `xi.api.sh`
 
 `(sh ctx "program" "arg" …)` → stdout on exit 0, rejects otherwise. An

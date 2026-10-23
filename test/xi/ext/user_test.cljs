@@ -59,6 +59,17 @@
       (is (= {:parsed {:a [1 2]} :json "{\"q\":\"a%20b\"}"}
              (get-in e [:extension :init :room]))))))
 
+(deftest the-store-is-available-in-the-sandbox
+  (let [dir (tmp-dir)]
+    (write! dir "s.cljs"
+            "(ns s (:require [xi.api.store :as store]))
+             (def extension
+               {:id :s
+                :init {:room {:fns [(fn? store/get) (fn? store/put!) (fn? store/delete!) (fn? store/keys)]}}})")
+    (let [[e] (user/load-dir dir)]
+      (is (nil? (:error e)))
+      (is (= [true true true true] (get-in e [:extension :init :room :fns]))))))
+
 (deftest declared-mcp-servers-are-kept-off-the-extension-map
   (let [dir (tmp-dir)]
     (write! dir "shop.cljs"
