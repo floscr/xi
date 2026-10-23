@@ -2185,7 +2185,7 @@
   (case type
     :confirm    (dlg/resolved-label {:options options} value)
     :select     (or (some #(when (= (:value %) value) (:label %)) options)
-                    (str value))
+                    (if (nil? value) "Cancelled" (str value)))
     :alert      "Dismissed"
     :cwd-select (str value)
     :form       (if value "Submitted" "Cancelled")
@@ -2243,10 +2243,17 @@
           :form       (form-dialog-body dispatch! state live-dialog answer!)
           [:div {:class ["dialog-actions"]}
            (case type
+             ;; A select resolves nil when dismissed (xi.api.dialog), like
+             ;; Esc in the TUI's build-select-dialog.
              :select
-             (for [{:keys [label value]} options]
-               [:button {:class ["confirm-btn" "confirm-btn--allow"]
-                         :on {:click (fn [_] (answer! value))}} label])
+             (concat
+              (for [{:keys [label value]} options]
+                [:button {:class ["confirm-btn" "confirm-btn--allow"]
+                          :on {:click (fn [_] (answer! value))}} label])
+              [(button/button
+                {:variant :ghost :size :sm
+                 :on-click (fn [_] (answer! nil))}
+                "Cancel")])
              :alert
              [:button {:class ["confirm-btn" "confirm-btn--allow"]
                        :on {:click (fn [_] (answer! nil))}} "OK"]
