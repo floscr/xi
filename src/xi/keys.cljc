@@ -11,7 +11,7 @@
      `:keybindings` — the event type is the action id unless they set `:id`.
    - Layers: where a key applies. A keymap is `{layer {key action-id}}`; the
      surface says which layers are active right now, inner → outer:
-       transient  :permission-pending :agent-busy
+       transient  :lightbox :permission-pending :agent-busy
        buffer     :buffer/diff :buffer/file :buffer/prompt :buffer/pager …
        page       :page/chat :page/home :page/git-status … (web only)
        mode       :mode/compose (a text field owns the keys) | :mode/terminal
@@ -269,6 +269,7 @@
    :scroll/half-down        {:label "Scroll half a page down" :surface #{:web}}
    :scroll/half-up          {:label "Scroll half a page up" :surface #{:web}}
    :dialog/close            {:label "Close the open dialog" :surface #{:web}}
+   :lightbox/close          {:label "Close the image viewer" :surface #{:web}}
    :terminal/leave          {:label "Leave the terminal, keys go back to Xi" :surface #{:web}}
    :terminal/focus          {:label "Type in the terminal" :surface #{:web}}
    ;; windows (xi.web.layout): no default keys
@@ -344,7 +345,8 @@
    [:buffer/keys        "Shortcut list"]
    [:buffer/subagents   "Sub-agents view"]
    [:agent-busy         "While the agent is working"]
-   [:permission-pending "While a permission request is pending"]])
+   [:permission-pending "While a permission request is pending"]
+   [:lightbox           "While an image is open full screen"]])
 
 (def ^:private layer-rank
   (into {} (map-indexed (fn [i [l _]] [l i])) layer-labels))
@@ -375,6 +377,7 @@
                               "alt+shift+down" :session/next-sibling
                               "alt+shift+up"   :session/prev-sibling
                               "escape"         :dialog/close}
+         :lightbox           {"escape" :lightbox/close}
          :permission-pending {"alt+a"       :permission/allow
                               "alt+s"       :permission/always
                               "alt+shift+a" :permission/allow-repo

@@ -3085,9 +3085,12 @@
    action ids the keymap binds (xi.keys/defaults, config.edn :keys). `:when`
    guards let a key fall through when the action makes no sense; actions
    that just dispatch declare the :event so palette rows can show the key.
-   Transient layers: :permission-pending and :agent-busy."
+   Transient layers: :lightbox, :permission-pending and :agent-busy."
   []
   (install-layout-actions!)
+  ;; First, so its Escape wins over the composer's :compose/blur.
+  (keymap/register-layer! {:id :lightbox
+                           :when (fn [st] (some? (:web/lightbox st)))})
   (keymap/register-layer! {:id :permission-pending
                            :when (fn [st] (some? (permission-answer st :yes)))})
   (keymap/register-layer! {:id :agent-busy
@@ -3232,6 +3235,7 @@
                                    (dispatch! {:type (if (:web/keys-open? st)
                                                        :keys/close
                                                        :appearance/close)}))})
+  (keymap/register-action! {:id :lightbox/close :event {:type :lightbox/close}})
   (keymap/register-action! {:id :keys/show :event {:type :keys/show}})
   ;; Back to the chat; the buffer stays open. Not while an open <dialog> (the
   ;; Ctrl+K palette…) has focus: its Escape closes just the dialog.

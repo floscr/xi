@@ -39,6 +39,7 @@ first layer that mentions it wins.
 
 | Layer | Applies |
 | --- | --- |
+| `:lightbox` | While an image is open full screen (web) |
 | `:permission-pending` | While a permission request is waiting for an answer |
 | `:agent-busy` | While the agent is working |
 | `:buffer/diff`, `:buffer/file`, `:buffer/terminal`, `:buffer/prompt`, `:buffer/keys` | While that view is open (diff, file, terminal, system prompt, this shortcut list) |
@@ -158,6 +159,12 @@ offers that choice.
 | `Alt+Shift+A` | Allow repo writes for the pending permission request | `:permission/allow-repo` | web |
 | `Alt+Shift+B` | Allow every request of the pending permission's block | `:permission/allow-block` | web |
 | `Alt+D` | Deny the pending permission request | `:permission/deny` | web |
+
+**While an image is open full screen** · `:lightbox`
+
+| Key | Does | Action | Client |
+| --- | --- | --- | --- |
+| `Esc` | Close the image viewer | `:lightbox/close` | web |
 
 <!-- /gen:keys -->
 
