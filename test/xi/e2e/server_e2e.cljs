@@ -2,13 +2,14 @@
   "`xi server --headless` end to end over its WebSocket and HTTP API: pairing,
    a streamed turn with its title side turn, abort, the prompt queue,
    reconnecting, the saved chat after a restart, a restart continuing a
-   turn it cut off (queue included) with nobody watching, and the command
-   list every client gets."
+   turn it cut off (queue included) with nobody watching, the command
+   list every client gets, and `xi start`."
   (:require [cljs.test :refer [deftest is testing async]]
             [clojure.string :as str]
             [xi.e2e.harness :as h :refer [of-type]]
             [xi.e2e.profiles :as profiles]
-            ["node:fs" :as fs]))
+            ["node:fs" :as fs]
+            ["node:path" :as node-path]))
 
 (def ^:private script
   {:rules [{:when {:prompt "hello"} :reply [{:text "hello "} {:text "over ws"}]}
@@ -132,6 +133,75 @@
              (fn [_]
                (is (= (:project env) (:cwd (first (h/main-turns env))))
                    "the background room runs in the server's cwd"))))))))
+
+(defn- auth-answer [client]
+  (some (comp #{:auth/ok :auth/pending :auth/denied} :type) @(:events client)))
+
+(deftest a-login-token-admits-one-browser-once
+  (async done
+    (with-server! profiles/minimal done
+      (fn [env server]
+        ;; what `xi start` writes (xi.auth/issue-login-token!) before opening the browser
+        (fs/writeFileSync (h/home-path env ".config/xi/login-tokens.edn")
+                          (pr-str {"0123456789abcdef0123" (+ (js/Date.now) 60000)
+                                   "fedcba9876543210fedc" (- (js/Date.now) 1000)}))
+        (-> (h/connect! server {:key "a-fresh-browser-key-123" :login-token "0123456789abcdef0123"})
+            (.then (fn [first-browser]
+                     (is (= :auth/ok (auth-answer first-browser)) "the token admits the browser")
+                     (is (str/includes? (h/slurp (h/home-path env ".config/xi/clients.edn"))
+                                        "a-fresh-browser-key-123")
+                         "and approves its key for good")
+                     (js/Promise.all
+                      #js [(h/connect! server {:key "another-browser-key-456" :login-token "0123456789abcdef0123"})
+                           (h/connect! server {:key "a-third-browser-key-789" :login-token "fedcba9876543210fedc"})])))
+            (.then (fn [[reused expired]]
+                     (is (= :auth/pending (auth-answer reused)) "a used token pairs as usual")
+                     (is (= :auth/pending (auth-answer expired)) "so does an expired one"))))))))
+
+(deftest xi-start-runs-a-background-server-and-opens-a-signed-in-browser
+  (async done
+    (h/with-env! profiles/minimal script done
+      (fn [env]
+        ;; xdg-open / open stand-ins that record the URL instead of opening a browser
+        (let [bin    (node-path/join (:root env) "bin")
+              opened (node-path/join (:root env) "opened")
+              pid    (atom nil)]
+          (fs/mkdirSync bin #js {:recursive true})
+          (doseq [cmd ["xdg-open" "open"]]
+            (fs/writeFileSync (node-path/join bin cmd) (str "#!/bin/sh\necho \"$1\" >> " opened "\n")
+                              #js {:mode 493}))  ; 0755
+          (-> (h/free-port)
+              (.then
+               (fn [port]
+                 (let [start! #(h/run-xi! env ["start" "--port" (str port) "--host" "127.0.0.1"]
+                                          {:timeout-ms 30000
+                                           :env {"PATH" (str bin ":" (aget js/process.env "PATH"))}})]
+                   (-> (start!)
+                       (.then
+                        (fn [{:keys [code stdout stderr]}]
+                          (reset! pid (some-> (re-find #"pid (\d+)" stdout) second js/parseInt))
+                          (is (= 0 code) stderr)
+                          (is (some? @pid) stdout)
+                          (is (str/includes? stdout (str "xi is running on http://localhost:" port "/")))
+                          (h/wait-until #(some->> (h/slurp opened) (re-find #"#login=([0-9a-f]+)") second)
+                                        5000 "the browser to be opened")))
+                       (.then
+                        (fn [token]
+                          (h/connect! {:port port} {:key "the-started-browser-key" :login-token token})))
+                       (.then
+                        (fn [browser]
+                          (is (= :auth/ok (auth-answer browser)) "which signs it in")
+                          (is (str/includes? (h/slurp (h/home-path env ".config/xi/server.log"))
+                                             "Headless server on")
+                              "the server logs to ~/.config/xi/server.log")
+                          (start!)))
+                       (.then
+                        (fn [{:keys [code stdout]}]
+                          (is (= 0 code))
+                          (is (not (str/includes? stdout "Starting")) "a running server is reused")
+                          (h/wait-until #(= 2 (count (str/split-lines (h/slurp opened))))
+                                        5000 "the browser to be opened again")))
+                       (.finally #(when @pid (try (js/process.kill @pid "SIGTERM") (catch :default _ nil))))))))))))))
 
 (deftest no-pairing-admits-every-client
   (async done

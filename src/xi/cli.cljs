@@ -7,6 +7,9 @@
                         no sockets). --no-auto-join forces standalone.
      xi server        → host rooms over WS; local TUI joins via WS
                         (--headless for server-only)
+     xi start         → a headless server in the background (unless one
+                        runs), then the web client in the browser, signed in
+                        by a one-time link (xi.auth)
      xi prompt <text> → one-shot: run a single prompt headless, print the
                         response and exit (aka `xi -p`; reads stdin when no
                         text is given; --stream to stream tokens live)
@@ -227,6 +230,10 @@ USAGE
   xi [flags]                 Standalone TUI. One local room; auto-joins a
                              running server on the port unless --no-auto-join.
   xi server [flags]          WS server + a local TUI client in one process.
+  xi start  [flags]          Start a headless server in the background (unless
+                             one runs on the port) and open the web client,
+                             signed in by a one-time link. Log:
+                             ~/.config/xi/server.log.
   xi prompt [flags] <text>   One-shot headless run: send one prompt, print the
   xi -p     [flags] <text>   response, and exit. Reads stdin when <text> is
                              omitted. Safe to script/pipe (no TUI, no server).
@@ -295,7 +302,8 @@ ENVIRONMENT
 
 EXAMPLES
   xi                                         # standalone TUI
-  xi server --headless                       # headless server on :7474
+  xi start                                   # server in the background + browser
+  xi server --headless                       # headless server on :1414
   xi prompt \"summarize the architecture\"     # one-shot, buffered
   git diff | xi -p --no-store \"review this\"   # pipe + ephemeral run
   xi --session <id>                          # resume a saved session
@@ -309,6 +317,7 @@ See docs/guide/command-line.md for the full reference.")
       (let [arg (first args)]
         (case arg
           "server"         (recur (next args) (assoc opts :command :server))
+          "start"          (recur (next args) (assoc opts :command :start))
           "join"           (recur (next args) (assoc opts :command :join))
           "create"         (recur (next args) (assoc opts :command :create))
           ("prompt" "-p")  (recur (next args) (assoc opts :command :prompt))
@@ -1058,6 +1067,71 @@ See docs/guide/command-line.md for the full reference.")
                    ;; Otherwise a virtual room: the server room is created on the first prompt.
                    :else (start-client! (assoc opts :target nil :defer-room? true))))))))
 
+;; ── Start (background server + browser) ──────────────────────────────────────
+
+(defn- server-log-file []
+  (.join (js/require "node:path") (.homedir (js/require "node:os")) ".config" "xi" "server.log"))
+
+(defn- spawn-server!
+  "`xi server --headless` with the rest of this `xi start` invocation's flags,
+   detached from the terminal, its output appended to `log` → its pid."
+  [argv log]
+  (let [fs    (js/require "node:fs")
+        cp    (js/require "node:child_process")
+        [before after] (split-with #(not= "start" %) argv)
+        _     (.mkdirSync fs (.dirname (js/require "node:path") log) #js {:recursive true})
+        fd    (.openSync fs log "a")
+        child (.spawn cp (.-execPath js/process)
+                      (clj->js (concat [(aget js/process.argv 1) "server" "--headless"]
+                                       before (rest after)))
+                      #js {:detached true :stdio #js ["ignore" fd fd]})]
+    (.unref child)
+    (.closeSync fs fd)
+    (.-pid child)))
+
+(defn- wait-for-server
+  "Poll the port every 250 ms, `tries` times → Promise<boolean>."
+  [port tries]
+  (-> (server-running? port)
+      (.then (fn [up?]
+               (cond
+                 up?          true
+                 (pos? tries) (-> (js/Promise. (fn [r] (js/setTimeout r 250)))
+                                  (.then #(wait-for-server port (dec tries))))
+                 :else        false)))))
+
+(defn- open-url! [url]
+  (let [[cmd & args] (case js/process.platform
+                       "darwin" ["open" url]
+                       "win32"  ["cmd" "/c" "start" "" url]
+                       ["xdg-open" url])
+        child (.spawn (js/require "node:child_process") cmd (clj->js args)
+                      #js {:detached true :stdio "ignore"})]
+    (.on child "error" (fn [_] nil))
+    (.unref child)))
+
+(defn- run-start!
+  "`xi start`: a headless server in the background unless one already answers
+   on the port, then the web client in the browser with a one-time login
+   token (xi.auth) in the URL fragment, so it needs no pairing."
+  [{:keys [port argv]}]
+  (let [log (server-log-file)]
+    (-> (server-running? port)
+        (.then (fn [running?]
+                 (or running?
+                     (let [pid (spawn-server! argv log)]
+                       (println (str "Starting xi on :" port " (pid " pid ", log: " log ")…"))
+                       (wait-for-server port 120)))))
+        (.then (fn [up?]
+                 (if-not up?
+                   (do (.write js/process.stderr
+                               (str "xi start: nothing answers on :" port " — see " log "\n"))
+                       (js/process.exit 1))
+                   (let [url (str "http://localhost:" port "/")]
+                     (open-url! (str url "#login=" (auth/issue-login-token!)))
+                     (println (str "xi is running on " url))
+                     (js/process.exit 0))))))))
+
 ;; ── Sessions (headless listing) ──────────────────────────────────────────────
 
 (defn- fetch-recent-sessions
@@ -1302,6 +1376,7 @@ See docs/guide/command-line.md for the full reference.")
                         (js/process.exit 0))
         :standalone (start-standalone-or-join! opts)
         :server     (start-server! opts)
+        :start      (run-start! (assoc opts :argv args))
         :prompt     (run-prompt! opts)
         :sessions   (run-sessions! opts)
         :clients    (run-clients! opts)

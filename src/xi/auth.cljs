@@ -33,6 +33,7 @@
 (defn clients-file [] (.join path (config-dir) "clients.edn"))
 (defn pending-file [] (.join path (config-dir) "pending-clients.edn"))
 (defn client-key-file [] (.join path (config-dir) "client-key"))
+(defn login-tokens-file [] (.join path (config-dir) "login-tokens.edn"))
 
 (defn- read-edn-file [file]
   (try
@@ -123,6 +124,34 @@
     (let [n    (.readUInt32BE (.randomBytes crypto 4) 0)
           code (str (+ 1000 (mod n 9000)))]
       (if (contains? taken code) (recur) code))))
+
+;; ── One-time login links (`xi start`) ─────────────────────────────────────────
+;; A token in ~/.config/xi/login-tokens.edn (token → expiry ms) lets the
+;; browser `xi start` opens skip pairing: whoever could write the file already
+;; runs as the user, like the local client-key.
+
+(def ^:private LOGIN-TTL-MS (* 5 60 1000))
+
+(defn- live-login-tokens [now]
+  (into {} (filter (fn [[_ exp]] (> exp now)))
+        (read-edn-file (login-tokens-file))))
+
+(defn issue-login-token!
+  "A fresh single-use login token, valid for five minutes."
+  []
+  (let [now (js/Date.now)
+        t   (.toString (.randomBytes crypto 24) "hex")]
+    (write-edn-file! (login-tokens-file) (assoc (live-login-tokens now) t (+ now LOGIN-TTL-MS)))
+    t))
+
+(defn consume-login-token!
+  "True once for an issued, unexpired `token`, which is then gone."
+  [token]
+  (let [now    (js/Date.now)
+        tokens (live-login-tokens now)]
+    (when (and (string? token) (contains? tokens token))
+      (write-edn-file! (login-tokens-file) (dissoc tokens token))
+      true)))
 
 ;; ── Client-side key (TUI) ─────────────────────────────────────────────────────
 

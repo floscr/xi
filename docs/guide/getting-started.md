@@ -42,8 +42,18 @@ asks for your approval when a call needs it.
 
 ## The browser
 
-Xi can run as a server, and then the terminal and the browser share the same
-chats:
+To use Xi in the browser only:
+
+```sh
+xi start
+```
+
+This starts a server in the background and opens
+[http://localhost:1414](http://localhost:1414), already signed in. It keeps
+running after you close the terminal.
+
+Xi can also run as a server with a terminal client attached, and then the
+terminal and the browser share the same chats:
 
 ```sh
 xi server

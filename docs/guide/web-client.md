@@ -8,11 +8,12 @@ can reach the server. Start a task at your desk and follow it on your phone.
 Run Xi as a server:
 
 ```sh
+xi start               # server in the background, opens the browser signed in
 xi server              # terminal client + web client
 xi server --headless   # web client only, no terminal
 ```
 
-Then open `http://localhost:7474`. On the same machine, that is all. The
+With `xi server`, open `http://localhost:1414`. On the same machine, that is all. The
 chat list shows every session; the one you have open in the terminal is
 marked as live.
 

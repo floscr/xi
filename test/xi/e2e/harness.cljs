@@ -168,7 +168,7 @@
 
 ;; ── xi server ────────────────────────────────────────────────────────────────
 
-(defn- free-port []
+(defn free-port []
   (js/Promise.
    (fn [resolve reject]
      (let [srv (net/createServer)]
@@ -251,12 +251,13 @@
 
 (defn connect!
   "Open a WS client to `server` and say hello with `:key` (default the
-   seeded local key) as `:user`. Resolves to a client map once the server
+   seeded local key) as `:user`, with `:login-token` if given (`xi start`'s
+   link). Resolves to a client map once the server
    answers the hello (:auth/ok, :auth/pending or :auth/denied):
      :events  atom of every decoded event received, in order
      :send!   (fn [event])
      :close!  (fn [])"
-  [{:keys [port]} & [{:keys [key user] :or {key client-key}}]]
+  [{:keys [port]} & [{:keys [key user login-token] :or {key client-key}}]]
   (let [ws     (js/WebSocket. (str "ws://127.0.0.1:" port))
         events (atom [])
         client {:events events
@@ -273,7 +274,8 @@
              (fn [_]
                ((:send! client) (cond-> {:type :auth/hello :client-key key
                                          :client-name "e2e" :platform "e2e"}
-                                  user (assoc :user user)))
+                                  user        (assoc :user user)
+                                  login-token (assoc :login-token login-token)))
                (-> (wait-until #(some (comp #{:auth/ok :auth/pending :auth/denied} :type)
                                       @events)
                                10000 "the auth answer")

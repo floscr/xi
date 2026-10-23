@@ -21,7 +21,8 @@ Then, in a project:
 
 ```sh
 xi            # the terminal client
-xi server     # the same, plus the web client on http://localhost:7474
+xi start      # a background server + the web client on http://localhost:1414
+xi server     # the terminal client plus the web client
 ```
 
 Claude uses your Claude Code login when there is one, otherwise

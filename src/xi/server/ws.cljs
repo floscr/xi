@@ -766,7 +766,7 @@
                          (try (.close ws) (catch :default _ nil)))))
                  (notify-authed! {:type :auth/resolved :code code :approved? approved?})))
              handle-hello!
-             (fn [^js ws {:keys [client-key client-name platform pid user]}]
+             (fn [^js ws {:keys [client-key client-name platform pid user login-token]}]
                (let [cid (.. ws -data -cid)]
                  ;; Stashed on the socket for admit!, which may run after pairing.
                  (when pid (set! (.. ws -data -clientPid) pid))
@@ -783,6 +783,11 @@
 
                    (auth/approved? client-key)
                    (do (auth/touch! client-key {:name client-name :platform platform})
+                       (admit! ws))
+
+                   ;; the link `xi start` opened (xi.auth/issue-login-token!)
+                   (auth/consume-login-token! login-token)
+                   (do (auth/approve! client-key {:name client-name :platform platform})
                        (admit! ws))
 
                    :else

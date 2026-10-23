@@ -10,6 +10,7 @@ version of this page.
 | `xi` | The terminal client with one local chat. If a server is already running on the port, it joins that instead (`--no-auto-join` keeps it local). |
 | `xi server` | A server plus a terminal client in one process. Serves the web client at `http://localhost:<port>`. |
 | `xi server --headless` | The server alone. |
+| `xi start` | A headless server in the background (unless one already runs on the port), then the web client in your browser, signed in without pairing. Takes the `server` flags. The server logs to `~/.config/xi/server.log`. |
 | `xi join [url]` | A terminal client joined to the most recent chat on a running server. |
 | `xi create [url]` | A terminal client in a new chat on a running server. |
 | `xi prompt <text>` (`xi -p`) | Send one message, print the answer, exit. Reads stdin when `<text>` is omitted. See [One-shot prompts](prompt.md). |
@@ -53,9 +54,10 @@ in [Configuration](configuration.md#environment-variables).
 
 ```sh
 xi                                         # terminal client
-xi server --headless --port 7475           # headless server on another port
-xi join                                    # attach to the latest chat on :7474
-xi create ws://host:7474                   # new chat on a remote server
+xi start                                   # background server + browser
+xi server --headless --port 1415           # headless server on another port
+xi join                                    # attach to the latest chat on :1414
+xi create ws://host:1414                   # new chat on a remote server
 xi --session 0192abcd-…                    # resume a saved chat
 
 xi prompt "summarise the architecture in one sentence"

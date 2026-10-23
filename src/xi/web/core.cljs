@@ -2946,6 +2946,15 @@
         (try (.setItem js/localStorage "xi-client-key" k) (catch :default _ nil))
         k)))
 
+(defn- take-login-token!
+  "The one-time token of the `#login=…` link `xi start` opens (xi.auth),
+   removed from the address bar so it isn't bookmarked or shared."
+  []
+  (when-let [[_ token] (re-matches #"#login=([0-9a-f]{16,128})" (.-hash js/location))]
+    (.replaceState js/history (.-state js/history) ""
+                   (str (.-pathname js/location) (.-search js/location)))
+    token))
+
 (defn- claimed-user
   "The user id this browser claims in :auth/hello (`localStorage xi-user`),
    or nil for the server's device assignment. Unauthenticated by design."
@@ -3761,6 +3770,7 @@
         ;; Legacy key from before the appearance settings.
         _         (try (.removeItem js/localStorage "xi-viewer-mode") (catch :default _ nil))
         route     (router/parse-path routes (.-pathname js/window.location))
+        login-token (take-login-token!)
         initial   (-> (state/initial-state {:mode :client})
                       (assoc :web/theme-mode stored-theme
                              :web/nav-items (:nav-items composed)
@@ -3775,7 +3785,8 @@
                         :hello      (cond-> {:client-key  (ensure-client-key!)
                                              :client-name (device-name)
                                              :platform    "web"}
-                                      (claimed-user) (assoc :user (claimed-user)))
+                                      (claimed-user) (assoc :user (claimed-user))
+                                      login-token    (assoc :login-token login-token))
                         ;; nil: the router drives joins; reconnect replays them.
                         :target     nil
                         :reconnect? true
