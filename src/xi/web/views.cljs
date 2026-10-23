@@ -987,7 +987,7 @@
              (explain-button dispatch! room-id id explanation)
              (confirm-buttons dialog answer! deny-reason!)]]]))
       (when imgs
-        [:div {:class ["tool-call-content" "user-images"]}
+        [:div {:class ["tool-call-content" "user-images" "tool-call-images"]}
          (map-indexed
           (fn [i {:keys [data media-type]}]
             (let [src (str "data:" media-type ";base64," data)]

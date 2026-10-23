@@ -3654,6 +3654,16 @@ body {
   padding: 0;
 }
 
+/* Images a tool returned (view_image, camera_snapshot): inset in the box. */
+.tool-call-content.tool-call-images {
+  padding: var(--size-2);
+  margin-bottom: 0;
+}
+
+.tool-call-images .user-image {
+  border-radius: var(--radius-sm);
+}
+
 /* Stacked content zones (clj input/result/stdout/error, permission asks) get a
    single hairline divider between them — no nested boxes. */
 .tool-call-content + .tool-call-content {
