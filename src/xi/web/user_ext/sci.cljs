@@ -12,14 +12,18 @@
    render plain hiccup (ui.command / ui.context-menu are left out — they hand
    data to a JS runtime the sanitizer can't see)."
   (:require [sci.core :as sci]
+            [ui.alert]
             [ui.badge]
             [ui.button]
+            [ui.button-group]
             [ui.chat]
+            [ui.chip]
             [ui.empty-state]
             [ui.form]
             [ui.icon]
             [ui.lightbox]
             [ui.sidebar]
+            [ui.skeleton]
             [ui.theme-toggle]
             [ui.toolbar]
             [xi.api.time :as time]
@@ -46,14 +50,18 @@
    ;; markdown string → hiccup (sanitized like any other page output)
    'xi.markdown.hiccup {'render md/render}
    'xi.core.state   (sci/copy-ns xi.core.state   (sci/create-ns 'xi.core.state))
+   'ui.alert        (sci/copy-ns ui.alert        (sci/create-ns 'ui.alert))
    'ui.badge        (sci/copy-ns ui.badge        (sci/create-ns 'ui.badge))
    'ui.button       (sci/copy-ns ui.button       (sci/create-ns 'ui.button))
+   'ui.button-group (sci/copy-ns ui.button-group (sci/create-ns 'ui.button-group))
    'ui.chat         (sci/copy-ns ui.chat         (sci/create-ns 'ui.chat))
+   'ui.chip         (sci/copy-ns ui.chip         (sci/create-ns 'ui.chip))
    'ui.empty-state  (sci/copy-ns ui.empty-state  (sci/create-ns 'ui.empty-state))
    'ui.form         (sci/copy-ns ui.form         (sci/create-ns 'ui.form))
    'ui.icon         (sci/copy-ns ui.icon         (sci/create-ns 'ui.icon))
    'ui.lightbox     (sci/copy-ns ui.lightbox     (sci/create-ns 'ui.lightbox))
    'ui.sidebar      (sci/copy-ns ui.sidebar      (sci/create-ns 'ui.sidebar))
+   'ui.skeleton     (sci/copy-ns ui.skeleton     (sci/create-ns 'ui.skeleton))
    'ui.theme-toggle (sci/copy-ns ui.theme-toggle (sci/create-ns 'ui.theme-toggle))
    'ui.toolbar      (sci/copy-ns ui.toolbar      (sci/create-ns 'ui.toolbar))})
 
