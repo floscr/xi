@@ -538,6 +538,39 @@ a.btn:hover { text-decoration: none; }
 .stage-window--phone .stage-viewport { aspect-ratio: 390 / 844; }
 .stage-window--phone .stage-frame { width: 390px; height: 844px; }
 
+/* Click to interact (site.js): a tour ignores the pointer, so the wheel
+   scrolls the page past it, until a click makes its screen .is-live; a ring
+   marks the live one. */
+.stage-viewport:not(.is-live) iframe,
+.phone-screen:not(.is-live) iframe { pointer-events: none; }
+.stage-viewport:not(.is-live), .phone-screen:not(.is-live) { cursor: pointer; }
+.stage-window, .phone-screen {
+  outline: 2px solid transparent;
+  outline-offset: 4px;
+  transition: outline-color .2s;
+}
+.stage-window:has(.is-live), .phone-screen.is-live {
+  outline-color: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+.stage-viewport::after, .phone-screen::after {
+  content: "Click to interact";
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translate(-50%, 4px);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s, transform .2s;
+}
+.stage-viewport:not(.is-live):hover::after,
+.phone-screen:not(.is-live):hover::after { opacity: 1; transform: translate(-50%, 0); }
+
 .feature { padding: 88px 0; border-top: var(--border-0); }
 .feature.alt { background: var(--bg-1); }
 .feature-code, .feature-text { min-width: 0; }

@@ -279,4 +279,27 @@
       }
     });
   });
+
+  // ---- click to interact ---------------------------------------------------
+  // A tour iframe ignores the pointer (main.css) so the wheel scrolls the
+  // page past it, until a click or keyboard focus makes its screen .is-live.
+  // A click elsewhere on the page, or scrolling it out of view, lets go.
+  var screens = Array.prototype.slice.call(document.querySelectorAll('.stage-viewport, .phone-screen'));
+  var release = function (s) { s.classList.remove('is-live'); };
+  screens.forEach(function (s) {
+    var frame = s.querySelector('iframe');
+    s.addEventListener('pointerdown', function () { s.classList.add('is-live'); });
+    frame.addEventListener('focus', function () { s.classList.add('is-live'); });
+    if (window.IntersectionObserver) {
+      new IntersectionObserver(function (entries) {
+        if (!entries[0].isIntersecting) release(s);
+      }).observe(s);
+    }
+  });
+  document.addEventListener('pointerdown', function (e) {
+    screens.forEach(function (s) { if (!s.contains(e.target)) release(s); });
+  });
+  document.addEventListener('focusin', function (e) {
+    screens.forEach(function (s) { if (!s.contains(e.target)) release(s); });
+  });
 })();

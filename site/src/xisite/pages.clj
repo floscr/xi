@@ -240,7 +240,7 @@ xi server
    [:figure.stage-figure
     (stage-window (cond-> {:data-src (tour-src tour)}
                     phone-variant (assoc :data-phone-src (str (tour-src tour) "&variant=" phone-variant))))
-    [:figcaption caption]]])
+    (when caption [:figcaption caption])]])
 
 (defn- slideshow
   "A release's video: its slides' tours played one after another in one
@@ -341,7 +341,7 @@ xi server
      :body-class "home"}
     (hero)
 
-    (stage "desk" "A recorded session, replayed in Xi's web client. Click Allow yourself, or let it run.")
+    (stage "desk" nil)
 
     [:section.feature {:id "clj"}
      [:div.wrap.split
