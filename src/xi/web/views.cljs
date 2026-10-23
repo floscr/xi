@@ -34,6 +34,7 @@
             [xi.web.appearance :as appearance]
             [xi.web.block-menu :as block-menu]
             [xi.web.buffer-views :as buffer-views]
+            [xi.web.overlays :as overlays]
             [xi.web.clipboard :as clipboard]
             [xi.web.dashboard :as dashboard]
             [xi.web.theme :as ctheme]
@@ -8278,23 +8279,25 @@
   [state dispatch! pages]
   (let [open? (boolean (:web/sidebar-open? state))
         page  (get-in state [:web/route :page])]
-    (sidebar/sidebar-layout
-     {:class "sidebar-layout--floating"
-      :attrs (cond-> {:style {:height "100%"}}
-               open? (assoc :data-sidebar-open true))}
-     (recent-sidebar state dispatch!)
-     (sidebar/sidebar-overlay {:on-click (fn [_] (dispatch! {:type :sidebar/close}))})
-     (sidebar/sidebar-layout-main
-      {:attrs {:style {:min-height "0"}}}
-      (if-let [page-view (get pages page)]
-        (page-view state dispatch!)
-        (case page
-          :chat (chat-view state dispatch!)
-          :git-status (git-status-view state dispatch!)
-          (home-view state dispatch!))))
-     (command-palette state dispatch!)
-     (appearance-dialog state dispatch!)
-     (keys-dialog state dispatch!)
-     (rename-dialog state dispatch!)
-     (auth-request-banner state dispatch!)
-     (auth-overlay state))))
+    (apply sidebar/sidebar-layout
+           {:class "sidebar-layout--floating"
+            :attrs (cond-> {:style {:height "100%"}}
+                     open? (assoc :data-sidebar-open true))}
+           (recent-sidebar state dispatch!)
+           (sidebar/sidebar-overlay {:on-click (fn [_] (dispatch! {:type :sidebar/close}))})
+           (sidebar/sidebar-layout-main
+            {:attrs {:style {:min-height "0"}}}
+            (if-let [page-view (get pages page)]
+              (page-view state dispatch!)
+              (case page
+                :chat (chat-view state dispatch!)
+                :git-status (git-status-view state dispatch!)
+                (home-view state dispatch!))))
+           (command-palette state dispatch!)
+           (appearance-dialog state dispatch!)
+           (keys-dialog state dispatch!)
+           (rename-dialog state dispatch!)
+           (auth-request-banner state dispatch!)
+           (auth-overlay state)
+           ;; extension overlays (xi.web.overlays), over every page
+           (overlays/views state dispatch!))))

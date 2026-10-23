@@ -61,7 +61,8 @@ provider effects, and TUI.
    :block-menu-items (fn [block state] → [{:label :icon :event}])  ; code-block menu (xi.web.block-menu)
    :terminal-toolbar-items (fn [buffer state] → [{:label :icon :title :send|:event}])  ; xi.web.terminal
    :buffer-views     {kind {:view (fn [state dispatch! room id buffer] → hiccup) :icon kw}}  ; xi.web.buffer-views
-   :timeline-posts   (fn [state dispatch! room entries] → [{:pos :key :node}])})  ; xi.web.timeline-posts
+   :timeline-posts   (fn [state dispatch! room entries] → [{:pos :key :node}])  ; xi.web.timeline-posts
+   :overlays         {kw (fn [state dispatch!] → hiccup|nil)}})  ; xi.web.overlays, over every page
 ```
 
 ## Architecture
@@ -474,6 +475,14 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
   group; a `p` above the rendered window pins at its top. Keys are unique per
   room. Registered in `xi.web.timeline-posts`; built-in web halves only.
   Example: the agent blocks (`xi.ext.blocks.web`), each after its tool call.
+
+- **`:overlays`** — `{kw (fn [state dispatch!] → hiccup | nil)}`, views the
+  root view draws over every page, after the dialogs; nil draws nothing. For
+  state that outlives a page (the device extension's floating camera
+  thumbnail while the phone shares its camera). A fixed overlay that must
+  clear the composer uses `--compose-dock-height` (set on the root by
+  `xi.web.core`, 0 off the chat). Registered in `xi.web.overlays`; built-in
+  web halves only.
 
 `:block-menu-items` and `:terminal-toolbar-items` are open to user web halves too (`xi.web.user-ext.guard/wrap` confines
 their events like `:palette-items`).

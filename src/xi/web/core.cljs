@@ -29,6 +29,7 @@
             [xi.web.appearance :as appearance]
             [xi.web.block-menu :as block-menu]
             [xi.web.buffer-views :as buffer-views]
+            [xi.web.overlays :as overlays]
             [xi.web.timeline-posts :as timeline-posts]
             [xi.web.block-nav :as block-nav]
             [xi.web.terminal :as terminal]
@@ -2564,7 +2565,18 @@
                              (load-earlier-now! timeline))
                            load-earlier-settle-ms))))
 
+(defn- publish-compose-dock-height!
+  "Expose the composer's height to CSS as --compose-dock-height on the root,
+   0 when no chat is open, so a fixed overlay (xi.web.overlays) can sit above
+   the composer whatever its current size."
+  []
+  (let [dock (.querySelector js/document ".compose-dock")]
+    (.setProperty (.-style js/document.documentElement) "--compose-dock-height"
+                  (str (if dock (.-offsetHeight dock) 0) "px"))))
+
 (defn- attach-scroll-listener! []
+  (when-not (.querySelector js/document ".compose-dock")
+    (publish-compose-dock-height!))
   (when-let [timeline (chat-timeline)]
     (follow-switched-session!)
     (when-not (identical? timeline @tracked-timeline)
@@ -2614,7 +2626,7 @@
                                    :scrolled-up? (not @auto-scroll?)})))))
       ;; Content laid out after a render (images, highlighting, a growing
       ;; composer) fires no render or scroll event, so re-snap on size growth.
-      (let [obs (js/ResizeObserver. (fn [] (scroll-to-bottom!)))]
+      (let [obs (js/ResizeObserver. (fn [] (publish-compose-dock-height!) (scroll-to-bottom!)))]
         (when-let [content (.querySelector timeline ".timeline-content")]
           (.observe obs content))
         (when-let [dock (.querySelector js/document ".compose-dock")]
@@ -3656,10 +3668,11 @@
                          :on-render     render!})]
     (reset! pages-ref (:pages composed))
     (dashboard/register! (:dashboard-cards composed))
-    (doseq [{:keys [id block-menu-items terminal-toolbar-items buffer-views timeline-posts]} (:extensions composed)]
+    (doseq [{:keys [id block-menu-items terminal-toolbar-items buffer-views timeline-posts overlays]} (:extensions composed)]
       (when block-menu-items (block-menu/register! id block-menu-items))
       (when buffer-views (buffer-views/register! id buffer-views))
       (when timeline-posts (timeline-posts/register! id timeline-posts))
+      (when overlays (overlays/register! id overlays))
       (when terminal-toolbar-items (terminal/register-toolbar! id terminal-toolbar-items)))
     (when-let [send! (:send! transport)]
       (terminal/set-send! send!))
