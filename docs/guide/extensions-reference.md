@@ -65,6 +65,18 @@ and `:remove-tools` are not available: whether a tool call runs is the
   from commands, keybindings,
   effects a command started, and handlers of own events a client sent (a
   click in a page). Never from tools.
+- `:chat/start` takes `:text`, `:cwd`, `:client-id` and `:user`, and two
+  keys for an extension's own chat: `:buffer-id` + `:buffer` open one of its
+  buffers (below) in the new chat, and the client lands on it; `:on-created`,
+  one of its own events, is dispatched with the new chat's `:room-id` and
+  `:session-id` and counts as user-initiated, so its handler may spawn
+  sub-agents in that chat.
+- **Own buffers.** `:ui/buffer-set` (`{:room-id :buffer-id :buffer}`),
+  `:ui/buffer-switch` (`{:room-id :buffer-id :client-id}`) and
+  `:ui/buffer-close` may be dispatched from anywhere for a buffer id
+  `"<id>:…"`. The buffer's `:kind` is `:<id>/<name>`, drawn by the web half's
+  `:buffer-views`; it is shared room state, keep it small and put the data in
+  the extension's room slice.
 - An own event a client sends needs no chat: it also arrives from the home
   view and the sidebar, with `:user` and no `:room-id`.
 - Effects are returned from handlers as `{:effects [[:ext.<id>/name payload] …]}`;

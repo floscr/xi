@@ -45,11 +45,44 @@
 (defn- own-event? [id ev-type]
   (= (some-> ev-type namespace) (str "ext." (name id))))
 
+(def ^:private buffer-events #{:ui/buffer-set :ui/buffer-switch :ui/buffer-close})
+
+(defn- own-buffer-event?
+  "A buffer event on one of the extension's own buffers: id `\"<id>:…\"`, and
+   for :ui/buffer-set a `:kind` namespaced by the id (drawn by its web half's
+   :buffer-views, xi.web.user-ext.guard)."
+  [id {:keys [type buffer-id buffer]}]
+  (and (contains? buffer-events type)
+       (string? buffer-id)
+       (str/starts-with? buffer-id (str (name id) ":"))
+       (or (not= :ui/buffer-set type)
+           (and (map? buffer)
+                (keyword? (:kind buffer))
+                (= (name id) (namespace (:kind buffer)))))))
+
 (defn- allowed?
-  [id ev-type {:keys [user-initiated?]}]
+  [id {ev-type :type :as ev} {:keys [user-initiated?]}]
   (or (own-event? id ev-type)
       (contains? always-allowed ev-type)
+      (own-buffer-event? id ev)
       (and user-initiated? (contains? command-allowed ev-type))))
+
+(defn- confine
+  "An allowed event as the extension may send it. A :chat/start keeps its
+   `:buffer-id` + `:buffer` (installed in the new chat, xi.server.ws) only for
+   an own buffer, and its `:on-created` (dispatched with the new chat's
+   :room-id) only as an own event, stamped user-initiated: :chat/start itself
+   is only allowed from user-initiated sources."
+  [id ev]
+  (if (= :chat/start (:type ev))
+    (let [{:keys [buffer-id buffer on-created]} ev]
+      (cond-> (dissoc ev :buffer-id :buffer :on-created)
+        (own-buffer-event? id {:type :ui/buffer-set :buffer-id buffer-id :buffer buffer})
+        (assoc :buffer-id buffer-id :buffer buffer)
+
+        (and (map? on-created) (own-event? id (:type on-created)))
+        (assoc :on-created (assoc on-created ::user-initiated true))))
+    ev))
 
 (defn- log-blocked [id what]
   (js/console.error (str "[user-ext " (name id) "] blocked " what)))
@@ -72,14 +105,16 @@
   (let [[fx-type payload] effect]
     (or (contains? own-fx fx-type)
         (and (= :app/dispatch fx-type)
-             (allowed? id (:type payload) opts)))))
+             (map? payload)
+             (allowed? id payload opts)))))
 
-(defn- strip-dispatch-mark
-  "A handler's `[:app/dispatch ev]` never carries the client stamp."
-  [effects]
+(defn- confine-dispatches
+  "A handler's `[:app/dispatch ev]` never carries the client stamp, and is
+   `confine`d."
+  [id effects]
   (mapv (fn [[fx-type payload :as effect]]
           (if (and (= :app/dispatch fx-type) (map? payload))
-            [fx-type (dissoc payload ::user-initiated)]
+            [fx-type (confine id (dissoc payload ::user-initiated))]
             effect))
         effects))
 
@@ -118,7 +153,7 @@
                                 (do (log-blocked id (str "effect " (first %))) false))
                            (:effects result))
           effects (->> effects
-                       strip-dispatch-mark
+                       (confine-dispatches id)
                        (mark-fx-effects own-fx (:user-initiated? opts)))
           effects (cond-> effects state (into (sync-effects id before state)))]
       (cond-> {}
@@ -146,7 +181,7 @@
         ;; code of an unmounted (reloaded / removed) extension: its late
         ;; callbacks must not touch the app any more
         (and token (not (api-core/active? token))) nil
-        (allowed? id (:type ev) opts) (dispatch! (dissoc ev ::user-initiated))
+        (allowed? id ev opts) (dispatch! (confine id (dissoc ev ::user-initiated)))
         :else (log-blocked id (str "dispatch " (:type ev)))))))
 
 (defn- guard-ctx [id token opts ctx]
@@ -295,6 +330,6 @@
        (update :keybindings
                (fn [kbs]
                  (filterv (fn [{:keys [event]}]
-                            (or (allowed? id (:type event) {:user-initiated? true})
+                            (or (allowed? id event {:user-initiated? true})
                                 (do (log-blocked id (str "keybinding " (:type event))) false)))
                           kbs)))))))

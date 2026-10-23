@@ -49,7 +49,17 @@
     (let [img {:data "AAAA" :media-type "image/jpeg"}]
       (is (= [[:chat/start {:text "" :cwd "/y" :images [img]}]]
              (:effects (handle st {:type :chat/start :cwd "/y" :text "" :images [img]})))
-          "images alone seed a chat"))))
+          "images alone seed a chat"))
+    (is (= [[:chat/start {:text "go" :cwd "/y" :buffer-id "x:plan" :buffer {:kind :x/plan}
+                          :on-created {:type :ext.x/created}}]]
+           (:effects (handle st {:type :chat/start :cwd "/y" :text "go"
+                                 :buffer-id "x:plan" :buffer {:kind :x/plan}
+                                 :on-created {:type :ext.x/created}})))
+        "a buffer to open and an extension event to run with the new chat")
+    (is (= [[:chat/start {:text "go" :cwd "/y"}]]
+           (:effects (handle st {:type :chat/start :cwd "/y" :text "go"
+                                 :on-created {:type :room/close}})))
+        "only an extension event runs on creation")))
 
 (deftest server-started-continues-cut-off-chats
   (is (= [[:sessions/resume-interrupted {}]]

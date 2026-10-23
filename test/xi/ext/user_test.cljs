@@ -329,6 +329,40 @@
     (is (= [{:type :ext.ext-g/go}] @seen)
         "a tool's own event loses a forged stamp, and :chat/start is blocked for it")))
 
+(deftest own-buffers-may-be-opened-and-shown
+  (let [seen (atom [])
+        set! {:type :ui/buffer-set :room-id "r" :buffer-id "ext-b:plan"
+              :buffer {:kind :ext-b/plan :title "Plan"}}
+        ext  (guard/wrap
+              {:id :ext-b
+               :tool-registry {"t" (fn [_ {:keys [dispatch!]}]
+                                     (dispatch! set!)
+                                     (dispatch! {:type :ui/buffer-switch :room-id "r" :buffer-id "ext-b:plan"})
+                                     (dispatch! {:type :ui/buffer-close :room-id "r" :buffer-id "ext-b:plan"})
+                                     ;; someone else's buffer, or a kind it doesn't draw
+                                     (dispatch! {:type :ui/buffer-close :room-id "r" :buffer-id "diff:git"})
+                                     (dispatch! (assoc-in set! [:buffer :kind] :diff))
+                                     (dispatch! (assoc set! :buffer-id "other:plan"))
+                                     {:content []})}})]
+    ((get-in ext [:tool-registry "t"]) {} {:dispatch! #(swap! seen conj %)})
+    (is (= [:ui/buffer-set :ui/buffer-switch :ui/buffer-close] (mapv :type @seen)))))
+
+(deftest a-started-chat-carries-only-own-buffers-and-events
+  (let [ev   {:type :chat/start :text "hi"
+              :buffer-id "ext-c:plan" :buffer {:kind :ext-c/plan}
+              :on-created {:type :ext.ext-c/created :n 1}}
+        ext  (guard/wrap {:id :ext-c
+                          :handlers {:ext.ext-c/go (fn [_ {:keys [start]}] {:effects [[:app/dispatch start]]})}})
+        go   (fn [start] (-> ((get-in ext [:handlers :ext.ext-c/go])
+                              {} {:type :ext.ext-c/go :start start ::guard/user-initiated true})
+                             :effects first second))]
+    (is (= (assoc ev :on-created {:type :ext.ext-c/created :n 1 ::guard/user-initiated true})
+           (go ev))
+        "own buffer and event pass; the event runs user-initiated, like the click")
+    (is (= {:type :chat/start :text "hi"}
+           (go (assoc ev :buffer {:kind :diff} :on-created {:type :ui/buffer-close})))
+        "a foreign buffer kind and a foreign event are dropped")))
+
 (deftest a-client-click-may-open-a-diff-but-a-tool-may-not
   (let [ev   {:type :diff/show :room-id "r" :args "main"}
         seen (atom [])

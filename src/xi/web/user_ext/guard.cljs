@@ -145,6 +145,16 @@
                                               (fn? f)))
                              (:block-kinds ext)))))
       ":block-kinds must be a map of a simple kind name (\"board\") → fn [spec state] → hiccup"
+      (and (some? (:buffer-views ext))
+           (not (and (map? (:buffer-views ext))
+                     (every? (fn [[k v]] (and (or (string? k) (keyword? k))
+                                              (re-matches #"[a-z0-9][a-z0-9-]*" (name k))
+                                              (map? v)
+                                              (fn? (:view v))
+                                              (or (nil? (:icon v)) (keyword? (:icon v)))))
+                             (:buffer-views ext)))))
+      (str ":buffer-views must be a map of a simple kind name (\"plan\") → "
+           "{:view fn [state dispatch! room buffer] → hiccup [:icon kw]}")
       (and (some? views) (not (map? views)))
       ":tool-views must be a map of tool name → fn"
       (seq alien)
@@ -447,6 +457,21 @@
                                        (log-blocked id (str "block kind threw: " (.-message e)))
                                        nil)))]))
                       kinds)))
+
+      ;; kind :<id>/<name>, the :kind of the buffers its server half opens
+      ;; (xi.ext.user.guard/own-buffer-event?); drawn like a page
+      (map? (:buffer-views ext))
+      (update :buffer-views
+              (fn [views]
+                (into {}
+                      (map (fn [[k {:keys [view icon]}]]
+                             [(keyword (name id) (name k))
+                              {:icon (or icon :layout-dashboard)
+                               :view (fn [state dispatch! room _buffer-id buffer]
+                                       (try (sanitize (view state (guard-dispatch id dispatch!) room buffer)
+                                                      (ui-binder id state dispatch!))
+                                            (catch :default e (error-box id (.-message e)))))}]))
+                      views)))
 
       (:taps ext)
       (update :taps

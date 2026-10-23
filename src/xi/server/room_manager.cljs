@@ -471,14 +471,21 @@
   "Open a new chat seeded with `text` (and `images`, xi.agent prompt shape) as
    its first user message; cwd defaults to the dispatching room's, :client-id
    is sent to the new chat unless :background? (the web palette's
-   fire-and-forget chat)."
-  [st {:keys [room-id client-id cwd text images user background?]}]
+   fire-and-forget chat). `:buffer-id` + `:buffer` open a buffer in it, which
+   the client lands on; `:on-created`, an extension's own event, is dispatched
+   with the new chat's `:room-id` (xi.ext.user.guard/confine)."
+  [st {:keys [room-id client-id cwd text images user background? buffer-id buffer on-created]}]
   (when (or (and (string? text) (seq text)) (seq images))
     {:effects [[:chat/start (cond-> {:text (or text "")
                                      :cwd  (or cwd (get-in st [:rooms room-id :cwd]))}
                               (seq images) (assoc :images (vec images))
                               (and client-id (not background?)) (assoc :client-id client-id)
-                              user (assoc :user user))]]}))
+                              user (assoc :user user)
+                              (and (string? buffer-id) (map? buffer))
+                              (assoc :buffer-id buffer-id :buffer buffer)
+                              (and (map? on-created)
+                                   (some-> (:type on-created) namespace (str/starts-with? "ext.")))
+                              (assoc :on-created on-created))]]}))
 
 (defn- server-started
   "The server is listening: continue the chats a hard restart cut off mid-turn

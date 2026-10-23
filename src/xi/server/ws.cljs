@@ -544,16 +544,23 @@
       ;; Open a background chat seeded with a user message (:chat/start,
       ;; xi.server.room-manager); the requesting client, if any, is sent to it.
       :chat/start
-      (fn [{:keys [dispatch!]} {:keys [client-id cwd text images user]}]
+      (fn [{:keys [dispatch!]} {:keys [client-id cwd text images user buffer-id buffer on-created]}]
         (let [room-id (fresh-room-id)
               {:keys [session room]} (build-room {:cwd cwd :user user})]
           (dispatch! {:type :room/create :room-id room-id :room room})
+          (when buffer
+            (dispatch! {:type :ui/buffer-set :room-id room-id :buffer-id buffer-id :buffer buffer}))
           (dispatch! (cond-> {:type :prompt/submit :room-id room-id :text text}
-                       (seq images) (assoc :images images)))
+                       (seq images) (assoc :images (image/process-attachments! images))))
+          (when on-created
+            (dispatch! (cond-> (assoc on-created :room-id room-id :session-id (:id session))
+                         client-id (assoc :client-id client-id)
+                         user      (assoc :user user))))
           (when client-id
-            (send-event! client-id {:type       :route/navigate
-                                    :page       :chat
-                                    :session-id (:id session)}))))
+            (send-event! client-id (cond-> {:type       :route/navigate
+                                            :page       :chat
+                                            :session-id (:id session)}
+                                     buffer (assoc :buffer-id buffer-id))))))
 
       :lobby/send
       (fn [{:keys [state]} {:keys [client-id]}]

@@ -455,3 +455,26 @@
       (is (= #{"deploys/board" "deploys/boom"} (set (keys kinds))) "named <id>/<name>")
       (is (= [:p "2"] ((get kinds "deploys/board") {:envs [1 2]} {})))
       (is (nil? ((get kinds "deploys/boom") {} {})) "a throw draws the text form instead"))))
+
+(deftest buffer-views-are-validated-named-and-guarded
+  (let [view (fn [_st dispatch! room buffer]
+               [:div {:on {:click (fn [_] (dispatch! {:type :ext.plans/go}))}}
+                (:title buffer) (:id room) [:script "x"]])
+        ok   {:id :plans :buffer-views {"plan" {:view view :icon :check}}}]
+    (is (nil? (guard/validate ok {})))
+    (is (re-find #":buffer-views must be" (guard/validate (assoc ok :buffer-views {"Bad Name" {:view view}}) {})))
+    (is (re-find #":buffer-views must be" (guard/validate (assoc ok :buffer-views {"plan" view}) {})))
+    (is (re-find #":buffer-views must be" (guard/validate (assoc ok :buffer-views {"plan" {:view view :icon "x"}}) {})))
+    (let [views (:buffer-views (guard/wrap (assoc-in ok [:buffer-views "boom"]
+                                                     {:view (fn [& _] (throw (js/Error. "x")))})))
+          sent  (atom [])
+          out   ((get-in views [:plans/plan :view]) {} #(swap! sent conj %) {:id "r1"} "plans:p" {:title "T"})]
+      (is (= #{:plans/plan :plans/boom} (set (keys views))) "kinds are :<id>/<name>")
+      (is (= :check (get-in views [:plans/plan :icon])))
+      (is (= :layout-dashboard (get-in views [:plans/boom :icon])) "a default icon")
+      (is (not (re-find #"script" (pr-str out))) "sanitized like a page")
+      ((get-in out [1 :on :click]) nil)
+      (is (= [{:type :user-ext/forward :event {:type :ext.plans/go}}] @sent) "dispatch is the guarded one")
+      (is (= "user-ext-error" (get-in ((get-in views [:plans/boom :view]) {} identity {} "plans:b" {})
+                                       [1 :class]))
+          "a throw shows the error box"))))
