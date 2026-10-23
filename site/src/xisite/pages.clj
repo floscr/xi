@@ -284,30 +284,26 @@ xi server
 (defn- hero
   "The home page's intro: a spotlight in the logo's colours turning behind
    the logo tile, headline and install bar (main.css, .hero-*). Copy
-   [data-copy] buttons are wired up in site.js."
+   [data-copy] buttons, and the terminal line [data-run] types after a
+   copy, are wired up in site.js."
   []
   [:section.hero
-   [:div.hero-bg {:aria-hidden "true"} [:div.hero-rays] [:div.hero-beam]]
+   [:div.hero-bg {:aria-hidden "true"} [:div.hero-dome] [:div.hero-rays]]
    [:div.wrap
     [:div.hero-mark.hero-in
      [:svg {:viewBox "0 0 55 40" :width "40" :height "30" :aria-hidden "true"} ui/logo-glyph]]
     [:a.hero-pill.hero-in {:href "/changelog/"}
      [:b (str "v" core/version)] "Open source · MIT · ClojureScript on Bun"
      [:span.hero-pill-arrow {:aria-hidden "true"} "→"]]
-    [:h1.hero-in "A coding harness " [:span.hero-gradient "you can shape."]]
+    [:h1.hero-in "An AI harness " [:span.hero-gradient "you can shape."]]
     [:p.lede.hero-in
-     "A coding harness for any model, with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
+     "A coding harness for any AI provider, with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
     [:div.hero-install.hero-in
      [:code [:span {:aria-hidden "true"} "$ "] install-command]
      (button/button {:variant :primary :icon-left :copy :class "hero-copy"
-                     :attrs {:type "button" :data-copy install-command}}
-                    "Copy")]
-    [:p.hero-hint.hero-in
-     "Then run " [:code "xi server"] " for the web client on " [:code "localhost:7474"]
-     ", or " [:code "xi"] " in a terminal."]
-    [:div.hero-actions.hero-in
-     (button/button {:variant :secondary :href "/docs/getting-started/"} "Get started")
-     (button/button {:variant :ghost :href "/docs/"} "Read the docs")]]])
+                     :attrs {:type "button" :data-copy install-command
+                             :data-run "xi start" :aria-label "Copy install command"
+                             :title "Copy"}})]]])
 
 (def ^:private tape-fetch-script
   "Starts loading the ?tape= while main.js downloads; xi.web.core/tour-init!

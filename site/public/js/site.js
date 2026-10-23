@@ -41,13 +41,64 @@
   // ---- copy buttons ---------------------------------------------------------
   // [data-copy] (the hero's install bar): copy the value, say so in the
   // button's label (its last text node, after the icon) for a moment.
+  // With [data-run] the button also grows into a terminal line over its
+  // parent bar and types that command (main.css, .hero-term); the line stays
+  // open while the pointer is over the bar.
+  var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  var runTerminal = function (btn, cmd) {
+    var bar = btn.parentNode;
+    var term = document.createElement('span');
+    term.className = 'hero-term';
+    term.setAttribute('aria-hidden', 'true');
+    term.innerHTML = '<span class="hero-term-prompt">$</span><span class="hero-term-cmd"></span>' +
+      '<span class="hero-term-caret"></span><span class="hero-term-note">Copied</span>';
+    bar.appendChild(term);
+    var typed = term.querySelector('.hero-term-cmd');
+    var timers = [];
+    var later = function (ms, f) { timers.push(setTimeout(f, ms)); };
+    var closeTimer;
+    var typedOut = false;
+    var closeSoon = function (ms) {
+      clearTimeout(closeTimer);
+      closeTimer = setTimeout(function () { bar.classList.remove('is-running'); }, ms);
+    };
+    bar.addEventListener('mouseenter', function () { clearTimeout(closeTimer); });
+    bar.addEventListener('mouseleave', function () { if (typedOut) closeSoon(900); });
+    return function () {
+      timers.forEach(clearTimeout);
+      timers = [];
+      clearTimeout(closeTimer);
+      typedOut = false;
+      // the clip starts from the button's current width: flush it first
+      bar.style.setProperty('--copy-w', btn.offsetWidth + 'px');
+      void term.offsetWidth;
+      typed.textContent = '';
+      bar.classList.add('is-running');
+      var instant = reducedMotion.matches;
+      var start = instant ? 0 : 420;
+      var step = 45;
+      if (instant) typed.textContent = cmd;
+      else cmd.split('').forEach(function (ch, i) {
+        later(start + i * step + Math.random() * 20, function () { typed.textContent += ch; });
+      });
+      later(start + (instant ? 0 : cmd.length * step + 20), function () {
+        typed.textContent = cmd;
+        typedOut = true;
+        if (!bar.matches(':hover')) closeSoon(2600);
+      });
+    };
+  };
   document.querySelectorAll('[data-copy]').forEach(function (btn) {
-    var label = btn.lastChild;
-    var text = label.nodeValue;
+    // Icon-only buttons have no text label to swap for "Copied".
+    var label = btn.lastChild && btn.lastChild.nodeType === 3 ? btn.lastChild : null;
+    var text = label && label.nodeValue;
+    var run = btn.hasAttribute('data-run') && runTerminal(btn, btn.getAttribute('data-run'));
     var timer;
     btn.addEventListener('click', function () {
       if (!navigator.clipboard) return;
       navigator.clipboard.writeText(btn.getAttribute('data-copy')).then(function () {
+        if (run) run();
+        if (!label) return;
         label.nodeValue = 'Copied';
         clearTimeout(timer);
         timer = setTimeout(function () { label.nodeValue = text; }, 1600);

@@ -227,9 +227,10 @@ a.btn:hover { text-decoration: none; }
 /* ---------- home ---------- */
 
 /* ── Hero (xisite.pages/hero) ──
-   A spotlight in the logo's three colours turns behind the headline; the
-   logo tile and the install bar carry the same gradient on their border.
-   The colours follow the theme's accent like the header logo's stops. */
+   A wide radial dome, tinted by the logo's secondary colour, curves down to
+   an accent-coloured horizon behind the headline; the logo tile and the
+   install bar carry the logo gradient on their border. The colours follow
+   the theme's accent like the header logo's stops. */
 @property --hero-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 @keyframes hero-spin { to { --hero-angle: 360deg; } }
 @keyframes hero-in { from { opacity: 0; transform: translateY(10px); filter: blur(4px); } }
@@ -240,7 +241,7 @@ a.btn:hover { text-decoration: none; }
   --hero-c1: #e83fb4;
   --hero-c2: #8b4cf0;
   --hero-c3: #3b8fd6;
-  --hero-beam-opacity: 0.2;
+  --hero-dome: 1;
   --hero-ease: cubic-bezier(0.23, 1, 0.32, 1);
   position: relative;
   isolation: isolate;
@@ -254,9 +255,9 @@ a.btn:hover { text-decoration: none; }
     --hero-c3: oklch(from var(--accent-500) 0.632 calc(c * 0.58) calc(h - 38));
   }
 }
-[data-theme="dark"] .hero { --hero-beam-opacity: 0.38; }
+[data-theme="dark"] .hero { --hero-dome: 1.4; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .hero { --hero-beam-opacity: 0.38; }
+  :root:not([data-theme="light"]) .hero { --hero-dome: 1.4; }
 }
 
 .hero-bg {
@@ -273,21 +274,39 @@ a.btn:hover { text-decoration: none; }
     transparent 0 3deg, color-mix(in srgb, var(--fg-0) 3%, transparent) 3deg 3.6deg);
   mask-image: radial-gradient(60% 70% at 50% 0%, #000, transparent 70%);
 }
-.hero-beam {
+/* The ellipse is wider than the page and centred above the top edge, so its
+   bands meet the page as a shallow curve: secondary (c3) on top, accent (c2)
+   at the horizon, then the page background. --hero-dome scales the tint.
+   The stops trace an eased curve and ::after lays grain over it, both
+   against 8-bit banding in a faint gradient. */
+.hero-dome {
+  --dome-mix: calc(var(--hero-dome) * 1%);
   position: absolute;
-  left: 50%;
-  top: 140px;
-  width: 1100px;
-  height: 1100px;
-  translate: -50% -50%;
-  border-radius: 50%;
-  background: conic-gradient(from var(--hero-angle),
-    transparent 0deg, var(--hero-c1) 40deg, transparent 95deg, transparent 160deg,
-    var(--hero-c2) 210deg, transparent 260deg, var(--hero-c3) 300deg, transparent 350deg);
-  filter: blur(70px);
-  opacity: var(--hero-beam-opacity);
-  mask-image: radial-gradient(closest-side, #000 25%, transparent 70%);
-  animation: hero-spin 28s linear infinite;
+  inset: 0;
+  background: radial-gradient(in oklab 150% 100% at 50% -4%,
+    color-mix(in oklab, var(--hero-c3) calc(var(--dome-mix) * 2), transparent) 0%,
+    color-mix(in oklab, var(--hero-c3) calc(var(--dome-mix) * 4), transparent) 22%,
+    color-mix(in oklab, var(--hero-c3) calc(var(--dome-mix) * 6), transparent) 36%,
+    color-mix(in oklab, var(--hero-c3) calc(var(--dome-mix) * 9), transparent) 46%,
+    color-mix(in oklab, var(--hero-c3) calc(var(--dome-mix) * 12), transparent) 54%,
+    color-mix(in oklab, var(--hero-c2) calc(var(--dome-mix) * 16), transparent) 61%,
+    color-mix(in oklab, var(--hero-c2) calc(var(--dome-mix) * 19), transparent) 66%,
+    color-mix(in oklab, var(--hero-c2) calc(var(--dome-mix) * 20), transparent) 69%,
+    color-mix(in oklab, var(--hero-c2) calc(var(--dome-mix) * 18), transparent) 73%,
+    color-mix(in oklab, var(--hero-c2) calc(var(--dome-mix) * 14), transparent) 77%,
+    color-mix(in oklab, var(--hero-c2) calc(var(--dome-mix) * 9), transparent) 82%,
+    color-mix(in oklab, var(--hero-c2) calc(var(--dome-mix) * 5), transparent) 88%,
+    color-mix(in oklab, var(--hero-c2) calc(var(--dome-mix) * 2), transparent) 94%,
+    transparent 100%);
+  mask-image: linear-gradient(#000 0% 75%, transparent 100%);
+}
+.hero-dome::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: calc(var(--hero-dome) * 0.05);
+  mix-blend-mode: soft-light;
 }
 
 .hero-mark {
@@ -305,24 +324,53 @@ a.btn:hover { text-decoration: none; }
   animation: hero-spin 6s linear infinite, hero-in 0.8s var(--hero-ease) both;
 }
 
+/* Glass: a white sheen with inset highlights over a blurred backdrop, lit
+   from below by a blurred blob in the logo colours (::before). */
 .hero-pill {
+  --pill-glass: 0.12;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 28px;
   padding: 5px 12px 5px 6px;
-  border: var(--border-0);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-1) 70%, transparent);
-  backdrop-filter: blur(8px);
+  background: linear-gradient(rgb(255 255 255 / var(--pill-glass)),
+    rgb(255 255 255 / calc(var(--pill-glass) * 0.4)));
+  backdrop-filter: blur(20px);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12),
+    inset 0 0 4px rgb(255 255 255 / 0.12), inset 0 1px 1px rgb(255 255 255 / 0.08);
   color: var(--fg-1);
   font-size: 0.78rem;
+}
+.hero-pill::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 85%;
+  left: 50%;
+  width: 120%;
+  height: 80%;
+  translate: -50%;
+  border-radius: 50%;
+  background: linear-gradient(270deg, var(--hero-c3) 14%, var(--hero-c2) 47%, var(--hero-c1) 85%);
+  filter: blur(12px);
+  opacity: 0.28;
+  pointer-events: none;
+  transition: opacity 0.45s, filter 0.45s;
+}
+.hero-pill:hover::before { opacity: 0.5; filter: blur(14px); }
+[data-theme="light"] .hero-pill { --pill-glass: 0.55; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .hero-pill { --pill-glass: 0.55; }
 }
 .hero-pill:hover { text-decoration: none; color: var(--fg-0); }
 .hero-pill b {
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--bg-2);
+  background: color-mix(in srgb, var(--fg-0) 10%, transparent);
   color: var(--fg-0);
   font-family: var(--mono);
   font-size: 0.7rem;
@@ -347,6 +395,7 @@ a.btn:hover { text-decoration: none; }
 .hero .lede { margin: 0 auto 32px; text-wrap: pretty; }
 
 .hero-install {
+  position: relative;
   display: flex;
   max-width: 520px;
   margin: 0 auto;
@@ -372,18 +421,64 @@ a.btn:hover { text-decoration: none; }
 .hero-install .hero-copy { height: auto; border-radius: 0; padding-inline: 18px; }
 .hero-install .hero-copy:active { transform: scale(0.97); }
 
-.hero-hint { margin-top: 12px; color: var(--fg-2); font-size: 0.8rem; }
-.hero-actions { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+/* After a copy the button grows over the whole bar into a terminal line that
+   types the next step ([data-run], site.js). It is the button's sibling, as
+   the button's hover filter and :active transform would trap an absolute
+   child; --copy-w (the button's width, set by site.js) clips it to the
+   button until .is-running opens it to the left. */
+.hero-term {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0 16px;
+  background: #000;
+  color: #fff;
+  font: 500 0.82rem/1 var(--mono);
+  white-space: nowrap;
+  pointer-events: none;
+  visibility: hidden;
+  clip-path: inset(0 0 0 calc(100% - var(--copy-w, 0px)));
+  transition: clip-path 0.45s var(--hero-ease), visibility 0s 0.45s;
+}
+.hero-install.is-running .hero-term {
+  visibility: visible;
+  clip-path: inset(0);
+  transition: clip-path 0.5s var(--hero-ease), visibility 0s;
+}
+.hero-term-prompt { opacity: 0.65; }
+.hero-term-caret {
+  width: 0.55em;
+  height: 1.1em;
+  margin-left: -0.45em;
+  background: currentColor;
+  animation: hero-caret 1s steps(1) infinite;
+}
+.hero-term-note {
+  margin-left: auto;
+  font: 500 0.75rem/1 var(--sans);
+  opacity: 0;
+  transform: translateY(1.2em);
+  transition: opacity 0.3s, transform 0.3s var(--hero-ease);
+}
+.hero-install.is-running .hero-term-note {
+  opacity: 0.75;
+  transform: none;
+  transition-delay: 0.35s;
+}
+@keyframes hero-caret { 50% { opacity: 0; } }
 
 .hero-pill { animation-delay: 0.08s; }
 .hero h1 { animation-delay: 0.16s; }
 .hero .lede { animation-delay: 0.24s; }
 .hero-install { animation-delay: 0s, 0.32s; }
-.hero-hint { animation-delay: 0.36s; }
-.hero-actions { animation-delay: 0.44s; }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-beam, .hero-mark, .hero-install, .hero-in { animation: none; }
+  .hero-mark, .hero-install, .hero-in, .hero-term-caret { animation: none; }
+  .hero-term, .hero-install.is-running .hero-term { transition: none; }
+  .hero-term-note { transform: none; }
 }
 
 /* ── Tour stage: the web client in a window frame (xisite.pages/stage) ──
