@@ -389,6 +389,25 @@
     (is (classed? h "subagent-row--ask") "its ask shows on the row")
     (is (not (classed? h "post--dialog")) "and not as a bubble in the chat")))
 
+(deftest a-reloaded-sub-agent-shows-every-exchange
+  ;; A reloaded chat keeps its children without :history (saved-child);
+  ;; its view then rebuilds the conversation from :exchanges.
+  (let [chat-view @#'views/chat-view
+        child     {:id "sub1" :anchor 1 :status :done :label "say hello" :task "say hello"
+                   :result "Yo!"
+                   :exchanges [{:answer "Hello!" :status :done}
+                               {:question "now say yo" :answer "Yo!" :status :done}]}
+        state     {:web/route {:session-id "s"}
+                   :active-room "r1"
+                   :rooms {"r1" {:id "r1" :session {:id "s"}
+                                 :history [{:kind :user :text "go"}]
+                                 :ui {:active-buffer "sub1"}
+                                 :ext {:subagents {:agents [child]}}}}}
+        texts     (->> (tree-seq #(or (vector? %) (seq? %)) seq (chat-view state (fn [_])))
+                       (filter string?)
+                       set)]
+    (is (every? texts ["say hello" "Hello!" "now say yo" "Yo!"]))))
+
 (deftest subagent-rows-follow-the-block-rules
   (let [chat-view @#'views/chat-view
         child     {:id "sub1" :anchor 2 :status :done :expanded? true :label "worker"

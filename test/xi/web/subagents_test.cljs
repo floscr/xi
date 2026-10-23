@@ -45,6 +45,18 @@
   (is (= "Commit plan" (s/child-title "Commit plan" "Commit plan")))
   (is (= "Do it" (s/label {:task "\n Do it\nnow"}))))
 
+(deftest exchanges-the-history-no-longer-holds
+  (let [xs [{:answer "Hello!"} {:question "say yo" :answer "Yo!"} {:question "bye" :answer "Bye"}]]
+    (is (= xs (s/exchanges-before [] xs)) "reloaded: all of them")
+    (is (= [] (s/exchanges-before [{:kind :text :text "Hello!"} {:kind :user :text "say yo"}
+                                   {:kind :text :text "Yo!"} {:kind :user :text "bye"}
+                                   {:kind :text :text "Bye"}]
+                                  xs))
+        "live: the history holds them all")
+    (is (= (subvec xs 0 2) (s/exchanges-before [{:kind :user :text "bye"} {:kind :text :text "Bye"}] xs))
+        "reloaded, then replied: the ones before that reply")
+    (is (= [] (s/exchanges-before [{:kind :text :text "Hello!"}] nil)) "never replied to")))
+
 (deftest grouped-by-turn
   (let [history [{:kind :user :text "first\nmore"}       ; 0
                  {:kind :tool-call :id "c1"}              ; 1

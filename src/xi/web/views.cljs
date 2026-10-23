@@ -4905,7 +4905,7 @@
    group-viewer-items) and can be asked about. Its id stands in the room's
    :active-buffer though it names no buffer
    (xi.web.router/buffer-open-event)."
-  [state dispatch! room {:keys [id task status history result session-id] :as child}]
+  [state dispatch! room {:keys [id task status history result exchanges session-id] :as child}]
   (let [room-id (:id room)
         status  (or status :running)
         ctx     (subagent-block-ctx state room (get-in room [:session :id]))
@@ -4923,15 +4923,24 @@
       (timeline-content
        (subagent-asks dispatch! state room-id asks)
        (when (seq task) (post "sv-task" {:kind :user :text task}))
+       ;; A reloaded chat keeps its children without their history
+       ;; (sa/saved-child), and a reply then starts it again: the exchanges
+       ;; it no longer holds come first (sav/exchanges-before), else the
+       ;; answer alone.
+       (map-indexed
+        (fn [i {:keys [question answer]}]
+          (list (when (seq question)
+                  (post (str "sv-xq-" i) {:kind :user :text question}))
+                (when (seq answer)
+                  (post (str "sv-xa-" i) {:kind :text :text answer}))))
+        (sav/exchanges-before history exchanges))
+       (when (and (empty? history) (empty? exchanges) (seq result))
+         (post "sv-result" {:kind :text :text result}))
        (group-viewer-items
         {:super?     (:super-collapsed? (:app ctx))
          :block-open (:block-open ctx)
          :toggle-fn  (fn [k] (remember-open dispatch! (:session-key ctx) k))}
         (subagent-items dispatch! ctx "sv-" true child))
-       ;; A reloaded chat keeps its children without their history
-       ;; (sa/saved-child): the answer stands for it.
-       (when (and (empty? history) (seq result))
-         (post "sv-result" {:kind :text :text result}))
        (when (and (empty? history) (empty? result))
          [:div {:class ["subagent-empty"] :replicant/key "sv-empty"}
           (cond session-id            "Promoted to its own session: open it as a chat."

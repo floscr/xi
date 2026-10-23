@@ -122,6 +122,18 @@
     (or (not-empty (str/replace (subs label' (count prefix)) #"^[\s:]+" "")) label')
     label'))
 
+(defn exchanges-before
+  "The `exchanges` (xi.ext.subagent.handlers: the task's answer, then each
+   reply with its answer) that `history` no longer holds: a reloaded chat
+   keeps its children without history (saved-child), and a reply after that
+   starts it again from that reply (a :user entry)."
+  [history exchanges]
+  (let [replies (count (filter #(= :user (:kind %)) history))
+        covered (cond (empty? history)                  0
+                      (= :user (:kind (first history))) replies
+                      :else                             (inc replies))]
+    (vec (take (max 0 (- (count exchanges) covered)) exchanges))))
+
 ;; ── By prompt ────────────────────────────────────────────────────────────────
 
 (defn by-turn
