@@ -8426,12 +8426,21 @@ code a:hover,
   height: 100%;
   width: 100%;
   background: var(--bg-0);
-  outline: 2px solid transparent;
-  outline-offset: -2px;
-  transition: outline-color var(--duration-fast) var(--ease-standard);
+  position: relative;
 }
-.pane--focused {
-  outline-color: color-mix(in srgb, var(--accent) 45%, transparent);
+/* The focus ring, drawn over the pane's content: an inset outline would sit
+   under the positioned .pane-body and its opaque headers. */
+.pane::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 2px transparent;
+  transition: box-shadow var(--duration-fast) var(--ease-standard);
+}
+.pane--focused::after {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .pane-body {
   flex: 1;
@@ -8524,7 +8533,7 @@ code a:hover,
   transform: translateX(0);
   box-shadow: var(--shadow-floating);
 }
-.pane-drawer > .pane { outline: none; }
+.pane-drawer > .pane::after { content: none; }
 @media (prefers-reduced-motion: reduce) {
   .pane-drawer, .pane-drawer-scrim { transition: none; }
 }
