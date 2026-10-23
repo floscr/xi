@@ -259,7 +259,7 @@ two buttons that move it into the left or right **sidebar**, and ×. Up to
 eight windows; the chat appears in one of them at most.
 
 - **Focus.** The window you last clicked is the focused one (an accent
-  outline). The URL, the sidebar's tinted row and the keys all follow it: a buffer opened from anywhere (the sidebar, the
+  outline while more than one window shows). The URL, the sidebar's tinted row and the keys all follow it: a buffer opened from anywhere (the sidebar, the
   palette, a file link) shows in the focused window, or focuses the window
   already showing it. `Esc` in a diff or file window puts the chat there.
 - **Resizing.** Drag the seam between two windows. Each seam is a keyboard

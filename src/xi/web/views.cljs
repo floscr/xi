@@ -5300,6 +5300,15 @@
 ;; main fill): the ui.panels runtime writes inline sizes, data-edge/bare and a
 ;; controller expando onto panel nodes, and those outlive a positional reuse —
 ;; a window then keeps a stale width and overlaps its neighbour.
+(defn- solo-pane?
+  "Whether `layout` shows one window alone, which then draws no focus ring:
+   on a narrow screen always (a sidebar is a drawer over it), on a wide one
+   with a single main window and no open sidebar."
+  [state layout]
+  (or (not (:web/wide? state))
+      (and (= 1 (count (layout/main-panes layout)))
+           (not-any? #(get-in layout [% :open?]) layout/sides))))
+
 (defn- pane-frame
   "One window: header + its view. `data-pane-id` / `data-pane-focused` are
    what xi.web.core's pointer listener and scroller lookup read."
@@ -5307,6 +5316,7 @@
   (let [focused? (= id (:focus layout))]
     [:div {:class ["pane"
                    (when focused? "pane--focused")
+                   (when (solo-pane? state layout) "pane--solo")
                    (when (= :chat view) "pane--chat")
                    (when side "pane--side")]
            :replicant/key (str "pane-" id)
