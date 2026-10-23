@@ -119,13 +119,23 @@
    [:div {:class ["claude-usage-track"]}
     [:div {:class ["claude-usage-fill"] :style {:width (str (or used 0) "%")}}]]])
 
+(defn- tick-labels
+  "How the chart labels its ticks for a period: every nth tick, the label fn
+   and the legend's name for the period. A month of day ticks gets a date
+   each week; weekday names would overlap."
+  [period-ms]
+  (cond
+    (> period-ms usage/week-ms) {:every 7 :label fmt-date :legend "this month"}
+    (> period-ms usage/day-ms)  {:every 1 :label fmt-weekday :legend "this week"}
+    :else                       {:every 2 :label fmt-time :legend "this window"}))
+
 (defn- line-chart
   "The current period as an SVG line (solid: this period; dotted: at this
    pace) over day / hour ticks, labelled below."
   [window samples now]
   (when-let [{:keys [points projection ticks]} (usage/chart window samples now)]
     (let [coord (fn [[x y]] (str (* 100 x) "," (- 100 y)))
-          daily? (> (:period-ms window) usage/day-ms)]
+          {:keys [every label legend]} (tick-labels (:period-ms window))]
       [:div {:class ["usage-chart"]}
        [:svg {:class ["usage-chart-svg"] :viewBox "0 0 100 100"
               :preserveAspectRatio "none" :aria-hidden "true"}
@@ -138,11 +148,11 @@
                       :points (str/join " " (map coord projection))}])]
        [:div {:class ["usage-chart-ticks"]}
         (for [[i {:keys [x at]}] (map-indexed vector ticks)
-              :when (or daily? (even? i))]
+              :when (zero? (mod i every))]
           [:span {:class ["usage-chart-tick"] :style {:left (str (* 100 x) "%")}}
-           (if daily? (fmt-weekday at) (fmt-time at))])]
+           (label at)])]
        [:div {:class ["usage-chart-legend"]}
-        [:span {:class ["usage-legend-line"]} (if daily? "this week" "this window")]
+        [:span {:class ["usage-legend-line"]} legend]
         (when projection [:span {:class ["usage-legend-dotted"]} "at this pace"])]])))
 
 (defn- past-strip
