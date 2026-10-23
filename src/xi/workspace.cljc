@@ -133,19 +133,30 @@
 (defn find-workspace [state id]
   (some #(when (= id (:id %)) %) (workspaces state)))
 
+(defn closed?
+  "Is workspace `id`'s tab closed (:workspace/closed, per user)? A closed
+   workspace keeps existing: the palette lists it and picking it reopens it."
+  [state id]
+  (contains? (set (:workspace/closed state)) id))
+
+(defn open-workspaces
+  "The workspaces with a tab in the bar: `workspaces` minus the closed ones."
+  [state]
+  (filterv #(not (closed? state (:id %))) (workspaces state)))
+
 (defn selected
   "The selected workspace, or nil for All (also when the selected id no
-   longer exists)."
+   longer exists or its tab was closed)."
   [state]
   (let [id (:workspace/selected state)]
-    (when (and id (not= id all-id))
+    (when (and id (not= id all-id) (not (closed? state id)))
       (find-workspace state id))))
 
 (defn selected-id [state]
   (or (:id (selected state)) all-id))
 
 (defn- tab-ids [state]
-  (into [all-id] (map :id) (workspaces state)))
+  (into [all-id] (map :id) (open-workspaces state)))
 
 (defn neighbor-id
   "The id `step` tabs (+1 / -1) from the selected one, wrapping; All counts
@@ -196,6 +207,77 @@
 
 (defn valid-id? [v]
   (and (string? v) (<= 1 (count v) 64)))
+
+(defn valid-closed?
+  "The closed tabs xi.user-state stores: a bounded vector of workspace ids."
+  [v]
+  (and (sequential? v)
+       (<= (count v) (* 2 max-workspaces))
+       (every? valid-id? v)))
+
+(defn close-tab
+  "`closed` (the closed ids) plus `id`, pruned to workspaces that still exist."
+  [state closed id]
+  (let [ids (set (map :id (workspaces state)))]
+    (->> (conj (vec closed) id) distinct (filterv ids))))
+
+(defn reopen-tab [closed id]
+  (filterv #(not= id %) closed))
+
+;; ── The chats opened in a workspace (:workspace/sessions, per user) ─────────
+;; {workspace-id [session-id …]}, oldest first: the sidebar's Workspace
+;; section. Kept until pruned, whatever the chat's directory.
+
+(def max-workspace-sessions 200)
+
+(defn visit
+  "`sessions` with `sid` opened in workspace `id` (once; the oldest drop past
+   the cap)."
+  [sessions id sid]
+  (let [sids (get sessions id [])]
+    (if (some #{sid} sids)
+      sessions
+      (assoc sessions id (vec (take-last max-workspace-sessions (conj sids sid)))))))
+
+(defn forget
+  "`sessions` without `sid` in workspace `id`."
+  [sessions id sid]
+  (let [sids (filterv #(not= sid %) (get sessions id []))]
+    (if (seq sids) (assoc sessions id sids) (dissoc sessions id))))
+
+(defn opened
+  "The session ids opened in workspace `id`."
+  [state id]
+  (get (:workspace/sessions state) id []))
+
+;; ── Collapsed sidebar groups per workspace (:workspace/collapsed, per user) ───
+;; {workspace-id [group-id …]}. All keeps :web/sidebar-collapsed; a workspace
+;; without an entry starts from All's.
+
+(defn collapsed-groups
+  "The sidebar group ids collapsed in the selected workspace."
+  [state]
+  (let [all (set (:web/sidebar-collapsed state))]
+    (if-let [ws (selected state)]
+      (set (get (:workspace/collapsed state) (:id ws) all))
+      all)))
+
+(defn valid-collapsed? [m]
+  (and (map? m)
+       (<= (count m) (* 2 max-workspaces))
+       (every? (fn [[k v]]
+                 (and (valid-id? k) (sequential? v) (<= (count v) 32) (every? keyword? v)))
+               m)))
+
+(defn valid-sessions? [m]
+  (and (map? m)
+       (<= (count m) (* 2 max-workspaces))
+       (every? (fn [[k v]]
+                 (and (valid-id? k)
+                      (sequential? v)
+                      (<= (count v) max-workspace-sessions)
+                      (every? #(and (string? %) (<= 1 (count %) 200)) v)))
+               m)))
 
 (defn valid-user-workspaces?
   "The shape xi.user-state stores: `[{:id str :label str :dirs [str …]}]`,

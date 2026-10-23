@@ -91,6 +91,86 @@
     (is (nil? (nav (run (-> with-chats (assoc :workspace/selected "w-1") (on-chat "pp"))
                         {:type :workspace/select :id "w-1"}))))))
 
+(deftest closing-a-tab-hides-it-and-selecting-reopens-it
+  (testing "closing the selected tab hands over to the one on its left"
+    (let [r (run (assoc state :workspace/selected "w-1") {:type :workspace/close :id "w-1"})]
+      (is (= ["w-1"] (get-in r [:state :workspace/closed])))
+      (is (= "penpot" (get-in r [:state :workspace/selected])))
+      (is (= {:workspaces-closed ["w-1"]} (sent r)) "closed tabs are per user")
+      (is (= (:workspace/user state) (get-in r [:state :workspace/user])) "nothing is deleted")))
+  (testing "config.edn's tabs close too; the selection stays when another tab closes"
+    (let [r (run (assoc state :workspace/selected "w-1") {:type :workspace/close :id "penpot"})]
+      (is (= ["penpot"] (get-in r [:state :workspace/closed])))
+      (is (= "w-1" (get-in r [:state :workspace/selected])))))
+  (testing "All has no close"
+    (is (nil? (run state {:type :workspace/close :id "all"})))
+    (is (nil? (run state {:type :workspace/close-current}))))
+  (testing "selecting a closed workspace reopens its tab"
+    (let [r (run (assoc state :workspace/closed ["penpot"]) {:type :workspace/select :id "penpot"})]
+      (is (= [] (get-in r [:state :workspace/closed])))
+      (is (= "penpot" (get-in r [:state :workspace/selected])))
+      (is (= {:workspaces-closed []} (sent r))))))
+
+(deftest the-switcher-skips-the-current-workspace-and-switches-when-one-is-left
+  (testing "the list never offers the workspace on screen; closed ones stay"
+    (let [st (assoc state :workspace/selected "w-1" :workspace/closed ["penpot"])]
+      (is (= ["all" "penpot"] (w/switch-targets st)))))
+  (testing "several to pick from: the palette page opens"
+    (let [r (run state {:type :palette/open-workspaces})]
+      (is (= {:kind :workspaces} (get-in r [:state :web/palette-page])))
+      (is (nil? (get-in r [:state :workspace/selected])) "nothing switched yet")))
+  (testing "one other workspace: a plain switch, no palette"
+    (let [st {:workspace/user [{:id "w-1" :label "Home" :dirs []}]}
+          r  (run st {:type :palette/open-workspaces})]
+      (is (= "w-1" (get-in r [:state :workspace/selected])))
+      (is (nil? (get-in r [:state :web/palette-page])))
+      (is (= "all" (get-in (run (:state r) {:type :palette/open-workspaces})
+                           [:state :workspace/selected]))
+          "and back again"))))
+
+(deftest the-workspace-section-keeps-what-was-opened-until-pruned
+  (testing "visiting a chat in a workspace adds it, per user"
+    (let [r (run state {:type :workspace/visit :id "w-1" :session-id "s1"})]
+      (is (= {"w-1" ["s1"]} (get-in r [:state :workspace/sessions])))
+      (is (= {:workspace-sessions {"w-1" ["s1"]}} (sent r)))
+      (is (nil? (run (:state r) {:type :workspace/visit :id "w-1" :session-id "s1"}))
+          "a second visit changes nothing")))
+  (is (nil? (run state {:type :workspace/visit :id "all" :session-id "s1"})) "All keeps no list")
+  (let [st (assoc state :workspace/sessions {"w-1" ["s1" "s2"] "penpot" ["s3"]}
+                  :workspace/selected "w-1")]
+    (testing "one chat out"
+      (is (= {"w-1" ["s2"] "penpot" ["s3"]}
+             (get-in (run st {:type :workspace/forget :id "w-1" :session-id "s1"})
+                     [:state :workspace/sessions]))))
+    (testing "prune empties the selected workspace only"
+      (is (= {"penpot" ["s3"]} (get-in (run st {:type :workspace/prune-current})
+                                       [:state :workspace/sessions])))
+      (is (nil? (run (assoc st :workspace/selected "all") {:type :workspace/prune-current}))))
+    (testing "deleting a workspace drops its list"
+      (is (= {"penpot" ["s3"]} (get-in (run st {:type :workspace/remove :id "w-1"})
+                                       [:state :workspace/sessions]))))))
+
+(deftest the-visit-tap-records-arriving-at-a-chat
+  (let [seen   (atom [])
+        tap    (w/visit-tap #(swap! seen conj %))
+        st     (-> state
+                   (assoc :workspace/selected "w-1" :web/route {:page :chat :session-id "s9"}))
+        loaded (assoc st :web/user-state-loaded? true)]
+    (tap {:type :lobby/state} st)
+    (is (= [] @seen) "before :user-state/state, nothing is written")
+    (tap {:type :lobby/state} loaded)
+    (is (= [{:type :workspace/visit :id "w-1" :session-id "s9"}] @seen))
+    (reset! seen [])
+    (tap {:type :workspace/prune-current} loaded)
+    (is (= [] @seen) "still on that chat: a prune or removal sticks")
+    (tap {:type :route/navigate} (assoc-in loaded [:web/route :session-id] "s10"))
+    (is (= [{:type :workspace/visit :id "w-1" :session-id "s10"}] @seen) "another chat is recorded")
+    (reset! seen [])
+    (tap {:type :route/navigate} (assoc loaded :workspace/sessions {"w-1" ["s9"]}))
+    (is (= [] @seen) "back to one already in the list")
+    (tap {:type :workspace/select} (assoc loaded :workspace/selected "all"))
+    (is (= [] @seen) "All records nothing")))
+
 (deftest the-dialog-creates-and-selects-a-workspace
   (let [st (:state (run state {:type :workspace/edit-open :mode :create :dir "/c/new"}))
         st (:state (run st {:type :workspace/edit-set :label "New one"}))

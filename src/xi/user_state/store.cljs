@@ -166,14 +166,15 @@
 ;; flags of their own entries on every session (xi.user-state/session-flags).
 
 (defn all-flagged-session-ids
-  "Every session id any user's extensions flagged or pinned: what the shared
-   lobby list must keep however old they are, since each user's own flags are
-   only applied when it is sent to them."
+  "Every session id any user's extensions flagged or pinned, or that a user
+   opened in a workspace (:workspace-sessions): what the shared lobby list
+   must keep however old they are, since each user's own flags are only
+   applied when it is sent to them."
   []
   (into #{}
         (comp (map load-state)
               (mapcat (fn [stored]
-                        (into (vec (filter string? (:pinned stored)))
-                              cat
-                              (vals (user-state/session-flags stored))))))
+                        (-> (vec (filter string? (:pinned stored)))
+                            (into cat (vals (user-state/session-flags stored)))
+                            (into cat (vals (:workspace-sessions stored)))))))
         (known-users)))

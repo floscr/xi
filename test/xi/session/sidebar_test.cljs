@@ -63,11 +63,7 @@
     (is (= [] (mapv :session-id (:cards (sb/extension-group (assoc state :workspace/selected "penpot")
                                                             favorites-group))))
         "extension groups are scoped too")
-    (is (= ["h"] (mapv :session-id (:cards (sb/extension-group state favorites-group)))))
-    (testing "the tab badges count attention across workspaces, whatever is selected"
-      (is (= {"all" 1 "penpot" 1 "w-1" 0}
-             (sb/workspace-attention (assoc state :workspace/selected "w-1")
-                                     [{:id "penpot" :dirs ["/c/penpot"]} {:id "w-1" :dirs ["/c/home"]}]))))))
+    (is (= ["h"] (mapv :session-id (:cards (sb/extension-group state favorites-group)))))))
 
 (deftest extension-group-without-limit-lists-everything
   (let [state (with-sessions (for [i (range 8)] {:session-id (str i) :starred? true :timestamp i}))]

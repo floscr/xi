@@ -67,7 +67,17 @@
    ;; connected. The selected tab is the window's own (xi.web.workspaces).
    :workspaces        {:path :workspace/user :default []
                        :coerce vec
-                       :fx   (fn [_] [])}})
+                       :fx   (fn [_] [])}
+   ;; the ids of the workspace tabs the user closed
+   :workspaces-closed {:path :workspace/closed :default []
+                       :coerce vec
+                       :fx   (fn [_] [])}
+   ;; {workspace-id [session-id …]}: each workspace's sidebar section
+   :workspace-sessions {:path :workspace/sessions :default {}
+                        :fx   (fn [_] [])}
+   ;; {workspace-id [group-id …]}: collapsed sidebar groups per workspace
+   :workspace-collapsed {:path :workspace/collapsed :default {}
+                         :fx   (fn [_] [])}})
 
 (defn- wire-value
   "State value → the vector/scalar the server's validators expect."
@@ -133,7 +143,9 @@
   "`:user-state/state {:user :state}` — the user's whole stored state, sent
    right after :auth/ok. Applies it over the cache (server wins), seeds keys
    the server lacks from this browser's cache, and records whose cache this
-   is."
+   is. Sets :web/user-state-loaded?: a key written whole from a value built
+   up by the client (xi.web.workspaces/visit-tap) must wait for it, or it
+   replaces the stored value."
   [st {:keys [user state]}]
   (let [cached  (:web/cached-user st)
         mine?   (or (nil? cached) (= cached user))
@@ -150,7 +162,7 @@
                     (set-effect k (get st (get-in bindings [k :path])))))
         ;; the command bar order is frozen per page load (see record-command):
         ;; only a connect — not a later change — may reorder it
-        st'     (cond-> (:state applied)
+        st'     (cond-> (assoc (:state applied) :web/user-state-loaded? true)
                   (contains? state :recent-commands)
                   (assoc :web/recent-commands (:web/command-usage (:state applied))))]
     {:state   st'

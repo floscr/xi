@@ -190,6 +190,14 @@
    ;; the user's own workspaces, [{:id :label :dirs}] (xi.workspace); the
    ;; selected tab is each browser window's own (xi.web.workspaces)
    :workspaces       {:valid? workspace/valid-user-workspaces?}
+   ;; ids of the workspace tabs the user closed (still listed in the palette)
+   :workspaces-closed {:valid? workspace/valid-closed?}
+   ;; {workspace-id [session-id …]}: the chats opened in each workspace (its
+   ;; sidebar section), until pruned. The lobby keeps them however old.
+   :workspace-sessions {:valid? workspace/valid-sessions?}
+   ;; {workspace-id [group-id …]}: the collapsed sidebar groups of each
+   ;; workspace; All's are :sidebar-collapsed
+   :workspace-collapsed {:valid? workspace/valid-collapsed?}
    ;; Server-kept like :ext: the lobby carries each user's own copy
    ;; (xi.server.ws), so a client neither reads nor writes these.
    ;; {session-id seen-response-count}: a chat is unread past its count

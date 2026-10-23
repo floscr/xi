@@ -64,6 +64,47 @@
   (is (= "all" (ws/neighbor-id (assoc state :workspace/selected "w-1") 1)))
   (is (= "penpot" (ws/neighbor-id (assoc state :workspace/selected "gone") 1)) "an unknown selection counts as All"))
 
+(deftest closed-tabs-leave-the-row-but-not-the-list
+  (let [st (assoc state :workspace/closed ["penpot"])]
+    (is (= ["w-1"] (mapv :id (ws/open-workspaces st))))
+    (is (= ["penpot" "w-1"] (mapv :id (ws/workspaces st))) "the palette still lists it")
+    (is (= "w-1" (ws/nth-id st 2)) "numbering skips it")
+    (is (= "w-1" (ws/neighbor-id st 1)) "and so does cycling")
+    (is (nil? (ws/selected (assoc st :workspace/selected "penpot")))
+        "a window on a tab closed elsewhere falls back to All"))
+  (is (= ["penpot"] (ws/close-tab state [] "penpot")))
+  (is (= ["penpot"] (ws/close-tab state ["penpot" "gone"] "penpot")) "pruned and distinct")
+  (is (= [] (ws/reopen-tab ["penpot"] "penpot")))
+  (is (ws/valid-closed? ["a" "b"]))
+  (is (not (ws/valid-closed? [""])))
+  (is (not (ws/valid-closed? "a"))))
+
+(deftest a-workspace-remembers-the-chats-opened-in-it
+  (let [s (-> {} (ws/visit "w" "a") (ws/visit "w" "b") (ws/visit "w" "a"))]
+    (is (= {"w" ["a" "b"]} s) "once each, oldest first")
+    (is (= {"w" ["b"]} (ws/forget s "w" "a")))
+    (is (= {} (ws/forget {"w" ["a"]} "w" "a")) "an empty list goes")
+    (is (= ["a" "b"] (ws/opened {:workspace/sessions s} "w")))
+    (is (= [] (ws/opened {} "w")))
+    (is (ws/valid-sessions? s))
+    (is (not (ws/valid-sessions? {"w" [1]})))
+    (is (not (ws/valid-sessions? ["a"]))))
+  (testing "capped: the oldest drop out"
+    (let [s (reduce #(ws/visit %1 "w" (str "s" %2)) {} (range (inc ws/max-workspace-sessions)))]
+      (is (= ws/max-workspace-sessions (count (get s "w"))))
+      (is (= "s1" (first (get s "w")))))))
+
+(deftest collapsed-sidebar-groups-are-per-workspace
+  (let [st (assoc state :web/sidebar-collapsed #{:earlier}
+                  :workspace/collapsed {"w-1" [:recent :projects]})]
+    (is (= #{:earlier} (ws/collapsed-groups st)) "All keeps its own")
+    (is (= #{:recent :projects} (ws/collapsed-groups (assoc st :workspace/selected "w-1"))))
+    (is (= #{:earlier} (ws/collapsed-groups (assoc st :workspace/selected "penpot")))
+        "a workspace not changed yet starts from All's")
+    (is (= #{} (ws/collapsed-groups {})))
+    (is (ws/valid-collapsed? {"w-1" [:recent]}))
+    (is (not (ws/valid-collapsed? {"w-1" ["recent"]})))))
+
 (deftest tabs-are-numbered-from-all-like-doom
   (is (= "all" (ws/nth-id state 1)))
   (is (= "penpot" (ws/nth-id state 2)))

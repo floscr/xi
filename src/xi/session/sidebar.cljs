@@ -259,18 +259,6 @@
       (when-let [sid (first (remove skip others))]
         {:sid sid :visited (conj skip sid)}))))
 
-(defn workspace-attention
-  "{workspace-id n}: how many chats of each workspace (xi.workspace) need
-   attention — waiting on a dialog, failed, finished with unread output or
-   running (`active-cards`) — across the whole lobby, whichever tab is
-   selected. The tab bar's badges."
-  [state workspaces]
-  (let [{:keys [recent hidden earlier]} (sidebar-session-groups (workspace/unscoped state))
-        cards (active-cards (concat recent hidden earlier))]
-    (into {workspace/all-id (count cards)}
-          (map (fn [ws] [(:id ws) (count (filter #(workspace/member? ws (:cwd %)) cards))]))
-          workspaces)))
-
 (defn sidebar-session-order
   "Flattened session-ids as shown in the drawer sidebar
    (Recent \u2192 Hidden \u2192 Earlier). Used by ALT+j/k session navigation."

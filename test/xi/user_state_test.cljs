@@ -221,7 +221,10 @@
   (store/set-ext! "alice" :favorites {:session-flags {:favorite? ["a1" "a2"]}})
   (store/set-ext! "bob" :favorites {:session-flags {:favorite? ["b1"]}})
   (store/set-key! "carol" :theme "dark")
-  (is (= #{"a1" "a2" "b1"} (store/all-flagged-session-ids))))
+  (is (= #{"a1" "a2" "b1"} (store/all-flagged-session-ids)))
+  (testing "the chats a user opened in a workspace are kept too"
+    (store/set-key! "carol" :workspace-sessions {"w-1" ["c1" "c2"]})
+    (is (= #{"a1" "a2" "b1" "c1" "c2"} (store/all-flagged-session-ids)))))
 
 (deftest store-keeps-extension-state-apart-from-ui-state
   (store/set-key! "alice" :theme "dark")

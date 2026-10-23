@@ -12,8 +12,19 @@ a personal agent's, is in All only.
 Each tab keeps its own open chat. Leaving a tab remembers the chat on
 screen, and coming back opens it again. A tab with no chat of its own keeps
 the one on screen if it belongs there, and otherwise shows the home page.
-A badge on a tab counts its chats that wait on you, failed, have unread
-replies or are running.
+
+## The Workspace section
+
+With a workspace other than All selected, the sidebar has a **Workspace**
+section below Projects: every chat you opened while that workspace was
+selected, whatever its directory. It keeps them, however old, until you
+prune the workspace: **Prune workspace** in the palette or in the tab's
+right-click menu empties the section. **Remove from workspace** in a chat's
+menu there takes out one chat. Neither deletes or hides the chats
+themselves. The section belongs to your user, like your workspaces.
+
+Each workspace also remembers which sidebar groups you collapsed. One you
+haven't changed yet starts with All's.
 
 ## Your own workspaces
 
@@ -29,14 +40,23 @@ and **Remove workspace …**.
 
 The same menu puts a project in or out of each of your workspaces (**Add
 to Penpot**, **Remove from Penpot**). Inside a workspace, **Add project…**
-at the end of its Projects group opens the project picker. Right-click a
-tab to rename or remove the workspace.
+at the end of its Projects group opens the project picker. Right-click one
+of your tabs to rename or delete the workspace; deleting it leaves its chats
+and projects alone.
 
 These workspaces belong to your [user](server.md#users), so your phone
 shows the same tabs as your laptop, and a colleague on the same server has
 their own. The selected tab and each tab's open chat belong to the browser
 window: two windows can show two workspaces, and a reload keeps the
 window's tab.
+
+## Closing a tab
+
+The × on a tab, or **Close workspace** in its right-click menu, closes it.
+Every tab but All can be closed, the ones from the config file too. Closing
+only hides the tab: **Switch workspace…** in the palette still lists the
+workspace, marked closed, and picking it opens the tab again. Closed tabs
+belong to your user, like your workspaces.
 
 ## Workspaces from the config file
 
@@ -73,8 +93,10 @@ No key is bound by default. The actions, to bind under `:keys` in
 | --- | --- |
 | `:workspace/switch` | Opens the palette's workspace list. |
 | `:workspace/new` | Asks for a name and creates a workspace. |
+| `:workspace/close` | Closes the selected tab; the tab to its left takes over. |
+| `:workspace/prune` | Empties the selected workspace's Workspace section. |
 | `:workspace/rename` | Renames the selected workspace, when it is one of yours. |
-| `:workspace/delete` | Removes the selected workspace, when it is one of yours. Its chats stay. |
+| `:workspace/delete` | Deletes the selected workspace, when it is one of yours. Its chats stay. |
 | `:workspace/next` / `:workspace/prev` | The next or previous tab, wrapping around. |
 | `:workspace/other` | The tab selected before this one. |
 | `:workspace/tab-1` … `:workspace/tab-9` | Tab 1 to 9, counting All as 1. |
@@ -87,7 +109,8 @@ Doom Emacs' `SPC TAB` map, as [leader keys](keyboard.md#leader-keys):
                              ["space" "tab" "."]   :workspace/switch
                              ["space" "tab" "n"]   :workspace/new
                              ["space" "tab" "r"]   :workspace/rename
-                             ["space" "tab" "d"]   :workspace/delete
+                             ["space" "tab" "d"]   :workspace/close
+                             ["space" "tab" "D"]   :workspace/delete
                              ["space" "tab" "]"]   :workspace/next
                              ["space" "tab" "["]   :workspace/prev
                              ["space" "tab" "`"]   :workspace/other

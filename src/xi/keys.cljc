@@ -249,8 +249,10 @@
    ;; workspaces (xi.workspace): no default keys
    :workspace/switch        {:label "Switch workspace" :surface #{:web}}
    :workspace/new           {:label "New workspace" :surface #{:web}}
+   :workspace/close         {:label "Close the current workspace tab" :surface #{:web}}
+   :workspace/prune         {:label "Prune the current workspace: empty its sidebar section" :surface #{:web}}
    :workspace/rename        {:label "Rename the current workspace" :surface #{:web}}
-   :workspace/delete        {:label "Remove the current workspace" :surface #{:web}}
+   :workspace/delete        {:label "Delete the current workspace (one of yours)" :surface #{:web}}
    :workspace/next          {:label "Next workspace tab" :surface #{:web}}
    :workspace/prev          {:label "Previous workspace tab" :surface #{:web}}
    :workspace/other         {:label "Back to the previously selected workspace" :surface #{:web}}

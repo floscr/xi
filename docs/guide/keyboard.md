@@ -243,8 +243,10 @@ the navigation ones fit together.
 | `:projects/open` | All projects | web |
 | `:workspace/switch` | Switch workspace | web |
 | `:workspace/new` | New workspace | web |
+| `:workspace/close` | Close the current workspace tab | web |
+| `:workspace/prune` | Prune the current workspace: empty its sidebar section | web |
 | `:workspace/rename` | Rename the current workspace | web |
-| `:workspace/delete` | Remove the current workspace | web |
+| `:workspace/delete` | Delete the current workspace (one of yours) | web |
 | `:workspace/next` | Next workspace tab | web |
 | `:workspace/prev` | Previous workspace tab | web |
 | `:workspace/other` | Back to the previously selected workspace | web |

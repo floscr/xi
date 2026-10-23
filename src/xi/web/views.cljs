@@ -46,6 +46,7 @@
             [xi.web.timeline-posts :as timeline-posts]
             [xi.blocks :as blocks]
             [xi.web.viewer-group :as viewer-group]
+            [xi.web.workspaces :as workspaces]
             [xi.workspace :as workspace]
             [ui.icon :as icon]
             [ui.alert :as alert]
@@ -5283,9 +5284,16 @@
    :dismissable?), copy session ID, and Delete. Hiding is gated on idle;
    Delete is always offered (the server keeps a busy room alive, see
    room_manager/session-delete)."
-  [dispatch! ext-items {:keys [session-id name dismissed? pinned? dismissable? busy? has-dialog?] :as card}]
+  [dispatch! ext-items {:keys [session-id name dismissed? pinned? dismissable? busy? has-dialog?
+                               workspace-id] :as card}]
   (let [idle? (not (or busy? has-dialog?))]
     (cond-> (mapv #(ext-session-menu-item dispatch! card %) ext-items)
+      ;; a card of the sidebar's Workspace section (recent-sidebar*)
+      workspace-id
+      (conj {:label    "Remove from workspace"
+             :icon     :x
+             :on-click #(dispatch! {:type :workspace/forget :id workspace-id
+                                    :session-id session-id})})
       true
       (conj {:label    "Rename…"
              :icon     :edit
@@ -6131,8 +6139,9 @@
              (when badge [:span {:class ["sidebar-more-badge"]} badge])])))))))
 
 (defn- sidebar-section
-  "Collapsible drawer group. Collapsed ids live in :web/sidebar-collapsed; a
-   collapsed group doesn't build its cards at all. Its cards reorder, so
+  "Collapsible drawer group. Collapsed ids are per workspace
+   (xi.workspace/collapsed-groups); a collapsed group doesn't build its cards
+   at all. Its cards reorder, so
    `children` must not leave nil slots between them: Replicant (2025.12.1)
    then moves the wrong DOM node and its vdom no longer matches the DOM."
   [dispatch! collapsed {:keys [id label]} & children]
@@ -6155,66 +6164,93 @@
 (def ^:private mac?
   (boolean (re-find #"Mac|iPhone|iPad" (or (some-> js/navigator .-platform) ""))))
 
+(defn- workspace-tab-menu
+  "The context menu of a workspace tab other than All: prune its sidebar
+   section, close it, and for one of the user's own also rename or delete it."
+  [dispatch! state {:keys [id source]}]
+  (cond-> []
+    (= :user source)
+    (conj {:label "Rename…" :icon :edit
+           :on-click (fn [_] (dispatch! {:type :workspace/edit-open :mode :rename :id id}))})
+    (seq (workspace/opened state id))
+    (conj {:label "Prune workspace" :icon :zap
+           :on-click (fn [_] (dispatch! {:type :workspace/prune :id id}))})
+    :always
+    (conj {:label "Close workspace" :icon :x
+           :on-click (fn [_] (dispatch! {:type :workspace/close :id id}))})
+    (= :user source)
+    (conj {:type :separator}
+          {:label "Delete workspace" :icon :trash :variant :danger
+           :confirm "Delete this workspace? Its chats and projects stay."
+           :on-click (fn [_] (dispatch! {:type :workspace/remove :id id}))})))
+
 (defn- workspace-bar*
   "The workspace tab bar across the top of the app, above the sidebar and the
-   chat (xi.workspace): All first, then config.edn's and the user's own
-   workspaces, a + for a new one. Shown once there is a workspace, never for
-   a personal agent. Badges count the chats that need attention in the other
-   tabs; a user tab's context menu renames or removes it."
+   chat (xi.workspace): All first, then the open tabs of config.edn's and the
+   user's own workspaces, a + for a new one. Shown once there is a workspace,
+   never for a personal agent. Every tab but All has an × that closes it and
+   a context menu (`workspace-tab-menu`)."
   [state dispatch!]
-  (let [wss (workspace/workspaces state)]
-    (when (and (seq wss) (not (get-in state [:lobby :agent-id])))
-      (let [sel    (workspace/selected-id state)
-            badges (sb/workspace-attention state wss)
-            tab    (fn [{:keys [id label source]}]
-                     (let [active? (= id sel)
-                           n       (get badges id 0)]
-                       [:button {:class ["ws-tab" (when active? "ws-tab--active")]
-                                 :replicant/key (str "tab-" id)
-                                 :type "button"
-                                 :role "tab"
-                                 :aria-selected (str active?)
-                                 :title (case source
-                                          :config (str label " · defined in config.edn")
-                                          :user   (str label " · right-click to rename or remove")
-                                          label)
-                                 :on {:click (fn [_] (dispatch! {:type :workspace/select :id id}))}}
-                        [:span {:class ["ws-tab-label"]} label]
-                        (when (and (pos? n) (not active?))
-                          [:span {:class ["ws-tab-badge"]} n])]))]
-        [:div {:class ["ws-bar"] :role "tablist" :aria-label "Workspaces"
-               :replicant/key "ws-bar"}
-         (tab {:id workspace/all-id :label "All"})
-         (for [{:keys [id source] :as ws} wss]
-           (if (= :user source)
-             (context-menu/context-menu-trigger
-              {:items [{:label "Rename…" :icon :edit
-                        :on-click (fn [_] (dispatch! {:type :workspace/edit-open :mode :rename :id id}))}
-                       {:label "Remove workspace" :icon :trash :variant :danger
-                        :on-click (fn [_] (dispatch! {:type :workspace/remove :id id}))}]
-               :class "ws-tab-trigger"
-               :attrs {:replicant/key id}}
-              (tab ws))
-             (tab ws)))
-         [:button {:class ["ws-tab" "ws-tab--add"]
-                   :type "button"
-                   :title "New workspace"
-                   :aria-label "New workspace"
-                   :on {:click (fn [_] (dispatch! {:type :workspace/edit-open :mode :create}))}}
-          (icon/icon {:icon-name :plus :size :sm})]]))))
+  (when (and (seq (workspace/workspaces state)) (not (get-in state [:lobby :agent-id])))
+    (let [wss    (workspace/open-workspaces state)
+          sel    (workspace/selected-id state)
+          select (fn [id] (dispatch! {:type :workspace/select :id id}))
+          tab    (fn [{:keys [id label source]}]
+                   (let [active? (= id sel)
+                         root?   (= id workspace/all-id)]
+                     ;; a div, not a button: the close × inside is a button
+                     [:div {:class ["ws-tab" (when active? "ws-tab--active")
+                                    (when-not root? "ws-tab--closable")]
+                            :replicant/key (str "tab-" id)
+                            :role "tab"
+                            :tabindex "0"
+                            :aria-selected (str active?)
+                            :title (case source
+                                     :config (str label " · defined in config.edn")
+                                     :user   (str label " · right-click to rename, close or delete")
+                                     label)
+                            :on {:click   (fn [_] (select id))
+                                 :keydown (fn [^js e]
+                                            (when (#{"Enter" " "} (.-key e))
+                                              (.preventDefault e)
+                                              (select id)))}}
+                      [:span {:class ["ws-tab-label"]} label]
+                      (when-not root?
+                        [:button {:class ["ws-tab-close"]
+                                  :type "button"
+                                  :title (str "Close " label)
+                                  :aria-label (str "Close " label)
+                                  :on {:click (fn [^js e]
+                                                (.stopPropagation e)
+                                                (dispatch! {:type :workspace/close :id id}))}}
+                         (icon/icon {:icon-name :x :size :sm})])]))]
+      [:div {:class ["ws-bar"] :role "tablist" :aria-label "Workspaces"
+             :replicant/key "ws-bar"}
+       (tab {:id workspace/all-id :label "All"})
+       (for [{:keys [id] :as ws} wss]
+         (context-menu/context-menu-trigger
+          {:items (workspace-tab-menu dispatch! state ws)
+           :class "ws-tab-trigger"
+           :attrs {:replicant/key id}}
+          (tab ws)))
+       [:button {:class ["ws-tab" "ws-tab--add"]
+                 :type "button"
+                 :title "New workspace"
+                 :aria-label "New workspace"
+                 :on {:click (fn [_] (dispatch! {:type :workspace/edit-open :mode :create}))}}
+        (icon/icon {:icon-name :plus :size :sm})]])))
 
-;; {:sig :html} memo of the bar: its badges walk the whole lobby, and the root
-;; re-renders on every streamed token.
+;; {:sig :html} memo of the bar: the root re-renders on every streamed token.
 (def ^:private workspace-bar-cache (atom nil))
 
 (defn- workspace-bar
   [state dispatch!]
-  (let [sig    [(:lobby state)
-                (:web/response-counts state)
-                (:web/watched state)
+  (let [sig    [(get-in state [:lobby :workspaces])
+                (get-in state [:lobby :agent-id])
                 (:workspace/selected state)
                 (:workspace/user state)
-                (get-in state [:web/route :session-id])]
+                (:workspace/closed state)
+                (:workspace/sessions state)]
         cached @workspace-bar-cache]
     (if (and cached (= (:sig cached) sig))
       (:html cached)
@@ -6266,12 +6302,18 @@
         pa?      (get-in state [:lobby :agent-id])
         projects (when (and render? (not pa?)) (recent-projects state))
         ws       (workspace/selected state)
+        ;; the chats opened in this workspace, whatever their directory
+        ws-cards (when (and render? ws)
+                   (let [sids (set (workspace/opened state (:id ws)))]
+                     (when (seq sids)
+                       (:cards (sb/extension-group (workspace/unscoped state)
+                                                   {:where #(sids (:session-id %))})))))
         {:keys [recent hidden earlier]} (when render? (sidebar-session-groups state))
         ext-groups (when render?
                      (sb/extension-groups state (:web/sidebar-groups state)))
         cards    (concat recent hidden earlier)
         drafts   (:web/draft-chats state)
-        collapsed (or (:web/sidebar-collapsed state) #{})
+        collapsed (workspace/collapsed-groups state)
         section  (partial sidebar-section dispatch! collapsed)
         {route-page :page route-dir :dir} (:web/route state)]
     (sidebar/sidebar
@@ -6306,6 +6348,10 @@
                            :data-nav "projects"}
                :on-click  (fn [_] (dispatch! {:type :route/navigate :page :home :dir :projects}))}
               "All projects")))
+         (when (seq ws-cards)
+           (section {:id :workspace :label "Workspace"}
+             (for [c (with-projects ws-cards)]
+               (session-card dispatch! state (assoc c :workspace-id (:id ws))))))
          (when (seq drafts)
            (section {:id :drafts :label "Drafts"}
              (for [d (rseq drafts)]
@@ -6402,10 +6448,13 @@
                 (get-in state [:web/route :page])
                 (get-in state [:web/route :dir])
                 (:web/sidebar-collapsed state)
+                (:workspace/collapsed state)
                 (:web/draft-chats state)
                 (:web/project-dirty state)
                 (:workspace/selected state)
                 (:workspace/user state)
+                (:workspace/closed state)
+                (:workspace/sessions state)
                 (:web/theme-mode state)
                 (:web/nav-items state)
                 (mapv #(nav-badge state %) (:web/nav-items state))
@@ -6627,25 +6676,28 @@
     opts))
 
 (defn- palette-workspace-page
-  "Workspaces (xi.workspace) as a palette sub-page: All and every workspace,
-   the selected one checked, then New workspace."
+  "Workspaces (xi.workspace) as a palette sub-page: the ones to switch to
+   (xi.web.workspaces/switch-targets: All and every workspace, closed tabs
+   too, never the selected one; picking a closed one reopens it), then New
+   workspace."
   [state dispatch!]
-  (let [sel  (workspace/selected-id state)
-        wss  (workspace/workspaces state)
-        item (fn [{:keys [id label source dirs]}]
-               (cmd/command-item
-                {:icon        (if (= id sel) :check :layers)
-                 :value       (str "workspace " label)
-                 :description (case source
-                                :config "config.edn"
-                                :user   (str (count dirs) (if (= 1 (count dirs)) " project" " projects"))
-                                "everything")
-                 :on-click    (fn [_] (dispatch! {:type :workspace/select :id id}))}
-                label))]
+  (let [by-id (into {workspace/all-id {:id workspace/all-id :label "All"}}
+                    (map (juxt :id identity))
+                    (workspace/workspaces state))
+        item  (fn [{:keys [id label source dirs]}]
+                (cmd/command-item
+                 {:icon        :layers
+                  :value       (str "workspace " label)
+                  :description (str (case source
+                                      :config "config.edn"
+                                      :user   (str (count dirs) (if (= 1 (count dirs)) " project" " projects"))
+                                      "everything")
+                                    (when (workspace/closed? state id) " · closed"))
+                  :on-click    (fn [_] (dispatch! {:type :workspace/select :id id}))}
+                 label))]
     [:div {:replicant/key :workspace-page}
-     (apply cmd/command-group {:heading "Workspaces"}
-       (item {:id workspace/all-id :label "All"})
-       (map item wss))
+     (apply cmd/command-group {:heading "Switch to"}
+       (map (comp item by-id) (workspaces/switch-targets state)))
      (cmd/command-group {}
        (cmd/command-item
         (with-shortcut {:icon :plus
@@ -6655,8 +6707,9 @@
         "New workspace…"))]))
 
 (defn- palette-workspace-items
-  "The main palette's Workspaces rows: switch and create, and for one of the
-   user's own workspaces when it is selected, add a project, rename, remove."
+  "The main palette's Workspaces rows: switch and create, close the selected
+   tab, and for one of the user's own workspaces when it is selected, add a
+   project, rename, delete."
   [state dispatch!]
   (let [ws   (workspace/selected state)
         own? (= :user (:source ws))
@@ -6673,6 +6726,16 @@
                   :value "new workspace create"
                   :on-click (fn [_] (dispatch! {:type :workspace/edit-open :mode :create}))}
                  :workspace/new "New workspace…"))
+      (and ws (seq (workspace/opened state (:id ws))))
+      (conj (row {:icon :zap
+                  :value (str "prune workspace clear section " (:label ws))
+                  :on-click (fn [_] (dispatch! {:type :workspace/prune-current}))}
+                 :workspace/prune (str "Prune workspace " (:label ws))))
+      ws
+      (conj (row {:icon :x
+                  :value (str "close workspace tab " (:label ws))
+                  :on-click (fn [_] (dispatch! {:type :workspace/close-current}))}
+                 :workspace/close (str "Close workspace " (:label ws))))
       own?
       (conj (row {:icon :folder
                   :value (str "add project to workspace " (:label ws))
@@ -6685,7 +6748,7 @@
             (row {:icon :trash
                   :value (str "remove delete workspace " (:label ws))
                   :on-click (fn [_] (dispatch! {:type :workspace/remove-current}))}
-                 :workspace/delete (str "Remove workspace " (:label ws)))))))
+                 :workspace/delete (str "Delete workspace " (:label ws)))))))
 
 (defn- palette-theme-page
   "Color themes (xi.web.theme) as a palette sub-page: Default, the built-ins

@@ -39,6 +39,7 @@
             [xi.web.theme :as theme]
             [xi.web.user-state :as user-state]
             [xi.web.workspaces :as workspaces]
+            [xi.workspace :as workspace]
             [xi.web.cache :as cache]
             [xi.web.dashboard :as dashboard]
             [xi.web.demo :as demo]
@@ -1402,15 +1403,21 @@
                                                        [:ws/send {:type :projects/web-list}]]})
           :sidebar/close         (fn [st _] {:state (assoc st :web/sidebar-open? false)})
           ;; Drawer groups collapse in state (the drawer remounts on open) and
-          ;; persist across reloads.
+          ;; persist across reloads, per workspace (xi.workspace/collapsed-groups):
+          ;; All's in :web/sidebar-collapsed, the others' in :workspace/collapsed.
           :sidebar/toggle-group  (fn [st {:keys [group]}]
-                                   (let [collapsed (or (:web/sidebar-collapsed st) #{})
+                                   (let [collapsed (workspace/collapsed-groups st)
                                          collapsed (if (contains? collapsed group)
                                                      (disj collapsed group)
                                                      (conj collapsed group))]
-                                     {:state   (assoc st :web/sidebar-collapsed collapsed)
-                                      :effects [[:cache/sidebar-collapsed {:groups collapsed}]
-                                                (user-state/set-effect :sidebar-collapsed collapsed)]}))
+                                     (if-let [ws (workspace/selected st)]
+                                       (let [m (assoc (or (:workspace/collapsed st) {})
+                                                      (:id ws) (vec (sort-by str collapsed)))]
+                                         {:state   (assoc st :workspace/collapsed m)
+                                          :effects [(user-state/set-effect :workspace-collapsed m)]})
+                                       {:state   (assoc st :web/sidebar-collapsed collapsed)
+                                        :effects [[:cache/sidebar-collapsed {:groups collapsed}]
+                                                  (user-state/set-effect :sidebar-collapsed collapsed)]})))
           :web/set-wide          (fn [st {:keys [wide?]}] {:state (assoc st :web/wide? wide?)})
           :overflow/toggle       (fn [st _] {:state (update st :web/overflow-menu? not)})
           :overflow/close        (fn [st _] {:state (dissoc st :web/overflow-menu?)})
@@ -2777,6 +2784,9 @@
 (defonce ^:private pages-ref (atom nil))
 (defonce ^:private routes-ref (atom nil))
 (defonce ^:private sidebar-layout-sig (atom nil))
+;; The workspace tab the last render showed: a switch swaps the sidebar's
+;; contents wholesale, so its rows are not animated (see render!).
+(defonce ^:private rendered-workspace (atom nil))
 
 (defn- sidebar-layout-sig-of
   "The state slices that move sidebar rows. A render where they are all
@@ -2784,7 +2794,8 @@
   [st]
   [(:lobby st) (:web/sidebar-collapsed st) (:web/draft-chats st)
    (:web/sidebar-buffers-open st) (:web/sidebar-open? st)
-   (:workspace/selected st) (:workspace/user st)
+   (:workspace/selected st) (:workspace/user st) (:workspace/closed st)
+   (:workspace/sessions st) (:workspace/collapsed st)
    (get-in st [:web/route :session-id]) (get-in st [:web/route :page])])
 
 (defn- compose-caret
@@ -2821,9 +2832,20 @@
   (let [root (el "app")
         hiccup (views/root-view app-state dispatch! @pages-ref)
         sig    (sidebar-layout-sig-of app-state)
-        snap   (when (not= sig @sidebar-layout-sig) (flip/snapshot))
+        ws     (workspace/selected-id app-state)
+        switch? (and @rendered-workspace (not= ws @rendered-workspace))
+        snap   (when (and (not= sig @sidebar-layout-sig) (not switch?))
+                 (flip/snapshot))
         caret  (compose-caret)]
     (reset! sidebar-layout-sig sig)
+    (reset! rendered-workspace ws)
+    ;; no CSS transitions either (a group's chevron turning): style.css
+    ;; [data-ws-switching], off again once the new sidebar has painted
+    (when switch?
+      (let [^js html (.-documentElement js/document)]
+        (.setAttribute html "data-ws-switching" "")
+        (js/requestAnimationFrame
+         #(js/requestAnimationFrame (fn [] (.removeAttribute html "data-ws-switching"))))))
     (try
       (r/render root hiccup)
       (catch :default e
@@ -3132,6 +3154,13 @@
   (let [own-selected? (fn [st] (some #(= (:workspace/selected st) (:id %)) (:workspace/user st)))]
     (keymap/register-action! {:id :workspace/switch :event {:type :palette/open-workspaces}})
     (keymap/register-action! {:id :workspace/new :event {:type :workspace/edit-open :mode :create}})
+    (keymap/register-action! {:id :workspace/close
+                              :when (fn [st] (some? (workspace/selected st)))
+                              :event {:type :workspace/close-current}})
+    (keymap/register-action! {:id :workspace/prune
+                              :when (fn [st] (some->> (workspace/selected st) :id
+                                                      (workspace/opened st) seq))
+                              :event {:type :workspace/prune-current}})
     (keymap/register-action! {:id :workspace/rename :when own-selected?
                               :event {:type :workspace/rename-current}})
     (keymap/register-action! {:id :workspace/delete :when own-selected?
@@ -3757,6 +3786,7 @@
     (add-tap! (prompt-nav-close-tap dispatch!))
     (add-tap! (user-ext/request-tap dispatch!))
     (add-tap! (dashboard/load-tap dispatch!))
+    (add-tap! (workspaces/visit-tap dispatch!))
     (doseq [make-tap (:taps composed)]
       (add-tap! (make-tap dispatch!)))
     (router/init! routes dispatch!)
