@@ -4425,6 +4425,41 @@
                                            ask? (with-ask-ref {:sub-id id :index i})))})))
    history))
 
+
+(defn- subagent-reply
+  "The reply field of a sub-agent (:subagent/reply,
+   xi.ext.subagent.handlers/reply): while it runs the text steers its turn,
+   finished it continues its own conversation, as a child of this chat
+   rather than a chat of its own."
+  [dispatch! room-id {:keys [id status]} input-id]
+  (let [running? (= :running status)
+        send!    (fn [_]
+                   (when-let [el (.getElementById js/document input-id)]
+                     (when-not (str/blank? (.-value el))
+                       (dispatch! {:type :subagent/reply :room-id room-id :sub-id id
+                                   :text (.-value el)})
+                       (set! (.-value el) ""))))]
+    [:div {:class ["diff-thread-reply" "subagent-reply"] :replicant/key "reply"}
+     (form/form-textarea-auto
+      {:placeholder (if running? "Steer this sub-agent…" "Reply to this sub-agent…")
+       :max-rows    6
+       :class       "diff-thread-input"
+       :attrs       {:id input-id :on {:keydown (enter-submits send!)}}})
+     (button/button {:variant :ghost :size :sm :class "diff-thread-send"
+                     :attrs {:aria-label (if running? "Send into its turn" "Send reply")}
+                     :on-click send!}
+                    (if running?
+                      (steer-icon :sm)
+                      (icon/icon {:icon-name :arrow-up :size :sm})))]))
+
+
+(defn- answer-post?
+  "Whether finished sub-agent `child` gets its answer post where it ended
+   (subagent-result-post / -marker-post). A stopped one without replies has
+   no answer: its card is its only panel and takes the reply field."
+  [{:keys [ended-anchor status exchanges]}]
+  (boolean (and ended-anchor (or (not= :stopped status) (seq exchanges)))))
+
 (defn- subagent-child
   "One sub-agent as a viewer super-group (<details>, the summary row of a
    folded tool run): status, label, its step count with the newest tool,
@@ -4480,7 +4515,10 @@
           [:div {:class ["subagent-empty"]}
            (cond (= :running status) "No output yet."
                  (:session-id child) "Its work is in its own session: open it as a chat."
-                 :else               "No output.")])])]))
+                 :else               "No output.")])
+        ;; without an answer post below, steer or continue it from here
+        (when-not (answer-post? child)
+          (subagent-reply dispatch! room-id child (str "subagent-card-reply-" id)))])]))
 
 (defn- subagents-post
   "The sub-agents spawned at one point of the conversation (`anchor`, the
@@ -4519,28 +4557,7 @@
             (icon/icon {:icon-name :x :size :sm})])]
         [:div {:class ["subagents-list"]} cards]])]))
 
-(defn- subagent-reply
-  "The reply field of a finished sub-agent: the text continues its own
-   conversation (:subagent/reply, xi.ext.subagent.handlers/reply), as a
-   child of this chat rather than a chat of its own."
-  [dispatch! room-id {:keys [id status]} input-id]
-  (when-not (= :running status)
-    (let [send! (fn [_]
-                  (when-let [el (.getElementById js/document input-id)]
-                    (when-not (str/blank? (.-value el))
-                      (dispatch! {:type :subagent/reply :room-id room-id :sub-id id
-                                  :text (.-value el)})
-                      (set! (.-value el) ""))))]
-      [:div {:class ["diff-thread-reply" "subagent-reply"] :replicant/key "reply"}
-       (form/form-textarea-auto
-        {:placeholder "Reply to this sub-agent…"
-         :max-rows    6
-         :class       "diff-thread-input"
-         :attrs       {:id input-id :on {:keydown (enter-submits send!)}}})
-       (button/button {:variant :ghost :size :sm :class "diff-thread-send"
-                       :attrs {:aria-label "Send reply"}
-                       :on-click send!}
-                      (icon/icon {:icon-name :arrow-up :size :sm}))])))
+
 
 (defn- subagent-exchanges
   "A replied-to sub-agent's answers (:exchanges) as a thread: the task's
@@ -4940,7 +4957,7 @@
                      ;; spawn call once the history is rebuilt (sa-threads).
                      by-spawn  (group-by #(sa-threads/anchor-of entries %) sub-agents)
                      by-end    (group-by #(sa-threads/ended-anchor-of entries %)
-                                         (filter :ended-anchor sub-agents))
+                                         (filter answer-post? sub-agents))
                      sa-ctx    (subagent-block-ctx state room sid)
                      ;; Question threads on blocks follow their block: a room
                      ;; entry's in the timeline, a sub-agent's under its card.

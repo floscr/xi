@@ -132,4 +132,5 @@
                     ;; and the spawn are server state, both come back as
                     ;; mirrored broadcasts.
                     :subagent/run-queued forward)
-   :fx       {:subagent/start (fn [_ _] nil)}})
+   :fx       {:subagent/start (fn [_ _] nil)
+              :subagent/steer (fn [_ _] nil)}})

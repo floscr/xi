@@ -66,8 +66,24 @@
     (is (= "new" (h/final-text [{:kind :text :text "old"} {:kind :user :text "q"}
                                 {:kind :text :text "new"}])))))
 
-(deftest no-reply-while-running-or-blank
-  (is (nil? (reply! (base-state (assoc finished :status :running)) "more")))
+(deftest a-reply-while-running-steers-its-turn
+  (let [running (assoc finished :status :running)
+        res     (reply! (base-state running) " also check the tests ")]
+    (testing "no new turn, the text goes into the running one"
+      (is (nil? (:state res)))
+      (is (= [[:subagent/steer {:room-id "r1" :sub-id "sa-1"
+                                :text "also check the tests" :images nil}]]
+             (:effects res))))
+    (testing "once the turn took it, it joins the history"
+      (let [st (:state ((:subagent/steered h/handlers) (base-state running)
+                        {:room-id "r1" :sub-id "sa-1" :text "also check the tests"}))
+            c  (child st)]
+        (is (= {:kind :user :text "also check the tests" :steered? true}
+               (peek (:history c))))
+        (is (= :running (:status c)))
+        (is (nil? (:exchanges c)) "a steer is no exchange of its own")))))
+
+(deftest no-reply-when-blank-or-unknown
   (is (nil? (reply! (base-state finished) "   ")))
   (is (nil? ((:subagent/reply h/handlers) (base-state finished)
              {:room-id "r1" :sub-id "nope" :text "x"}))))

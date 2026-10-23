@@ -91,7 +91,10 @@ across the top narrows the cards and lists to one
   same button on top of the sub-agent's chat. The answer post has a reply
   field: a reply continues the sub-agent's own conversation, and its answer
   streams into that post under your reply. The sub-agent stays in this chat;
-  it does not become a chat of its own.
+  it does not become a chat of its own. While a sub-agent runs, its card
+  (opened) and its window have the same field: the message goes into its
+  running turn. A stopped sub-agent has no answer post; its card keeps the
+  reply field.
 - **Ask about any block.** Hover a message, tool call or thinking block and
   click the ⚡ button at its right edge. On a phone, tap the block (or
   long-press a tool header); for a code block or your own message, it is in
@@ -211,7 +214,8 @@ refreshes it in place.
   [sub-agents](builtin-tools.md#sub-agents) list under its card with the
   buffers ("2 buffers · 1 sub-agent"), a spinner on the ones still running.
   A row shows the sub-agent in place of the chat, like a buffer: its task
-  and output, a reply field once it has finished, and buttons to stop it,
+  and output, a field to steer it while it runs or reply once it has
+  finished, and buttons to stop it,
   open it as a chat of its own or dismiss it. The topbar pill lists the chat's sub-agents too, and
   the chat shows them where they were started (above).
   The trailing button stops a running one or dismisses a finished one.

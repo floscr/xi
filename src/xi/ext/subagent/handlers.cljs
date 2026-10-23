@@ -304,7 +304,14 @@
   (let [text  (some-> text str/trim not-empty)
         room  (state/get-room st room-id)
         child (find-child st room-id sub-id)]
-    (when (and text room child (not= :running (:status child)))
+    (cond
+      (not (and text room child)) nil
+
+      (= :running (:status child))
+      {:effects [[:subagent/steer {:room-id room-id :sub-id sub-id
+                                   :text text :images images}]]}
+
+      :else
       (let [prior (cond->> (vec (:history child))
                     (seq (:task child)) (into [{:kind :user :text (:task child)}]))]
         {:state   (update-child st room-id sub-id
@@ -320,6 +327,16 @@
          :effects [(update (start-effect room child text images) 1 assoc
                            :resume (select-keys child [:cli-session-id :session-id])
                            :history prior)]}))))
+
+(defn- steered
+  "The running turn took a steering message (:subagent/steer): it joins the
+   child's history where the turn stood."
+  [st {:keys [room-id sub-id text images]}]
+  (when (find-child st room-id sub-id)
+    {:state (update-child st room-id sub-id
+                          #(update % :history (fnil conj [])
+                                   (cond-> {:kind :user :text text :steered? true}
+                                     (seq images) (assoc :images images))))}))
 
 (defn- text-delta [st {:keys [room-id sub-id text]}]
   (when (find-child st room-id sub-id)
@@ -705,6 +722,7 @@
    forwards it, the node applies it."
   {:subagent/spawn           spawn
    :subagent/reply           reply
+   :subagent/steered         steered
    :subagent/text-delta      text-delta
    :subagent/thinking-delta  thinking-delta
    :subagent/tool-start      tool-start

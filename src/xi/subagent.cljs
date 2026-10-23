@@ -16,7 +16,8 @@
             [xi.dialog :as dialog]
             [xi.session :as session]))
 
-;; sub-id -> {:abort! fn :room-id str}. Process-local; never crosses the wire.
+;; sub-id -> {:abort! fn :steer! fn :room-id str}. Process-local; never crosses
+;; the wire.
 (defonce ^:private registry (atom {}))
 
 ;; sub-id -> {:dir path :remove! fn} — each sub-agent's throwaway
@@ -168,7 +169,7 @@
             ;; carry the same _meta "xi/clientPid" as the parent's (a browser
             ;; server scopes to that terminal, see xi.ext.mcp/call-meta).
             client-pid (agent/room-client-pid (get-state) room-id)
-            {:keys [promise abort!]}
+            {:keys [promise abort! steer!]}
             ((:start-turn! prov)
              (cond-> (merge {:room-id room-id
                              :prompt  (agent/prompt-with-attachment-paths prompt images)
@@ -188,7 +189,7 @@
                extra-tool-registry    (assoc :extra-tool-registry extra-tool-registry)
                client-pid             (assoc :client-pid client-pid)
                config-dir             (assoc :env {"CLAUDE_CONFIG_DIR" config-dir})))]
-        (swap! registry assoc sub-id {:abort! abort! :room-id room-id})
+        (swap! registry assoc sub-id {:abort! abort! :steer! steer! :room-id room-id})
         (when config-dir
           (swap! dirs assoc sub-id {:dir config-dir :remove! remove-config-dir!}))
         (-> promise
@@ -216,4 +217,14 @@
 
     :subagent/abort
     (fn [_ {:keys [sub-id]}]
-      (abort! sub-id))}))
+      (abort! sub-id))
+
+    ;; A message for the running turn (xi.ext.subagent.handlers/reply): once
+    ;; the turn took it, it joins the child's history (:subagent/steered).
+    :subagent/steer
+    (fn [{:keys [dispatch!]} {:keys [room-id sub-id text images]}]
+      (when-let [steer! (:steer! (get @registry sub-id))]
+        (when (steer! {:text   (agent/prompt-with-attachment-paths text images)
+                       :images images})
+          (dispatch! {:type :subagent/steered :room-id room-id :sub-id sub-id
+                      :text text :images images}))))}))
