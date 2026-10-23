@@ -19,9 +19,9 @@
   "Web-half keys a user extension may declare. No :fx; :handlers are reducers
    over the extension's own browser slice only (see `wrap`) — logic lives in
    the server half."
-  #{:id :routes :pages :nav-items :palette-items :taps :tool-views :sidebar-groups
-    :session-menu-items :dashboard-cards :handlers :block-menu-items
-    :terminal-toolbar-items :block-kinds})
+  #{:id :routes :pages :nav-items :palette-items :palette-menus :taps :tool-views
+    :sidebar-groups :session-menu-items :dashboard-cards :handlers :block-menu-items
+    :terminal-toolbar-items :block-kinds :buffer-views})
 
 (def builtin-segments
   "First URL segments the web client routes itself."
@@ -122,6 +122,17 @@
            " [:size :normal|:wide] [:icon kw] [:description str]}")
       (and (some? (:palette-items ext)) (not (fn? (:palette-items ext))))
       ":palette-items must be a fn of the app state → [{:label str :icon kw :event {…}}]"
+      (and (some? (:palette-menus ext))
+           (not (and (map? (:palette-menus ext))
+                     (every? (fn [[k v]] (and (or (string? k) (keyword? k))
+                                              (re-matches #"[a-z0-9][a-z0-9-]*" (name k))
+                                              (map? v)
+                                              (fn? (:items v))
+                                              (or (nil? (:title v)) (string? (:title v)))
+                                              (or (nil? (:placeholder v)) (string? (:placeholder v)))))
+                             (:palette-menus ext)))))
+      (str ":palette-menus must be a map of a simple menu name (\"prs\") → "
+           "{:items fn [state] → rows [:title str] [:placeholder str]}")
       (and (some? (:block-menu-items ext)) (not (fn? (:block-menu-items ext))))
       ":block-menu-items must be a fn [block state] → [{:label str :icon kw :event {…}}]"
       (and (some? (:terminal-toolbar-items ext)) (not (fn? (:terminal-toolbar-items ext))))
@@ -340,6 +351,40 @@
 
     :else (do (log-blocked id (str "event " (:type event))) nil)))
 
+(defn- palette-row
+  "A palette row (`:palette-items`, `:palette-menus`) as the palette may run
+   it: with :children, a drill into those rows (confined in turn); with
+   :menu, the named menu of extension `id` (never another's); else its :event
+   made `forwardable`. nil for a row that is none of these."
+  [id {:keys [label event children menu] :as row}]
+  (when (and (map? row) (string? label))
+    (cond
+      (sequential? children)
+      (-> row
+          (dissoc :event :menu)
+          (assoc :children (into [] (keep #(palette-row id %)) children)))
+
+      (or (string? menu) (keyword? menu))
+      (-> row
+          (dissoc :event :children)
+          (assoc :menu {:ext id :name (name menu)}))
+
+      :else
+      (when-let [ev (forwardable id event)]
+        (-> row
+            (dissoc :children :menu)
+            (assoc :event ev))))))
+
+(defn- palette-rows
+  "Provider `f` of extension `id` confined: its rows through `palette-row`, a
+   throw logged as no rows."
+  [id what f]
+  (fn [state]
+    (try (into [] (keep #(palette-row id %)) (f state))
+         (catch :default e
+           (log-blocked id (str what " threw: " (.-message e)))
+           []))))
+
 (defn- error-box [id msg]
   [:div {:class "user-ext-error"}
    (str "Extension " (name id) " failed to render: " msg)])
@@ -448,18 +493,20 @@
                       items)))
 
       (:palette-items ext)
-      (update :palette-items
-              (fn [f]
-                (fn [state]
-                  (try (into []
-                             (keep (fn [item]
-                                     (when (and (map? item) (string? (:label item)))
-                                       (when-let [event (forwardable id (:event item))]
-                                         (assoc item :event event)))))
-                             (f state))
-                       (catch :default e
-                         (log-blocked id (str "palette items threw: " (.-message e)))
-                         [])))))
+      (update :palette-items #(palette-rows id "palette items" %))
+
+      ;; keyed by the name as a string: the key action :<id>/<name> and a
+      ;; row's :menu (palette-row) both name it so
+      (map? (:palette-menus ext))
+      (update :palette-menus
+              (fn [named]
+                (into {}
+                      (map (fn [[k m]]
+                             [(name k)
+                              (assoc (select-keys m [:title :placeholder])
+                                     :items (palette-rows id (str "palette menu " (name k))
+                                                          (:items m)))]))
+                      named)))
 
       (:block-menu-items ext)
       (update :block-menu-items

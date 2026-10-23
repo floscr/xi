@@ -1788,6 +1788,26 @@
                                                      :web/palette-drilling? true)
                                     :effects [[:palette/reset-filter nil]
                                               [:palette/reopen nil]]})
+          ;; A user extension's menu (xi.web.palette-items): :palette/open-menu
+          ;; opens a named one, :palette/drill-rows the :children of a row as
+          ;; the next page, which Back leaves for the page it came from.
+          :palette/open-menu     (fn [st {:keys [ext menu]}]
+                                   {:state (assoc st :web/palette-page {:kind :ext-menu
+                                                                       :ext ext :menu menu}
+                                                     :web/palette-open? true
+                                                     :web/palette-drilling? true)
+                                    :effects [[:palette/reset-filter nil]
+                                              [:palette/reopen nil]]})
+          :palette/drill-rows    (fn [st {:keys [title placeholder rows]}]
+                                   {:state (assoc st :web/palette-page {:kind :ext-menu
+                                                                       :title title
+                                                                       :placeholder placeholder
+                                                                       :rows rows
+                                                                       :back (:web/palette-page st)}
+                                                     :web/palette-open? true
+                                                     :web/palette-drilling? true)
+                                    :effects [[:palette/reset-filter nil]
+                                              [:palette/reopen nil]]})
           ;; A pending :select dialog with :menu? (xi.api.dialog/select) as a
           ;; palette page; picking a row answers it (:web/dialog-answer).
           :palette/open-dialog   (fn [st {:keys [room-id dialog-id]}]

@@ -127,6 +127,42 @@
     (testing "a throwing provider adds nothing"
       (is (= [] ((:terminal-toolbar-items ext) {:tag :boom} {}))))))
 
+(deftest palette-rows-drill-into-children-and-own-menus
+  (testing ":palette-menus must name fns of the state"
+    (is (nil? (guard/validate {:id :pr :palette-menus {"prs" {:title "PRs" :items (fn [_])}}} {})))
+    (is (re-find #":palette-menus must be a map"
+                 (guard/validate {:id :pr :palette-menus {"prs" {:items []}}} {})))
+    (is (re-find #":palette-menus must be a map"
+                 (guard/validate {:id :pr :palette-menus {"Bad Name" {:items (fn [_])}}} {}))))
+  (let [open {:type :ext.pr/open :n 1}
+        ext  (guard/wrap
+              {:id :pr
+               :palette-items
+               (fn [_]
+                 [{:label "PR diffs" :menu "prs" :event open}
+                  {:label "Evil" :event {:type :agent/abort}}])
+               :palette-menus
+               {:prs {:title "PRs"
+                      :items (fn [st]
+                               (if (:boom st)
+                                 (throw (js/Error. "boom"))
+                                 [{:label "#1"
+                                   :children [{:label "Viewer" :event open}
+                                              {:label "Evil" :event {:type :terminal/open}}
+                                              {:label "Nested" :children [{:label "Deep" :event open}]}]}]))}}})
+        fwd  {:type :user-ext/forward :event open}]
+    (testing "a :menu row opens the extension's own menu and runs no event"
+      (is (= [{:label "PR diffs" :menu {:ext :pr :name "prs"}}]
+             ((:palette-items ext) {}))))
+    (testing "menus are keyed by name; children are confined at every depth"
+      (let [{:keys [title items]} (get-in ext [:palette-menus "prs"])]
+        (is (= "PRs" title))
+        (is (= [{:label "#1"
+                 :children [{:label "Viewer" :event fwd}
+                            {:label "Nested" :children [{:label "Deep" :event fwd}]}]}]
+               (items {})))
+        (is (= [] (items {:boom true})) "a throwing menu has no rows")))))
+
 (deftest tool-views-render-only-the-extensions-own-tools
   (let [ok {:id :notes :tool-views {"notes_add" (fn [_])}}]
     (is (nil? (guard/validate ok {:own-tools ["notes_add"]})))

@@ -7336,6 +7336,43 @@
                 :on-click (fn [_] (dispatch! (select rel)))}
                rel))))))))
 
+(defn- palette-ext-row
+  "A user extension's palette row (xi.web.palette-items): its :event runs,
+   :children drill into a page of those rows, :menu opens the named menu
+   (Tab does too, palette-keydown; the badge is the menu's key, if bound)."
+  [state dispatch! {:keys [label description children menu event] :as row}]
+  (cmd/command-item
+   (with-shortcut (cond-> {:icon     (:icon (with-default-icon row))
+                           :value    (str label " " description)
+                           :on-click (fn [_]
+                                       (dispatch!
+                                        (cond
+                                          children {:type :palette/drill-rows
+                                                    :title (or (:title row) label)
+                                                    :placeholder (:placeholder row)
+                                                    :rows children}
+                                          menu     {:type :palette/open-menu
+                                                    :ext (:ext menu) :menu (:name menu)}
+                                          :else    event)))}
+                    description (assoc :description description)
+                    (or children menu) (assoc :shortcut (keycaps "⇥")
+                                              :attrs {:data-palette-ext-drill "true"}))
+     state (cond-> row
+             menu (assoc :action (keyword (name (:ext menu)) (:name menu)))))
+   label))
+
+(defn- palette-ext-menu-page
+  "A user extension's menu or a drilled row's children, as a palette sub-page."
+  [state dispatch! page]
+  (let [{:keys [title rows] :as m} (palette-items/menu-page state page)]
+    (cond
+      (nil? m)     [:div {:class ["command-loading"]} (spinner)]
+      (empty? rows) [:div {:class ["command-empty"]} "Nothing here"]
+      :else
+      [:div {:replicant/key [:ext-menu (:ext page) (:menu page) title]}
+       (apply cmd/command-group {:heading title}
+         (map #(palette-ext-row state dispatch! %) rows))])))
+
 (defn- palette-dialog-page
   "A pending :menu? select dialog (xi.api.dialog/select) as a palette page:
    its options in order, picking one answers it. Empty once it is answered."
@@ -7358,6 +7395,7 @@
            label))
         options))]
     [:div {:class ["command-empty"]} "Already answered"]))
+
 (defn- pin-palette-items!
   "Keep the `.command-item--pinned` row selectable under any filter: after each
    ui-runtime.js filter pass, un-hide the row and its group, sink the group
@@ -7374,8 +7412,8 @@
 
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js: Tab drills the active project row
-   (or opens its file finder on the picker page, or flips the search page's
-   toggle); Shift+Tab / Backspace-on-empty backs out of a sub-page."
+   or extension menu row (or opens its file finder on the picker page, or
+   flips the search page's toggle); Shift+Tab / Backspace-on-empty backs out of a sub-page."
   [dispatch! palette-page]
   (fn [^js e]
     (let [dialog (.-currentTarget e)
@@ -7383,6 +7421,11 @@
           tab?   (and (= key "Tab") (not (.-shiftKey e)))
           active (fn [] (.querySelector dialog ".command-item--active"))]
       (cond
+        ;; an extension row with :children or :menu (palette-ext-row)
+        (and tab? (some-> ^js (active) (.. -dataset -paletteExtDrill)))
+        (do (.preventDefault e)
+            (.click ^js (active)))
+
         (and (nil? palette-page) tab?)
         (when-let [^js row (active)]
           (when-let [cwd (.. row -dataset -paletteDrill)]
@@ -7483,6 +7526,9 @@
                                                          (:label palette-page) "…")
                                      (= :theme (:kind palette-page)) "Switch color theme…"
                                      (= :workspaces (:kind palette-page)) "Switch workspace…"
+                                     (= :ext-menu (:kind palette-page))
+                                     (or (:placeholder (palette-items/menu-page state palette-page))
+                                         "Filter…")
                                      (= :dialog (:kind palette-page)) "Filter…"
                                      palette-page "Filter actions…"
                                      :else        "Type a command or search…")
@@ -7561,6 +7607,7 @@
          :commands       (palette-commands-page state dispatch!)
          :search         (palette-search-page state dispatch!)
          :new-chat       (palette-new-chat-page state dispatch! palette-page)
+         :ext-menu       (palette-ext-menu-page state dispatch! palette-page)
          :dialog         (palette-dialog-page state dispatch! palette-page)
          (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
            (palette-project-actions state dispatch! (:cwd palette-page)))))
@@ -7632,12 +7679,13 @@
                                   :on-click (fn [_] (dispatch! event))}
                     state {:event event})
                   "Find link or file in this chat…")))
-         :always (into (for [item (concat (nav-items-for state :palette)
-                                          (map with-default-icon (palette-items/items state)))]
+         :always (into (for [item (nav-items-for state :palette)]
                          (cmd/command-item (with-shortcut {:icon (:icon item)
                                                            :on-click (fn [_] (dispatch! (:event item)))}
                                              state item)
-                           (:label item))))))
+                           (:label item))))
+         :always (into (map #(palette-ext-row state dispatch! %)
+                            (palette-items/items state)))))
      (when-not pa?
        (apply cmd/command-group {:heading "Workspaces"}
          (palette-workspace-items state dispatch!)))

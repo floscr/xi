@@ -10,9 +10,10 @@
 
    Only the surfaces the web client can extend after startup are supported:
    :pages (pages-ref), :routes (routes-ref), :nav-items, :sidebar-groups and
-   :session-menu-items (state), :taps and :tool-views (xi.web.tool-views), :palette-items (xi.web.palette-items),
+   :session-menu-items (state), :taps and :tool-views (xi.web.tool-views), :palette-items and
+   :palette-menus (xi.web.palette-items; a menu is also the key action :<id>/<menu>),
    :dashboard-cards (xi.web.dashboard), :block-menu-items (xi.web.block-menu),
-   :terminal-toolbar-items (xi.web.terminal),
+   :terminal-toolbar-items (xi.web.terminal), :buffer-views (xi.web.buffer-views),
    and :handlers — reducers over the extension's own browser slice at
    [:user-ext/state <id>], applied when its server half pushes one of its
    events to this user (:user-ext/push, see xi.server.ws). App handlers/fx
@@ -21,8 +22,11 @@
   (:require [clojure.string :as str]
             [shadow.lazy :as lazy]
             [xi.core.state :as state]
+            [xi.keys :as xkeys]
             [xi.web.block-menu :as block-menu]
+            [xi.web.buffer-views :as buffer-views]
             [xi.web.dashboard :as dashboard]
+            [xi.web.keymap :as keymap]
             [xi.web.palette-items :as palette-items]
             [xi.web.router :as router]
             [xi.web.terminal :as terminal]
@@ -139,10 +143,26 @@
             (block-kinds/register! id block-kinds))
           (doseq [{:keys [id palette-items]} ok :when palette-items]
             (palette-items/register! id palette-items))
+          (doseq [{:keys [id palette-menus]} ok :when palette-menus]
+            (palette-items/register-menus! id palette-menus)
+            ;; never over a built-in action (`:files/find` from an extension `files`)
+            (doseq [[menu {:keys [title]}] palette-menus
+                    :let [action (keyword (name id) menu)]]
+              (if (or (contains? xkeys/catalog action)
+                      (and (contains? (keymap/registered-actions) action)
+                           (not= :palette/open-menu
+                                 (get-in (keymap/registered-actions) [action :event :type]))))
+                (js/console.error (str "[user-ext] " (name id) ": palette menu " menu
+                                       " not bound, action " action " is taken"))
+                (keymap/register-action! {:id    action
+                                          :label (or title menu)
+                                          :event {:type :palette/open-menu :ext id :menu menu}}))))
           (doseq [{:keys [id block-menu-items]} ok :when block-menu-items]
             (block-menu/register! id block-menu-items))
           (doseq [{:keys [id terminal-toolbar-items]} ok :when terminal-toolbar-items]
             (terminal/register-toolbar! id terminal-toolbar-items))
+          (doseq [{:keys [id buffer-views]} ok :when buffer-views]
+            (buffer-views/register! id buffer-views))
           (doseq [{:keys [id handlers]} ok :when handlers]
             (register-handlers! id handlers))
           (dashboard/register! (mapcat :dashboard-cards ok))
