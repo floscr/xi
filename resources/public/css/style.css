@@ -3164,11 +3164,31 @@ html:not([data-alt-held]) .compose-send--alt-only {
 
 .user-attachments:last-child { margin-bottom: 0; }
 
+/* A prompt's images in one row, bottom-aligned on the bubble: each starts
+   at its natural size up to the row height and they shrink in proportion to
+   their width when the row runs out of space, so a wide screenshot gives up
+   more than a tall one and none is cropped. */
+.user-attachment-images {
+  display: flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: var(--size-2);
+  max-width: 100%;
+}
+
+.user-attachment-images > * {
+  flex: 0 1 auto;
+  min-width: 48px;
+}
+
 .user-attachments .user-image {
-  max-width: min(340px, 100%);
-  max-height: 260px;
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 240px;
   border-radius: var(--radius-lg);
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .user-attachment-card {

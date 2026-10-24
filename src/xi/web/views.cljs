@@ -1387,27 +1387,31 @@
       [:span {:class ["user-attachment-meta"]} (attachment-meta att)]]]))
 
 (defn- user-attachments
-  "A prompt's images and file cards, stacked right-aligned above its bubble.
-   With `on-remove` (the bubble editor) each one carries an × calling
-   `(on-remove i)`."
+  "A prompt's attachments right-aligned above its bubble: the images side by
+   side in one row, the file cards stacked below. With `on-remove` (the bubble
+   editor) each one carries an × calling `(on-remove i)`."
   ([dispatch! entry] (user-attachments dispatch! entry nil))
   ([dispatch! entry on-remove]
    (if-let [atts (seq (:images entry))]
-     [:div {:class ["user-attachments"]}
-      (map-indexed
-       (fn [i att]
-         (let [node (user-attachment dispatch! i att)]
-           (if on-remove
-             [:div {:replicant/key i :class ["user-attachment-edit"]}
-              node
-              [:button {:class ["user-attachment-remove"] :type "button"
-                        :aria-label "Remove attachment"
-                        :on {:click (fn [^js e]
-                                      (.stopPropagation e)
-                                      (on-remove i))}}
-               (icon/icon {:icon-name :x :size :sm})]]
-             node)))
-       atts)]
+     (let [node (fn [i att]
+                  (let [n (user-attachment dispatch! i att)]
+                    (if on-remove
+                      [:div {:replicant/key i :class ["user-attachment-edit"]}
+                       n
+                       [:button {:class ["user-attachment-remove"] :type "button"
+                                 :aria-label "Remove attachment"
+                                 :on {:click (fn [^js e]
+                                               (.stopPropagation e)
+                                               (on-remove i))}}
+                        (icon/icon {:icon-name :x :size :sm})]]
+                      n)))
+           image? #(str/starts-with? (or (:media-type (second %)) "") "image/")
+           {images true files false} (group-by image? (map-indexed vector atts))]
+       [:div {:class ["user-attachments"]}
+        (when images
+          [:div {:replicant/key "images" :class ["user-attachment-images"]}
+           (map #(apply node %) images)])
+        (map #(apply node %) files)])
      (when-let [n (:image-count entry)]
        (when (pos? n)
          [:div {:class ["status-text"]} (str "📎 " n " image" (when (> n 1) "s"))])))))
