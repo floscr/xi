@@ -261,8 +261,10 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   network) into a plain-language card with a Technical details toggle;
   unrecognised errors keep the raw `[Error]` line (`error-card`).
 - Images: paste / picker, client-side resize via `xi.image`, lightbox
-  (`:web/lightbox`). Markdown via `xi.markdown.hiccup`, highlighting with the
-  bundled browser grammars ([syntax-highlighting.md](syntax-highlighting.md)).
+  (`:web/lightbox`; a message's images open as a swipe gallery,
+  `image-viewer` in `xi.web.views`, on top of `ui.lightbox`'s zoom runtime).
+  Markdown via `xi.markdown.hiccup`, highlighting with the bundled browser
+  grammars ([syntax-highlighting.md](syntax-highlighting.md)).
 - Auto-scroll pinned to the bottom unless scrolled up. Sending from a cached,
   not-yet-joined session stashes the message (`:web/pending-submit`) and
   fires it after `:room/joined`.
@@ -338,7 +340,7 @@ Never sent over the wire:
 | `:web/appearance`, `:web/appearance-config`, `:web/appearance-open?` | appearance overrides, the seeded config map, dialog open |
 | `:web/themes`, `:web/theme-draft` | the user's color themes (`xi.web.theme` over the framework's `ui.theme-model`; `:active` is a custom name or a built-in's keyword from `ui.themes`; per-user state `:themes`, cached in `xi/themes`) and the editor's unsaved copy, previewed live. The active theme's CSS properties are also cached as JSON in `xi/theme-vars` for index.html's inline script to paint before main.js loads. Per-mode colors go out as `--theme-<token>-<mode>`, which theme.css and style.css read before their own mapping |
 | `:web/local-fonts` | installed font families from `window.queryLocalFonts` (Chromium, on request), suggested in the theme editor's font fields |
-| `:web/lightbox` | open image src |
+| `:web/lightbox` | open image viewer: `{:srcs [src …] :index i :dir :next/:prev}` |
 | `:web/watched`, `:web/response-counts` | unread tracking |
 | `:web/cache` | hydrated per-session history for deep links |
 | `:web/join-seq`, `:web/join-burst`, `:web/pending-join` | join pacing during a sidebar walk (`xi.web.router`): the open burst's seq and the join it deferred |

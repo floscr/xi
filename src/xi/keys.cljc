@@ -290,6 +290,8 @@
    :scroll/half-up          {:label "Scroll half a page up" :surface #{:web}}
    :dialog/close            {:label "Close the open dialog" :surface #{:web}}
    :lightbox/close          {:label "Close the image viewer" :surface #{:web}}
+   :lightbox/next           {:label "Next image in the viewer" :surface #{:web}}
+   :lightbox/prev           {:label "Previous image in the viewer" :surface #{:web}}
    :terminal/leave          {:label "Leave the terminal, keys go back to Xi" :surface #{:web}}
    :terminal/focus          {:label "Type in the terminal" :surface #{:web}}
    ;; windows (xi.web.layout): no default keys
@@ -397,7 +399,9 @@
                               "alt+shift+down" :session/next-sibling
                               "alt+shift+up"   :session/prev-sibling
                               "escape"         :dialog/close}
-         :lightbox           {"escape" :lightbox/close}
+         :lightbox           {"escape" :lightbox/close
+                              "right"  :lightbox/next
+                              "left"   :lightbox/prev}
          :permission-pending {"alt+a"       :permission/allow
                               "alt+s"       :permission/always
                               "alt+shift+a" :permission/allow-repo

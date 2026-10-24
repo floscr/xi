@@ -321,8 +321,23 @@
   [st {:keys [window]}]
   {:state (assoc st :web/timeline-window window)})
 
-(defn- lightbox-open [st {:keys [src]}]
-  {:state (assoc st :web/lightbox src)})
+(defn- lightbox-open
+  "`:srcs` are the images the viewer swipes through (a message's images),
+   `:src` the one it opens on; without `:srcs` it shows `:src` alone."
+  [st {:keys [src srcs]}]
+  (let [srcs (vec (or (seq srcs) [src]))]
+    {:state (assoc st :web/lightbox {:srcs  srcs
+                                     :index (max 0 (.indexOf srcs src))})}))
+
+(defn- lightbox-step
+  "Show the image `delta` steps away; stops at either end, no wrap-around.
+   `:dir` tells the view which side the new image slides in from."
+  [st {:keys [delta]}]
+  (when-let [{:keys [srcs index]} (:web/lightbox st)]
+    (let [i (-> (+ index delta) (max 0) (min (dec (count srcs))))]
+      (when (not= i index)
+        {:state (update st :web/lightbox assoc :index i
+                        :dir (if (pos? delta) :next :prev))}))))
 
 (defn- lightbox-close [st _]
   {:state (dissoc st :web/lightbox)})
@@ -1292,6 +1307,7 @@
           :timeline/set-window   timeline-set-window
           :timeline/block-toggle timeline-block-toggle
           :lightbox/open         lightbox-open
+          :lightbox/step         lightbox-step
           :lightbox/close        lightbox-close
           :attachment/open       attachment-open
           :web/file-drag         file-drag
@@ -3436,6 +3452,8 @@
                                                        (:web/keys-open? st)   :keys/close
                                                        :else                  :appearance/close)}))})
   (keymap/register-action! {:id :lightbox/close :event {:type :lightbox/close}})
+  (keymap/register-action! {:id :lightbox/next :event {:type :lightbox/step :delta 1}})
+  (keymap/register-action! {:id :lightbox/prev :event {:type :lightbox/step :delta -1}})
   (keymap/register-action! {:id :keys/show :event {:type :keys/show}})
   ;; Back to the chat; the buffer stays open. Not while an open <dialog> (the
   ;; Ctrl+K palette…) has focus: its Escape closes just the dialog.

@@ -859,6 +859,104 @@
     (dispatch! {:type :timeline/block-toggle :session-key session-key :key k
                 :open? (not (.. e -currentTarget -parentNode -open))})))
 
+;; ── Image viewer (:web/lightbox) ──
+;; One image is ui.lightbox as is. Several get the same markup plus swipe,
+;; ‹ › buttons and a counter, so ui-runtime's pinch / pan / double-tap zoom
+;; keeps working on the image shown; a swipe only starts while it's unzoomed.
+
+(defn- image-srcs
+  "The data: URLs of the images among `atts` (attachment maps), in order."
+  [atts]
+  (into [] (keep (fn [{:keys [data media-type]}]
+                   (when (str/starts-with? (or media-type "") "image/")
+                     (str "data:" media-type ";base64," data))))
+        atts))
+
+(def ^:private swipe-axis-px 10)
+(def ^:private swipe-commit-px 60)
+
+(defn- swipe-handlers
+  "The viewer overlay's pointer handlers: a sideways one-finger drag moves the
+   image with the finger and, past swipe-commit-px, steps to its neighbour.
+   The drag is kept on the overlay node so a re-render mid-drag keeps it; the
+   runtime's own pointer-up clears the transform, which is the snap-back."
+  [dispatch! has-prev? has-next?]
+  (let [image (fn [^js overlay] (.querySelector overlay ".lightbox-image"))]
+    {:pointerdown
+     (fn [^js e]
+       (let [overlay (.-currentTarget e)
+             img     (image overlay)]
+         ;; A second finger (a pinch) cancels the swipe.
+         (aset overlay "__xiSwipe"
+               (when (and (.-isPrimary e) img
+                          (not (.hasAttribute img "data-zoomed"))
+                          (not (.closest (.-target e) "button")))
+                 {:id (.-pointerId e) :x0 (.-clientX e) :y0 (.-clientY e)}))))
+     :pointermove
+     (fn [^js e]
+       (let [overlay (.-currentTarget e)
+             {:keys [id x0 y0 axis] :as drag} (aget overlay "__xiSwipe")]
+         (when (and drag (= id (.-pointerId e)))
+           (let [dx   (- (.-clientX e) x0)
+                 dy   (- (.-clientY e) y0)
+                 axis (or axis
+                          (when (> (js/Math.hypot dx dy) swipe-axis-px)
+                            (if (> (js/Math.abs dx) (js/Math.abs dy)) :x :y)))]
+             (aset overlay "__xiSwipe" (assoc drag :axis axis :dx dx))
+             (when-let [^js img (and (= axis :x) (image overlay))]
+               ;; Past either end the image only gives a little.
+               (let [end? (if (pos? dx) (not has-prev?) (not has-next?))]
+                 (set! (.. img -style -transition) "none")
+                 (set! (.. img -style -transform)
+                       (str "translateX(" (if end? (* dx 0.3) dx) "px)"))))))))
+     :pointerup
+     (fn [^js e]
+       (let [overlay (.-currentTarget e)
+             {:keys [id axis dx]} (aget overlay "__xiSwipe")]
+         (aset overlay "__xiSwipe" nil)
+         (when (and (= id (.-pointerId e)) (= axis :x)
+                    (> (js/Math.abs dx) swipe-commit-px))
+           (cond
+             (and (neg? dx) has-next?) (dispatch! {:type :lightbox/step :delta 1})
+             (and (pos? dx) has-prev?) (dispatch! {:type :lightbox/step :delta -1})))))
+     :pointercancel
+     (fn [^js e] (aset (.-currentTarget e) "__xiSwipe" nil))}))
+
+(defn- image-viewer [dispatch! {:keys [srcs index dir]}]
+  (let [close #(dispatch! {:type :lightbox/close})
+        n     (count srcs)]
+    (if (< n 2)
+      (lightbox/lightbox {:src (first srcs) :on-close close})
+      (let [has-prev? (pos? index)
+            has-next? (< index (dec n))
+            button    (fn [cls label icon-name on-click]
+                        [:button {:class cls :type "button" :aria-label label
+                                  :on {:click (fn [^js e]
+                                                (.stopPropagation e)
+                                                (on-click))}}
+                         (icon/icon {:icon-name icon-name :size :md})])]
+        [:div {:class ["lightbox-overlay" "lightbox-gallery"]
+               :on (assoc (swipe-handlers dispatch! has-prev? has-next?)
+                          :click (fn [_] (close)))}
+         ;; Keyed by index: each image is a fresh node with its own zoom.
+         [:img {:replicant/key index
+                :class ["lightbox-image"
+                        (case dir
+                          :next "lightbox-image--from-next"
+                          :prev "lightbox-image--from-prev"
+                          nil)]
+                :src (nth srcs index)
+                :alt (str "Image " (inc index) " of " n)
+                :on {:click (fn [^js e] (.stopPropagation e))}}]
+         [:div {:class ["lightbox-counter"]} (str (inc index) " / " n)]
+         (when has-prev?
+           (button ["lightbox-nav" "lightbox-nav--prev"] "Previous image" :chevron-left
+                   #(dispatch! {:type :lightbox/step :delta -1})))
+         (when has-next?
+           (button ["lightbox-nav" "lightbox-nav--next"] "Next image" :chevron-right
+                   #(dispatch! {:type :lightbox/step :delta 1})))
+         (button ["lightbox-close"] "Close" :x close)]))))
+
 (defn- tool-post
   "A tool call's <details> block. `:grouped?` (inside a viewer group),
    `:collapsed?`, `:open-choice` + `:toggle!` (remember-open), `:tool-args`
@@ -992,17 +1090,17 @@
              (confirm-buttons dialog answer! deny-reason!)]]]))
       (when imgs
         [:div {:class ["tool-call-content" "user-images" "tool-call-images"]}
-         (map-indexed
-          (fn [i {:keys [data media-type]}]
-            (let [src (str "data:" media-type ";base64," data)]
+         (let [srcs (image-srcs imgs)]
+           (map-indexed
+            (fn [i src]
               [:img {:replicant/key i
                      :class ["user-image" "lightbox-thumb"]
                      :src src
                      :alt "viewed image"
                      :on {:click (fn [^js e]
                                    (.stopPropagation e)
-                                   (dispatch! {:type :lightbox/open :src src}))}}]))
-          imgs)])]
+                                   (dispatch! {:type :lightbox/open :src src :srcs srcs}))}}])
+            srcs))])]
      ;; Outside the <details> so a collapsed block keeps it in view.
      (when explanation
        (explanation-block explanation (some? permission)))]))
@@ -1324,7 +1422,8 @@
           [:div {:replicant/key idx :class ["compose-image-thumb"]}
            (let [src (str "data:" media-type ";base64," data)]
              [:img {:src src :alt "attachment" :class ["lightbox-thumb"]
-                    :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src}))}}])
+                    :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src
+                                                    :srcs (image-srcs images)}))}}])
            [:button {:class ["compose-image-remove"] :type "button"
                      :on {:click (fn [_] (on-remove idx))}}
             (icon/icon {:icon-name :x :size :sm})]]))
@@ -1357,8 +1456,9 @@
     (str/join " · " (remove str/blank? [(some-> ext str/upper-case) size]))))
 
 (defn- user-attachment
-  "One attachment of a prompt: an image (opens the lightbox) or a file card."
-  [dispatch! i {:keys [data media-type name path] :as att}]
+  "One attachment of a prompt: an image (opens the lightbox on `srcs`, the
+   prompt's images) or a file card."
+  [dispatch! srcs i {:keys [data media-type name path] :as att}]
   (if (str/starts-with? (or media-type "") "image/")
     (let [src (str "data:" media-type ";base64," data)]
       [:img {:replicant/key i
@@ -1367,7 +1467,7 @@
              :alt (or name "attached image")
              :on {:click (fn [^js e]
                            (.stopPropagation e)
-                           (dispatch! {:type :lightbox/open :src src}))}}])
+                           (dispatch! {:type :lightbox/open :src src :srcs srcs}))}}])
     [:div (cond-> {:replicant/key i
                    :class ["user-attachment-card"
                            (when (= media-type "application/pdf") "user-attachment-card--pdf")]}
@@ -1393,8 +1493,9 @@
   ([dispatch! entry] (user-attachments dispatch! entry nil))
   ([dispatch! entry on-remove]
    (if-let [atts (seq (:images entry))]
-     (let [node (fn [i att]
-                  (let [n (user-attachment dispatch! i att)]
+     (let [srcs (image-srcs atts)
+           node (fn [i att]
+                  (let [n (user-attachment dispatch! srcs i att)]
                     (if on-remove
                       [:div {:replicant/key i :class ["user-attachment-edit"]}
                        n
@@ -5303,8 +5404,7 @@
           (bubble-menu dispatch! (:id room) menu))
         (when-let [menu (:web/thread-menu state)]
           (thread-menu dispatch! (:id room) menu))
-        (lightbox/lightbox {:src (:web/lightbox state)
-                            :on-close (fn [] (dispatch! {:type :lightbox/close}))})
+        (some->> (:web/lightbox state) (image-viewer dispatch!))
         [:div {:class ["compose-dock"]}
          (when (:web/copy-flash state) (copy-toast))
          ;; Deny-with-reason holds the dock only while its ask is still pending.

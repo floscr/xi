@@ -165,6 +165,8 @@ offers that choice.
 | Key | Does | Action | Client |
 | --- | --- | --- | --- |
 | `Esc` | Close the image viewer | `:lightbox/close` | web |
+| `→` | Next image in the viewer | `:lightbox/next` | web |
+| `←` | Previous image in the viewer | `:lightbox/prev` | web |
 
 <!-- /gen:keys -->
 
