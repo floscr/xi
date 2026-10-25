@@ -78,6 +78,17 @@
                             :else (js/decodeURIComponent seg2))})
       {:page :home}))))
 
+(defn chat-path
+  "The path of a chat's conversation view."
+  [session-id]
+  (str "/chat/" session-id))
+
+(defn session-url
+  "The absolute address of a chat (`origin` is js/location.origin): what
+   \"Copy link\" / \"Share link\" hand out (xi.web.views)."
+  [origin session-id]
+  (str origin (chat-path session-id)))
+
 (defn route->path
   "Route map → URL path. Extension :path fns (keyed by page) take
    precedence over the built-ins."
@@ -86,7 +97,7 @@
     (f route)
     (case page
     :chat (if session-id
-            (str "/chat/" session-id (some->> (buffer->segment buffer-id) (str "/")))
+            (str (chat-path session-id) (some->> (buffer->segment buffer-id) (str "/")))
             "/chat")
     :git-status (if cwd (str "/git-status/" (js/encodeURIComponent cwd)) "/git-status")
     ;; :home — use /projects/:cwd when drilling into a directory

@@ -86,6 +86,13 @@
   (testing "all sessions"
     (is (= "/projects/all" (router/route->path routes {:page :home :dir :all})))))
 
+(deftest session-url-is-the-chat-route
+  (testing "the shared link opens the chat the router parses"
+    (let [url (router/session-url "https://xi.example:1414" "sid1")]
+      (is (= "https://xi.example:1414/chat/sid1" url))
+      (is (= {:page :chat :session-id "sid1" :buffer-id :chat}
+             (router/parse-path routes (subs url (count "https://xi.example:1414"))))))))
+
 (deftest parse-roundtrips
   (doseq [[label route] [["home"        {:page :home}]
                           ["chat"        {:page :chat :session-id "sid1" :buffer-id :chat}]

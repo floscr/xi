@@ -43,6 +43,7 @@
             [xi.web.theme :as ctheme]
             [xi.web.keymap :as keymap]
             [xi.web.rename :as rename]
+            [xi.web.router :as router]
             [xi.web.palette-items :as palette-items]
             [xi.web.terminal :as terminal]
             [xi.web.tool-views :as tool-views]
@@ -152,6 +153,27 @@
     (dispatch! {:type :copy/open :text text})
     (-> (clipboard/copy! text)
         (.then (fn [_] (dispatch! {:type :copy/flash}))))))
+
+(defn- share-link!
+  "Hand `url` to the device's share sheet (Web Share API). Closing the sheet
+   rejects with AbortError: not an error."
+  [title url]
+  (-> (.share js/navigator #js {:title title :url url})
+      (.catch (fn [_] nil))))
+
+(defn session-link-items
+  "Menu entries ({:label :icon :on-click}) handing out a chat's address
+   (router/session-url): copy it, and where the device has a share sheet
+   (navigator.share: phones, Safari) share it."
+  [dispatch! session-id title]
+  (let [url (router/session-url js/location.origin session-id)]
+    (cond-> [{:label    "Copy link"
+              :icon     :link
+              :on-click #(copy! dispatch! url)}]
+      (some? (.-share js/navigator))
+      (conj {:label    "Share link…"
+             :icon     :upload
+             :on-click #(share-link! title url)}))))
 
 (defn- copy-dialog-overlay
   "iOS manual-copy fallback: the text in a pre-selected read-only textarea for
@@ -3968,6 +3990,16 @@
                (icon/icon {:icon-name (:icon item) :size :sm})
                [:span (:label item)]])))
          [:div {:class ["overflow-menu-divider"]}]
+         (when-let [sid (get-in room [:session :id])]
+           (for [{:keys [label icon on-click]} (session-link-items dispatch! sid (.-title js/document))]
+             [:button {:class ["overflow-menu-item"]
+                       :replicant/key (str "session-link-" label)
+                       :on {:click (fn [e]
+                                     (.stopPropagation e)
+                                     (dispatch! {:type :overflow/close})
+                                     (on-click))}}
+              (icon/icon {:icon-name icon :size :sm})
+              [:span label]]))
          [:button {:class ["overflow-menu-item"]
                    :on {:click (fn [e]
                                  (.stopPropagation e)
@@ -5743,6 +5775,8 @@
       (conj {:label    "Copy session ID"
              :icon     :copy
              :on-click #(copy! dispatch! session-id)})
+      true
+      (into (session-link-items dispatch! session-id name))
       true
       (conj {:type :separator}
             {:label    "Delete"
@@ -8057,6 +8091,8 @@
                :let [{:keys [label icon on-click]}
                      (ext-session-menu-item dispatch! (assoc cur-session :session-id cur-sid) item)]]
            (cmd/command-item {:icon icon :on-click (fn [_] (on-click))} label))
+         (for [{:keys [label icon on-click]} (session-link-items dispatch! cur-sid (.-title js/document))]
+           (cmd/command-item {:icon icon :value (str label " share copy url") :on-click (fn [_] (on-click))} label))
          (cmd/command-item
           {:icon :bookmark
            :on-click (fn [_] (dispatch! {:type :pinned/toggle :session-id cur-sid}))}

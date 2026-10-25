@@ -187,6 +187,11 @@ across the top narrows the cards and lists to one
 - **Rename a chat.** "Rename…" in the same menu. While you type, Claude
   Haiku suggests three names from the conversation; click one, or press Tab
   to cycle them into the field. **More** asks for three new ones.
+- **Share a chat.** "Copy link" in the same menu, in the chat's ⋮ menu and
+  in the command palette copies the chat's address
+  (`http://<server>/chat/<id>`); it opens the chat on any device paired
+  with the server. On a device with a share sheet (a phone, Safari), "Share
+  link…" next to it opens the sheet with the address instead.
 - **Prune.** "Prune all" in the sidebar (`:sessions/prune`) runs every
   cleanup at once: mark all as read, hide all from Recent (pinned chats are
   skipped), close idle rooms.
