@@ -2039,6 +2039,16 @@
 (def ^:private smooth-scroll-settle-ms 1500)
 (def ^:private smooth-follow-ease 0.28)
 
+(defn- switch-settling?
+  "Within smooth-scroll-settle-ms of a session switch, while the first paint
+   grows to the full window and the join lands. The scroll position moves on
+   its own then: the swapped-in content clamps it, and WebKit's asynchronous
+   scrolling (iOS) can revert a scrollTop write to the position before it.
+   Such a decrease would otherwise pass as the user's (pure-scroll?) and
+   freeze the chat near its top."
+  []
+  (< (js/Date.now) @smooth-scroll-settle-until))
+
 ;; Debounces the offline badge so transient WS blips don't flicker it.
 (defonce ^:private offline-timer (atom nil))
 
@@ -2547,7 +2557,7 @@
           (do (cancel-smooth-follow!)
               (snap-scroll-top! timeline target)
               ;; Only live streaming earns the easing: arm once settled and busy.
-              (when (and (> (js/Date.now) @smooth-scroll-settle-until)
+              (when (and (not (switch-settling?))
                          (some-> @app-ref :state deref state/active-room
                                  :agent :busy?))
                 (reset! smooth-scroll-armed? true))))))))
@@ -2766,13 +2776,18 @@
       (attach-global-scroll-intent!)
       (.addEventListener timeline "scroll"
                          (fn []
-                           (let [top      (.-scrollTop timeline)
-                                 prev     @prev-scroll-top
-                                 bottom?  (at-bottom? timeline)
+                           (let [top       (.-scrollTop timeline)
+                                 prev      @prev-scroll-top
+                                 bottom?   (at-bottom? timeline)
+                                 settling? (switch-settling?)
                                  ;; Touch events stop at finger-lift while iOS
                                  ;; momentum scrolls on, so a decrease that no
-                                 ;; layout change explains is the user's too.
-                                 gesture? (or (user-scrolling?) (pure-scroll? timeline))]
+                                 ;; layout change explains is the user's too —
+                                 ;; except while a switch settles, when the
+                                 ;; position moves on its own (see
+                                 ;; switch-settling?).
+                                 gesture?  (or (user-scrolling?)
+                                               (and (not settling?) (pure-scroll? timeline)))]
                              (remember-scroll-metrics! timeline)
                              ;; Layout lowers scrollTop too (a switch swaps in
                              ;; a short first paint, xi.web.router/
@@ -2784,7 +2799,10 @@
                                bottom?
                                (reset! auto-scroll? true)
                                (and (< top (- prev 2)) gesture?)
-                               (reset! auto-scroll? false))
+                               (reset! auto-scroll? false)
+                               ;; Nobody's decrease while settling: land again.
+                               (and (< top (- prev 2)) settling? @auto-scroll?)
+                               (js/requestAnimationFrame scroll-to-bottom!))
                              (when-let [d @dispatch-ref]
                                (d {:type :web/set-scrolled-up
                                    :scrolled-up? (not @auto-scroll?)})))))

@@ -270,9 +270,14 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   `image-viewer` in `xi.web.views`, on top of `ui.lightbox`'s zoom runtime).
   Markdown via `xi.markdown.hiccup`, highlighting with the bundled browser
   grammars ([syntax-highlighting.md](syntax-highlighting.md)).
-- Auto-scroll pinned to the bottom unless scrolled up. Sending from a cached,
-  not-yet-joined session stashes the message (`:web/pending-submit`) and
-  fires it after `:room/joined`.
+- Auto-scroll pinned to the bottom unless scrolled up. A scrollTop decrease
+  counts as the user's during an input gesture, or when nothing but the
+  position moved (`pure-scroll?`, iOS momentum) — except within 1.5s of a
+  session switch (`switch-settling?`): the first paint grows and the join
+  lands then, and WebKit's asynchronous scrolling can revert a scrollTop
+  write, so a decrease there re-lands at the bottom instead of freezing the
+  chat near its top. Sending from a cached, not-yet-joined session stashes
+  the message (`:web/pending-submit`) and fires it after `:room/joined`.
 
 ## Routing, unread, visibility
 
