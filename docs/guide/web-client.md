@@ -421,6 +421,15 @@ page follows each poll; the refresh button asks for one now.
 An [extension](extensions-reference.md) can add accounts of its own to the
 page, for example the other logins of an account pool.
 
+## Accounts
+
+The `/accounts` page ("Accounts" in the command palette and the ⋮ menu)
+lists every provider's stored [accounts](models.md#accounts): Switch makes
+one live, Forget drops it, and "Sign in to another account" starts a
+sign-in with an optional alias. The sign-in shows its page as a button; for
+Claude, paste the code that page shows into the box below it. The palette
+offers "Switch … to …" for each account once the page has loaded them.
+
 ## Camera
 
 **Share camera** in a chat's ⋮ menu (or the command palette) opens the

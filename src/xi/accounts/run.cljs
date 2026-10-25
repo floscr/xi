@@ -7,12 +7,12 @@
   (:require [clojure.string :as str]
             [xi.accounts :as accounts]))
 
-(defonce ^{:private true :doc "provider id → {:code! :cancel! :needs-code?} of a running sign-in"}
+(defonce ^{:private true :doc "provider id → {:code! :cancel! :needs-code? :url :user-code} of a running sign-in"}
   !pending (atom {}))
 
 (defn- ok [m] (js/Promise.resolve m))
 
-(defn- fail [text] {:text text :tone :error :error? true})
+(defn- fail [text] {:text text :tone :danger :error? true})
 
 (defn- list! [p]
   (if-let [list-fn (get-in p [:accounts :list!])]
@@ -51,7 +51,7 @@
                                                   (:rows r))
                                              ;; none yet, or the list failed: its text says which
                                              [(cond-> {:label (accounts/provider-name p) :text (:text r)}
-                                                (:error? r) (assoc :tone :error))]))
+                                                (:error? r) (assoc :tone :danger))]))
                                          ps rs))
                       :data {:providers (mapv (fn [p r] {:provider (accounts/provider-name p)
                                                          :accounts (get-in r [:data :accounts])})
@@ -88,8 +88,8 @@
       (do (swap! !pending assoc id {})
           (-> ((get-in p [:login :login!])
                {:alias alias :email email
-                :on-prompt (fn [{:keys [code! cancel! needs-code?] :as prompt}]
-                             (swap! !pending assoc id {:code! code! :cancel! cancel! :needs-code? needs-code?})
+                :on-prompt (fn [prompt]
+                             (swap! !pending assoc id (select-keys prompt [:code! :cancel! :needs-code? :url :user-code]))
                              (on-prompt prompt))})
               (.then (fn [{:keys [email account]}]
                        {:text (str "Signed in to " lbl (when email (str " as " email)) ".")
@@ -142,6 +142,31 @@
               (fn [_ a]
                 (-> (logout! (:id a))
                     (.then (fn [_] {:text (str "Forgot " (accounts/account-label a) ".")}))))))))
+
+(defn snapshot!
+  "Every signable provider as the /accounts page shows it (xi.ext.accounts.web):
+   [{:name :label :accounts? :accounts [account …] :error :sign-in {:url
+   :user-code :needs-code?}}], :sign-in while one runs. Never rejects."
+  [providers]
+  (let [ps (accounts/signable providers)]
+    (-> (js/Promise.all
+         (into-array
+          (for [p ps]
+            (let [base {:name (accounts/provider-name p) :label (accounts/label p)
+                        :accounts? (boolean (:accounts p)) :login? (boolean (:login p))}]
+              (if (:accounts p)
+                (-> (list! p)
+                    (.then #(assoc base :accounts %))
+                    (.catch #(assoc base :accounts [] :error (.-message %))))
+                (js/Promise.resolve base))))))
+        ;; the running sign-ins as of now, not as of the call: two snapshots
+        ;; racing (a cancel's, then the sign-in's end) both end up current
+        (.then (fn [results]
+                 (mapv (fn [p r]
+                         (if-let [pending (get @!pending (:id p))]
+                           (assoc r :sign-in (select-keys pending [:url :user-code :needs-code?]))
+                           r))
+                       ps results))))))
 
 (defn exec!
   "Run `cmd` (xi.accounts parse-args) against `providers`. `on-prompt` shows a

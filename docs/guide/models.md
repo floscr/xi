@@ -108,7 +108,8 @@ your plan's. Zen's preview ids (`gpt-6-astra`) exist only on Zen; use
 
 Claude and OpenCode Go keep several sign-ins, one of them live: the one
 chats run on. `/account` lists them, `xi account` does the same from the
-shell.
+shell, and the web client's [Accounts page](web-client.md#accounts) has
+buttons for it.
 
 ```text
 /account                            # every provider's accounts

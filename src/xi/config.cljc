@@ -47,7 +47,8 @@
         [xi.ext.worktree.core :as worktree]
         [xi.ext.yolo :as yolo]]
        :browser
-       [[xi.ext.blocks.web :as blocks-web]
+       [[xi.ext.accounts.web :as accounts-web]
+        [xi.ext.blocks.web :as blocks-web]
         [xi.ext.canvas-review.web :as canvas-review-web]
         [xi.ext.device.web :as device-web]
         [xi.ext.diff.web :as diff-web]
@@ -210,6 +211,9 @@
       ;; the /usage page (readings polled by xi.server.usage), plus its
       ;; dashboard card
       usage-web/extension
+      ;; the /accounts page: providers' stored accounts, switch and sign-in
+      ;; (xi.accounts, answered by xi.server.ws)
+      accounts-web/extension
       ;; answers the server's clock / location / camera queries (xi.device)
       ;; and has the Camera page that shares a device's camera with a chat
       device-web/extension]))

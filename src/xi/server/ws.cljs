@@ -43,6 +43,8 @@
 
    Deferred to later phases: :visibility tracking."
   (:require [clojure.string :as str]
+            [xi.accounts :as accounts]
+            [xi.accounts.run :as account-run]
             [xi.agent-profile :as profile]
             [xi.auth :as auth]
             [xi.core.state :as core-state]
@@ -354,6 +356,9 @@
                   (when-let [ws (.get sockets client-id)]
                     (try (.send ws payload) (catch :default _ nil))))
         send-event!    (fn [client-id event] (send! client-id (wire/encode event)))
+        send-accounts! (fn [client-id]
+                         (.then (account-run/snapshot! providers)
+                                #(send-event! client-id {:type :accounts/state :providers %})))
         no-broadcast   (into base-no-broadcast (:no-broadcast ext))
         originator-only (into #{} (:originator-only ext))
         lobby-relevant (into base-lobby-relevant (:lobby-relevant ext))
@@ -719,6 +724,12 @@
                  (doseq [^js ws (es6-iterator-seq (.values sockets))]
                    (when (authed? ws)
                      (send! (.. ws -data -cid) payload)))))
+             ;; every open /accounts page follows a change, whoever made it
+             ;; (a reload drops the connection that started a sign-in)
+             broadcast-accounts!
+             (fn []
+               (.then (account-run/snapshot! providers)
+                      #(notify-authed! {:type :accounts/state :providers %})))
              admit!
              (fn [^js ws]
                (let [cid  (.. ws -data -cid)
@@ -1031,6 +1042,29 @@
                                   (= :usage/fetch (:type ev))
                                   (send! cid (wire/encode (assoc (usage/snapshot)
                                                                  :type :usage/state)))
+
+                                  ;; The /accounts page (xi.ext.accounts.web): every
+                                  ;; provider's accounts, and an /account request
+                                  ;; (its words) run for it. The asker gets its
+                                  ;; :accounts/result; every page the new
+                                  ;; :accounts/state, also once a sign-in shows its page.
+                                  (= :accounts/fetch (:type ev))
+                                  (send-accounts! cid)
+
+                                  (= :accounts/run (:type ev))
+                                  (let [cmd (accounts/parse-args (filterv string? (:words ev)))]
+                                    (-> (account-run/exec! providers cmd
+                                                           {:on-prompt (fn [_] (broadcast-accounts!))})
+                                        (.then (fn [result]
+                                                 (let [ev {:type   :accounts/result
+                                                           :result (select-keys result [:text :tone :error?])}]
+                                                   ;; a sign-in ends long after its page may have reloaded
+                                                   (if (= "login" (:op cmd))
+                                                     (notify-authed! ev)
+                                                     (send! cid (wire/encode ev))))
+                                                 (broadcast-accounts!))))
+                                    ;; a sign-in shows as running at once
+                                    (when (= "login" (:op cmd)) (broadcast-accounts!)))
 
                                   (or (pre-join-types (:type ev))
                                       (roomless-types (:type ev)))
