@@ -130,15 +130,93 @@
                                                     :aria-label "Show as list"}
                                             :on-click (set-mode true)}))))
 
+(defn more-horizontal-icon
+  "The ⋯ glyph (Lucide more-horizontal, which ui.icon lacks)."
+  []
+  [:svg {:class ["icon" "icon-sm"]
+         :xmlns "http://www.w3.org/2000/svg"
+         :viewBox "0 0 24 24"
+         :fill "none"
+         :stroke "currentColor"
+         :stroke-width "2"
+         :stroke-linecap "round"
+         :stroke-linejoin "round"
+         :aria-hidden "true"}
+   [:circle {:cx "5" :cy "12" :r "1"}]
+   [:circle {:cx "12" :cy "12" :r "1"}]
+   [:circle {:cx "19" :cy "12" :r "1"}]])
+
 (defn- table-caption-bar
   "Strip joined to the table's top edge: its size on the left, the mode toggle
-   on the right. Stays in list mode, so the toggle never moves."
+   and the ⋯ button on the right. Stays in list mode, so the toggle never
+   moves. The ⋯ button has no handler of its own: a delegated listener
+   (xi.web.core) opens the copy menu from the wrap's data-table-* attributes."
   [n-rows n-cols]
   [:div {:class "md-table-bar"}
    [:span {:class "md-table-meta"}
     (str n-rows (if (= 1 n-rows) " row" " rows")
          " · " n-cols (if (= 1 n-cols) " column" " columns"))]
-   (table-mode-toggle)])
+   [:div {:class "md-table-actions"}
+    (table-mode-toggle)
+    [:button {:type "button" :class "md-table-more"
+              :title "Copy table" :aria-label "Copy table"}
+     (more-horizontal-icon)]]])
+
+;; ---------------------------------------------------------------------------
+;; Table serialization (the ⋯ menu's copy entries)
+;; ---------------------------------------------------------------------------
+
+(defn- inline-markdown
+  "Inline tokens back to markdown source. Pipes are escaped: the result
+   is a table cell."
+  [tokens]
+  (apply str
+         (for [t tokens]
+           (cond
+             (string? t) (str/replace t "|" "\\|")
+             (vector? t) (let [[tag content] t]
+                           (case tag
+                             :bold   (str "**" (inline-markdown content) "**")
+                             :italic (str "_" (inline-markdown content) "_")
+                             :strike (str "~~" (inline-markdown content) "~~")
+                             (:code :color) (str "`" (str/replace content "|" "\\|") "`")
+                             :link   (str "[" (:text content) "](" (:url content) ")")
+                             ""))
+             :else ""))))
+
+(defn- pad-right
+  [s n]
+  (str s (apply str (repeat (- n (count s)) " "))))
+
+(defn table->markdown
+  "A parsed table block's data ({:align :header :rows}, xi.markdown.parse)
+   as a GFM pipe table, columns padded to equal width."
+  [{:keys [align header rows]}]
+  (let [cells  (mapv #(mapv inline-markdown %) (cons header rows))
+        n-cols (count header)
+        widths (mapv (fn [i]
+                       (max 3 (reduce max 0 (map #(count (nth % i "")) cells))))
+                     (range n-cols))
+        sep    (mapv (fn [i]
+                       (let [w (nth widths i)]
+                         (case (nth align i :none)
+                           :left   (str ":" (apply str (repeat (dec w) "-")))
+                           :right  (str (apply str (repeat (dec w) "-")) ":")
+                           :center (str ":" (apply str (repeat (- w 2) "-")) ":")
+                           (apply str (repeat w "-")))))
+                     (range n-cols))
+        line   (fn [row]
+                 (str "| "
+                      (str/join " | " (map (fn [i] (pad-right (nth row i "") (nth widths i))) (range n-cols)))
+                      " |"))]
+    (str/join "\n" (concat [(line (first cells)) (line sep)] (map line (rest cells))))))
+
+(defn table->tsv
+  "A parsed table block's data as tab-separated plain text (markup dropped),
+   header first: what a spreadsheet pastes as cells."
+  [{:keys [header rows]}]
+  (let [flat (fn [tokens] (-> (inline-text tokens) (str/replace #"[\t\r\n]+" " ")))]
+    (str/join "\n" (map #(str/join "\t" (map flat %)) (cons header rows)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Block rendering
@@ -206,8 +284,13 @@
                              :right {:style {:text-align "right"}}
                              :center {:style {:text-align "center"}}
                              {}))
-              labels (mapv inline-text header)]
-          [:div {:class "md-table-wrap"}
+              labels (mapv inline-text header)
+              data   {:align align :header header :rows rows}]
+          ;; the copies the ⋯ menu offers ride on the wrap (like data-diff-text
+          ;; on a diff), so the listener needs no access to the AST
+          [:div {:class "md-table-wrap"
+                 :data-table-md (table->markdown data)
+                 :data-table-tsv (table->tsv data)}
            (table-caption-bar (count rows) (count header))
            [:table {:class "md-table"}
             [:thead

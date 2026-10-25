@@ -1325,8 +1325,8 @@
           ;; block path) is probed on the server; :file/exists-result below
           ;; adds View file to the open menu when it is there.
           :code/menu-open        (fn [st {:keys [text path line lang diff-path diff-text x y
-                                                 ask-index ask-sub file? dir?]}]
-                                   (let [probe (when-not path
+                                                 ask-index ask-sub file? dir? table? tsv]}]
+                                   (let [probe (when-not (or path table?)
                                                  (session-links/code-path (str/trim (or text ""))))
                                          cwd   (view-cwd st)]
                                      (cond-> {:state (assoc st :web/code-menu
@@ -1337,6 +1337,8 @@
                                                                      :ask-sub ask-sub
                                                                      :file? file?
                                                                      :dir? dir?
+                                                                     :table? table?
+                                                                     :tsv tsv
                                                                      :x x :y y}
                                                               probe (assoc :probe probe)))}
                                        (and probe cwd)
@@ -2824,11 +2826,23 @@
    (:web/code-menu). Skipped inside user bubbles and inline editors. A
    right-click or touch long-press (data-long-press) on a row of a tool block
    naming a file (views/file-row-attrs) opens its file menu
-   (views/file-path-menu) instead; a tap keeps the row's own action."
+   (views/file-path-menu) instead; a tap keeps the row's own action. A click
+   on a table's ⋯ button (xi.markdown.hiccup/table-caption-bar) opens its
+   copy menu (views/table-copy-menu) under the button."
   []
   (when-not @code-copy-attached?
     (reset! code-copy-attached? true)
-    (let [code-node (fn [^js e]
+    (let [open-table! (fn [^js button]
+                        (when-let [d @dispatch-ref]
+                          (when-let [wrap (.closest button ".md-table-wrap")]
+                            (let [r (.getBoundingClientRect button)]
+                              (d {:type :code/menu-open
+                                  :table? true
+                                  :text (.getAttribute wrap "data-table-md")
+                                  :tsv (.getAttribute wrap "data-table-tsv")
+                                  :x (.-left r)
+                                  :y (+ (.-bottom r) 4)})))))
+          code-node (fn [^js e]
                       (when-let [node (some-> (.-target e) (.closest "pre, code, .md-diff"))]
                         (when (and (not (.closest node ".post--user"))
                                    (not (.closest node ".bubble-edit-textarea")))
@@ -2892,9 +2906,11 @@
       (.addEventListener
        js/document "click"
        (fn [^js e]
-         (when (views/tap-opens-context-menu?)
-           (when-let [node (code-node e)]
-             (open! e node)))))
+         (if-let [button (some-> (.-target e) (.closest ".md-table-more"))]
+           (open-table! button)
+           (when (views/tap-opens-context-menu?)
+             (when-let [node (code-node e)]
+               (open! e node))))))
       (.addEventListener
        js/document "contextmenu"
        (fn [^js e]

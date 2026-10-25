@@ -2305,6 +2305,19 @@ body {
   font-size: 0.75rem; color: var(--fg-2); user-select: none;
 }
 
+/* right side of the strip: the mode toggle and the ⋯ copy menu button */
+.md-table-actions { flex: none; display: flex; align-items: center; gap: 2px; }
+.md-table-more {
+  display: inline-flex; align-items: center; justify-content: center;
+  height: 1.625rem; width: 1.75rem; padding: 0;
+  border: 0; border-radius: var(--radius-sm); background: none;
+  color: var(--fg-2); cursor: pointer;
+}
+.md-table-more .icon { width: 0.9rem; height: 0.9rem; }
+@media (hover: hover) {
+  .md-table-more:hover { background: var(--bg-2); color: var(--fg-0); }
+}
+
 /* compact boxed button-group, icon-only */
 .md-table-toggle { flex: none; padding: 2px; gap: 2px; user-select: none; }
 .md-table-toggle .button-group-item {
@@ -2393,6 +2406,7 @@ body {
 }
 .post--user .md-table-meta,
 .post--user .md-table-toggle .button-group-item,
+.post--user .md-table-more,
 .post--user .md-table-wrap.as-text .md-table td:not(:first-child):not(:last-child),
 .post--user .md-table-wrap.as-text .md-table td:not(:first-child):not(:last-child)::before {
   color: var(--ub-muted);
@@ -2402,7 +2416,8 @@ body {
   background: var(--ub-active); color: inherit; box-shadow: none;
 }
 @media (hover: hover) {
-  .post--user .md-table-toggle .button-group-item:hover {
+  .post--user .md-table-toggle .button-group-item:hover,
+  .post--user .md-table-more:hover {
     background: var(--ub-tint); color: inherit;
   }
 }

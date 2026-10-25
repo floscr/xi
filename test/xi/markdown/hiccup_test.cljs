@@ -83,6 +83,32 @@
     (is (= 2 (count items)))
     (is (every? #(fn? (get-in (second %) [:on :click])) items))))
 
+(deftest table-wrap-carries-its-copies
+  (let [out  (md/render "| **Name** | Default |\n| :--- | ---: |\n| `a` | 1 |\n| [x](http://x.io) | 22 |")
+        wrap (->> (find-all out :div)
+                  (some #(when (= "md-table-wrap" (:class (second %))) %)))
+        attrs (second wrap)]
+    (testing "the ⋯ button sits in the caption bar"
+      (is (some #(= "md-table-more" (:class (second %))) (find-all out :button))))
+    (testing "data-table-md is the table as padded GFM markdown, markup kept"
+      (is (= (str "| **Name**         | Default |\n"
+                  "| :--------------- | ------: |\n"
+                  "| `a`              | 1       |\n"
+                  "| [x](http://x.io) | 22      |")
+             (:data-table-md attrs))))
+    (testing "data-table-tsv is header + rows, tab-separated, markup dropped"
+      (is (= "Name\tDefault\na\t1\nx\t22" (:data-table-tsv attrs))))))
+
+(deftest table-serializers
+  (let [data {:align [:none :center]
+              :header [["A"] ["B"]]
+              :rows   [[["x" [:code "y"]] ["tab\there"]]]}]
+    (testing "a cell's pipe is escaped, a tab or newline in plain text is a space"
+      (is (= "| A    | B        |\n| ---- | :------: |\n| x`y` | tab\there |"
+             (md/table->markdown data)))
+      (is (= "A\tB\nxy\ttab here" (md/table->tsv data)))
+      (is (= "| a\\|b |\n| ---- |" (md/table->markdown {:header [["a|b"]] :rows []}))))))
+
 (deftest soft-breaks-collapse-by-default-and-render-as-br-with-hard-breaks
   (testing "a single newline inside a paragraph stays plain text by default"
     (let [p (find-tag (md/render "line one\nline two") :p)]

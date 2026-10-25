@@ -4289,6 +4289,29 @@
                    [:span label]]))
            (file-menu-items dispatch! state path {:extra extra :view? (not dir?)}))]))
 
+(defn- table-copy-menu
+  "Floating menu under a rendered table's ⋯ button: copy it as the Markdown
+   source (`text`) or as tab-separated plain text (`tsv`) for a spreadsheet.
+   Opened by the delegated listener in xi.web.core like code-copy-menu."
+  [dispatch! {:keys [text tsv x y]}]
+  (let [close! (fn [] (dispatch! {:type :code/menu-close}))
+        entry  (fn [label icon-name content]
+                 [:button {:class ["bubble-menu-item"]
+                           :on {:click (fn [e]
+                                         (.stopPropagation e)
+                                         (close!)
+                                         (copy! dispatch! content))}}
+                  (icon/icon {:icon-name icon-name :size :sm})
+                  [:span label]])]
+    [:div {:class ["bubble-menu-backdrop"]
+           :on {:click (fn [_] (close!))}}
+     [:div {:class ["bubble-menu"]
+            :style {:top (str y "px") :left (str x "px")}
+            :replicant/on-mount clamp-bubble-menu!
+            :on {:click (fn [e] (.stopPropagation e))}}
+      (entry "Copy as Markdown" :copy text)
+      (entry "Copy for spreadsheet" :file-spreadsheet tsv)]]))
+
 (defn- code-copy-menu
   "Floating menu for a tapped code block: Copy, Split lines (a multi-line
    block: lists its lines to copy one by one), View file (when the block
@@ -5739,9 +5762,10 @@
        (pane-view state dispatch! ctx nil nil active-buf))
      ;; outside the panes: code blocks in file buffers open it too
      (when-let [menu (:web/code-menu state)]
-       (if (:file? menu)
-         (file-path-menu dispatch! state (:id room) menu)
-         (code-copy-menu dispatch! state (:id room) menu)))]))
+       (cond
+         (:file? menu)  (file-path-menu dispatch! state (:id room) menu)
+         (:table? menu) (table-copy-menu dispatch! menu)
+         :else          (code-copy-menu dispatch! state (:id room) menu)))]))
 
 ;; ── Home view ────────────────────────────────────────────────────────────────
 
@@ -6575,21 +6599,6 @@
              (when (= id me)
                (icon/icon {:icon-name :check :size :sm}))])))))))
 
-(defn- more-horizontal-icon
-  []
-  [:svg {:class ["icon" "icon-sm"]
-         :xmlns "http://www.w3.org/2000/svg"
-         :viewBox "0 0 24 24"
-         :fill "none"
-         :stroke "currentColor"
-         :stroke-width "2"
-         :stroke-linecap "round"
-         :stroke-linejoin "round"
-         :aria-hidden "true"}
-   [:circle {:cx "5" :cy "12" :r "1"}]
-   [:circle {:cx "12" :cy "12" :r "1"}]
-   [:circle {:cx "19" :cy "12" :r "1"}]])
-
 (defn- sidebar-more-menu
   "The sidebar footer's ⋯ popover. `items` are {:label :icon :on-click :badge
    :danger?} maps or :separator."
@@ -6601,7 +6610,7 @@
                       :title "More actions"
                       :replicant/key "sidebar-more-trigger"}
                      (popover/trigger-attrs "sidebar-more-menu"))
-      (more-horizontal-icon)]
+      (md/more-horizontal-icon)]
      (popover/popover-content
       {:id    "sidebar-more-menu"
        :side  :top
