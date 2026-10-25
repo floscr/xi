@@ -3403,6 +3403,20 @@ a.btn-link {
   transform: scale(0.97);
 }
 
+/* Menu open: ui/js/context_menu puts .clj-ui-menu-open on <html> while a
+   menu is showing and removes it on dismiss. No text selection anywhere
+   meanwhile — a drag or shift-click next to the menu must not highlight
+   the page (the runtime also swallows further right-clicks: they only
+   close the menu). `*` + !important because user-select does not inherit
+   and app CSS may set `user-select: text` on a descendant with higher
+   specificity; like the reduced-motion block this is a transient global
+   override, not a component style. */
+.clj-ui-menu-open,
+.clj-ui-menu-open * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
 .context-menu {
   position: fixed;
   z-index: 9999;

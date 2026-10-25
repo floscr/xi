@@ -2346,6 +2346,7 @@
     }
     ;
   };
+  var open_class = "clj-ui-menu-open";
   var create_icon = function(elements) {
     const ns_uri1 = "http://www.w3.org/2000/svg";
     const svg2 = document.createElementNS(ns_uri1, "svg");
@@ -2605,6 +2606,7 @@
       state12.menu = menu11;
       position_menu_BANG_(menu11, event.clientX, event.clientY);
       focus_first_item_BANG_(menu11);
+      document.documentElement.classList.add(open_class);
       const on_click13 = (function(e) {
         if (not(menu11.contains(e.target))) {
           e.preventDefault();
@@ -2613,17 +2615,22 @@
         }
         ;
       });
-      const on_key14 = (function(e) {
-        const key15 = e.key;
-        if (key15 === "Escape") {
+      const on_ctx14 = (function(e) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return dismiss_BANG_();
+      });
+      const on_key15 = (function(e) {
+        const key16 = e.key;
+        if (key16 === "Escape") {
           e.preventDefault();
           return dismiss_BANG_();
         } else {
-          if (key15 === "ArrowDown") {
+          if (key16 === "ArrowDown") {
             e.preventDefault();
             return focus_next_BANG_(menu11, "down");
           } else {
-            if (key15 === "ArrowUp") {
+            if (key16 === "ArrowUp") {
               e.preventDefault();
               return focus_next_BANG_(menu11, "up");
             } else {
@@ -2633,26 +2640,29 @@
         }
         ;
       });
-      const on_scroll16 = (function(e) {
+      const on_scroll17 = (function(e) {
         if (truth_(moves_trigger_QMARK_(trigger6, e))) {
           return dismiss_BANG_();
         }
         ;
       });
-      const on_resize17 = (function(_) {
+      const on_resize18 = (function(_) {
         return dismiss_BANG_();
       });
-      const cleanup18 = (function() {
+      const cleanup19 = (function() {
+        document.documentElement.classList.remove(open_class);
         document.removeEventListener("click", on_click13, true);
-        document.removeEventListener("keydown", on_key14, true);
-        window.removeEventListener("scroll", on_scroll16, true);
-        return window.removeEventListener("resize", on_resize17);
+        document.removeEventListener("contextmenu", on_ctx14, true);
+        document.removeEventListener("keydown", on_key15, true);
+        window.removeEventListener("scroll", on_scroll17, true);
+        return window.removeEventListener("resize", on_resize18);
       });
       document.addEventListener("click", on_click13, true);
-      document.addEventListener("keydown", on_key14, true);
-      window.addEventListener("scroll", on_scroll16, true);
-      window.addEventListener("resize", on_resize17);
-      return state12.cleanup = cleanup18;
+      document.addEventListener("contextmenu", on_ctx14, true);
+      document.addEventListener("keydown", on_key15, true);
+      window.addEventListener("scroll", on_scroll17, true);
+      window.addEventListener("resize", on_resize18);
+      return state12.cleanup = cleanup19;
     });
     f5.cljs$lang$maxFixedArity = 1;
     return f5;
