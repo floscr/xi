@@ -2796,6 +2796,15 @@ body {
   .compose-status-usage {
     margin-left: auto;
   }
+  /* The yolo flame (views/yolo-flame), sized to the line's text. */
+  .compose-status-yolo {
+    display: flex;
+    align-items: center;
+  }
+  .compose-status-yolo .icon {
+    width: 13px;
+    height: 13px;
+  }
   .compose-status-dim {
     opacity: 0.7;
   }

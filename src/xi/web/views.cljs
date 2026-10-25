@@ -2156,6 +2156,32 @@
     (let [ms (.getTime (js/Date. resets-at))]
       (and (not (js/isNaN ms)) (<= ms (js/Date.now))))))
 
+
+(defn- flame-icon
+  "Tabler's flame, outline or `filled?`, which the clj-ui-framework icon set lacks."
+  [filled? classes]
+  [:svg (cond-> {:class (into ["icon" "icon-sm"] classes)
+                 :xmlns "http://www.w3.org/2000/svg"
+                 :viewBox "0 0 24 24"
+                 :aria-hidden "true"}
+          filled?       (assoc :fill "currentColor")
+          (not filled?) (assoc :fill "none" :stroke "currentColor" :stroke-width "2"
+                               :stroke-linecap "round" :stroke-linejoin "round"))
+   [:path {:d (if filled?
+                "M10 2c0 -.88 1.056 -1.331 1.692 -.722c1.958 1.876 3.096 5.995 1.75 9.12l-.08 .174l.012 .003c.625 .133 1.203 -.43 2.303 -2.173l.14 -.224a1 1 0 0 1 1.582 -.153c1.334 1.435 2.601 4.377 2.601 6.27c0 4.265 -3.591 7.705 -8 7.705s-8 -3.44 -8 -7.706c0 -2.252 1.022 -4.716 2.632 -6.301l.605 -.589c.241 -.236 .434 -.43 .618 -.624c1.43 -1.512 2.145 -2.924 2.145 -4.78"
+                "M12 10.941c2.333 -3.308 .167 -7.823 -1 -8.941c0 3.395 -2.235 5.299 -3.667 6.706c-1.43 1.408 -2.333 3.294 -2.333 5.588c0 3.704 3.134 6.706 7 6.706c3.866 0 7 -3.002 7 -6.706c0 -1.712 -1.232 -4.403 -2.333 -5.588c-2.084 3.353 -3.257 3.353 -4.667 2.235")}]])
+
+(defn- yolo-flame
+  "The room's yolo level (xi.ext.yolo) → [flame title], nil when off: the
+   flame outlined for yolo, filled for relentless."
+  [room]
+  (case (get-in room [:ext :yolo :level])
+    :sane       [(flame-icon false ["yolo-chip-flame"])
+                 "Yolo mode: tool calls run without asking, except risky ones."]
+    :relentless [(flame-icon true ["yolo-chip-flame" "yolo-chip-flame--relentless"])
+                 "Relentless yolo mode: every tool call runs without asking."]
+    nil))
+
 (defn- compose-status-pct
   "A window's percent, amber from 75% on."
   [pct]
@@ -2163,19 +2189,28 @@
 
 (defn- compose-status
   "The plain-text line under the composer's input row on wide desktops (CSS
-   hides it below): the chat's model, opening the model picker, and the
-   Claude subscription usage from the lobby broadcast, opening /usage."
-  [dispatch! model claude-usage]
+   hides it below): the chat's model, opening the model picker, the yolo
+   flame while yolo mode is on, turning it off, and the Claude subscription
+   usage from the lobby broadcast, opening /usage."
+  [dispatch! room model claude-usage]
   (let [{:keys [session weekly session-resets-at weekly-resets-at]} claude-usage
         session (when-not (usage-window-outdated? session-resets-at) session)
-        weekly  (when-not (usage-window-outdated? weekly-resets-at) weekly)]
-    (when (or model claude-usage)
+        weekly  (when-not (usage-window-outdated? weekly-resets-at) weekly)
+        yolo    (yolo-flame room)]
+    (when (or model claude-usage yolo)
       [:div {:class ["compose-status"]}
        (when model
          [:button {:class ["compose-status-item"]
                    :title (str model " — change model")
                    :on {:click (fn [_] (dispatch! {:type :palette/open-models}))}}
           (str/lower-case (rename/model-label model))])
+       (when-let [[flame title] yolo]
+         (let [title (str title " Click to turn it off.")]
+           [:button {:class ["compose-status-item" "compose-status-yolo"]
+                     :title title
+                     :aria-label title
+                     :on {:click (fn [_] (dispatch-command! dispatch! (:id room) "yolo off"))}}
+            flame]))
        (when claude-usage
          [:button {:class ["compose-status-item" "compose-status-usage"]
                    :title "Claude usage — all usage"
@@ -3672,31 +3707,12 @@
   (when (false? (:web/connected? state))
     [:span {:class ["offline-label"]} "Offline"]))
 
-(defn- flame-icon
-  "Tabler's flame, outline or `filled?`, which the clj-ui-framework icon set lacks."
-  [filled? classes]
-  [:svg (cond-> {:class (into ["icon" "icon-sm"] classes)
-                 :xmlns "http://www.w3.org/2000/svg"
-                 :viewBox "0 0 24 24"
-                 :aria-hidden "true"}
-          filled?       (assoc :fill "currentColor")
-          (not filled?) (assoc :fill "none" :stroke "currentColor" :stroke-width "2"
-                               :stroke-linecap "round" :stroke-linejoin "round"))
-   [:path {:d (if filled?
-                "M10 2c0 -.88 1.056 -1.331 1.692 -.722c1.958 1.876 3.096 5.995 1.75 9.12l-.08 .174l.012 .003c.625 .133 1.203 -.43 2.303 -2.173l.14 -.224a1 1 0 0 1 1.582 -.153c1.334 1.435 2.601 4.377 2.601 6.27c0 4.265 -3.591 7.705 -8 7.705s-8 -3.44 -8 -7.706c0 -2.252 1.022 -4.716 2.632 -6.301l.605 -.589c.241 -.236 .434 -.43 .618 -.624c1.43 -1.512 2.145 -2.924 2.145 -4.78"
-                "M12 10.941c2.333 -3.308 .167 -7.823 -1 -8.941c0 3.395 -2.235 5.299 -3.667 6.706c-1.43 1.408 -2.333 3.294 -2.333 5.588c0 3.704 3.134 6.706 7 6.706c3.866 0 7 -3.002 7 -6.706c0 -1.712 -1.232 -4.403 -2.333 -5.588c-2.084 3.353 -3.257 3.353 -4.667 2.235")}]])
 
 (defn- yolo-chip
-  "Chat header chip while the room's yolo mode is on (xi.ext.yolo): just the
-   flame, outlined for yolo and filled for relentless; a click runs /yolo off."
+  "Chat header chip while the room's yolo mode is on: just the flame
+   (yolo-flame); a click runs /yolo off."
   [dispatch! room]
-  (when-let [[flame title]
-             (case (get-in room [:ext :yolo :level])
-               :sane       [(flame-icon false ["yolo-chip-flame"])
-                            "Yolo mode: tool calls run without asking, except risky ones."]
-               :relentless [(flame-icon true ["yolo-chip-flame" "yolo-chip-flame--relentless"])
-                            "Relentless yolo mode: every tool call runs without asking."]
-               nil)]
+  (when-let [[flame title] (yolo-flame room)]
     (let [title (str title " Click to turn it off.")]
       (chip/chip {:attrs    {:class      ["yolo-chip"]
                              :title      title
@@ -5505,7 +5521,7 @@
                           (:web/scrolled-up? state)
                           (false? (:web/connected? state))
                           (slash-ctx state)
-                          (compose-status dispatch! model
+                          (compose-status dispatch! room model
                                           (get-in state [:lobby :claude-usage]))
                           (agents-button dispatch! room history sub-agents))))]))
 
