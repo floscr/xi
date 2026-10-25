@@ -30,8 +30,13 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   every room event (sender included) and the client applies them through
   the same reducers, seeded by the `:room/joined` snapshot.
 - Served by the same Bun server that hosts the WS endpoint, from
-  `resources/public` (SPA fallback to `index.html`). `bb web:build` compiles
-  the `:web` build; the dev watch hot-reloads it. Over https (e.g. behind a
+  `resources/public` (SPA fallback to `index.html`; `xi.server.static`).
+  Every asset goes out `Cache-Control: no-cache` with an ETag and
+  Last-Modified, so a reload revalidates and an unchanged file is a 304, not
+  a re-download — a mobile browser evicts the page in the background, and
+  reopening it reloads everything. Compressible assets (js, css, html, …)
+  are gzipped, once per file version, cached in memory. `bb web:build`
+  compiles the `:web` build; the dev watch hot-reloads it. Over https (e.g. behind a
   TLS proxy) the shadow-cljs devtools socket can't reach `ws://<host>:9630`,
   so `index.html` points it at the page's origin and the server relays
   `/api/remote-relay` to the local shadow server (`xi.server.shadow-relay`).

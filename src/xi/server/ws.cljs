@@ -53,6 +53,7 @@
             [xi.server.files :as files]
             [xi.server.room-manager :as rm]
             [xi.server.shadow-relay :as shadow-relay]
+            [xi.server.static :as static]
             [xi.server.usage :as usage]
             [xi.session :as session]
             [xi.system-prompt :as system-prompt]
@@ -327,42 +328,6 @@
           nil)
 
       :else nil)))
-
-(defn- serve-static
-  "Serve a file from public-dir, SPA-falling back to index.html for
-   extensionless router paths. `icon-variant` (\"personal\", \"green\") picks
-   the favicon served at /apple-touch-icon.png."
-  [public-dir ^js req icon-variant]
-  (let [path (js/require "node:path")
-        url  (js/URL. (.-url req))
-        pathname (js/decodeURIComponent (.-pathname url))
-        rel  (if (= "/" pathname) "index.html" (.replace pathname #"^/+" ""))
-        rel  (if (and (= rel "apple-touch-icon.png")
-                      (contains? #{"personal" "green"} icon-variant))
-               (str "apple-touch-icon-" icon-variant ".png")
-               rel)
-        ;; Normalize + contain to public-dir (no path traversal)
-        full (.normalize path (.join path public-dir rel))
-        index (.join path public-dir "index.html")
-        has-ext? (re-find #"\.[a-zA-Z0-9]+$" rel)
-        ;; SPA route prefixes — always fall back to index.html
-        spa-route? (re-find #"^(chat)(/|$)" rel)
-        ;; No Cache-Control means iOS/WebKit applies aggressive heuristic
-        ;; caching, so edited CSS/JS can stay stale for a long time. Force
-        ;; revalidation on every request to keep the PWA in sync with builds.
-        serve (fn [file status]
-                (js/Response. (js/Bun.file file)
-                              #js {:status status
-                                   :headers #js {"Cache-Control" "no-cache"}}))]
-    (if-not (.startsWith full public-dir)
-      (js/Promise.resolve (js/Response. "Forbidden" #js {:status 403}))
-      (-> (.exists (js/Bun.file full))
-          (.then (fn [exists?]
-                   (cond
-                     exists?              (serve full 200)
-                     (or spa-route?
-                         (not has-ext?))  (serve index 200)
-                     :else               (js/Response. "Not found" #js {:status 404}))))))))
 
 (defn create-server
   "Build the WS server's effect handlers and starter; the app is wired in via
@@ -1006,7 +971,7 @@
                          (handle-api! req pathname)
 
                          (not upgrade?)
-                         (serve-static public-dir req icon-variant)
+                         (static/serve public-dir req icon-variant)
 
                          :else
                          (upgrade! #js {:cid (gen-client-id)
