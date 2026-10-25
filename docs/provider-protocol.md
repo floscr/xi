@@ -41,7 +41,7 @@ key of `package.json`; otherwise a `provider.edn` file with the same keys
 | `label` | The name shown to users. Default: the id. |
 | `routes` | Which model ids it serves: `prefixes` (`["opencode/"]`), exact `ids` (`["sonnet"]`), or `default: true` for every id no other provider claims. The first provider (in config order) whose prefix or id matches wins. |
 | `models` | A static model list for `/model`. Without it, and with the `models` capability, Xi sends a `models` request. |
-| `capabilities` | Optional requests it answers: `models`, `usage`, `login`. |
+| `capabilities` | Optional requests it answers: `models`, `usage`, `login`, `accounts`. |
 | `login` | `{"name", "label"}`: `/login <name>` and `xi login <name>` run its `login` request. |
 | `defaultModel` | The model a new chat starts on when nobody picked one; the first provider (in config order) that names one decides. |
 | `sideTurns` | It runs titles, summaries, quick replies and compaction; the first such provider does. `{"fast": id, "strong": id}` names the models: `fast` for titles, summaries and quick replies, `strong` for compaction and a rollover's summary. `true` leaves the model to the provider (the request's `model` is empty). |
@@ -70,7 +70,7 @@ Xi's first line is the request. Every request has:
 
 | Field | |
 | --- | --- |
-| `type` | `turn`, `models`, `usage`, `login` or `logout` |
+| `type` | `turn`, `models`, `usage`, `login`, `logout`, `accounts`, `switch` or `alias` |
 | `protocol` | `1` |
 | `providerId` | The manifest's id |
 | `options` | The provider's entry in `config.edn` without `:id` / `:dir` / `:npm`, keys in camelCase (`:base-url` → `baseUrl`) |
@@ -170,10 +170,53 @@ with camelCase keys (`resetsAt`, `periodMs`, `usedPct`, `fetchedAt`).
 
 ### `login` and `logout`
 
-A sign-in shows the user a page and a code:
-`{type:"login-prompt", url, userCode}`, then `{type:"done", email?}` once
-approved. A failed sign-in sends `error`, then `done`. `logout` forgets the
-stored sign-in and answers `done`.
+```text
+→ {type:"login", alias?, email?}
+```
+
+A sign-in shows the user a page: `{type:"login-prompt", url, userCode?,
+needsCode?}`. With `userCode` (a device flow) the user enters that code on
+the page and the program finds out by itself once they did. With
+`needsCode: true` the page shows the user a code instead, which Xi sends
+back:
+
+```text
+← {type:"login-code", code}
+```
+
+as often as the user sends one (a wrong code may be followed by another).
+The request ends with `{type:"done", email?, account?}` once signed in. A
+failed sign-in sends `error`, then `done`. `abort` cancels a sign-in.
+
+`alias` and `email` are optional: the alias a new account gets, the
+address to sign in as.
+
+`{type:"logout", account?}` forgets a sign-in: with `accounts`, the stored
+account `account` (a program may refuse the active one), else the one
+sign-in the program keeps. It answers `done`.
+
+### `accounts`, `switch` and `alias`
+
+The `accounts` capability: the program stores several sign-ins and one of
+them is active, the one requests run on. A `login` adds one and makes it
+active. The program owns the credentials; Xi only ever sees this view, never
+a token:
+
+```text
+account = {id, email?, alias?, plan?, active, tokenValid?}
+```
+
+`id` is stable within the provider. `tokenValid: false` marks a stored
+token that expired and renews once the account is active.
+
+| Request | Answer |
+| --- | --- |
+| `{type:"accounts"}` | `{type:"done", accounts:[account, …]}` |
+| `{type:"switch", account}` | `{type:"done", account}`, now active |
+| `{type:"alias", account, alias}` | `{type:"done", account}`; `alias: null` clears it |
+
+A program with `accounts` and `usage` may return a reading per account,
+each naming it in `account`.
 
 ### Services
 
