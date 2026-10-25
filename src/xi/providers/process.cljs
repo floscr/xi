@@ -2,7 +2,7 @@
   "A provider backed by an external program (docs/provider-protocol.md):
    `create` turns a manifest (xi.providers.manifest) into the provider map
    xi.agent and the side-turn effects consume —
-   {:id :start-turn! :list-models! :login :usage-sources :store :spec …}.
+   {:id :start-turn! :list-models! :login :accounts :usage-sources :store :spec …}.
 
    Every request spawns the program afresh (xi.providers.runner), so an edit
    to it applies on the next turn. Xi keeps tools, rules and dialogs: a
@@ -97,10 +97,11 @@
          (str ": " (str/trim (last (str/split-lines (str/trim stderr))))))))
 
 (defn request!
-  "Run one non-turn request (`models`, `usage`, `login`, `logout`). Promise of
-   the `done` frame; rejects on an `error` frame or a crash. `on-frame` sees
-   every other frame."
-  [m options type & [{:keys [on-frame]}]]
+  "Run one non-turn request (`models`, `usage`, `login`, `logout`, `accounts`,
+   `switch`, `alias`) with the `extra` fields. Promise of the `done` frame;
+   rejects on an `error` frame or a crash. `on-frame` sees every other frame
+   and gets `send!` to answer into the running request (a `login-code`)."
+  [m options type & [{:keys [on-frame extra]}]]
   (js/Promise.
    (fn [resolve reject]
      (let [owner   #js {}
@@ -114,9 +115,9 @@
                                    (if @error (reject (js/Error. @error)) (resolve frame)))
                        "error" (reset! error (or (get-in frame [:error :message]) "provider error"))
                        (do (handle-lock! frame owner (:send! @h) log-tag)
-                           (when on-frame (on-frame frame)))))]
+                           (when on-frame (on-frame frame (:send! @h))))))]
        (reset! h (runner/start! {:command (:command m) :dir (:dir m) :log-tag log-tag
-                                 :request (base-request m options type)
+                                 :request (merge (base-request m options type) extra)
                                  :on-frame frame!}))
        (.then (:exited @h)
               (fn [exit]
@@ -287,6 +288,16 @@
         (update :provider keyword)
         (update :badges (fn [bs] (some->> bs (mapv #(update % :tone keyword))))))))
 
+(defn account-of
+  "A stored account from a program (docs/provider-protocol.md, `accounts`):
+   {:id :email :alias :plan :active? :token-valid?}, absent keys left out."
+  [{:keys [id email alias plan active tokenValid]}]
+  (cond-> {:id (str id) :active? (true? active)}
+    email               (assoc :email email)
+    alias               (assoc :alias alias)
+    plan                (assoc :plan plan)
+    (boolean? tokenValid) (assoc :token-valid? tokenValid)))
+
 ;; ── The provider map ─────────────────────────────────────────────────────────
 
 (defn create
@@ -319,13 +330,36 @@
       login
       (assoc :login {:name    (:name login)
                      :label   (:label login)
-                     :login!  (fn [{:keys [on-prompt]}]
+                     ;; on-prompt gets the page to open, and :code! / :cancel!
+                     ;; answering into the running sign-in
+                     :login!  (fn [{:keys [on-prompt alias email]}]
                                 (-> (request! m options "login"
-                                              {:on-frame (fn [f]
+                                              {:extra    (cond-> {} alias (assoc :alias alias) email (assoc :email email))
+                                               :on-frame (fn [f send!]
                                                            (when (and on-prompt (= "login-prompt" (:type f)))
-                                                             (on-prompt {:url (:url f) :user-code (:userCode f)})))})
-                                    (.then (fn [{:keys [email]}] (cond-> {} email (assoc :email email))))))
-                     :logout! (fn [] (request! m options "logout"))})
+                                                             (on-prompt {:url         (:url f)
+                                                                         :user-code   (:userCode f)
+                                                                         :needs-code? (boolean (:needsCode f))
+                                                                         :code!       #(send! {:type "login-code" :code %})
+                                                                         :cancel!     #(send! {:type "abort"})})))})
+                                    (.then (fn [{:keys [email account]}]
+                                             (cond-> {}
+                                               email   (assoc :email email)
+                                               account (assoc :account (account-of account)))))))
+                     ;; a stored account by id (`accounts`), else the provider's one sign-in
+                     :logout! (fn [& [account]]
+                                (request! m options "logout" {:extra (when account {:account account})}))})
+
+      (contains? capabilities :accounts)
+      (assoc :accounts {:list!   (fn []
+                                   (-> (request! m options "accounts")
+                                       (.then (fn [{:keys [accounts]}] (mapv account-of accounts)))))
+                        :switch! (fn [id]
+                                   (-> (request! m options "switch" {:extra {:account id}})
+                                       (.then (fn [{:keys [account]}] (account-of account)))))
+                        :alias!  (fn [id alias]
+                                   (-> (request! m options "alias" {:extra {:account id :alias alias}})
+                                       (.then (fn [{:keys [account]}] (account-of account)))))})
 
       (contains? capabilities :usage)
       (assoc :usage-sources

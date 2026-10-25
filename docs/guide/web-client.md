@@ -120,7 +120,9 @@ across the top narrows the cards and lists to one
   and goes on with it in mind. It appears in the chat at that point; a
   message the turn could no longer take stays in the queue. Holding Alt
   turns the send button into the steer icon while that works: not while a
-  permission request waits, when the message queues as usual.
+  permission request waits, when the message queues as usual. On a touch
+  screen a tap on send steers and holding it queues: a ring fills, and
+  the message queues when it closes. Slide away to cancel.
 - **Read what the agent did.** Tool calls and thinking are collapsed blocks.
   Open one in place (it stays open when you come back from another chat),
   or switch the appearance settings (gear in the sidebar footer) to keep
@@ -134,6 +136,10 @@ across the top narrows the cards and lists to one
   the block. In a diff buffer, right-click a file's header to open that file
   or copy its path. The welcome card's cwd and instruction files have the
   same menu: find a file in the cwd, open an instruction file.
+- **Tables.** The bar above a rendered table shows its size, a **Table /
+  List** switch (list mode shows one entry per row, with the column names as
+  labels), and **⋯** to copy the table as Markdown or as tab-separated text
+  that pastes into a spreadsheet as cells.
 - **Diff buffer.** The bar above a diff picks its source, its renderer
   (**git**, or **difftastic** for structural changes: what changed within a
   line is highlighted, the code's own colors are dimmed) and its layout:
@@ -398,8 +404,13 @@ at reset"), and when the sign-in renews.
   windows and credits.
 - **Ollama Cloud**: with `OLLAMA_API_KEY` set, the included and purchased
   credits and the last 30 days' spend.
-- **OpenCode Go**: with an OpenCode Go key (`OPENCODE_API_KEY` or the
-  OpenCode CLI's login), its rolling, weekly and monthly windows.
+- **OpenCode Go**: the sign-in (`/login opencode`) or an OpenCode Go key
+  (`OPENCODE_API_KEY` or the OpenCode CLI's login), its rolling, weekly and
+  monthly windows.
+- **Stored accounts**: each Claude and OpenCode Go account kept with
+  [`/account`](models.md#accounts) that isn't live, marked "Stored". A
+  stored Claude account's card is fresh while its token holds; after that
+  it shows its last reading for an hour.
 
 A 7-day window draws the week so far as a line, dotted ahead at the current
 pace; a 5-hour window draws the peak of each earlier window. The server

@@ -34,6 +34,7 @@
    that runs that slash command; with :url instead it opens that page. A
    :goto {:label :session-id} is a web button opening that session's chat."
   (:require [clojure.string :as str]
+            [xi.accounts :as accounts]
             [xi.buffers :as buffers]
             [xi.core.state :as state]
             [xi.dialog :as dialog]
@@ -230,17 +231,33 @@
                   has-session? (conj [:session/sync {:room-id room-id}]))})
     {:effects [[:models/fetch {:room-id room-id}]]}))
 
-(defn- cmd-login
-  "`/login <provider>` — the provider's subscription sign-in (xi.fx
-   :provider/login; the provider map's :login)."
+(defn- account-run
+  "`words` (xi.accounts parse-args) as the :account/run effect (xi.fx), or
+   the parse error as a status line."
+  [st room-id words]
+  (let [cmd (accounts/parse-args words)]
+    (if-let [error (:error cmd)]
+      (status st room-id error)
+      {:effects [[:account/run {:room-id room-id :cmd cmd}]]})))
+
+(defn- cmd-account
+  "`/account [<provider> …]` — a provider's stored accounts: list, switch,
+   sign in, alias, forget (xi.accounts)."
   [st {:keys [room-id args]}]
-  (if (seq args)
-    {:effects [[:provider/login {:room-id room-id :provider args}]]}
+  (account-run st room-id (accounts/words args)))
+
+(defn- cmd-login
+  "`/login <provider> [--alias NAME]` — `/account <provider> login`."
+  [st {:keys [room-id args]}]
+  (if-let [[provider & more] (seq (accounts/words args))]
+    (account-run st room-id (into [provider "login"] more))
     (status st room-id "Usage: /login <provider> — e.g. /login opencode")))
 
-(defn- cmd-logout [st {:keys [room-id args]}]
-  (if (seq args)
-    {:effects [[:provider/logout {:room-id room-id :provider args}]]}
+(defn- cmd-logout
+  "`/logout <provider> [<account>]` — `/account <provider> forget`."
+  [st {:keys [room-id args]}]
+  (if-let [[provider & more] (seq (accounts/words args))]
+    (account-run st room-id (into [provider "forget"] more))
     (status st room-id "Usage: /logout <provider> — e.g. /logout opencode")))
 
 (defn- cmd-resume [st {:keys [room-id args]}]
@@ -412,6 +429,8 @@
    {:name "model"    :description "Show or set model"                  :handler cmd-model}
    {:name "login"    :description "Sign in to a provider's subscription (/login opencode)" :handler cmd-login}
    {:name "logout"   :description "Forget a provider sign-in (/logout opencode)" :handler cmd-logout}
+   {:name "account"  :aliases ["accounts"] :handler cmd-account
+    :description "Provider accounts: /account claude [<account> | switch | login | code | cancel | alias | forget]"}
    {:name "resume"   :description "Resume a previous session"          :handler cmd-resume
     :surfaces #{:tui}}
    {:name "sessions" :description "List previous sessions"             :handler cmd-sessions

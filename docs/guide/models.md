@@ -77,7 +77,7 @@ xi login opencode                             # the same, from the shell
 Xi shows a link and a code. Open the link, enter the code, and the chat
 reports the sign-in. The tokens are kept in `~/.config/xi/opencode-go.json`
 and refreshed as needed. `/logout opencode` (or `xi logout opencode`)
-forgets them.
+signs out. You can keep several OpenCode accounts: see [Accounts](#accounts).
 
 Without a sign-in, a key is read from `OPENCODE_GO_API_KEY`, the
 `opencode-go` entry of `~/.local/share/opencode/auth.json`, or else the Zen
@@ -103,6 +103,40 @@ Xi reads the Codex CLI's credentials (`~/.codex/auth.json`, or `CODEX_HOME`)
 on every message and refreshes an expired token for both. Rate limits are
 your plan's. Zen's preview ids (`gpt-6-astra`) exist only on Zen; use
 `opencode/` for those.
+
+## Accounts
+
+Claude and OpenCode Go keep several sign-ins, one of them live: the one
+chats run on. `/account` lists them, `xi account` does the same from the
+shell.
+
+```text
+/account                            # every provider's accounts
+/account claude                     # Claude's; * marks the live one
+/account claude work                # make "work" live: an id, email or alias
+/account claude switch              # the next one
+/account claude login --alias work  # sign in to another account
+/account claude code <CODE>         # finish a Claude sign-in
+/account claude alias 2 spare       # name an account; no name clears it
+/account claude forget spare        # forget a stored account
+```
+
+A sign-in shows a link to open on any device. Claude's page then shows a
+code: send it back with `/account claude code <CODE>` (`xi account claude
+login` asks for it). OpenCode Go shows its code in Xi: enter it on the
+page. `/account <provider> cancel` stops a sign-in. `/login <provider>` is
+`/account <provider> login`, `/logout <provider>` its `forget`.
+
+Every account request first stores the live sign-in, so a login made
+elsewhere (`claude /login`) joins the list. Forgetting the live OpenCode Go
+account signs out; the live Claude account can't be forgotten, switch away
+first.
+
+Switching Claude rewrites the Claude CLI's login, so every chat on the
+machine moves to the new account with its next message. The accounts are
+kept in `~/.local/share/xi/providers/<provider>/accounts.json`; a
+`claude-swap` store is imported once. The [usage page](web-client.md#usage)
+shows a card for each stored account.
 
 ## Which model does what
 

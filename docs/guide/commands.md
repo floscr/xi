@@ -13,7 +13,8 @@ message. `/help` lists everything that is available in the current setup.
 | `/cd <dir>` | Change the working directory of this chat |
 | `/project` | Pick one of your [projects](projects.md) (also `Alt+p`) |
 | `/model [name]` | Show or switch the [model](models.md) |
-| `/login opencode`, `/logout opencode` | Sign in to OpenCode Go with your OpenCode account, or forget the sign-in; see [Models](models.md#opencode-go) |
+| `/account [provider …]` | List, switch, sign in to, name and forget a provider's stored accounts (Claude, OpenCode Go); see [Accounts](models.md#accounts) |
+| `/login <provider>`, `/logout <provider>` | Sign in to another account, or forget one; `/account <provider> login` and `forget` |
 | `/fork` | Continue the conversation in a new chat, keeping this one as it is |
 | `/tree` | Go back to an earlier point of the chat and continue from there |
 | `/truncate` | Summarise the conversation so far to make room for more |

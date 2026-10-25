@@ -16,8 +16,9 @@ version of this page.
 | `xi prompt <text>` (`xi -p`) | Send one message, print the answer, exit. Reads stdin when `<text>` is omitted. See [One-shot prompts](prompt.md). |
 | `xi sessions` | List saved chats as tab-separated lines. `--all` lists every chat, `--limit N` caps it, `--json` prints JSON. |
 | `xi clients [action]` | Manage paired devices: `list` (default), `pending`, `approve <code>`, `revoke <prefix-or-name>`, `user <prefix-or-name> <user-id>` (`-` clears). See [Server mode](server.md#pairing) and [Users](server.md#users). |
-| `xi login <provider>` | Sign in to a provider's subscription; `opencode` is OpenCode Go. Prints a link and a code, waits for the approval. See [Models](models.md#opencode-go). |
-| `xi logout <provider>` | Forget that sign-in. |
+| `xi login <provider>` | Sign in to a provider's subscription: `claude` or `opencode` (OpenCode Go). Prints a link; for OpenCode Go a code to enter there, for Claude it asks for the code the page shows. `--alias NAME` names the account. See [Accounts](models.md#accounts). |
+| `xi logout <provider> [account]` | Forget a stored account; without one, sign out where the provider can. |
+| `xi account [provider] [op]` | A provider's stored accounts: list (default), `<account>` or `switch [account]` (none: the next), `login`, `alias <account> [name]`, `forget <account>`. An account is its id, email or alias. `--json` prints JSON. See [Accounts](models.md#accounts). |
 | `xi help` | This, shorter. Also `--help` and `-h`. |
 
 For `join` and `create`, `url` is `host:port` (`ws://` is added) or a full
@@ -40,7 +41,8 @@ For `join` and `create`, `url` is `host:port` (`ws://` is added) or a full
 | `--user ID` | all | The user this process acts as (default `root`, or `XI_USER`). A joining terminal claims it; a server owns its own prompts under it. See [Users](server.md#users). |
 | `--stream` | `prompt` | Print tokens as they arrive. |
 | `--no-store` | `prompt` | Leave no session behind. |
-| `--json` | `prompt`, `sessions` | Machine-readable output. |
+| `--json` | `prompt`, `sessions`, `account` | Machine-readable output. |
+| `--alias NAME` / `--email ADDR` | `login`, `account … login` | The new account's alias / the address to sign in as. |
 | `--all` / `--limit N` | `sessions` | Every chat / at most N. |
 | `--debug-events` | `xi`, `server` | Write the full event stream to a JSONL file, for debugging. |
 | `--no-hardened-rules` | all | Drop the non-overridable rules tier. Unsafe; only the person launching Xi can set it. |
@@ -63,6 +65,10 @@ xi --session 0192abcd-…                    # resume a saved chat
 xi prompt "summarise the architecture in one sentence"
 git diff | xi -p --no-store "write a commit message"
 xi prompt --agent coach --json "hi"
+
+xi account claude                          # stored Claude accounts
+xi account claude work                     # switch Claude to "work"
+xi login claude --alias spare              # sign in to another Claude account
 
 xi sessions --json | jq '.[0]'
 xi clients approve 1234

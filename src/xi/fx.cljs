@@ -10,6 +10,8 @@
   (:require [clojure.string :as str]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
+            [xi.accounts :as accounts]
+            [xi.accounts.run :as account-run]
             [xi.core.log :as log]
             [xi.image :as image]
             [xi.session :as session]
@@ -343,48 +345,25 @@
           (dispatch! {:type :ui/menu-populate :room-id room-id :id :model
                       :menu {:prompt "model> " :items items}})))))
 
-   ;; `/login <name>`: the subscription sign-in of the provider whose :login
-   ;; map is called `name` (a manifest's :login, e.g. "opencode"). The page to open
-   ;; and the code arrive as a status banner with a link button, which goes
-   ;; once the Console approves or the flow fails.
-   :provider/login
-   (fn [{:keys [dispatch!]} {:keys [room-id provider]}]
-     (let [status!   (fn [m] (dispatch! (assoc m :type :ui/status :room-id room-id)))
-           logins    (keep :login (vals providers))
-           login     (some #(when (= provider (:name %)) %) logins)
+   ;; `/account`, `/login`, `/logout` (xi.commands): a provider's sign-ins
+   ;; and stored accounts (xi.accounts.run). A sign-in's page arrives as a
+   ;; banner with a link button, which goes once the sign-in settles.
+   :account/run
+   (fn [{:keys [dispatch!]} {:keys [room-id cmd]}]
+     (let [status!   (fn [m] (dispatch! (merge {:type :ui/status :room-id room-id}
+                                               (select-keys m [:text :title :detail :tone :rows :action]))))
            action-id (str (random-uuid))
+           p         (some->> (:provider cmd) (accounts/find-provider providers))
            expire!   #(dispatch! {:type :ui/status-action-expire :room-id room-id
                                   :action-id action-id})]
-       (if-not login
-         (status! {:text (str "No sign-in for \"" provider "\". Available: "
-                             (str/join ", " (sort (map :name logins))))})
-         (-> ((:login! login)
-              {:on-prompt
-               (fn [{:keys [url user-code]}]
-                 (status! {:title  (str "Sign in to " (:label login))
-                           :text   (str "Sign in to " (:label login) ": open " url
-                                        " and enter the code " user-code ". Waiting for the approval…")
-                           :detail (str "Open the sign-in page and enter the code " user-code
-                                        ". Waiting for the approval…")
-                           :tone   :info
-                           :action {:id action-id :label "Open sign-in page" :url url}}))})
-             (.then (fn [{:keys [email]}]
-                      (expire!)
-                      (status! {:text (str "Signed in to " (:label login)
-                                           (when email (str " as " email)) ".")})))
-             (.catch (fn [err]
-                       (expire!)
-                       (status! {:text (str (:label login) " sign-in failed: " (.-message err))})))))))
-
-   :provider/logout
-   (fn [{:keys [dispatch!]} {:keys [room-id provider]}]
-     (let [login   (some #(when (= provider (:name %)) %) (keep :login (vals providers)))
-           status! (fn [text] (dispatch! {:type :ui/status :room-id room-id :text text}))]
-       (if login
-         (-> (js/Promise.resolve ((:logout! login)))
-             (.then (fn [_] (status! (str "Signed out of " (:label login) "."))))
-             (.catch (fn [err] (status! (str (:label login) " sign-out failed: " (.-message err))))))
-         (status! (str "No sign-in for \"" provider "\".")))))
+       (-> (account-run/exec!
+            providers cmd
+            {:on-prompt (fn [prompt]
+                          (status! (accounts/prompt-status (accounts/label p) (accounts/provider-name p)
+                                                           prompt action-id)))})
+           (.then (fn [result]
+                    (when (= "login" (:op cmd)) (expire!))
+                    (status! result))))))
 
    ;; The model a user's new chats start with: kept in their own state
    ;; (xi.user-state :preferred-model), the same key the web client syncs.

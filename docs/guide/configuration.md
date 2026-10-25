@@ -167,7 +167,8 @@ drop one setting while keeping the rest.
 | `~/.config/xi/ext/task-trust.edn` | Trusted project file hashes (`bb.edn`, `package.json`, `deno.json`). Written by Xi. |
 | `~/.config/xi/ext/mcp-trust.edn` | Trusted MCP server fingerprints. Written by Xi. |
 | `~/.config/xi/client-key`, `clients.edn` | Your own device key and the paired devices, each with an optional user assignment. See [Server mode](server.md#pairing). |
-| `~/.config/xi/opencode-go.json` | The OpenCode Go sign-in (`/login opencode`). See [Models](models.md#opencode-go). |
+| `~/.config/xi/opencode-go.json` | The live OpenCode Go sign-in (`/login opencode`). See [Models](models.md#opencode-go). |
+| `~/.local/share/xi/providers/<provider>/accounts.json` | A provider's stored accounts (`anthropic`, `zen`), tokens included. Written by its provider; see [Accounts](models.md#accounts). |
 | `~/.config/xi/tls/` | Certificate and key for [HTTPS](https.md). |
 | `~/.config/xi/sessions/`, `personal-agent/` | Saved chats. See [Sessions](sessions.md). |
 | `~/.config/xi/skills/<name>/SKILL.md` | An on-demand skill (`/skill load <name>`). In its body `$SKILL` becomes the skill's directory, for helper scripts next to it, and `$SKILL_DATA` becomes `~/.local/share/xi/skills/<name>/` (made on load), for what it should keep after the chat. |

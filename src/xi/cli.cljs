@@ -67,6 +67,8 @@
             [xi.core.state :as state]
             [xi.config :as config]
             [xi.env :as env]
+            [xi.accounts :as accounts]
+            [xi.accounts.run :as account-run]
             [xi.ext.core :as ext]
             [xi.ext.rules :as rules-ext]
             [xi.holds :as holds]
@@ -98,6 +100,7 @@
             [xi.util :as util]
             ["node:fs" :as fs]
             ["node:path" :as node-path]
+            ["node:readline" :as readline]
             ["node:worker_threads" :as wt]))
 
 (defonce ^:private !providers
@@ -249,10 +252,19 @@ USAGE
                              pairing codes over ssh on a headless server.
                              `user` assigns a paired device to a user id (`-`
                              clears it); applies on its next connection.
-  xi login <provider>        Sign in to a provider's subscription. `opencode`
-                             (OpenCode Go) prints a link and a code to enter,
-                             then waits for the approval.
-  xi logout <provider>       Forget that sign-in.
+  xi login <provider>        Sign in to a provider's subscription: prints the
+                             page to open, then waits. `opencode` (OpenCode Go)
+                             shows a code to enter there; `claude` asks for the
+                             code the page shows. --alias NAME names the account.
+  xi logout <provider> [<account>]
+                             Forget a sign-in: a stored account, else the live
+                             one where the provider can sign out.
+  xi account [<provider> [<op>]]
+                             A provider's stored accounts: list (default),
+                             <account> or switch [<account>] (none: the next),
+                             login [--alias NAME] [--email ADDR], alias <account>
+                             [NAME], forget <account>. An account is its id,
+                             email or alias. --json for scripts.
   xi help                    Show this help (also --help, -h).
 
 FLAGS
@@ -325,6 +337,9 @@ See docs/guide/command-line.md for the full reference.")
           "clients"        (recur (next args) (assoc opts :command :clients))
           "login"          (recur (next args) (assoc opts :command :login))
           "logout"         (recur (next args) (assoc opts :command :logout))
+          ("account" "accounts") (recur (next args) (assoc opts :command :account))
+          "--alias"        (recur (nnext args) (assoc opts :alias (second args)))
+          "--email"        (recur (nnext args) (assoc opts :email (second args)))
           ("help" "--help" "-h") (recur (next args) (assoc opts :command :help))
           "--json"         (recur (next args) (assoc opts :json? true))
           "--all"          (recur (next args) (assoc opts :all? true))
@@ -358,7 +373,7 @@ See docs/guide/command-line.md for the full reference.")
                    (and (= :clients (:command opts))
                         (not (.startsWith arg "--")))
                    (update opts :clients-args (fnil conj []) arg)
-                   (and (#{:login :logout} (:command opts))
+                   (and (#{:login :logout :account} (:command opts))
                         (not (.startsWith arg "--")))
                    (update opts :auth-args (fnil conj []) arg)
                    ;; An unknown flag fails loudly: a removed restriction flag must not
@@ -1305,50 +1320,45 @@ See docs/guide/command-line.md for the full reference.")
             "usage: xi clients [list|pending|approve <code>|revoke <key-prefix|name>|user <key-prefix|name> <user-id|->]"))
     (js/process.exit 0)))
 
-(defn- login-of
-  "The :login map of the provider whose sign-in is called `name`."
-  [name]
-  (some #(when (= name (get-in % [:login :name])) (:login %)) (vals (providers))))
+(defn- prompt-in-terminal!
+  "Show a sign-in's page; when it wants the page's code back, read it from
+   stdin (each line is sent, a wrong code can be retried). Returns a function
+   closing the reader."
+  [{:keys [url user-code needs-code? code!]}]
+  (println (str "Open " url))
+  (if needs-code?
+    (let [^js rl (.createInterface readline #js {:input js/process.stdin :output js/process.stdout})]
+      (.setPrompt rl "Paste the code the page shows: ")
+      (.prompt rl)
+      (.on rl "line" (fn [line]
+                       (when-not (str/blank? line) (code! (str/trim line)))
+                       (println "Checking the code…")))
+      #(.close rl))
+    (do (println (str "and enter the code: " user-code))
+        (println "Waiting for the approval…")
+        (fn []))))
 
-(defn- unknown-login! [cmd name]
-  (.write js/process.stderr
-          (str "xi " cmd ": unknown provider " (pr-str name) ". Available: "
-               (str/join ", " (sort (keep #(get-in % [:login :name]) (vals (providers)))))
-               "\n"))
-  (js/process.exit 2))
-
-(defn- run-login!
-  "Sign in to a provider's subscription from the shell: print the page to
-   open and the code, wait for the approval, exit 0 once the tokens are
-   stored."
-  [{:keys [auth-args]}]
-  (let [[name] auth-args]
-    (if-let [login (login-of name)]
-      (-> ((:login! login)
-           {:on-prompt (fn [{:keys [url user-code]}]
-                         (println (str "Open " url))
-                         (println (str "and enter the code: " user-code))
-                         (println "Waiting for the approval…"))})
-          (.then (fn [{:keys [email]}]
-                   (println (str "Signed in to " (:label login)
-                                 (when email (str " as " email)) "."))
-                   (js/process.exit 0)))
-          (.catch (fn [err]
-                    (.write js/process.stderr (str "xi login: " (.-message err) "\n"))
-                    (js/process.exit 1))))
-      (unknown-login! "login" name))))
-
-(defn- run-logout! [{:keys [auth-args]}]
-  (let [[name] auth-args]
-    (if-let [login (login-of name)]
-      (-> (js/Promise.resolve ((:logout! login)))
-          (.then (fn [_]
-                   (println (str "Signed out of " (:label login) "."))
-                   (js/process.exit 0)))
-          (.catch (fn [err]
-                    (.write js/process.stderr (str "xi logout: " (.-message err) "\n"))
-                    (js/process.exit 1))))
-      (unknown-login! "logout" name))))
+(defn- run-account!
+  "`xi account <provider> [op …]` (xi.accounts parse-args), and `xi login` /
+   `xi logout` as its `login` / `forget`: print the result (--json: its data),
+   exit 1 when it failed."
+  [{:keys [auth-args alias email json?]} & [op]]
+  (let [[provider & more] auth-args
+        words (cond-> (vec (remove nil? (concat [provider op] more)))
+                alias (conj "--alias" alias)
+                email (conj "--email" email))
+        cmd   (if (and op (nil? provider))
+                {:error (str "Usage: xi " (if (= op "login") "login" "logout") " <provider>")}
+                (accounts/parse-args words))
+        close (atom (fn []))]
+    (-> (account-run/exec! (providers) cmd
+                           {:on-prompt #(reset! close (prompt-in-terminal! %))})
+        (.then (fn [{:keys [text data error?]}]
+                 (@close)
+                 (if (and json? data (not error?))
+                   (println (js/JSON.stringify (clj->js data)))
+                   (.write (if error? js/process.stderr js/process.stdout) (str text "\n")))
+                 (js/process.exit (if error? 1 0)))))))
 
 (defn- silence-worker-console!
   "Drop a worker's console: the TUI's stdout interception never sees it, so
@@ -1380,7 +1390,8 @@ See docs/guide/command-line.md for the full reference.")
         :prompt     (run-prompt! opts)
         :sessions   (run-sessions! opts)
         :clients    (run-clients! opts)
-        :login      (run-login! opts)
-        :logout     (run-logout! opts)
+        :login      (run-account! opts "login")
+        :logout     (run-account! opts "forget")
+        :account    (run-account! opts)
         :join       (start-client! (assoc opts :target "latest"))
         :create     (start-client! (assoc opts :target "new"))))))
