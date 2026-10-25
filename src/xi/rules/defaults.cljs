@@ -149,6 +149,11 @@
    Matched against the resolved absolute path (see `:path` in docs/guide/rules-reference.md)."
   #"/\.claude/projects(?:/|$)")
 
+(def ^:private skill-data-re
+  "The skills' data root `~/.local/share/xi/skills` (`$SKILL_DATA`,
+   xi.paths/skill-data-dir) and anything under it."
+  #"/\.local/share/xi/skills(?:/|$)")
+
 ;; ── Secret leaks: whole-environment dumps, credential files, secret CLIs ─────
 ;;
 ;; Whatever a tool returns goes into the transcript and to the LLM provider.
@@ -610,6 +615,13 @@
               :options [:yes :no]
               :guard   :sane}}]
 
+   ;; A skill's `$SKILL_DATA` dir is where it is told to keep its output, so
+   ;; writing there is the skill doing its job. After the sensitive/protected
+   ;; asks, which still apply inside it.
+   ::skill-data
+   [{:match  {:tool #{:write :edit} :path skill-data-re}
+     :action {:type :allow}}]
+
    ::outside-writes
    [{:match  {:tool #{:write :edit} :outside :cwd}
      :action {:type :ask
@@ -617,7 +629,7 @@
               :options [:yes :no :repo]}}]
 
    ::write-gates
-   [::sensitive-writes ::protected-writes ::outside-writes]
+   [::sensitive-writes ::protected-writes ::skill-data ::outside-writes]
 
    ;; Chained/piped bash is refused: those one-liners are what the clj tool
    ;; replaces. bash is hidden from the model while the clj extension is on, so

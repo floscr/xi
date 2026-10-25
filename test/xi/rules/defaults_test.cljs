@@ -405,6 +405,22 @@
   (testing "writes are not covered"
     (is (not= :allow (action-type {:tool :write :path "/home/u/.claude/projects/p/x.jsonl"})))))
 
+(deftest skill-data-writable
+  (testing "writes under the skills' data root are allowed"
+    (doseq [tool [:write :edit]
+            path ["/home/u/.local/share/xi/skills/design-directions/x/01.html"
+                  "/home/u/.local/share/xi/skills"]]
+      (is (= :allow (action-type {:tool tool :path path :outside-cwd? true}))
+          (str tool " " path))))
+  (testing "the rest of the xi data dir still asks"
+    (is (= :ask (action-type {:tool :write :outside-cwd? true
+                              :path "/home/u/.local/share/xi/extensions/x/a"})))
+    (is (= :ask (action-type {:tool :write :outside-cwd? true
+                              :path "/home/u/.local/share/xi/skills-old/a"}))))
+  (testing "protected writes inside it still ask"
+    (is (= :ask (action-type {:tool :write :outside-cwd? true
+                              :path "/home/u/.local/share/xi/skills/s/.env"})))))
+
 (defn- leak-rule
   "The first default rule matching `req`, when it is one of the secret-leak
    asks (yes/no only, refused unanswered); nil otherwise."
@@ -503,10 +519,11 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 48 (count defaults/default-rules))))
+    (is (= 49 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
+                             :xi.rules.defaults/skill-data
                              :xi.rules.defaults/outside-writes])
            (defaults/expand [:xi.rules.defaults/write-gates])))
     (is (= (defaults/expand [:xi.rules.defaults/env-dump
