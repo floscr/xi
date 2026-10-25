@@ -1388,10 +1388,15 @@
       (update-in res [:content 0 :text] str "\n\n" hint)
       res)))
 
-(defn- run-clj [args {:keys [cwd sub-id]}]
+(defn- run-clj [args {:keys [cwd sub-id get-state]}]
   (-> (run-in-worker #js {:kind    "clj"
                           :code    (str (:code args))
                           :roomId  (room-key (:_room-id args))
+                          ;; the chat's session, XI_SESSION_ID for what the
+                          ;; eval spawns (eval-message)
+                          :sessionId (when get-state
+                                       (some-> (get-in (get-state) [:rooms (:_room-id args) :session :id])
+                                               str))
                           ;; a sub-agent's evals run in its parent room's
                           ;; worker; its own stop wakes them (on-subagent-end)
                           :subId   (some-> sub-id str)
@@ -1468,7 +1473,14 @@
         cwd (or (.-cwd m) (.cwd js/process))]
     (case (.-kind m)
       "clj"
-      (let [res (eval-code! {:code    (str (.-code m))
+      (let [_   (when-not wt/isMainThread
+                  ;; A worker's process.env is its own copy, so this only
+                  ;; reaches the processes this room's evals spawn: a CLI
+                  ;; can tell which chat ran it (e.g. to link back to it).
+                  (if-let [sid (.-sessionId m)]
+                    (aset js/process.env "XI_SESSION_ID" sid)
+                    (js-delete js/process.env "XI_SESSION_ID")))
+            res (eval-code! {:code    (str (.-code m))
                              :room-id (.-roomId m)
                              :gate-id (.-gateId m)
                              :allowed (js->clj (.-allowed m))

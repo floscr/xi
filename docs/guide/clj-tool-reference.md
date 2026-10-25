@@ -100,6 +100,10 @@ change what an approved program loads or runs (`PATH`, `HOME`, `LD_*`,
 `NODE_OPTIONS`, `GIT_*`, `EDITOR`, `VISUAL`, `PAGER`, `XDG_CONFIG_HOME`,
 `RIPGREP_CONFIG_PATH`, …).
 
+Programs started by `sh` and `process/start` get `XI_SESSION_ID`, the id of
+the chat that ran them, so a script can link back to it
+(`http://<xi host>:1414/chat/<id>`).
+
 ### How a program gets approved
 
 Before the script runs, Xi reads every literal `sh` call out of it and

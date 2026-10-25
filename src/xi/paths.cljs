@@ -79,13 +79,22 @@
       abs
       (node-path/join (real-resolve cwd parent) (node-path/basename abs)))))
 
+(defn- data-home []
+  (or (not-empty (aget js/process.env "XDG_DATA_HOME"))
+      (node-path/join (os/homedir) ".local" "share")))
+
 (defn extension-data-dir
   "The data directory a user extension may freely read and write:
    $XDG_DATA_HOME (else ~/.local/share) /xi/extensions/<id>."
   [id]
-  (node-path/join (or (not-empty (aget js/process.env "XDG_DATA_HOME"))
-                      (node-path/join (os/homedir) ".local" "share"))
-                  "xi" "extensions" (name id)))
+  (node-path/join (data-home) "xi" "extensions" (name id)))
+
+(defn skill-data-dir
+  "Where an on-demand skill keeps what should outlive the chat (previews,
+   results): $XDG_DATA_HOME (else ~/.local/share) /xi/skills/<name>. A skill
+   names it as `$SKILL_DATA` (xi.ext.clojure-skills)."
+  [skill-name]
+  (node-path/join (data-home) "xi" "skills" (str skill-name)))
 
 (defn hidden-paths
   "Absolute hidden paths (no existence check — usable for pure gating)."

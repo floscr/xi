@@ -3,6 +3,7 @@
    the system prompt. Also provides on-demand skills loaded from
    ~/.config/xi/skills/*/SKILL.md via /skill list|load commands."
   (:require [clojure.string :as str]
+            [xi.paths :as paths]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]))
@@ -133,14 +134,21 @@ You have `clj-surgeon` available — a babashka CLI for structural Clojure refac
   "Find a skill by name and read its body. Returns the scan-skills map with
    :body added, or nil. Substitutes `$SKILL` in the body with the skill's own
    directory so skills can reference bundled helper scripts by absolute path
-   (e.g. `bb $SKILL/cli.clj`) regardless of where the dir is symlinked from."
+   (e.g. `bb $SKILL/cli.clj`) regardless of where the dir is symlinked from,
+   and `$SKILL_DATA` with its data directory (xi.paths/skill-data-dir, made
+   here) for what should outlive the chat. `$SKILL_DATA` goes first: `$SKILL`
+   is its prefix."
   [skill-name]
   (when-let [skill (some #(when (= (:name %) skill-name) %) (scan-skills))]
     (let [content (.toString (fs/readFileSync (:path skill) "utf-8"))
           {:keys [body]} (parse-frontmatter content)
           skill-dir (.dirname node-path (:path skill))
-          body (str/replace body "$SKILL" skill-dir)]
-      (assoc skill :body body))))
+          data-dir  (paths/skill-data-dir (.basename node-path skill-dir))]
+      (when (str/includes? body "$SKILL_DATA")
+        (fs/mkdirSync data-dir #js {:recursive true}))
+      (assoc skill :body (-> body
+                             (str/replace "$SKILL_DATA" data-dir)
+                             (str/replace "$SKILL" skill-dir))))))
 
 (defn- load-skill-by-name
   "Load a skill by name. Returns the full content (body after frontmatter) or nil."
