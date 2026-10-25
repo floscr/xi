@@ -245,6 +245,12 @@ The web client opts into `:reconnect?`:
   is closed are flushed on reopen
 - the last `:room/join` is remembered (per join, cleared on `:room/leave`)
   and **replayed on reopen**, so a dropped connection restores the room
+- **wake**: the page coming back to the foreground (`visibilitychange`),
+  the network returning (`online`) or a back/forward-cache restore
+  (`pageshow`) calls the transport's `:wake!`, which reconnects at once
+  when the socket isn't open — mobile browsers freeze timers in the
+  background, so a drop while suspended would otherwise wait out the
+  backoff after resume. A socket stuck connecting for over 5s is replaced.
 - `:connection/status` events drive the offline badge
   (`:web/connected?`)
 

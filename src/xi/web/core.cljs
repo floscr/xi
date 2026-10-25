@@ -3941,7 +3941,9 @@
                                                              :app-ref     app-ref
                                                              :builtin-ids (map :id (:extensions composed))})
                                                (:fx composed))
-                         :on-render     render!})]
+                         :on-render     render!})
+        ;; the tour transport has none: nothing to reconnect
+        wake!     (or (:wake! transport) (fn []))]
     (reset! pages-ref (:pages composed))
     (dashboard/register! (:dashboard-cards composed))
     (doseq [{:keys [id block-menu-items terminal-toolbar-items buffer-views timeline-posts overlays]} (:extensions composed)]
@@ -4005,8 +4007,12 @@
     (.addEventListener js/document "gestureend" (fn [e] (.preventDefault e)))
     (.addEventListener js/document "visibilitychange"
                        (fn [_]
-                         (dispatch! {:type :client/update
-                                     :visible? (= "visible" (.-visibilityState js/document))})))
+                         (let [visible? (= "visible" (.-visibilityState js/document))]
+                           (dispatch! {:type :client/update :visible? visible?})
+                           (when visible? (wake!)))))
+    ;; Back online, or restored from the back/forward cache: reconnect now.
+    (.addEventListener js/window "online" (fn [_] (wake!)))
+    (.addEventListener js/window "pageshow" (fn [_] (wake!)))
     (install-actions!)
     (.addEventListener js/document "keydown"
                        (fn [^js e] (keymap/handle-keydown @state dispatch! e)))

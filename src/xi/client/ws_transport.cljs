@@ -213,10 +213,14 @@
    sends), :on-status (fn [connected?]), :on-close (fn [], only without
    :reconnect?), :intercept (fn [event] → truthy when it consumed the event,
    which then never reaches the app: a stream with its own consumer, the web
-   terminals' output). Returns {:effects :send! :set-dispatch! :close!}; :send!
-   sends an event without going through the app."
+   terminals' output). Returns {:effects :send! :set-dispatch! :close! :wake!};
+   :send! sends an event without going through the app; :wake! reconnects at
+   once when the socket isn't open (the page came back to the foreground, the
+   network is back) instead of waiting out the backoff."
   [{:keys [url hello target cwd reconnect? on-status on-close intercept]}]
   (let [ctx #js {:dispatch nil :ws nil :closed false :pending #js [] :backoff 1000
+                 ;; the scheduled reconnect, and when the current socket was opened
+                 :retryTimer nil :connectedAt 0
                  :authed (nil? hello)
                  ;; Incoming broadcasts are coalesced: decoded events pile into
                  ;; :inbox and flush as one synchronous batch per event-loop
@@ -257,13 +261,33 @@
                 (if reconnect?
                   (let [delay (.-backoff ctx)]
                     (set! (.-backoff ctx) (min 30000 (* 2 delay)))
-                    (js/setTimeout #(when-not (.-closed ctx) (connect!)) delay))
+                    (set! (.-retryTimer ctx)
+                          (js/setTimeout #(do (set! (.-retryTimer ctx) nil)
+                                              (when-not (.-closed ctx) (connect!)))
+                                         delay)))
                   (do (set! (.-closed ctx) true)
                       (js/console.error (str "[ws] disconnected from " url))
                       (when on-close (on-close))))))
+            (wake! []
+              ;; A socket still CONNECTING after this long is a stale attempt
+              ;; from before the page was suspended; replace it. Mobile
+              ;; browsers freeze timers in the background, so a drop while
+              ;; suspended may otherwise wait the full backoff after resume.
+              (let [ws (.-ws ctx)
+                    stale-connecting? (and ws (= 0 (.-readyState ws))
+                                           (> (- (js/Date.now) (.-connectedAt ctx)) 5000))]
+                (when (and reconnect? (not (.-closed ctx))
+                           (or (nil? ws) (> (.-readyState ws) 1) stale-connecting?))
+                  (when-let [t (.-retryTimer ctx)]
+                    (js/clearTimeout t)
+                    (set! (.-retryTimer ctx) nil))
+                  (when ws (try (.close ws) (catch :default _ nil)))
+                  (set! (.-backoff ctx) 1000)
+                  (connect!))))
             (connect! []
               (let [ws (js/WebSocket. url)]
                 (set! (.-ws ctx) ws)
+                (set! (.-connectedAt ctx) (js/Date.now))
                 (.addEventListener
                  ws "open"
                  (fn [_]
@@ -315,7 +339,9 @@
                      (when-not (and intercept (intercept ev))
                        (.push (.-inbox ctx) (assoc ev :remote? true))
                        (schedule-flush!)))))
-                (.addEventListener ws "close" (fn [_] (handle-drop!)))
+                ;; A socket wake! replaced closes later; only the current one's
+                ;; close is a drop.
+                (.addEventListener ws "close" (fn [_] (when (identical? ws (.-ws ctx)) (handle-drop!))))
                 (.addEventListener ws "error"
                                    (fn [_] (try (.close ws) (catch :default _ nil))))))
             (send! [event]
@@ -339,6 +365,7 @@
       {:effects       {:ws/send (fn [_ event] (send! event))}
        :send!         send!
        :set-dispatch! (fn [dispatch!] (set! (.-dispatch ctx) dispatch!))
+       :wake!         wake!
        :close!        (fn []
                         (set! (.-closed ctx) true)
                         (try (.close (.-ws ctx)) (catch :default _ nil)))})))
