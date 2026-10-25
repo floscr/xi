@@ -3122,6 +3122,44 @@ html:not([data-alt-held]) .compose-send--alt-only {
   display: none;
 }
 
+/* On touch a tap steers and a hold queues (xi.web.views/send-button-on):
+   the ring fills while held (data-holding). Its duration is send-hold-ms. */
+.compose-send--steer {
+  position: relative;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.compose-send-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.compose-send-ring circle {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+}
+
+.compose-send--steer[data-holding] .compose-send-ring {
+  opacity: 1;
+}
+
+.compose-send--steer[data-holding] .compose-send-ring circle {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 450ms linear;
+}
+
 /* Anchored on .compose-box (NOT inside .compose-frame — the frame's
    backdrop-filter would make it the containing block and its overflow:hidden
    would clip the popover away), right-aligned above the composer. */

@@ -2095,6 +2095,65 @@
         (icon/icon {:icon-name :x :size :sm})]])
     queued)])
 
+;; ── Send button on touch while the turn can be steered ──────────────────────
+;; A tap steers the message into the running turn; holding the button for
+;; send-hold-ms queues it, the ring (.compose-send-ring) filling meanwhile.
+;; Sliding the finger away cancels. A mouse keeps click = queue,
+;; Alt+click = steer.
+
+(def ^:private send-hold-ms 450) ; = the ring's transition in style.css
+(def ^:private send-hold-slop-px 24)
+
+;; The touch press on the send button: {:node :x :y :timer :steer!}.
+(defonce ^:private send-hold (atom nil))
+
+(defn- end-send-hold! []
+  (when-let [{:keys [timer ^js node]} @send-hold]
+    (js/clearTimeout timer)
+    (.removeAttribute node "data-holding")
+    (reset! send-hold nil)))
+
+(defn- touch-press? []
+  (contains? #{"touch" "pen"} @last-pointer-type))
+
+(defn- send-button-on
+  "`:on` of the send button while the agent works. `send!` takes
+   {:steer? bool}."
+  [steerable? send!]
+  (if-not steerable?
+    {:click (fn [_] (send! {:steer? false}))}
+    {:click       (fn [^js e]
+                    (when-not (touch-press?)
+                      (send! {:steer? (.-altKey e)})))
+     :contextmenu (fn [^js e] (when (touch-press?) (.preventDefault e)))
+     :pointerdown (fn [^js e]
+                    (when (not= "mouse" (.-pointerType e))
+                      (end-send-hold!)
+                      (let [node (.-currentTarget e)]
+                        (.setAttribute node "data-holding" "")
+                        (reset! send-hold
+                                {:node   node
+                                 :x      (.-clientX e)
+                                 :y      (.-clientY e)
+                                 :steer! #(send! {:steer? true})
+                                 :timer  (js/setTimeout
+                                          (fn []
+                                            (end-send-hold!)
+                                            (when (.-vibrate js/navigator)
+                                              (.vibrate js/navigator 15))
+                                            (send! {:steer? false}))
+                                          send-hold-ms)}))))
+     :pointermove (fn [^js e]
+                    (when-let [{:keys [x y]} @send-hold]
+                      (when (> (js/Math.hypot (- (.-clientX e) x) (- (.-clientY e) y))
+                               send-hold-slop-px)
+                        (end-send-hold!))))
+     :pointerup     (fn [_]
+                      (when-let [{:keys [steer!]} @send-hold]
+                        (end-send-hold!)
+                        (steer!)))
+     :pointercancel (fn [_] (end-send-hold!))}))
+
 (defn- floating-actions
   "Action row inside .compose-frame (icon pills on mobile, a labeled bar on
    desktop): prompt-nav, Projects, Snippets, Commands, then at the right
@@ -2363,17 +2422,22 @@
            spinner-abort
            ;; While the turn can be steered, holding Alt (data-alt-held,
            ;; xi.web.key-hints) turns the send arrow into the steer icon, and
-           ;; an Alt+click steers like Alt+Enter.
+           ;; an Alt+click steers like Alt+Enter. On touch a tap steers and a
+           ;; hold queues (send-button-on).
            (when (or has-input? (seq images) steerable?)
              [:button {:class ["icon-btn" (when steerable? "compose-send--steer")
                                (when-not (or has-input? (seq images)) "compose-send--alt-only")]
                        :title (when steerable? "Send · Alt: into the running turn")
-                       :on {:click (fn [^js e]
-                                     (submit-compose! dispatch! room-id session-id
-                                                      images draft-key draft skill-names
-                                                      {:steer? (and steerable? (.-altKey e))}))}}
+                       :on (send-button-on
+                            steerable?
+                            (fn [opts]
+                              (submit-compose! dispatch! room-id session-id
+                                               images draft-key draft skill-names opts)))}
               [:span {:class ["compose-send-icon"]} (icon/icon {:icon-name :arrow-up :size :md})]
-              (when steerable? [:span {:class ["compose-steer-icon"]} (steer-icon)])])
+              (when steerable?
+                (list [:span {:class ["compose-steer-icon"]} (steer-icon)]
+                      [:svg {:class ["compose-send-ring"] :viewBox "0 0 36 36" :aria-hidden "true"}
+                       [:circle {:cx 18 :cy 18 :r 16.5 :pathLength 100}]]))])
            [:button {:class ["icon-btn"]
                      :on {:click (fn [_] (dispatch! {:type :agent/abort :room-id room-id}))}}
             (icon/icon {:icon-name :circle-x :size :md})]]
