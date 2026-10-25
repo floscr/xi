@@ -105,21 +105,24 @@ Opening an idle session goes through a disk **resume**: the server installs
 the room with an *empty* history for a beat, then streams the messages in a
 separate `:session/resumed`. The chat view must not let that empty history
 shadow the cache — `(or (:history room) (:history cached))` returns `[]`
-(truthy) and blanks the timeline, which used to flash the “Connecting…”
-spinner between the cached paint and the newest chat. Instead `chat-view`
+(truthy) and blanks the timeline, which used to flash the loading
+placeholder between the cached paint and the newest chat. Instead `chat-view`
 prefers the room history only once it is *authoritative* (`(seq room-history)`)
 and otherwise falls through to the cache:
 
-- **cache present** — paint it immediately and show a quiet `Updating…` hint
-  in the chat topbar (`.topbar-updating`) while the resume is in flight; the
-  hint clears the moment the authoritative history lands (identical history =
-  no visible change; new messages simply reconcile in). No spinner flash.
-- **no cache** — fall back to the blocking `Connecting…` spinner, since there
-  is nothing to paint.
+- **cache present** — paint it immediately and run a 2px indeterminate bar
+  along the chat topbar's bottom edge (`.topbar-sync-bar`) while the resume is
+  in flight; it clears the moment the authoritative history lands (identical
+  history = no visible change; new messages simply reconcile in). No spinner
+  flash.
+- **no cache** — a bottom-anchored skeleton of the chat
+  (`views/history-skeleton`: bubbles right, text lines left, a tool row), so
+  the messages land where the ghosts were. After 3s it adds “Still fetching
+  from the server…” (“Waiting for the connection…” at once while offline).
 
 The live re-attach path (`:room/joined` carries the full history, or the
 cached one spliced back in, see below) is authoritative on arrival, so it
-never shows the `Updating…` hint.
+never shows the sync bar.
 
 ### Live-room transfer skip (`:history-base` / `:history-tail`)
 

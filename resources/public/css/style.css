@@ -123,22 +123,96 @@ body {
   white-space: nowrap;
 }
 
-/* Quiet "cache shown, fetching newer" hint that replaces the old
-   cache→spinner→newest flash. Sits in the (otherwise empty) chat topbar
-   title so it stays visible even when the timeline is scrolled to the bottom. */
-.topbar-updating {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--size-2);
-  font-weight: 500;
-  font-size: var(--font-xs);
-  color: var(--fg-2);
+/* Quiet "cache shown, fetching newer" hint (views/chat-view): an
+   indeterminate hairline along the chat topbar's bottom edge, so it stays in
+   view wherever the timeline is scrolled and moves no content. */
+.topbar-sync-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
 }
 
-.topbar-updating .agent-status-spinner {
-  --spinner-w: 1.5px;
-  width: 11px;
-  height: 11px;
+.topbar-sync-bar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: topbar-sync-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes topbar-sync-slide {
+  from { left: -40%; }
+  to { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar-sync-bar::before { animation: none; left: 0; width: 100%; opacity: 0.5; }
+}
+
+/* A session's history loading with nothing cached (views/history-skeleton):
+   the chat's shapes, bottom-anchored like the timeline. */
+.history-skeleton {
+  position: relative;
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4);
+  padding: var(--size-2) 0;
+}
+
+.history-skeleton i {
+  display: block;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, var(--bg-2) 0%,
+                color-mix(in srgb, var(--fg-2) 22%, var(--bg-2)) 40%, var(--bg-2) 80%);
+  background-size: 260% 100%;
+  animation: history-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.history-skeleton i.history-skeleton-user {
+  align-self: flex-end;
+  width: 64%;
+  height: 44px;
+  border-radius: var(--radius-surface);
+}
+
+.history-skeleton i.history-skeleton-user--short { width: 46%; height: 40px; }
+
+.history-skeleton-tool { width: 70%; height: 32px; }
+
+.history-skeleton-lines { display: flex; flex-direction: column; gap: var(--size-2); }
+.history-skeleton-lines i { height: 12px; }
+.history-skeleton-lines i:nth-child(1) { width: 92%; }
+.history-skeleton-lines i:nth-child(2) { width: 84%; }
+.history-skeleton-lines i:nth-child(3) { width: 58%; }
+
+.history-skeleton-note {
+  margin: 0 0 var(--size-2);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  opacity: 0;
+  animation: history-skeleton-note-in 0.3s ease 3s forwards;
+}
+
+.history-skeleton-note--offline { animation-delay: 0s; }
+
+@keyframes history-skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -60% 0; }
+}
+
+@keyframes history-skeleton-note-in { to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .history-skeleton i { animation: none; }
 }
 
 /* User avatars (xi.avatar): an image over a circle of initials. The stack

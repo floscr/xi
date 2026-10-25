@@ -212,6 +212,21 @@
 
 (defn spinner [] [:div {:class ["agent-status-spinner"]}])
 
+(defn- history-skeleton
+  "Stands in for a session's history while it loads with nothing cached
+   (chat-history :loading?). Bottom-anchored like the timeline, so the
+   messages land where the ghosts were; the note fades in after a few seconds
+   (CSS), at once while offline."
+  [offline?]
+  [:div {:class ["history-skeleton"] :role "status" :aria-label "Loading conversation"}
+   [:p {:class ["history-skeleton-note" (when offline? "history-skeleton-note--offline")]}
+    (if offline? "Waiting for the connection…" "Still fetching from the server…")]
+   [:i {:class ["history-skeleton-user"]}]
+   [:i {:class ["history-skeleton-tool"]}]
+   [:div {:class ["history-skeleton-lines"]} [:i] [:i] [:i]]
+   [:i {:class ["history-skeleton-user" "history-skeleton-user--short"]}]
+   [:div {:class ["history-skeleton-lines"]} [:i] [:i]]])
+
 (defn reload-with-feedback!
   "Paint a full-screen 'Reloading…' overlay (built directly, state is about
    to be discarded), then reload on the next frame so it is visible."
@@ -5428,7 +5443,7 @@
                                            (into #{} (map :id) (vals perm-hosts))))
                (when room (ask-hover-button dispatch! (:id room)))))
             (with-post-key "tl-empty"
-                           (empty-state/empty-state {} (spinner) [:p "Connecting…"])))
+                           (history-skeleton (false? (:web/connected? state)))))
           (with-post-key "tl-quick-replies"
                          (quick-replies-row dispatch! room busy?)))]
         (copy-dialog-overlay dispatch! (:web/copy-text state))
@@ -5703,9 +5718,9 @@
      [:div {:class ["topbar" "topbar--chat"]}
       (menu-button dispatch!)
       [:div {:class ["topbar-title"]}
+       ;; Positioned against the topbar: a hairline along its bottom edge.
        (when (and resuming? (seq history))
-         [:span {:class ["topbar-updating"]}
-          (spinner) [:span "Updating…"]])]
+         [:span {:class ["topbar-sync-bar"] :role "progressbar" :aria-label "Updating"}])]
       (offline-badge state)
       (yolo-chip dispatch! room)
       (process-chip dispatch! room)
