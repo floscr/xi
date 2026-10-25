@@ -5,4 +5,5 @@
  :command      ["bun" "main.mjs"]
  :routes       {:prefixes ["scripted/"]}
  :models       ["scripted/echo"]
- :capabilities #{:usage}}
+ :capabilities #{:usage :login :accounts}
+ :login        {:name "scripted" :label "Scripted"}}

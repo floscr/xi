@@ -39,6 +39,44 @@
              (fn [{:keys [stderr]}]
                (is (str/includes? stderr "No model picked: choose one with /model or --model.")))))))))
 
+(defn- account! [env & args]
+  (let [[opts args] (if (map? (last args)) [(last args) (butlast args)] [nil args])]
+    (h/run-xi! env (into ["account" "scripted"] args) (merge {:env {"XI_FAKE_LLM" ""}} opts))))
+
+(deftest accounts-sign-in-switch-and-forget
+  ;; the protocol's accounts capability, through `xi account`: the sign-in
+  ;; asks for the page's code on stdin and sends it as login-code
+  (async done
+    (h/with-env! (config [{:dir scripted-dir}]) {} done
+      (fn [env]
+        (-> (account! env)
+            (.then (fn [{:keys [code stdout stderr]}]
+                     (is (= 0 code) stderr)
+                     (is (= "Scripted accounts\n* 1  one@x.io  live\n" stdout))
+                     (account! env "login" "--alias" "spare" {:stdin "nope\n"})))
+            (.then (fn [{:keys [code stdout stderr]}]
+                     (is (= 1 code))
+                     (is (str/includes? stdout "Open https://scripted.example/sign-in"))
+                     (is (str/includes? stderr "Scripted sign-in failed: wrong code"))
+                     (account! env "login" "--alias" "spare" {:stdin "ok\n"})))
+            (.then (fn [{:keys [code stdout stderr]}]
+                     (is (= 0 code) stderr)
+                     (is (str/includes? stdout "Signed in to Scripted as new@x.io."))
+                     (account! env "one@x.io")))
+            (.then (fn [{:keys [stdout]}]
+                     (is (= "Scripted now runs on one@x.io. Chats use it from their next message.\n" stdout))
+                     (account! env "forget" "one@x.io")))
+            (.then (fn [{:keys [code stderr]}]
+                     (is (= 1 code))
+                     (is (str/includes? stderr "that is the live account") "the provider's refusal reaches the user")
+                     (account! env "forget" "spare")))
+            (.then (fn [{:keys [stdout]}]
+                     (is (= "Forgot new@x.io (spare).\n" stdout))
+                     (account! env "alias" "1" "main")))
+            (.then (fn [_] (account! env "--json")))
+            (.then (fn [{:keys [json]}]
+                     (is (= {:accounts [{:id "1" :active true :email "one@x.io" :alias "main"}]} json)))))))))
+
 (deftest an-unusable-provider-is-reported
   (async done
     (h/with-env! (config [{:dir "/nonexistent/provider"}]) {} done
