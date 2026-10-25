@@ -218,6 +218,11 @@ token that expired and renews once the account is active.
 A program with `accounts` and `usage` may return a reading per account,
 each naming it in `account`.
 
+In TypeScript, the kit's `withAccounts` serves all of this, `login` and
+`usage` included, from an adapter that says how the provider's live
+sign-in is read, written and signed into; `cliLogin` runs a sign-in
+program that prints a URL and reads the page's code from stdin.
+
 ### Services
 
 Any request may use these:
