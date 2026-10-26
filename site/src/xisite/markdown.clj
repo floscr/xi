@@ -28,9 +28,17 @@
 
 ;; --- Heading ids (github-slugger style) ---
 
-(defn slugify [s]
+(defn- html->text
+  "Heading html as plain text: tags dropped, entities decoded (markdown-clj
+   writes `*` in inline code as `&#42;`; hiccup would escape it again)."
+  [s]
   (-> s
       (str/replace #"<[^>]*>" "")
+      (str/replace #"&#(\d+);" (fn [[_ n]] (str (char (parse-long n)))))
+      (str/replace #"&(lt|gt|quot|amp);" (fn [[_ e]] ({"lt" "<" "gt" ">" "quot" "\"" "amp" "&"} e)))))
+
+(defn slugify [s]
+  (-> (html->text s)
       str/lower-case
       (str/replace #"[^\p{L}\p{N}\s-]" "")
       str/trim
@@ -47,7 +55,7 @@
   (for [[_ level id content] (re-seq #"<h([2-3]) id=\"([^\"]+)\">(.*?)</h\1>" html)]
     {:level (parse-long level)
      :id id
-     :text (str/replace content #"<[^>]*>" "")}))
+     :text (html->text content)}))
 
 ;; --- Links ---
 
