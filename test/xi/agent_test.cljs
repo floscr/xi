@@ -197,6 +197,12 @@
              {:kind :tool-call :id "t1" :tool "bash"
               :arguments {:command "ls"} :result "out"
               :is-error false :status :done}]))))
+  (testing "a Claude transcript's tool names replay without the mcp__xi-tools__ prefix"
+    (is (= [{:id "t1" :name "clj" :arguments {}}
+            {:id "t2" :name "mcp__chrome__click" :arguments {}}]
+           (:tool-calls (first (agent/history->messages
+                                [{:kind :tool-call :id "t1" :tool "mcp__xi-tools__clj" :status :done}
+                                 {:kind :tool-call :id "t2" :tool "mcp__xi-tools__mcp__chrome__click" :status :done}]))))))
   (testing "running/aborted tool calls are skipped (no dangling tool_use)"
     (is (= [{:role :user :text "go"}]
            (agent/history->messages

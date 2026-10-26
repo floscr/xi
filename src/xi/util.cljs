@@ -155,6 +155,15 @@
       n)
     n))
 
+(defn strip-xi-tools-prefix
+  "A tool name without the Claude provider's `mcp__xi-tools__` prefix, the
+   bare name every other provider advertises. Unlike strip-mcp-prefix an MCP
+   server's tool keeps its `mcp__<server>__` part."
+  [n]
+  (if (and (string? n) (str/starts-with? n "mcp__xi-tools__"))
+    (subs n (count "mcp__xi-tools__"))
+    n))
+
 (def tool-arg-value-max
   "Longest argument value `tool-args-line` shows before cutting it."
   80)

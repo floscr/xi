@@ -37,9 +37,11 @@
   "Run one proxied tool call through `tool-policy` (nil lets it through, a
    nil result blocks, {:intercepted true :result …} stands in for the tool's
    result) and the turn's `registry`. Promise of {:content [block …]
-   :is-error bool}."
+   :is-error bool}. A name with the Claude provider's prefix resolves to the
+   bare tool: a model replaying a Claude transcript copies its names."
   [{:keys [name arguments]} {:keys [registry tool-policy tool-ctx cwd client-pid]}]
-  (let [policy (or tool-policy (fn [call] (js/Promise.resolve call)))
+  (let [name   (if (contains? registry name) name (util/strip-xi-tools-prefix name))
+        policy (or tool-policy (fn [call] (js/Promise.resolve call)))
         call   {:name name :arguments arguments}]
     (-> (policy call)
         (.then

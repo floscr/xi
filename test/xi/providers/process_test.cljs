@@ -134,6 +134,17 @@
                  (is (= {:content [{:type "text" :text "ran"}] :is-error false} ran))
                  (done))))))
 
+(deftest a-claude-prefixed-name-runs-the-bare-tool
+  (async done
+    (let [seen (atom nil)]
+      (-> (process/run-call {:name "mcp__xi-tools__ls" :arguments {}}
+                            {:registry {"ls" (fn [_ _] {:content [{:type "text" :text "ran"}]})}
+                             :tool-policy (fn [call] (reset! seen (:name call)) (js/Promise.resolve call))})
+          (.then (fn [ran]
+                   (is (= "ls" @seen))
+                   (is (= {:content [{:type "text" :text "ran"}] :is-error false} ran))
+                   (done)))))))
+
 ;; ── Locks ────────────────────────────────────────────────────────────────────
 
 (deftest locks-serve-waiters-in-order

@@ -121,7 +121,7 @@
          :tool-call
          ;; Only replay completed calls (a result arrived). Skip running/aborted.
          (if (and id (contains? #{:done :error} status))
-           (let [tc  {:id id :name tool :arguments (or arguments {})}
+           (let [tc  {:id id :name (util/strip-xi-tools-prefix tool) :arguments (or arguments {})}
                  res {:id id :content (or result "") :is-error (boolean is-error)}]
              (if (= :tool (:role (peek acc)))
                ;; Mid tool-group: this call ran in the same assistant turn as
