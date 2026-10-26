@@ -3483,31 +3483,133 @@ a.btn-link {
   color: var(--danger-700);
 }}
 
-/* ── Confirm ─────────────────────────────────────────────────────── */
+/* ── Confirm: tap again (default) ────────────────────────────────── */
+/* ui/js/context_menu arms a :confirm item on the first activation: the row
+   fills with the danger color and a bar drains over
+   --context-menu-arm-duration (set inline by the runtime, which owns the
+   timeout). The other rows step back meanwhile. */
 
-.context-menu-confirm-message {
-  padding: var(--size-2) var(--size-3);
+.context-menu--armed .context-menu-item:not(.context-menu-item--armed) {
+  opacity: 0.45;
+  transition: opacity var(--duration-fast) var(--ease-standard);
+}
+
+.context-menu-item--armed {
+  position: relative;
+  overflow: hidden;
+  font-weight: var(--weight-medium);
+  animation: context-menu-arm var(--duration-standard) var(--ease-spring);
+}
+
+.context-menu-item--armed::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: currentColor;
+  opacity: 0.5;
+  transform-origin: left;
+  animation: context-menu-arm-drain var(--context-menu-arm-duration, 3000ms) linear forwards; /* lint-allow: countdown, not motion */
+}
+
+@keyframes context-menu-arm {
+  from { transform: scale(0.97); }
+  to   { transform: scale(1); }
+}
+
+@keyframes context-menu-arm-drain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+/* ── Confirm: panel (:confirm-style :panel) ──────────────────────── */
+/* The menu drills into a confirm page: back header, message, a full-width
+   action and Cancel. */
+
+.context-menu.context-menu--panel {
+  width: calc(var(--size-16) * 4);
+  max-width: calc(100vw - 16px);
+}
+
+.context-menu-panel {
+  animation: context-menu-push var(--duration-standard) var(--ease-enter);
+}
+
+@keyframes context-menu-push {
+  from { opacity: 0; transform: translateX(var(--size-3)); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.context-menu-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--size-1);
+  padding: var(--size-1);
+  border-bottom: var(--border-subtle);
   font-size: var(--font-sm);
-  line-height: 1.25;
   color: var(--fg-1);
+}
+
+.context-menu-panel-back {
+  display: grid;
+  place-items: center;
+  width: var(--size-8);
+  height: var(--size-8);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--fg-1);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+
+.context-menu-panel-back:focus-visible{
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+@media (hover: hover){.context-menu-panel-back:hover{
+  background: var(--bg-2);
+  color: var(--fg-0);
+}}
+
+.context-menu-panel-body {
+  padding: var(--size-3) var(--size-3) 0;
+}
+
+.context-menu-panel-title {
+  margin: 0;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-medium);
+  color: var(--fg-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.context-menu-confirm-actions {
-  display: flex;
-  gap: 0;
+.context-menu-panel-message {
+  margin: var(--size-1) 0 0;
+  font-size: var(--font-sm);
+  line-height: var(--leading-body);
+  color: var(--fg-1);
 }
 
-.context-menu-confirm-actions .context-menu-item {
-  flex: 1;
-  justify-content: center;
+.context-menu-panel-actions {
+  display: grid;
+  gap: var(--size-1);
+  padding: var(--size-3);
+}
+
+.context-menu-panel-actions .btn {
+  width: 100%;
 }
 
 /* ── Separator ───────────────────────────────────────────────────── */
 
 .context-menu-separator {
   height: 1px;
-  margin: var(--size-1) 0;
+  margin: 0;
   background: var(--gray-200);
 }
 
@@ -3548,6 +3650,18 @@ a.btn-link {
     background: var(--gray-800);
   }
 }
+
+/* Armed row colors: after the dark-mode blocks so they beat the danger
+   item's themed hover colors on equal specificity. */
+
+.context-menu.context-menu--armed .context-menu-item--armed, .context-menu.context-menu--armed .context-menu-item--armed:focus-visible{
+  background: var(--danger);
+  color: var(--fg-on-danger);
+}
+@media (hover: hover){.context-menu.context-menu--armed .context-menu-item--armed:hover{
+  background: var(--danger);
+  color: var(--fg-on-danger);
+}}
 
 
 /* ── DialKit — live tuning panel ──────────────────────────────────── */

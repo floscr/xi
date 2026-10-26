@@ -2340,7 +2340,7 @@
     if (truth_(or__23426__auto__1)) {
       return or__23426__auto__1;
     } else {
-      const s2 = { "menu": null, "cleanup": null, "growthObserver": null };
+      const s2 = { "menu": null, "cleanup": null, "growthObserver": null, "armed": null, "back": null };
       window["__uiCtxState"] = s2;
       return s2;
     }
@@ -2370,8 +2370,37 @@
     }));
     return svg2;
   };
-  var dismiss_BANG_ = function() {
+  var arm_ms = 3e3;
+  var disarm_BANG_ = function() {
     const state1 = get_state();
+    const armed2 = state1.armed;
+    if (truth_(armed2)) {
+      clearTimeout(armed2.timer);
+      armed2.el.classList.remove("context-menu-item--armed");
+      armed2.menu.classList.remove("context-menu--armed");
+      armed2.labelEl.textContent = armed2.label;
+      state1.armed = null;
+      return true;
+    }
+    ;
+  };
+  var again_label = function(label) {
+    const verb1 = truth_(document.documentElement.classList.contains("clj-ui-touch")) ? "Tap" : "Click";
+    return `${verb1 ?? ""}${" again to "}${label.charAt(0).toLowerCase() ?? ""}${label.slice(1) ?? ""}`;
+  };
+  var arm_BANG_ = function(menu, el, label_el, item) {
+    disarm_BANG_();
+    const label1 = item["label"];
+    el.style.setProperty("--context-menu-arm-duration", `${arm_ms ?? ""}ms`);
+    el.classList.add("context-menu-item--armed");
+    menu.classList.add("context-menu--armed");
+    label_el.textContent = again_label(label1);
+    return get_state().armed = { "el": el, "menu": menu, "labelEl": label_el, "label": label1, "timer": setTimeout(disarm_BANG_, arm_ms) };
+  };
+  var dismiss_BANG_ = function() {
+    disarm_BANG_();
+    const state1 = get_state();
+    state1.back = null;
     if (truth_(state1.menu)) {
       state1.menu.remove();
       state1.menu = null;
@@ -2401,98 +2430,187 @@
     }
     ;
   };
-  var show_confirm_BANG_ = function(menu, item) {
-    const confirm_val1 = item["confirm"];
-    const message2 = confirm_val1 === true ? "Are you sure?" : confirm_val1;
-    const _3 = menu.innerHTML = "";
-    const msg_el4 = document.createElement("div");
-    msg_el4.className = "context-menu-confirm-message";
-    msg_el4.textContent = message2;
-    menu.appendChild(msg_el4);
-    const actions5 = document.createElement("div");
-    actions5.className = "context-menu-confirm-actions";
-    const cancel_btn6 = document.createElement("button");
-    cancel_btn6.className = "context-menu-item";
-    cancel_btn6.textContent = "Cancel";
-    cancel_btn6.setAttribute("tabindex", "-1");
-    cancel_btn6.addEventListener("click", (function(e) {
+  var resize_ms = 240;
+  var resize_easing = "cubic-bezier(0.2, 0, 0, 1)";
+  var reduced_motion_QMARK_ = function() {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  };
+  var animate_height_BANG_ = function(menu, h0) {
+    const h11 = menu.offsetHeight;
+    if (truth_(!_EQ_(h0, h11) && (() => {
+      const and__23442__auto__2 = menu.animate;
+      if (truth_(and__23442__auto__2)) {
+        return not(reduced_motion_QMARK_());
+      } else {
+        return and__23442__auto__2;
+      }
+      ;
+    })())) {
+      return menu.animate({ "height": [`${h0 ?? ""}px`, `${h11 ?? ""}px`] }, { "duration": resize_ms, "easing": resize_easing });
+    }
+    ;
+  };
+  var make_el = function(tag, class_name) {
+    const el1 = document.createElement(tag);
+    el1.className = class_name;
+    return el1;
+  };
+  var make_button = function(class_name, text, on_click4) {
+    const btn1 = make_el("button", class_name);
+    btn1.setAttribute("type", "button");
+    btn1.setAttribute("tabindex", "-1");
+    if (truth_(text)) {
+      btn1.appendChild(document.createTextNode(text));
+    }
+    ;
+    btn1.addEventListener("click", (function(e) {
       e.preventDefault();
       e.stopPropagation();
-      return dismiss_BANG_();
+      return on_click4();
     }));
-    actions5.appendChild(cancel_btn6);
+    return btn1;
+  };
+  var chevron_left = [["path", [["d", "m15 18-6-6 6-6"]]]];
+  var show_panel_BANG_ = function(menu, item, on_back) {
+    const h01 = menu.offsetHeight;
+    const w02 = menu.offsetWidth;
+    const label3 = item["label"];
+    const confirm4 = item["confirm"];
+    const title5 = item["confirm-title"];
+    const message6 = truth_(string_QMARK_(confirm4)) ? confirm4 : "This can't be undone.";
     const danger7 = item["variant"] === "danger";
-    const confirm_btn8 = document.createElement("button");
-    confirm_btn8.className = danger7 ? "context-menu-item context-menu-item--danger" : "context-menu-item";
-    confirm_btn8.textContent = "Confirm";
-    confirm_btn8.setAttribute("tabindex", "-1");
-    confirm_btn8.addEventListener("click", (function(e) {
-      e.preventDefault();
-      e.stopPropagation();
+    const panel8 = make_el("div", "context-menu-panel");
+    const head9 = make_el("div", "context-menu-panel-head");
+    const back10 = make_button("context-menu-panel-back context-menu-action", null, on_back);
+    const body11 = make_el("div", "context-menu-panel-body");
+    const actions12 = make_el("div", "context-menu-panel-actions");
+    const run13 = make_button(`${"btn btn-sm context-menu-action "}${(danger7 ? "btn-danger" : "btn-primary") ?? ""}`, null, (function() {
       dismiss_BANG_();
       return execute_item_BANG_(item);
     }));
-    actions5.appendChild(confirm_btn8);
-    menu.appendChild(actions5);
-    const cancel9 = menu.querySelector(".context-menu-item");
-    if (truth_(cancel9)) {
-      return cancel9.focus();
+    const cancel14 = make_button("btn btn-sm btn-ghost context-menu-action", "Cancel", on_back);
+    disarm_BANG_();
+    back10.setAttribute("aria-label", "Back");
+    back10.appendChild(create_icon(chevron_left));
+    head9.appendChild(back10);
+    const span15 = make_el("span", "");
+    span15.textContent = label3;
+    head9.appendChild(span15);
+    if (truth_(title5)) {
+      const t16 = make_el("p", "context-menu-panel-title");
+      t16.textContent = title5;
+      body11.appendChild(t16);
+    }
+    ;
+    const m17 = make_el("p", "context-menu-panel-message");
+    m17.textContent = message6;
+    body11.appendChild(m17);
+    const paths18 = item["icon-paths"];
+    if (truth_((() => {
+      const and__23442__auto__19 = paths18;
+      if (truth_(and__23442__auto__19)) {
+        return paths18.length > 0;
+      } else {
+        return and__23442__auto__19;
+      }
+      ;
+    })())) {
+      run13.appendChild(create_icon(paths18));
+    }
+    ;
+    run13.appendChild(document.createTextNode(label3));
+    actions12.appendChild(run13);
+    actions12.appendChild(cancel14);
+    panel8.appendChild(head9);
+    panel8.appendChild(body11);
+    panel8.appendChild(actions12);
+    menu.innerHTML = "";
+    menu.style.minWidth = `${w02 ?? ""}px`;
+    menu.classList.add("context-menu--panel");
+    menu.appendChild(panel8);
+    get_state().back = on_back;
+    animate_height_BANG_(menu, h01);
+    return cancel14.focus();
+  };
+  var fill_menu_BANG_ = function(menu, items2, focus_idx) {
+    const h01 = menu.offsetHeight;
+    menu.innerHTML = "";
+    menu.classList.remove("context-menu--panel");
+    menu.style.minWidth = "";
+    get_state().back = null;
+    items2.forEach((function(item, idx) {
+      if (item["type"] === "separator") {
+        const sep2 = make_el("div", "context-menu-separator");
+        sep2.setAttribute("role", "separator");
+        return menu.appendChild(sep2);
+      } else {
+        const url3 = item["url"];
+        const el4 = make_el(truth_(url3) ? "a" : "button", item["variant"] === "danger" ? "context-menu-item context-menu-item--danger" : "context-menu-item");
+        const span5 = document.createElement("span");
+        el4.setAttribute("role", "menuitem");
+        el4.setAttribute("tabindex", "-1");
+        if (truth_(url3)) {
+          el4.setAttribute("href", url3);
+        }
+        ;
+        const paths6 = item["icon-paths"];
+        if (truth_((() => {
+          const and__23442__auto__7 = paths6;
+          if (truth_(and__23442__auto__7)) {
+            return paths6.length > 0;
+          } else {
+            return and__23442__auto__7;
+          }
+          ;
+        })())) {
+          el4.appendChild(create_icon(paths6));
+        }
+        ;
+        span5.textContent = item["label"];
+        el4.appendChild(span5);
+        el4.addEventListener("click", (function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (not(item["confirm"])) {
+            dismiss_BANG_();
+            return execute_item_BANG_(item);
+          } else {
+            if (item["confirm-style"] === "panel") {
+              return show_panel_BANG_(menu, item, (function() {
+                return fill_menu_BANG_(menu, items2, idx);
+              }));
+            } else {
+              if (truth_(el4.classList.contains("context-menu-item--armed"))) {
+                dismiss_BANG_();
+                return execute_item_BANG_(item);
+              } else {
+                if ("else") {
+                  return arm_BANG_(menu, el4, span5, item);
+                } else {
+                  return null;
+                }
+              }
+            }
+          }
+          ;
+        }));
+        menu.appendChild(el4);
+        if (_EQ_(idx, focus_idx)) {
+          return el4.focus();
+        }
+        ;
+      }
+      ;
+    }));
+    if (!(focus_idx == null)) {
+      return animate_height_BANG_(menu, h01);
     }
     ;
   };
   var create_menu = function(items2) {
-    const menu1 = document.createElement("div");
-    menu1.className = "context-menu";
+    const menu1 = make_el("div", "context-menu");
     menu1.setAttribute("role", "menu");
-    items2.forEach((function(item) {
-      if (item["type"] === "separator") {
-        const sep2 = document.createElement("div");
-        sep2.className = "context-menu-separator";
-        sep2.setAttribute("role", "separator");
-        return menu1.appendChild(sep2);
-      } else {
-        const url3 = item["url"];
-        const tag4 = truth_(url3) ? "a" : "button";
-        const el5 = document.createElement(tag4);
-        const danger6 = item["variant"] === "danger";
-        el5.className = danger6 ? "context-menu-item context-menu-item--danger" : "context-menu-item";
-        el5.setAttribute("role", "menuitem");
-        el5.setAttribute("tabindex", "-1");
-        if (truth_(url3)) {
-          el5.setAttribute("href", url3);
-        }
-        ;
-        const paths7 = item["icon-paths"];
-        if (truth_((() => {
-          const and__23442__auto__8 = paths7;
-          if (truth_(and__23442__auto__8)) {
-            return paths7.length > 0;
-          } else {
-            return and__23442__auto__8;
-          }
-          ;
-        })())) {
-          el5.appendChild(create_icon(paths7));
-        }
-        ;
-        const span9 = document.createElement("span");
-        span9.textContent = item["label"];
-        el5.appendChild(span9);
-        el5.addEventListener("click", (function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (truth_(item["confirm"])) {
-            return show_confirm_BANG_(el5.closest(".context-menu"), item);
-          } else {
-            dismiss_BANG_();
-            return execute_item_BANG_(item);
-          }
-          ;
-        }));
-        return menu1.appendChild(el5);
-      }
-      ;
-    }));
+    fill_menu_BANG_(menu1, items2, null);
     return menu1;
   };
   var clamp_to_viewport_BANG_ = function(menu) {
@@ -2538,15 +2656,16 @@
     }
     ;
   };
+  var focusable = ".context-menu-item, .context-menu-action";
   var focus_first_item_BANG_ = function(menu) {
-    const first_item1 = menu.querySelector(".context-menu-item");
+    const first_item1 = menu.querySelector(focusable);
     if (truth_(first_item1)) {
       return first_item1.focus();
     }
     ;
   };
   var focus_next_BANG_ = function(menu, direction) {
-    const items1 = menu.querySelectorAll(".context-menu-item");
+    const items1 = menu.querySelectorAll(focusable);
     const active2 = document.activeElement;
     const len3 = items1.length;
     if (len3 > 0) {
@@ -2624,7 +2743,20 @@
         const key16 = e.key;
         if (key16 === "Escape") {
           e.preventDefault();
-          return dismiss_BANG_();
+          if (truth_(disarm_BANG_())) {
+            return null;
+          } else {
+            if (truth_(state12.back)) {
+              return state12.back();
+            } else {
+              if ("else") {
+                return dismiss_BANG_();
+              } else {
+                return null;
+              }
+            }
+          }
+          ;
         } else {
           if (key16 === "ArrowDown") {
             e.preventDefault();
@@ -4623,7 +4755,7 @@
   // .compiled/flip.mjs
   var default_duration = 250;
   var default_easing = "cubic-bezier(0.32, 0.72, 0, 1)";
-  var reduced_motion_QMARK_ = function() {
+  var reduced_motion_QMARK_2 = function() {
     return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   };
   var resolve_els = function(target) {
@@ -4753,7 +4885,7 @@
       return play(snap, null);
     });
     f14.cljs$core$IFn$_invoke$arity$2 = (function(snap, opts) {
-      if (truth_(reduced_motion_QMARK_())) {
+      if (truth_(reduced_motion_QMARK_2())) {
       } else {
         const opts3 = (() => {
           const or__23426__auto__4 = opts;
@@ -5510,7 +5642,7 @@
   var round2 = function(v) {
     return Math.round(v * 100) / 100;
   };
-  var reduced_motion_QMARK_2 = function() {
+  var reduced_motion_QMARK_3 = function() {
     return matchMedia("(prefers-reduced-motion: reduce)").matches;
   };
   var has_attr_QMARK_ = function(el, attr) {
@@ -5801,7 +5933,7 @@
     }
     ;
     if (truth_((() => {
-      const or__23426__auto__9 = reduced_motion_QMARK_2();
+      const or__23426__auto__9 = reduced_motion_QMARK_3();
       if (truth_(or__23426__auto__9)) {
         return or__23426__auto__9;
       } else {
