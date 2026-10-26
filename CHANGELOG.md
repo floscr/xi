@@ -2,37 +2,122 @@
 
 What changed in each Xi release, newest first.
 
-## Unreleased
+## 0.5.0 - 2026-10-26
 
 ### Added
 
-- Camera
-  - Share a device's camera with a chat from the web client's ⋮ menu (`/camera`): a live preview, the screen stays on
-  - Extensions read pictures from it with `xi.api.device/camera`, one or a burst; a read lands on the sharing device
-- `xi start`
-  - Starts a headless server in the background and opens the web client, signed in by a one-time link: no pairing on your own machine
-  - Reuses a server already running on the port; the server logs to `~/.config/xi/server.log`
-- Palette menus for extension dialogs
-  - `xi.api.dialog/select` with `{:menu? true}` shows a long list as a filterable Cmd+K page, opened as the dialog arrives
+- Windows
+  - Split a chat into windows
+  - Windows as sidebars
+  - Undo and redo layout changes
+  - On narrow screens one window at a time, sidebars as drawers
+
+- [Workspaces](https://xi.florianschroedl.com/docs/workspaces/)
+  - Tabs that narrow Xi to a set of projects
+  - Make one from the palette (<kbd>Ctrl+K</kbd>)
+  - Or per project, from `:workspaces` in `config.edn`
+
+- Agent blocks
+  - Agents show checklists, choices and small layouts you act on
+  - Agents draw their own layouts as hiccup, sanitized
+  - MCP Apps: tools with a UI show their view in the chat
+  - Extensions add their own block kinds
+  - Open a block as a buffer, move between blocks with the keyboard
+
+- Sub-agents in the chat: ask, steer and reply in place
+
+- Steering
+  - <kbd>Alt+Enter</kbd> steers a running turn
+  - On touch, tap send to steer, hold to queue
+  - Steer a queued message into the running turn
+
+- Providers and accounts
+  - Sign in to several accounts of a provider and switch between them
+  - `/account` and `xi account` list, switch and sign in to accounts
+  - Accounts page in the web client
+  - Every model provider runs as its own program, Claude included
+  - `:providers` in `config.edn` picks them, from a directory or npm
+  - Write your own with the provider protocol or `@xi-agent/provider-kit`
+  - No runtime dependencies; Claude's SDK installs on first use
+  - Save, resume and `/tree` work for Ollama, Codex and OpenCode
+
+- CLI
+  - `xi start` runs a background server and opens the web client
+  - `xi server --no-pairing` admits every client
+
+- Diff viewer
+  - Stacked and split layouts
+  - Explain and Modify answer inline
+
+- Color themes
+  - Tokyo Night, Catppuccin, Gruvbox, Nord, Rosé Pine and Nezumi
+
+- Chat
+  - Rename a chat from its menu, with suggested names
+  - Copy or share a chat's link
+  - Find the links and files a chat mentions from the palette
+  - Model and usage under the message box on wide screens
+  - Copy a table as Markdown or for a spreadsheet
+  - Hex and `rgb()` colors show a swatch
+  - Copy one line of a code block from its menu
+  - Attachments as cards, editable after sending
+  - Slash commands ranked by use
+
+- Configuration
+  - Pick per tool which tool blocks start collapsed
+
+- Extensions
+  - Load errors show in the UI instead of on stderr
+  - [Palette menus and drill-downs](https://xi.florianschroedl.com/docs/extensions-reference/#browser-halves), also for [`xi.api.dialog/select`](https://xi.florianschroedl.com/docs/extensions-reference/#xiapidialog)
+  - [`xi.api.store`](https://xi.florianschroedl.com/docs/extensions-reference/#xiapistore), a key-value store
+  - Alerts, chips, button groups and skeletons on extension pages
+
+- Skills
+  - A `$SKILL_DATA` directory for each skill's data
 
 ### Changed
 
-- The default port is now 1414 (ξ is the 14th Greek letter), HTTPS 1443. Set `XI_PORT=7474` to keep the old one; browsers pair again on the new port
+- Default port is 1414 (HTTPS 1443); `XI_PORT=7474` keeps the old one
 
-## 0.5.0 - 2026-10-22
+- Project tasks
+  - `run_task` replaces the `bb` tool, for bb, npm, pnpm, yarn and deno
+  - Rules with the old names (`:tool :bb`, `:bb-trusted`) are refused until `xi migrate` updates them
 
-### Changed
+### Fixed
 
-- Providers are programs
-  - Every model provider runs as its own process, spawned per message; Xi keeps the tools, the rules and the chat
-  - Claude, Ollama, OpenAI Codex and OpenCode moved to the xi-providers repo and ship inside the package as before
-  - `:providers` in `config.edn` picks which run, in model-picker order, with options (`{:id :ollama :base-url …}`)
-  - A provider can come from a directory (`{:dir …}`) or an npm package (`{:npm "name@1.2.0"}`)
-  - Write your own in any language: [the provider protocol](docs/provider-protocol.md), or TypeScript with `@xi-agent/provider-kit`
-- No Claude dependency
-  - The package has no runtime dependencies; the Claude Agent SDK installs on the first start that runs Claude
-  - A new chat starts on the first provider's default model, and titles, summaries and compaction use the side-turn provider's models
-  - With no default model, Xi asks you to pick one instead of failing at the provider
+- Permissions
+  - `:dir` rules match whole path components, with `..` and symlinks resolved
+  - `:guard :always` asks can no longer be overridden
+  - Every pending ask shows in its own tool block
+  - Answering one of several asks no longer jumps the chat
+  - Sub-agents ask for their gated tool calls
+
+- Scroll jumps on iPhone when opening or scrolling a chat
+
+- Reopening the web client reconnects at once and loads faster
+
+- Diffs
+  - Diff buffers keep their state when you switch away
+  - Session edits open after their directory moved
+  - Files from other repos open from session diffs
+
+- Resumed sessions keep their file attachments
+
+- Switching chats no longer carries over the last chat's scroll position
+
+- Copy path in a file tab copies the absolute path
+
+- Home-relative paths in inline code open their file
+
+- <kbd>Escape</kbd> closes the image viewer; select dialogs can be dismissed
+
+- Fenced pastes in the prompt can be undone
+
+- `ext_reload` takes effect mid-turn
+
+- OpenAI-compatible API errors include the response body
+
+- Collapsed skill prompts can be deleted
 
 ## 0.4.0 - 2026-10-15
 
