@@ -290,9 +290,9 @@ body {
 /* Frosted-glass chips: translucent fill over a light backdrop blur so every
    header button reads as floating over the scrolling content. The tab pill
    is frosted as a single unit, so its inner segments are left untouched — as
-   are the rows of the buffer menu's popover (a child of the topbar in the
-   DOM), which keep their own hover / active fills. */
-.topbar--chat button:not(.tab-pill-item):not(.buffer-menu-item),
+   are the rows of the buffer menu's popover and the overflow menu (children
+   of the topbar in the DOM), which keep their own hover / active fills. */
+.topbar--chat button:not(.tab-pill-item):not(.buffer-menu-item):not(.overflow-menu-item),
 .topbar--chat .tab-pill {
   background: color-mix(in srgb, var(--bg-0) 55%, transparent);
   -webkit-backdrop-filter: blur(6px);
@@ -551,8 +551,8 @@ body {
 }
 
 .overflow-menu-divider {
+  flex-shrink: 0;
   height: 1px;
-  margin: var(--size-1) 0;
   background: var(--border-color, var(--bg-2));
 }
 
