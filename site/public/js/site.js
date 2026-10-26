@@ -139,9 +139,8 @@
   // ---- tour stage ----------------------------------------------------------
   // The iframe renders the web client at 1280x800 (xisite.pages/stage);
   // scale it to the frame. It loads (and the tour starts) once the stage is
-  // mostly in view, and posts {xiTour: 'done'} at its end. A stage with a
-  // data-phone-src plays that phone variant on small screens instead: a
-  // 390x844 phone frame that loops (no Replay bar).
+  // mostly in view. A stage with a data-phone-src plays that phone variant
+  // on small screens instead: a 390x844 phone frame that loops.
   var TOUR_WIDTH = 1280;
   var PHONE_WIDTH = 390;
   var STAGE_PHONE_QUERY = '(max-width: 820px)';
@@ -163,7 +162,6 @@
   Array.prototype.forEach.call(document.querySelectorAll('.stage .stage-window'), function (win) {
     var viewport = win.querySelector('.stage-viewport');
     var frame = win.querySelector('.stage-frame');
-    var replay = win.querySelector('.stage-replay');
     var phoneSrc = frame.getAttribute('data-phone-src');
     var phone = !!phoneSrc && window.matchMedia(STAGE_PHONE_QUERY).matches;
     var width = phone ? PHONE_WIDTH : TOUR_WIDTH;
@@ -182,15 +180,66 @@
     fit();
     if (window.ResizeObserver) new ResizeObserver(fit).observe(viewport);
     else window.addEventListener('resize', fit);
+    // the tour's chapter cards (xisite.pages/stage-chapters): the one it
+    // posted last is current, the ones before it done, and the step in the
+    // bar follows. The tour posts how far into the chapter it is after each
+    // step; the card's line fills to that.
+    var chapters = Array.prototype.slice.call(
+      win.parentNode.querySelectorAll('.stage-chapters [data-chapter]'));
+    var titles = chapters.map(function (c) { return c.getAttribute('data-chapter'); });
+    var step = win.querySelector('.stage-step');
+    var seek = win.querySelector('.stage-seek');
+    var current = -1;
+    var seeking = null;
+    var again = null;
+    var setProgress = function (value) {
+      chapters.forEach(function (c, j) {
+        c.querySelector('.stage-chapter-progress').style.width =
+          j === current ? (value * 100) + '%' : '0';
+      });
+    };
+    var markChapter = function (at) {
+      current = at;
+      chapters.forEach(function (c, j) {
+        c.classList.toggle('is-done', at >= 0 && j < at);
+        c.classList.toggle('is-current', j === at);
+      });
+      setProgress(0);
+      if (step) step.textContent = String(Math.max(at, 0) + 1);
+      // keep the current card in view where the row scrolls (phones)
+      var row = chapters.length && chapters[0].closest('.stage-chapters');
+      if (at >= 0 && row && row.scrollWidth > row.clientWidth) {
+        var left = chapters[at].parentNode.getBoundingClientRect().left - row.getBoundingClientRect().left;
+        row.scrollTo({ left: row.scrollLeft + left - parseFloat(getComputedStyle(row).paddingLeft),
+                       behavior: 'smooth' });
+      }
+    };
+    // A jump reloads the tour at ?chapter=, which fast-forwards there behind
+    // the .stage-seek cover; the chapters it passes on the way are ignored.
+    var jump = function (at) {
+      clearTimeout(again);
+      seeking = at > 0 ? titles[at] : null;
+      markChapter(at);
+      if (seek) {
+        seek.textContent = 'Jumping to ' + titles[at] + '…';
+        seek.classList.toggle('is-shown', !!seeking);
+      }
+      frame.src = seeking ? src + '&chapter=' + encodeURIComponent(seeking) : src;
+    };
+    chapters.forEach(function (c, j) { c.addEventListener('click', function () { jump(j); }); });
     window.addEventListener('message', function (e) {
-      if (e.source !== frame.contentWindow || !e.data || e.data.xiTour !== 'done') return;
-      if (phone) setTimeout(function () { frame.src = src; }, 5000);
-      else replay.hidden = false;
-    });
-    replay.addEventListener('click', function () {
-      replay.hidden = true;
-      // the client pushed /chat/<id> into the frame's history: start over at src
-      frame.src = src;
+      if (e.source !== frame.contentWindow || !e.data) return;
+      var msg = e.data.xiTour;
+      if (msg === 'chapter') {
+        if (seeking && e.data.title !== seeking) return;
+        seeking = null;
+        if (seek) seek.classList.remove('is-shown');
+        markChapter(titles.indexOf(e.data.title));
+      } else if (msg === 'progress' && !seeking) {
+        setProgress(e.data.value);
+      } else if (msg === 'done' && phone) {
+        again = setTimeout(function () { jump(0); }, 5000);
+      }
     });
   });
 

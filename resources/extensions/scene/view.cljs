@@ -93,6 +93,17 @@ const geometry = (shape, s) => {
   }
 };
 
+// The camera's start: the scene's center and size, framed again on every
+// resize until someone moves the camera. A narrow frame (a phone) fits the
+// scene's width, not its height, so it backs off.
+let home = null, moved = false;
+controls.addEventListener('start', () => { moved = true; });
+function frameScene() {
+  if (!home) return;
+  const k = Math.max(1, 1.2 / camera.aspect);
+  camera.position.copy(home.c).add(new THREE.Vector3(home.r * 0.6, home.r * 0.5, home.r * 0.8).multiplyScalar(k));
+}
+
 function build(spec) {
   group.clear();
   for (const o of (spec.objects || [])) {
@@ -108,7 +119,8 @@ function build(spec) {
   if (!box.isEmpty()) {
     const c = box.getCenter(new THREE.Vector3()), r = box.getSize(new THREE.Vector3()).length() || 4;
     controls.target.copy(c);
-    camera.position.copy(c).add(new THREE.Vector3(r, r * 0.8, r * 1.2));
+    home = { c, r }; moved = false;
+    frameScene();
   }
   info(`${group.children.length} object${group.children.length === 1 ? '' : 's'} · drag to orbit, scroll to zoom, click one`);
   requestRender();
@@ -121,8 +133,11 @@ let downAt = null;
 canvas.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
 canvas.addEventListener('pointerup', e => {
   if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 4) return; // a drag, not a click
+  pick(e.clientX, e.clientY);
+});
+function pick(clientX, clientY) {
   const r = canvas.getBoundingClientRect();
-  pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  pointer.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
   ray.setFromCamera(pointer, camera);
   const hit = ray.intersectObjects(group.children)[0];
   if (selected) { selected.material.emissive.setHex(0x000000); requestRender(); }
@@ -135,7 +150,7 @@ canvas.addEventListener('pointerup', e => {
     send('ui/update-model-context',
          { content: [{ type: 'text', text: 'In the 3D view the user selected: ' + selected.userData.label }] });
   }
-});
+}
 document.getElementById('ask').onclick = () => selected &&
   send('ui/message', { role: 'user', content: { type: 'text', text: 'Tell me about the ' + selected.userData.label + ' in the scene.' } });
 document.getElementById('full').onclick = async () => {
@@ -153,6 +168,7 @@ function fit() {
   renderer.setSize(w, h, false);
   camera.aspect = w / Math.max(h, 1);
   camera.updateProjectionMatrix();
+  if (!moved) frameScene();
   requestRender();
 }
 new ResizeObserver(fit).observe(document.body);
@@ -171,8 +187,49 @@ window.addEventListener('message', e => {
     build(((m.params || {}).structuredContent || {}).scene || {});
   } else if (m.method === 'ui/notifications/host-context-changed') {
     applyContext(m.params || {});
+  } else if (m.xiTour && e.source === parent) {
+    tour(m);
   }
 });
+
+// ── site tours ──
+// The tour's autopilot (xi.web.tour) can't reach into this opaque-origin
+// frame: it asks where an object (by label) or a button (by selector) is,
+// moves its pointer there and asks for a click. Plain messages, not JSON-RPC,
+// so Xi's bridge ignores them.
+function locate({ label, selector }) {
+  if (!group.children.length) return null; // the scene isn't drawn yet
+  if (selector) {
+    const r = document.querySelector(selector)?.getBoundingClientRect();
+    return r && { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+  const o = group.children.find(c => c.userData.label === label);
+  if (!o) return null;
+  const v = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()).project(camera);
+  const r = canvas.getBoundingClientRect();
+  return { x: r.left + (v.x + 1) / 2 * r.width, y: r.top + (1 - v.y) / 2 * r.height };
+}
+function orbit(angle, ms) {
+  moved = true;
+  const offset = camera.position.clone().sub(controls.target), t0 = performance.now();
+  const step = now => {
+    const k = Math.min(1, (now - t0) / ms), ease = k * k * (3 - 2 * k);
+    camera.position.copy(controls.target).add(offset.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), angle * ease));
+    requestRender();
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function tour(m) {
+  if (m.xiTour === 'locate') {
+    parent.postMessage({ xiTour: 'located', id: m.id, at: locate(m) }, '*');
+  } else if (m.xiTour === 'click') {
+    const el = document.elementFromPoint(m.x, m.y);
+    if (el === canvas) pick(m.x, m.y); else el?.click();
+  } else if (m.xiTour === 'orbit') {
+    orbit(m.angle, m.ms || 1500);
+  }
+}
 
 const r = await send('ui/initialize', { protocolVersion: '2026-01-26', clientInfo: { name: 'scene', version: '1' },
                                         appCapabilities: { availableDisplayModes: ['inline', 'fullscreen'] } });

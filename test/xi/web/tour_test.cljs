@@ -58,3 +58,10 @@
 
 (deftest event-type-is-the-keyword-without-colon
   (is (= "room/join" (tour/event-type {:type :room/join}))))
+
+(deftest chapter-progress-counts-steps-within-each-chapter
+  (is (= [nil 0 0.5 1 0 1]
+         (tour/chapter-progress [{:wait 1} {:chapter "A"} {:wait 1} {:click "x"}
+                                 {:chapter "B"} {:wait 1}])))
+  (testing "a chapter with no steps after it"
+    (is (= [0] (tour/chapter-progress [{:chapter "A"}])))))

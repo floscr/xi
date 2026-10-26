@@ -1,6 +1,7 @@
 (ns xisite.pages
   "Page renderers: home, docs index, docs page. Each returns a full html string."
-  (:require [clojure.edn :as edn]
+  (:require [cheshire.core :as json]
+            [clojure.edn :as edn]
             [clojure.string :as str]
             [hiccup2.core :as h]
             [ui.badge :as badge]
@@ -202,33 +203,70 @@ xi server
 (defn- tour-src [tour] (str "/tour/?tape=" tour))
 
 (defn- stage-window
-  "A browser window around a tour iframe (`frame-attrs`); `overlay` sits over
-   the viewport."
-  [frame-attrs & [overlay]]
+  "A browser window around a tour iframe (`frame-attrs`). opts: :title (the
+   bar's middle, default the client's URL), :replay? (a Replay button site.js
+   shows once the tour is done), :overlay (over the viewport)."
+  [frame-attrs & [{:keys [title replay? overlay]}]]
   [:div.stage-window
    [:div.stage-bar
     [:span.stage-dots [:i] [:i] [:i]]
-    [:span.stage-url "localhost:1414"]
-    (button/button {:variant :ghost :size :sm :icon-left :refresh :class "stage-replay"
-                    :attrs {:type "button" :hidden true}}
-                   "Replay")]
+    [:span.stage-url (or title "localhost:1414")]
+    (when replay?
+      (button/button {:variant :ghost :size :sm :icon-left :refresh :class "stage-replay"
+                      :attrs {:type "button" :hidden true}}
+                     "Replay"))]
    [:div.stage-viewport
     [:iframe.stage-frame (merge {:title "Xi's web client replaying a recorded session"}
                                 frame-attrs)]
     overlay]])
 
+(defn- tour-chapters
+  "A tour's {\"chapter\": title, \"about\": line} steps as {:chapter :about}
+   (site/tours/<tour>/steps.json)."
+  [tour]
+  (let [f (java.io.File. (str "tours/" tour "/steps.json"))]
+    (when (.exists f)
+      (->> (:steps (json/parse-string (slurp f) true))
+           (filter :chapter)
+           (mapv #(select-keys % [:chapter :about]))))))
+
+(defn- stage-chapters
+  "The tour's chapters as cards under its stage. site.js marks the one the
+   tour is at, fills its progress line, and jumps to a chapter on click."
+  [chapters]
+  [:ol.stage-chapters {:aria-label "Chapters of the tour"}
+   (map-indexed
+    (fn [i {:keys [chapter about]}]
+      [:li
+       [:button.stage-chapter {:type "button" :data-chapter chapter}
+        [:span.stage-chapter-n (format "%02d" (inc i))]
+        [:span.stage-chapter-title chapter]
+        (when about [:span.stage-chapter-about about])
+        [:span.stage-chapter-progress]]])
+    chapters)])
+
 (defn- stage
   "The web client in a window frame, replaying site/public/tours/<tour>.json
    through /tour/. site.js loads the iframe (data-src) once the stage is in
-   view, scales it from 1280×800 to the frame, and shows Replay when the tour
-   posts that it's done. With :phone-variant, small screens get that variant
-   of the tape in a phone frame instead (390×844, looping)."
+   view and scales it from 1280×800 to the frame. With :phone-variant, small
+   screens get that variant of the tape in a phone frame instead (390×844,
+   looping). A tour with chapters gets them as cards under it, and its step
+   in the window's title."
   [tour caption & [{:keys [phone-variant]}]]
-  [:section.stage
-   [:figure.stage-figure
-    (stage-window (cond-> {:data-src (tour-src tour)}
-                    phone-variant (assoc :data-phone-src (str (tour-src tour) "&variant=" phone-variant))))
-    (when caption [:figcaption caption])]])
+  (let [chapters (tour-chapters tour)]
+    [:section.stage
+     [:figure.stage-figure
+      (stage-window (cond-> {:data-src (tour-src tour)}
+                      phone-variant (assoc :data-phone-src (str (tour-src tour) "&variant=" phone-variant)))
+                    {:title   [:span.stage-title
+                               [:i.stage-live]
+                               [:strong "Xi tour"]
+                               (when (seq chapters)
+                                 [:span "· step " [:span.stage-step "1"] " of " (count chapters)])]
+                     :overlay [:div.stage-seek {:aria-hidden "true"}]})
+      (when (seq chapters)
+        (stage-chapters chapters))
+      (when caption [:figcaption caption])]]))
 
 (defn- slideshow
   "A release's video: its slides' tours played one after another in one
@@ -237,7 +275,8 @@ xi server
   [slides]
   [:figure.slideshow
    (stage-window {:data-src (tour-src (:tour (first slides)))}
-                 [:div.slideshow-title {:aria-hidden "true"}])
+                 {:replay? true
+                  :overlay [:div.slideshow-title {:aria-hidden "true"}]})
    [:div.slideshow-chapters
     (map-indexed
      (fn [i {:keys [tour title]}]
@@ -245,6 +284,7 @@ xi server
                    :attrs {:type "button" :data-slide-src (tour-src tour) :data-slide-title title}}
          (str (inc i) ". " title)))
      slides)]])
+
 
 ;; --- Theming section (themes the site and its previews, site/public/js/theme-demo.js) ---
 
@@ -330,7 +370,7 @@ xi server
      :body-class "home"}
     (hero)
 
-    (stage "desk" nil)
+    (stage "scene" nil {:phone-variant "phone"})
 
     [:section.feature {:id "clj"}
      [:div.wrap.split

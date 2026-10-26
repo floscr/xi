@@ -1,0 +1,67 @@
+;; The hero tour ("scene"): the agent bundles each acme-web module on its own
+;; (a clj call that asks first), shows the sizes as a three.js scene
+;; (scene_show, the bundled scene demo, enabled in the tour HOME). Asked about
+;; the box the visitor picked, it reads that module and suggests a cut, makes
+;; it on "Do it.", and Explain on the new lines in /diff answers inline. The
+;; tool calls run for real against the seeded project (scripts/tour-seed.mjs).
+;; Format: xi.providers.fake.
+{:rules
+ [{:when  {:prompt "charts.ts in the scene"}
+   :reply [{:thinking "They picked the tallest box. Read the module to see what makes it heavy."}
+           {:sleep 300}
+           {:text "Let me look "}
+           {:text "at what's in it."}
+           {:tool "read" :args {:path "src/charts.ts"}}
+           {:sleep 600}
+           {:text "`charts.ts` is a whole charting kit "}
+           {:text "in one module:\n\n"}
+           {:text "- a 12-color `palette`\n"}
+           {:text "- number formatting: `compact` (1.2k, 3M) and `niceTicks`\n"}
+           {:text "- three SVG renderers: `lineChart`, `barChart` and `sparkline`\n\n"}
+           {:sleep 200}
+           {:text "The cheapest cut: `compact` "}
+           {:text "rebuilds what `Intl.NumberFormat` "}
+           {:text "already does with `notation: \"compact\"`."}]}
+  {:when  {:prompt "Do it"}
+   :reply [{:text "Swapping the loop "}
+           {:text "for the built-in formatter."}
+           {:tool "edit" :args {:path "src/charts.ts"
+                                :edits [{:oldText "const units = [\"\", \"k\", \"M\", \"B\", \"T\"];\n\nexport function compact(n: number): string {\n  let i = 0;\n  while (Math.abs(n) >= 1000 && i < units.length - 1) { n /= 1000; i++; }\n  return (Math.round(n * 10) / 10).toString() + units[i];\n}"
+                                         :newText "const compactFormat = new Intl.NumberFormat(\"en\", { notation: \"compact\", maximumFractionDigits: 1 });\n\nexport function compact(n: number): string {\n  return compactFormat.format(n);\n}"}]}}
+           {:sleep 400}
+           {:text "Done: `compact` is one `Intl.NumberFormat` call now. "}
+           {:text "`/diff` shows the change."}]}
+  ;; Explain on the new lines in the diff (xi.ext.subagent.handlers/diff-thread-prompt)
+  {:when  {:prompt "wants the selected lines explained"}
+   :reply [{:sleep 500}
+           {:text "`compact` used to divide by 1000 in a loop "}
+           {:text "and glue on its own suffix (k, M, B, T).\n\n"}
+           {:sleep 300}
+           {:text "Now one `Intl.NumberFormat` with `notation: \"compact\"` "}
+           {:text "does that in the browser: 1234 → `1.2K`, 3000000 → `3M`. "}
+           {:text "It's built once, when the module loads, "}
+           {:text "and `maximumFractionDigits: 1` keeps the old rounding.\n\n"}
+           {:sleep 200}
+           {:text "One visible difference: thousands now read as an upper-case **K**."}]}]
+ :default
+ [{:thinking "Bundle each module on its own, compare the sizes, then plot them."}
+  {:sleep 400}
+  {:text "I'll bundle each module "}
+  {:text "on its own and compare the sizes."}
+  {:tool "clj" :args {:code "(sh \"bun\" \"run\" \"size\")"}}
+  {:sleep 500}
+  {:text "`charts.ts` is the heaviest at 2.1 KB, "}
+  {:text "more than twice `dashboard.ts`. "}
+  {:text "One box per module, "}
+  {:text "its height the bundle size:"}
+  {:tool "scene_show"
+   :args {:title "acme-web modules by bundle size"
+          :objects [{:shape "box" :label "charts.ts"    :position [-4.4 3.15 0]  :size [1.4 6.3 1.4]  :color "#f59e0b"}
+                    {:shape "box" :label "dashboard.ts" :position [-2.2 1.2 0]   :size [1.4 2.4 1.4]  :color "#6366f1"}
+                    {:shape "box" :label "auth.ts"      :position [0 0.52 0]     :size [1.4 1.04 1.4] :color "#0ea5e9"}
+                    {:shape "box" :label "upload.ts"    :position [2.2 0.5 0]    :size [1.4 1.0 1.4]  :color "#10b981"}
+                    {:shape "box" :label "format.ts"    :position [4.4 0.24 0]   :size [1.4 0.47 1.4] :color "#8b5cf6"}]}}
+  {:sleep 400}
+  {:text "Drag to turn it, click a box to select it: "}
+  {:text "**Ask about it** asks me about that module."}]
+ :side [{:text "Module sizes in 3D"}]}

@@ -32,21 +32,39 @@ Changed only `steps.json`? Re-bake the last recording:
 
 ## On the site
 
-The home page's stage (`xisite.pages/stage`) is an iframe on `/tour/?tape=desk`:
+The home page's stages (`xisite.pages/stage`) are iframes on `/tour/?tape=<tour>`:
+`scene` under the hero (its `phone` variant on small screens, its `chapter`
+steps as cards under the stage), `desk` in the theming section and the
+phones. Each is
 the web client from the release `:tour` build (`bb tour:build` →
 `target/tour/main.js`, ~260 KB gzipped; `bb site:build` runs it first), the
 web client's `style.css`, and `site/public/css/tour.css`, which shrinks the
 app's rem-based type one size. The iframe renders at 1280×800; `site.js`
-scales it to the frame with a CSS transform, loads it once the stage is 40%
-in view, and shows Replay when the tour posts `{xiTour: "done"}`: once the
-tape has played out and the autopilot's last step ran, so steps may click
-through the result after the stream ends (expanding a tool block mid-stream
-is too busy to follow). Until a
+scales it to the frame with a CSS transform and loads it once the stage is
+40% in view. A tour posts `{xiTour: "done"}` once the tape has played out
+and the autopilot's last step ran, so steps may click through the result
+after the stream ends (expanding a tool block mid-stream is too busy to
+follow); the slideshows show Replay then. Until a
 tour frame starts, `site.js` prefetches the tour's files once the page is
 idle, and `/tour/` starts fetching the tape in its `<head>` (`window.xiTape`)
 rather than after `main.js` runs. In an
 iframe the client ignores programmatic focus until the visitor clicks into
 it, so the tour never takes the page's keyboard focus or scroll.
+
+### Chapters
+
+A `{"chapter": "Diff", "about": "Review every change"}` step names the part
+of the tour that starts there; `about` is the one line its card shows. The
+home stage (`xisite.pages/stage-chapters`) shows a card per chapter and the
+step in the window's title. The tour posts `{xiTour: "chapter", title}` at
+each and, after every step, `{xiTour: "progress", value}`: how far into its
+chapter it is (0–1, by steps), which fills the current card's line.
+
+A click on a card reloads the tour at `?chapter=<title>`: it fast-forwards
+to that chapter (frames without their spacing, steps without their pauses,
+~2 s for the whole `scene` tour) behind a "Jumping to …" cover, then plays
+on at normal speed. Steps have to hold up at that speed: wait for an element
+or text, not a fixed `wait`.
 
 ### Theme
 
@@ -126,8 +144,17 @@ client would.
   does every step that waits for an element (`waitText`, `click`). A slide
   that opens earlier sessions on purpose (link hints) uses `wait` and `key`
   steps after it.
-- The tour HOME binds `f` to link hints and gives zsh a plain prompt
-  (`scripts/tour-seed.mjs`).
+- The tour HOME binds `f` to link hints, gives zsh a plain prompt and
+  enables the scene demo extension (`scripts/tour-seed.mjs`).
+- App views (MCP Apps blocks, e.g. the scene demo's three.js view): the
+  recorder sends `:ext.blocks/app-load` for the block, as its frame does on
+  mount, so the view's HTML is in the tape. The view is an opaque-origin
+  iframe the autopilot can't click into: `{"app": "charts.ts"}` (a 3D object
+  by label) or `{"app": "#ask"}` (an element) asks the view where it is and
+  clicks there, `{"appOrbit": -0.5}` turns its camera; the view answers
+  those `xiTour` messages (`resources/extensions/scene/view.cljs`). Its
+  three.js loads from jsDelivr when the block appears, not with the tour
+  bundle.
 - A sub-agent the client spawns (the diff view's Ask) is matched by its
   `:sub-id`, filled in like the join token.
 - Terminal tours: the player hands `:terminal/output` to xterm.js and gates

@@ -4053,11 +4053,12 @@
 
 (defn- tour-init!
   "Replay a recorded tour (xi.web.tour) through the real client, as the
-   tape's ?variant= run if given. Embedded in the site's iframe, it posts
-   {xiTour: \"sent\", type} for each gate it passes and {xiTour: \"done\"} at
-   the end; a mirroring run posts {xiTour: \"ready\"} and takes
-   {xiTourSent: type} from the page."
-  [tape variant-name]
+   tape's ?variant= run if given, fast-forwarded to its ?chapter= if given.
+   Embedded in the site's iframe, it posts {xiTour: \"sent\", type} for each
+   gate it passes and {xiTour: \"done\"} at the end (the autopilot posts the
+   chapters and the progress through them); a mirroring run posts
+   {xiTour: \"ready\"} and takes {xiTourSent: type} from the page."
+  [tape variant-name chapter]
   (tour/contain-focus!)
   (embed/listen! #(when-let [dispatch! @dispatch-ref] (dispatch! %)))
   (-> (or (unchecked-get js/window "xiTape") ; the site's /tour/ page starts it early
@@ -4091,7 +4092,7 @@
                  (real-init! {:transport transport})
                  ;; done once the tape has played out and the autopilot's
                  ;; last step (which may click after the stream ends) ran
-                 (-> (js/Promise.all #js [tape-done (tour/autopilot! steps pointer visiting?)])
+                 (-> (js/Promise.all #js [tape-done (tour/autopilot! steps pointer visiting? chapter)])
                      (.then #(post! #js {:xiTour "done"}))))))))
 
 (defn ^:export init! []
@@ -4100,7 +4101,7 @@
   (r/set-dispatch! (fn [_ _]))
   (let [params (js/URLSearchParams. (.-search js/window.location))]
     (cond
-      (.get params "tape") (tour-init! (.get params "tape") (.get params "variant"))
+      (.get params "tape") (tour-init! (.get params "tape") (.get params "variant") (.get params "chapter"))
       (.get params "demo") (demo-init! (.get params "demo"))
       :else                (real-init!))))
 

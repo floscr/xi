@@ -65,6 +65,11 @@
 
 ;; ── Transport ────────────────────────────────────────────────────────────────
 
+(def ^:private skip-to
+  "The chapter a tour opened with ?chapter= fast-forwards to: until its step
+   runs, frames play without their spacing and steps without their pauses."
+  (atom nil))
+
 (def ^:private visit-ms
   "How long a session the visitor opens takes to answer, as from a server."
   120)
@@ -116,17 +121,18 @@
                        (dispatch! {:type :room/joined :room-id room-id :room room})))))
                visit-ms))
             (play! []
-              (let [{:keys [i sent prev-t]} @player
-                    {:keys [op t data] gate :type :as step} (advance frames gates sent i)]
-                (swap! player assoc :i (:i step) :sent (:sent step))
-                (case op
-                  :done (when on-done (on-done))
-                  :wait (swap! player assoc :waiting gate :gate-t t)
-                  :emit (let [d (delay-ms prev-t t)]
-                          (swap! player assoc :prev-t t)
-                          (if (< d 8)
-                            (do (emit! data) (play!))
-                            (js/setTimeout #(do (emit! data) (play!)) d))))))
+              (loop []
+                (let [{:keys [i sent prev-t]} @player
+                      {:keys [op t data] gate :type :as step} (advance frames gates sent i)]
+                  (swap! player assoc :i (:i step) :sent (:sent step))
+                  (case op
+                    :done (when on-done (on-done))
+                    :wait (swap! player assoc :waiting gate :gate-t t)
+                    :emit (let [d (if @skip-to 0 (delay-ms prev-t t))]
+                            (swap! player assoc :prev-t t)
+                            (if (< d 8)
+                              (do (emit! data) (recur))
+                              (js/setTimeout #(do (emit! data) (play!)) d)))))))
             (gate! [sent-type]
               (let [{:keys [waiting gate-t i]} @player]
                 (cond
@@ -172,8 +178,16 @@
 ;;   {:enter css}            press Enter in it
 ;;   {:key "g g"}            press keys on the page, space-separated chords
 ;;                           ("Alt+u", "G", "Space"), each shown as a keycap
+;;   {:app "label"}          click inside the last app view (an MCP Apps
+;;   {:app "#selector"}      iframe, xi.ext.blocks.frame): a 3D object by its
+;;                           label, or an element; the view says where
+;;   {:appOrbit radians}     drag the view's camera around (resources/
+;;                           extensions/scene/view.cljs answers both)
+;;   {:chapter "title"}      tell the embedding page the tour reached it
+;;                           (site.js marks it on the stage's chapter cards;
+;;                           :about is the card's line, read by xisite.pages)
 
-(defn- sleep [ms] (js/Promise. (fn [res] (js/setTimeout res ms))))
+(defn- sleep [ms] (js/Promise. (fn [res] (js/setTimeout res (if @skip-to 0 ms)))))
 
 (defn- find-el [{:keys [click enter clickText within contains waitText] typed :type}]
   (cond
@@ -188,8 +202,14 @@
                     (if contains (str/includes? text clickText) (= clickText text))))
          first)
 
+    ;; Enter on an empty composer sends nothing: wait for what fills it (an
+    ;; app view's Ask does a moment after its click)
+    enter
+    (let [^js el (.querySelector js/document enter)]
+      (when (and el (not (str/blank? (.-value el)))) el))
+
     :else
-    (.querySelector js/document (or click typed enter))))
+    (.querySelector js/document (or click typed))))
 
 (defn- await-el
   "Resolves to the step's element once it is in the DOM, or nil after 10 s
@@ -227,12 +247,14 @@
         (.append (.-body js/document) el)
         el)))
 
+(defn- move-cursor! [x y]
+  (set! (.. (cursor) -style -transform) (str "translate(" x "px," y "px)"))
+  (sleep 750))
+
 (defn- move-to! [^js el]
-  (let [r (.getBoundingClientRect el)
-        x (+ (.-left r) (* 0.5 (.-width r)))
-        y (+ (.-top r) (* 0.6 (.-height r)))]
-    (set! (.. (cursor) -style -transform) (str "translate(" x "px," y "px)"))
-    (sleep 750)))
+  (let [r (.getBoundingClientRect el)]
+    (move-cursor! (+ (.-left r) (* 0.5 (.-width r)))
+                  (+ (.-top r) (* 0.6 (.-height r))))))
 
 (defn- set-value! [^js el v]
   ;; The native setter, so the input event carries the new value through.
@@ -328,11 +350,92 @@
               (this-as el
                 (when @user? (.apply native el (into-array args)))))))))
 
-(defn- run-step! [{:keys [wait waitText text enter after] typed :type pressed :key :as step} paused?]
+;; ── Inside an app view ──
+;; The view is an opaque-origin iframe the autopilot can't reach into, so it
+;; asks the view by postMessage where a thing is ({xiTour: "locate"} →
+;; "located"), moves the cursor there and asks for the click.
+
+(defn- app-frame ^js []
+  (last (array-seq (.querySelectorAll js/document "iframe.ab-app-frame"))))
+
+(defn- post-view! [^js frame msg]
+  (.postMessage (.-contentWindow frame) (clj->js msg) "*"))
+
+(defn- ask-view
+  "The view's answer to a locate of `target` ({:label} or {:selector}) →
+   Promise of {:x :y} in the view's own pixels, or nil within a second (not
+   drawn yet)."
+  [^js frame target]
+  (js/Promise.
+   (fn [res]
+     (let [id (str (random-uuid))
+           on (fn on [^js e]
+                (let [d (.-data e)]
+                  (when (and d (= "located" (.-xiTour d)) (= id (.-id d)))
+                    (.removeEventListener js/window "message" on)
+                    (res (some-> (.-at d) (js->clj :keywordize-keys true))))))]
+       (.addEventListener js/window "message" on)
+       (js/setTimeout #(do (.removeEventListener js/window "message" on) (res nil)) 1000)
+       (post-view! frame (merge {:xiTour "locate" :id id} target))))))
+
+(defn- locate-in-view
+  "Retries until the view has drawn `target` (it loads three.js first) →
+   Promise of [frame {:x :y}], or nil after 20 s not counting `paused?`."
+  [target paused?]
+  ((fn try! [left]
+     (if (paused?)
+       (-> (sleep 200) (.then #(try! left)))
+       (let [frame (app-frame)]
+         (-> (if frame (ask-view frame target) (js/Promise.resolve nil))
+             (.then (fn [at]
+                      (cond
+                        at          [frame at]
+                        (neg? left) nil
+                        :else       (-> (sleep 300) (.then #(try! (- left 1300)))))))))))
+   20000))
+
+(defn- app-target
+  "An :app step's string: a CSS selector (`#ask`, `.x`, `[…]`) or a label."
+  [s]
+  (if (re-find #"^[#.\[]" s) {:selector s} {:label s}))
+
+(defn- app-click! [target paused?]
+  (-> (locate-in-view (app-target target) paused?)
+      (.then (fn [[^js frame {:keys [x y]}]]
+               (when frame
+                 (let [r (.getBoundingClientRect frame)]
+                   (-> (move-cursor! (+ (.-left r) x) (+ (.-top r) y))
+                       (.then #(post-view! frame {:xiTour "click" :x x :y y})))))))))
+
+(defn- app-orbit!
+  "The cursor drags across the view while its camera turns `angle`."
+  [angle paused?]
+  (-> (locate-in-view {:selector "canvas"} paused?)
+      (.then (fn [[^js frame]]
+               (when frame
+                 (let [r  (.getBoundingClientRect frame)
+                       cx (+ (.-left r) (* 0.6 (.-width r)))
+                       cy (+ (.-top r) (* 0.55 (.-height r)))
+                       ms 1000]
+                   (-> (move-cursor! cx cy)
+                       (.then (fn []
+                                (post-view! frame {:xiTour "orbit" :angle angle :ms ms})
+                                (set! (.. (cursor) -style -transition)
+                                      (str "transform " ms "ms cubic-bezier(.45,0,.55,1)"))
+                                (move-cursor! (- cx (* angle 180)) cy)))
+                       (.then #(sleep (- ms 750)))
+                       (.then #(set! (.. (cursor) -style -transition)
+                                     "transform .7s cubic-bezier(.3,.7,.2,1)")))))))))
+
+(defn- run-step! [{:keys [wait waitText text enter after app appOrbit chapter] typed :type pressed :key :as step} paused?]
   (cond
+    chapter  (do (when (= chapter @skip-to) (reset! skip-to nil))
+                 (.postMessage js/parent #js {:xiTour "chapter" :title chapter} "*"))
     wait     (sleep wait)
     waitText (await-el step paused?)
     pressed  (-> (sleep (or after 0)) (.then #(press-keys! pressed)))
+    app      (-> (sleep (or after 0)) (.then #(app-click! app paused?)))
+    appOrbit (-> (sleep (or after 0)) (.then #(app-orbit! appOrbit paused?)))
     :else
     (-> (sleep (or after 0))
         (.then #(await-el step paused?))
@@ -362,11 +465,32 @@
      :mirror? (boolean (:mirror v))
      :pointer (keyword (or (:pointer v) "mouse"))}))
 
+(defn chapter-progress
+  "How far into its chapter the tour is once each of `steps` ran: 0 at a
+   {:chapter} step, 1 after the chapter's last step; nil before the first."
+  [steps]
+  (let [n-after (fn [i] (count (take-while (complement :chapter) (drop (inc i) steps))))]
+    (first
+     (reduce (fn [[out start n] [i step]]
+               (cond
+                 (:chapter step) [(conj out 0) i (n-after i)]
+                 start           [(conj out (/ (- i start) n)) start n]
+                 :else           [(conj out nil) start n]))
+             [[] nil 0]
+             (map-indexed vector steps)))))
+
 (defn autopilot!
   "Play `steps` in order with a :mouse or :touch `pointer`; resolves when
-   the last one ran. A step waits while `paused?` holds."
-  [steps pointer-kind paused?]
+   the last one ran. A step waits while `paused?` holds. With `from`, one of
+   the steps' chapters, it fast-forwards to that chapter. After each step it
+   posts the embedding page {xiTour: \"progress\", value} (chapter-progress)."
+  [steps pointer-kind paused? from]
   (reset! pointer pointer-kind)
-  (reduce (fn [p step] (.then p #(run-step! step paused?)))
+  (reset! skip-to (some #{from} (keep :chapter steps)))
+  (reduce (fn [p [step progress]]
+            (.then p (fn []
+                       (-> (js/Promise.resolve (run-step! step paused?))
+                           (.then #(when progress
+                                     (.postMessage js/parent #js {:xiTour "progress" :value progress} "*")))))))
           (js/Promise.resolve)
-          steps))
+          (map vector steps (chapter-progress steps))))
