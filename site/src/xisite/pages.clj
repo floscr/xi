@@ -80,18 +80,6 @@
   {:match  {:tool #{:read :grep :find :ls} :path #\"^~/Code(?:/|$)\"}
    :action {:type :allow}}]}")
 
-(def ^:private outline-sample
-  "read(\"src/client.ts\")        # 412 lines, parsed to a syntax tree
-
-imports: [1-6]
-types:
-  export interface Config [8-14]
-fns:
-  export function createClient(config: Config): Client [16-42]
-  async function retry<T>(fn: () => Promise<T>): Promise<T> [44-61]
-
-read_source(\"src/client.ts\", \"retry\")   # only the 18 lines it asked for")
-
 (def ^:private users-sample
   ";; ~/.config/xi/config.edn
 :users {\"alice\" {:name \"Alice\"
@@ -297,7 +285,8 @@ xi server
      [:span.hero-pill-arrow {:aria-hidden "true"} "→"]]
     [:h1.hero-in "An AI harness " [:span.hero-gradient "you can shape."]]
     [:p.lede.hero-in
-     "A coding harness for any AI provider, with Clojure scripting access and permission gating via rules. Configurable extensions and MCP support."]
+     "An AI coding harness for any LLM provider." [:br]
+     "With advanced Clojure scripting, permission gating via rules and broad configurability via extensions and MCP support."]
     [:div.hero-install.hero-in
      [:code [:span {:aria-hidden "true"} "$ "] install-command]
      (button/button {:variant :primary :icon-left :copy :class "hero-copy"
@@ -436,21 +425,8 @@ xi server
     (stage "desk" "The same session in your colors, live." {:phone-variant "phone"})
     [:script {:src "/js/theme-demo.js" :defer true}]
 
-    [:section.feature.alt {:id "outlines"}
+    [:section.feature.alt {:id "users"}
      [:div.wrap.split.reverse
-      [:div.feature-text
-       [:p.eyebrow "Code reading"]
-       [:h2 "Files are read as syntax trees first."]
-       [:p "When the agent reads a large source file, Xi parses it with tree-sitter and returns an outline: imports, types and signatures with their line ranges. The agent asks for the code of a single definition only when it needs it."]
-       (feature-list
-        [["Fewer tokens." "A 2,000-line file costs a few dozen lines of context. File reads are most of what an agent spends."]
-         ["Exact when it matters." "read_source returns the literal code of one function, class or line range, so edits work from the real text."]
-         ["Built in." "TypeScript, JavaScript, Python, Rust, Go, Clojure, Nix, Bash and CSS. Grammars ship with Xi; nothing to install."]])
-       [:p [:a {:href "/docs/reading-code/"} "How the agent reads code →"]]]
-      [:div.feature-code (code "text" outline-sample)]]]
-
-    [:section.feature {:id "users"}
-     [:div.wrap.split
       [:div.feature-text
        [:p.eyebrow "Multi-user " (badge/badge {:variant :secondary :size :sm} "Beta")]
        [:h2 "First-class multi-user."]
@@ -463,11 +439,11 @@ xi server
        (code "clojure" users-sample)
        (code "sh" users-cli-sample)]]]
 
-    [:section.feature.alt {:id "providers"}
-     [:div.wrap.split.reverse
+    [:section.feature {:id "providers"}
+     [:div.wrap.split
       [:div.feature-text
        [:p.eyebrow "Providers"]
-       [:h2 "Any model. Bring your own."]
+       [:h2 "Providers"]
        [:p "Every model provider is a program Xi starts for each message: Claude through the Agent SDK, GPT on a ChatGPT plan, OpenCode, Ollama, or one you write. Xi keeps the tools, the rules and the chat; a provider only turns a prompt into text and tool calls."]
        (feature-list
         [["Pick in your config." "List the providers you want, in the order the model picker shows them, with options for each. Only those load."]
@@ -491,11 +467,11 @@ xi server
       [:p.eyebrow "Under the hood"]
       [:div.trio
        [:div [:h3 "One state, every surface."]
-        [:p "Terminal, server and browser run the same pure handlers over one state map. Standalone just means not connected."]]
+        [:p "Terminal, server and browser run the same pure handlers over one state interface."]]
        [:div [:h3 "Everything is an event."]
         [:p "Prompts, output, commands, dialogs and renders all pass through one queue. The wire protocol is the event maps themselves."]]
        [:div [:h3 "ClojureScript on Bun."]
-        [:p "No runtime dependencies. Models come from provider programs: Claude, Codex, OpenCode, Ollama, or one you write."]]]]]
+        [:p "A light runtime with no dependencies that starts fast. Server, terminal and browser share the same code, and you can change it from a REPL while it runs."]]]]]
 
     [:section.band
      [:div.wrap
