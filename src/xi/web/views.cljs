@@ -2249,37 +2249,38 @@
 (defn- compose-status
   "The plain-text line under the composer's input row on wide desktops (CSS
    hides it below): the chat's model, opening the model picker, the yolo
-   flame while yolo mode is on, turning it off, and the Claude subscription
-   usage from the lobby broadcast, opening /usage."
+   flame, colored while yolo mode is on and turning it off, grey while off
+   and turning it on, and the Claude subscription usage from the lobby
+   broadcast, opening /usage."
   [dispatch! room model claude-usage]
   (let [{:keys [session weekly session-resets-at weekly-resets-at]} claude-usage
         session (when-not (usage-window-outdated? session-resets-at) session)
         weekly  (when-not (usage-window-outdated? weekly-resets-at) weekly)
-        yolo    (yolo-flame room)]
-    (when (or model claude-usage yolo)
-      [:div {:class ["compose-status"]}
-       (when model
-         [:button {:class ["compose-status-item"]
-                   :title (str model " — change model")
-                   :on {:click (fn [_] (dispatch! {:type :palette/open-models}))}}
-          (str/lower-case (rename/model-label model))])
-       (when-let [[flame title] yolo]
-         (let [title (str title " Click to turn it off.")]
-           [:button {:class ["compose-status-item" "compose-status-yolo"]
-                     :title title
-                     :aria-label title
-                     :on {:click (fn [_] (dispatch-command! dispatch! (:id room) "yolo off"))}}
-            flame]))
-       (when claude-usage
-         [:button {:class ["compose-status-item" "compose-status-usage"]
-                   :title "Claude usage — all usage"
-                   :on {:click (fn [_] (dispatch! {:type :route/navigate :page :usage}))}}
-          (if session (compose-status-pct session) "?")
-          [:span {:class ["compose-status-dim"]} " session"]
-          (when weekly
-            (list [:span {:class ["compose-status-dim"]} " · "]
-                  (compose-status-pct weekly)
-                  [:span {:class ["compose-status-dim"]} " week"]))])])))
+        [flame title command] (if-let [[flame title] (yolo-flame room)]
+                                [flame (str title " Click to turn it off.") "yolo off"]
+                                [(flame-icon false [])
+                                 "Yolo mode is off. Click to turn it on." "yolo sane"])]
+    [:div {:class ["compose-status"]}
+     (when model
+       [:button {:class ["compose-status-item"]
+                 :title (str model " — change model")
+                 :on {:click (fn [_] (dispatch! {:type :palette/open-models}))}}
+        (str/lower-case (rename/model-label model))])
+     [:button {:class ["compose-status-item" "compose-status-yolo"]
+               :title title
+               :aria-label title
+               :on {:click (fn [_] (dispatch-command! dispatch! (:id room) command))}}
+      flame]
+     (when claude-usage
+       [:button {:class ["compose-status-item" "compose-status-usage"]
+                 :title "Claude usage — all usage"
+                 :on {:click (fn [_] (dispatch! {:type :route/navigate :page :usage}))}}
+        (if session (compose-status-pct session) "?")
+        [:span {:class ["compose-status-dim"]} " session"]
+        (when weekly
+          (list [:span {:class ["compose-status-dim"]} " · "]
+                (compose-status-pct weekly)
+                [:span {:class ["compose-status-dim"]} " week"]))])]))
 
 (defn- compose-box [dispatch! room busy? images draft-key draft session-id cmd-selected pa? queue-open? prompt-nav nav-ctx scrolled-up? offline? cmd-ctx status agents]
   (let [room-id  (:id room)
