@@ -37,7 +37,9 @@
    ;; for as long as a warning stands. Warnings still print in the watch output.
    :devtools   {:after-load xi.web.core/reload!
                 :hud #{:errors :progress}}
-   :compiler-options {:reader-features #{:browser}}}
+   :compiler-options {:reader-features #{:browser}}
+   ;; features not in the release yet, on in the watch (xi.config)
+   :dev {:closure-defines {xi.config/camera? true}}}
 
   ;; The site's live tours (site/tours/, `bb tour:build`): the web client in
   ;; one release file, target/tour/main.js. No user extensions, so no SCI

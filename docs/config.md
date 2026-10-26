@@ -66,12 +66,14 @@ mode); there is no switch for that.
 
 ## Feature flags
 
-Plain `def`s read by their consuming namespace.
+Plain `def`s read by their consuming namespace, or closure defines
+(`goog-define`) that a build's `:closure-defines` in `shadow-cljs.edn` sets.
 
 | Flag | Default | What it does | Owner |
 | --- | --- | --- | --- |
 | `quick-replies?` | `false` | After each finished turn, run a cheap model over the final message to detect a decision point and show one-tap quick-reply chips. A regex gate runs first so most turns never call the model. | `xi.quick-replies` |
 | `recommend-rule?` | `false` | Adds a **Recommend a rule** option (`?`) to every `:ask` dialog: denies the call, spawns a sub-agent to draft a rule, opens an editable save dialog. Saving writes runtime scopes into app state and `repo`/`global` scopes into the rules file directly, not through a tool call. Never offered for `xi.api.*` calls. | `xi.ext.rules` via `xi.cli` |
+| `camera?` | `false`; `true` in the `:web` build's `:dev` compiles | The camera: the web client's Camera page, its **Share camera** entries and the browser's answer to an `xi.api.device/camera` read (refused while off). A closure define, so the watch has it and release builds (the npm package) don't. | `xi.ext.device.web` via `xi.config` |
 
 ## Where runtime config is read
 

@@ -138,6 +138,12 @@
    extension can't require xi.config (config requires it). Default false."
   false)
 
+;; The camera (xi.ext.device.web: the Camera page, its menu entries, and the
+;; browser's answer to a :camera read). A closure define: off in release
+;; builds (the npm package), on in the web build's :dev compiles
+;; (shadow-cljs.edn), so it can be tried out before it ships.
+#?(:cljs (goog-define ^boolean camera? false))
+
 #?(:node
    (def server
      "Extensions whose state + provider/tool hooks run server-side (server,
@@ -216,4 +222,4 @@
       accounts-web/extension
       ;; answers the server's clock / location / camera queries (xi.device)
       ;; and has the Camera page that shares a device's camera with a chat
-      device-web/extension]))
+      (device-web/extension {:camera? camera?})]))

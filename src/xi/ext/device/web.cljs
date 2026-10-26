@@ -93,13 +93,15 @@
              ;; under the server's own timeout, so the reason gets back
              :timeout            (max 1000 (- (or timeout-ms 60000) 2000))})))))
 
-(defn- answer! [dispatch! {:keys [id what opts]}]
+(defn- answer! [dispatch! camera? {:keys [id what opts]}]
   (-> (js/Promise.resolve nil)
       (.then (fn [_]
                (case what
                  :clock    (clock)
                  :location (location opts)
-                 :camera   (camera/frames! opts)
+                 :camera   (if camera?
+                             (camera/frames! opts)
+                             (throw (js/Error. "the camera isn't enabled in this build of Xi")))
                  (throw (js/Error. (str "unknown device query " what))))))
       (.then (fn [result] (dispatch! {:type :device/answered :id id :result result}))
              (fn [e] (dispatch! {:type :device/answered :id id
@@ -236,31 +238,38 @@
                :on {:click (fn [_] (dispatch! {:type :device/camera-stop}))}}
       (icon/icon {:icon-name :x :size :sm})]]))
 
-(def extension
-  {:id       :device
-   :handlers {;; from the server only: a local event can't make this browser answer
-              :device/query          (fn [_st {:keys [remote?] :as ev}]
-                                       (when remote?
-                                         {:effects [[:device/answer (select-keys ev [:id :what :opts])]]}))
-              :device/answered       (fn [_st {:keys [id result error]}]
-                                       {:effects [[:ws/send (cond-> {:type :device/reply :id id}
-                                                              result (assoc :result result)
-                                                              error  (assoc :error error))]]})
-              :device/camera-start   start
-              :device/camera-started started
-              :device/camera-failed  failed
-              :device/camera-stop    stop
-              :device/camera-flip    flip
-              :device/camera-ended   ended}
-   :fx       {:device/answer         (fn [{:keys [dispatch!]} payload] (answer! dispatch! payload))
-              :device/camera-share   (fn [{:keys [dispatch!]} payload] (share! dispatch! payload))
-              :device/camera-unshare (fn [_ _] (camera/unshare!))}
-   :taps     [resume-tap]
-   :routes   {"camera" {:parse (fn [_] {:page page-id})
-                        :path  {page-id (fn [_] "/camera")}}}
-   :pages    {page-id camera-page}
-   :overlays {:device/camera camera-pip}
+(def ^:private camera-parts
+  {:handlers  {:device/camera-start   start
+               :device/camera-started started
+               :device/camera-failed  failed
+               :device/camera-stop    stop
+               :device/camera-flip    flip
+               :device/camera-ended   ended}
+   :fx        {:device/camera-share   (fn [{:keys [dispatch!]} payload] (share! dispatch! payload))
+               :device/camera-unshare (fn [_ _] (camera/unshare!))}
+   :taps      [resume-tap]
+   :routes    {"camera" {:parse (fn [_] {:page page-id})
+                         :path  {page-id (fn [_] "/camera")}}}
+   :pages     {page-id camera-page}
+   :overlays  {:device/camera camera-pip}
    :nav-items [{:menu :overflow :mode :room :label "Share camera" :icon :camera
                 :event {:type :route/navigate :page page-id}}
                {:menu :palette :label "Share camera" :icon :camera
                 :event {:type :route/navigate :page page-id}}]})
+
+(defn extension
+  "The device web half; `:camera?` (xi.config/camera?) adds the Camera page
+   and lets a :camera read open this browser's camera."
+  [{:keys [camera?]}]
+  (merge-with merge
+   {:id       :device
+    :handlers {;; from the server only: a local event can't make this browser answer
+               :device/query    (fn [_st {:keys [remote?] :as ev}]
+                                  (when remote?
+                                    {:effects [[:device/answer (select-keys ev [:id :what :opts])]]}))
+               :device/answered (fn [_st {:keys [id result error]}]
+                                  {:effects [[:ws/send (cond-> {:type :device/reply :id id}
+                                                         result (assoc :result result)
+                                                         error  (assoc :error error))]]})}
+    :fx       {:device/answer (fn [{:keys [dispatch!]} payload] (answer! dispatch! camera? payload))}}
+   (when camera? camera-parts)))
