@@ -577,9 +577,10 @@
 
 (defn- extension-lines
   "The user-extension loader's report (xi.ext.user/report) as header lines;
-   nil when it loaded, rejected and skipped nothing."
-  [{:keys [loaded rejected skipped]}]
-  (when (or (seq loaded) (seq rejected) (seq skipped))
+   nil when it loaded and rejected nothing. Files not enabled go unmentioned
+   here: the startup log and /ext reload list them."
+  [{:keys [loaded rejected]}]
+  (when (or (seq loaded) (seq rejected))
     (-> []
         (cond-> (seq loaded)
           (conj (node/text (str (ansi/fg :dim "Extensions: ")
@@ -588,10 +589,6 @@
                 (node/text (str (ansi/fg :red "✗") " " (ansi/fg :dim "Extension ")
                                 (ansi/fg :accent (last (str/split file #"/")))
                                 (ansi/fg :dim " rejected: ") error))))
-        (cond-> (seq skipped)
-          (conj (node/text (str (ansi/fg :yellow "●") (ansi/fg :dim " Not enabled: ")
-                                (ansi/fg :accent (str/join ", " skipped))
-                                (ansi/fg :dim " (list under :extensions in config.edn)")))))
         (conj (node/spacer)))))
 
 (defn launch-header

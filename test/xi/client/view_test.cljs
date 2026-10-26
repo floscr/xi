@@ -74,7 +74,7 @@
                                         :skipped  ["calendar.cljs"]}})]
     (is (str/includes? text "Extensions: kb, vim"))
     (is (str/includes? text "Extension broken.cljs rejected: eval error: boom"))
-    (is (str/includes? text "Not enabled: calendar.cljs")))
+    (is (not (str/includes? text "calendar.cljs")) "files not enabled go unmentioned"))
   (testing "nothing to say, no lines"
     (is (not (str/includes? (header-text {:extensions {:loaded [] :rejected [] :skipped []}})
                             "Extension")))))
