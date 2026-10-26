@@ -27,6 +27,7 @@
             [xi.mcp.trust :as mcp-trust]
             [xi.rules :as rules]
             [xi.rules.defaults :as defaults]
+            [xi.rules.migrate :as migrate]
             [xi.rules.nodes :as nodes]
             [xi.rules.tasks :as tasks]
             [xi.paths :as paths]
@@ -156,6 +157,12 @@
 
       (not (sequential? (:defaults data [])))
       {:error ":defaults must be a vector of aliases / rule maps"}
+
+      ;; an ignored old key would widen its rule: refuse until migrated
+      (seq (migrate/changes data))
+      {:error (str "uses names an older xi had ("
+                   (str/join "; " (migrate/changes data))
+                   ") — run `xi migrate` to update it")}
 
       :else
       (try

@@ -19,6 +19,7 @@ version of this page.
 | `xi login <provider>` | Sign in to a provider's subscription: `claude` or `opencode` (OpenCode Go). Prints a link; for OpenCode Go a code to enter there, for Claude it asks for the code the page shows. `--alias NAME` names the account. See [Accounts](models.md#accounts). |
 | `xi logout <provider> [account]` | Forget a stored account; without one, sign out where the provider can. |
 | `xi account [provider] [op]` | A provider's stored accounts: list (default), `<account>` or `switch [account]` (none: the next), `login`, `alias <account> [name]`, `forget <account>`. An account is its id, email or alias. `--json` prints JSON. See [Accounts](models.md#accounts). |
+| `xi migrate [file …]` | Update [rules files](rules-reference.md#names-from-older-versions) written for an older Xi: the global one and the current repo's, or the files named. Keeps each old text as `<file>.bak`. |
 | `xi help` | This, shorter. Also `--help` and `-h`. |
 
 For `join` and `create`, `url` is `host:port` (`ws://` is added) or a full
@@ -44,6 +45,7 @@ For `join` and `create`, `url` is `host:port` (`ws://` is added) or a full
 | `--json` | `prompt`, `sessions`, `account` | Machine-readable output. |
 | `--alias NAME` / `--email ADDR` | `login`, `account … login` | The new account's alias / the address to sign in as. |
 | `--all` / `--limit N` | `sessions` | Every chat / at most N. |
+| `--dry-run` | `migrate` | List what would change, write nothing. |
 | `--debug-events` | `xi`, `server` | Write the full event stream to a JSONL file, for debugging. |
 | `--no-hardened-rules` | all | Drop the non-overridable rules tier. Unsafe; only the person launching Xi can set it. |
 

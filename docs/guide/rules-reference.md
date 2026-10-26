@@ -21,6 +21,19 @@ top-level key, a bare vector, an unknown `:defaults` alias, unreadable EDN)
 is replaced by one rule that denies everything, with a message naming the
 file and the problem. `/rules` shows it.
 
+### Names from older versions
+
+A file that still uses a name an older Xi had is invalid too, since Xi
+would ignore the old key and the rule would match more than it says.
+`xi migrate` rewrites them in place, comments kept (see
+[Command line](command-line.md)):
+
+| Old | New | Since |
+| --- | --- | --- |
+| `:tool :bb` | `:tool :task` | 0.5.0 |
+| `:tool-name "bb"` | `:tool-name "run_task"` | 0.5.0 |
+| `:bb-trusted` | `:task-file-trusted` | 0.5.0 |
+
 ## Order
 
 1. Immutable: the agent can never write `~/.config/xi/rules.edn`, by any

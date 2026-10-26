@@ -85,6 +85,7 @@
             [xi.providers.fake :as fake]
             [xi.providers.routing :as routing]
             [xi.quick-replies :as quick-replies]
+            [xi.rules.migrate :as rules-migrate]
             [xi.rules.store :as rules-store]
             [xi.summary :as summary]
             [xi.server.room-manager :as rm]
@@ -265,6 +266,10 @@ USAGE
                              login [--alias NAME] [--email ADDR], alias <account>
                              [NAME], forget <account>. An account is its id,
                              email or alias. --json for scripts.
+  xi migrate [file ...]      Update rules files written for an older xi (the
+                             global one and the current repo's, or the files
+                             named), keeping each old text as <file>.bak.
+                             --dry-run only lists what would change.
   xi help                    Show this help (also --help, -h).
 
 FLAGS
@@ -338,6 +343,8 @@ See docs/guide/command-line.md for the full reference.")
           "login"          (recur (next args) (assoc opts :command :login))
           "logout"         (recur (next args) (assoc opts :command :logout))
           ("account" "accounts") (recur (next args) (assoc opts :command :account))
+          "migrate"        (recur (next args) (assoc opts :command :migrate))
+          "--dry-run"      (recur (next args) (assoc opts :dry-run? true))
           "--alias"        (recur (nnext args) (assoc opts :alias (second args)))
           "--email"        (recur (nnext args) (assoc opts :email (second args)))
           ("help" "--help" "-h") (recur (next args) (assoc opts :command :help))
@@ -376,6 +383,9 @@ See docs/guide/command-line.md for the full reference.")
                    (and (#{:login :logout :account} (:command opts))
                         (not (.startsWith arg "--")))
                    (update opts :auth-args (fnil conj []) arg)
+                   (and (= :migrate (:command opts))
+                        (not (.startsWith arg "--")))
+                   (update opts :migrate-files (fnil conj []) arg)
                    ;; An unknown flag fails loudly: a removed restriction flag must not
                    ;; silently yield a full coding agent.
                    (.startsWith arg "--")
@@ -1368,6 +1378,42 @@ See docs/guide/command-line.md for the full reference.")
   (doseq [k ["log" "info" "debug" "warn" "error"]]
     (aset js/console k (fn [& _] nil))))
 
+(defn- run-migrate!
+  "Update rules files written for an older xi (xi.rules.migrate): the named
+   files, else the global one and the current repo's. Each rewritten file
+   keeps its old text as <file>.bak; --dry-run only reports."
+  [{:keys [migrate-files dry-run?]}]
+  (let [cwd    (or (aget js/process.env "XI_CWD") (.cwd js/process))
+        files  (if (seq migrate-files)
+                 (map #(rules-store/expand-path cwd %) migrate-files)
+                 (remove nil? [(rules-store/global-file)
+                               (rules-store/repo-file (rules-store/git-root cwd))]))
+        failed (atom false)]
+    (doseq [file files]
+      (if-not (fs/existsSync file)
+        (when (seq migrate-files)
+          (println (str file ": no such file"))
+          (reset! failed true))
+        (let [text (str (fs/readFileSync file "utf8"))
+              {:keys [changes error] new-text :text}
+              (rules-migrate/migrate-text text rules-store/read-rule-edn)]
+          (cond
+            (empty? changes)
+            (println (str file ": up to date"))
+
+            error
+            (do (reset! failed true)
+                (println (str file ": " error))
+                (doseq [c changes] (println (str "  " c))))
+
+            :else
+            (do (println (str file (if dry-run? ": would change" ": updated")))
+                (doseq [c changes] (println (str "  " c)))
+                (when-not dry-run?
+                  (fs/writeFileSync (str file ".bak") text)
+                  (fs/writeFileSync file new-text)))))))
+    (js/process.exit (if @failed 1 0))))
+
 (defn main [& args]
   (if-not wt/isMainThread
     ;; A worker_threads Worker of the same bundle: become the role workerData
@@ -1393,5 +1439,6 @@ See docs/guide/command-line.md for the full reference.")
         :login      (run-account! opts "login")
         :logout     (run-account! opts "forget")
         :account    (run-account! opts)
+        :migrate    (run-migrate! opts)
         :join       (start-client! (assoc opts :target "latest"))
         :create     (start-client! (assoc opts :target "new"))))))
