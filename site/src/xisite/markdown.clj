@@ -61,9 +61,14 @@
 
 (defn- rewrite-href
   "Guide-internal `page.md#x` → `/docs/page/#x`; reference `../x.md` →
-   the repo's docs on the forge; anything else untouched."
+   the repo's docs on the forge; the site's own absolute URLs (CHANGELOG.md
+   uses them, for GitHub and npm) → root-relative, so they stay on the dev
+   server; anything else untouched."
   [href]
   (cond
+    (str/starts-with? href (str core/site-url "/"))
+    (subs href (count core/site-url))
+
     (re-find #"^(?:https?:|mailto:|#|/)" href) href
 
     (str/starts-with? href "../")
