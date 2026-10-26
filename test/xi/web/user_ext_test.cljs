@@ -349,6 +349,16 @@
         "sibling requires resolve against the bundle, output is sanitized")
     (is (= {:page :notes/list} ((get-in r [:web-ext :routes "notes" :parse]) [])))))
 
+(deftest load!-has-the-jvm-url-encoder
+  (let [bundle {:id :u :ns "u.web"
+                :sources {"u.web"
+                          (str "(ns u.web)"
+                               "(def web-extension"
+                               "  {:id :u :pages {:u/p (fn [_ _] [:p (URLEncoder/encode \"a b\")])}})")}}
+        [r]    (user-sci/load! [bundle] {})]
+    (is (nil? (:error r)) (str (:error r)))
+    (is (= [:p "a+b"] ((get-in r [:web-ext :pages :u/p]) {} identity)))))
+
 (deftest load!-rejects-escapes-and-mismatched-ids
   (let [src (fn [ns body] {:id :x :ns ns :sources {ns (str "(ns " ns ") " body)}})
         [a b c] (user-sci/load!

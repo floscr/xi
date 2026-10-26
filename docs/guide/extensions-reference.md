@@ -365,7 +365,9 @@ to the agent or to another extension.
 Available: `clojure.core`, `clojure.string`, `clojure.set`, `clojure.walk`,
 `clojure.edn`, `xi.core.state` (pure helpers: `active-room`, `get-room`,
 `room-ext`, `mode`, `port`, `own-user`, `user-record`, `user-ext`),
-`xi.core.events`, and `xi.api.*`.
+`xi.core.events`, and `xi.api.*`. `java.net.URLEncoder/encode` and
+`java.net.URLDecoder/decode` work as in babashka (UTF-8 only), in browser
+halves too.
 
 Not available: `js/` interop, `node:*` and npm requires, `aget`, `eval`,
 `resolve`, class constructors, environment variables, `.then`.

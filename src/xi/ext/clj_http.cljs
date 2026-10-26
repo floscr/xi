@@ -5,6 +5,7 @@
    stdin and header names are plain tokens (no `-H @file`)."
   (:require [clojure.string :as str]
             [xi.ext.clj-bytes :as bytes]
+            [xi.sandbox.url :as url]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as node-path]))
@@ -13,18 +14,12 @@
 (def ^:private UNEXCEPTIONAL
   #{200 201 202 203 204 205 206 207 300 301 302 303 304 307})
 
-(defn- url-encode
-  "java.net.URLEncoder's form encoding, which bb uses: a space is `+`."
-  [x]
-  (-> (js/encodeURIComponent (if (keyword? x) (name x) (str x)))
-      (str/replace "%20" "+")))
-
 (defn- query-string
   "bb's encoding: a sequential value repeats its key."
   [params]
   (str/join "&" (for [[k v] params
                       v (if (sequential? v) v [v])]
-                  (str (url-encode k) "=" (url-encode v)))))
+                  (str (url/form-encode k) "=" (url/form-encode v)))))
 
 (defn- header-line [[k v]]
   (let [k (if (keyword? k) (name k) (str k))

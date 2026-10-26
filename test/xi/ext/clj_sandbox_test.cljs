@@ -99,6 +99,16 @@
   (is (= "=> \"hi\"" (ev "(String. (.decode (Base64/getDecoder) \"aGk=\\n\") \"UTF-8\")")))
   (is (= "=> \"ABC\"" (ev "(.toUpperCase \"abc\")"))))
 
+(deftest jvm-url-encoder-idiom-works
+  (is (= "=> \"a+b%26c%3D%C3%A9%21%28%29*\""
+         (ev "(java.net.URLEncoder/encode \"a b&c=é!()*\" \"UTF-8\")")))
+  (is (= "=> \"a b+é\"" (ev "(URLDecoder/decode \"a+b%2B%C3%A9\" \"UTF-8\")")))
+  (is (= "=> \"x%7E\"" (ev "(URLEncoder/encode \"x~\")")))
+  (is (blocked? "(URLEncoder/encode \"x\" \"ISO-8859-1\")"))
+  (is (blocked? "((URLEncoder/constructor.constructor \"return 1\"))"))
+  (is (blocked? "((.. URLEncoder/encode -constructor) \"return 1\")"))
+  (is (blocked? "((.. (URLDecoder/decode \"x\") -constructor -constructor) \"return 1\")")))
+
 (deftest compute-mode-has-no-file-program-or-socket-access
   (let [ev (partial ev* "compute-test" true)]
     (testing "every helper that touches files, runs programs or reads the env refuses"

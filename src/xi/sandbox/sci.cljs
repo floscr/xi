@@ -15,7 +15,8 @@
    the name and reflects on the real object).
 
    The escape corpus lives in test/xi/ext/clj_sandbox_test.cljs."
-  (:require [sci.core :as sci]))
+  (:require [sci.core :as sci]
+            [xi.sandbox.url :as url]))
 
 (def denied-core
   "Core symbols removed from every sandbox (see ns doc)."
@@ -89,11 +90,18 @@
      'ExceptionInfo ex-info-class
      'clojure.lang.ExceptionInfo ex-info-class}))
 
+(def ^:private default-classes
+  "JVM statics every sandbox gets (xi.sandbox.url)."
+  (let [encoder {:class (null-proto {:encode url/encode})}
+        decoder {:class (null-proto {:decode url/decode})}]
+    {'URLEncoder encoder 'java.net.URLEncoder encoder
+     'URLDecoder decoder 'java.net.URLDecoder decoder}))
+
 (defn init
   "sci/init with the shared hardening applied: `denied-core` merged into
-   `:deny`, SCI's default Error class overridden. Callers still supply their
-   own `:classes` as null-proto values."
+   `:deny`, SCI's default Error class overridden, `default-classes` added.
+   Callers still supply their own `:classes` as null-proto values."
   [opts]
   (sci/init (-> opts
-                (update :classes #(merge default-class-overrides %))
+                (update :classes #(merge default-classes default-class-overrides %))
                 (update :deny (fnil into #{}) denied-core))))

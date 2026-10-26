@@ -12,7 +12,9 @@ constructors. `Math`, `Date`, `System/currentTimeMillis` and
 `System/getProperty` (`user.home`, `user.dir`, `java.io.tmpdir`, `os.name`,
 the separators) exist; `System/getenv` does not (use `env`). Base64 works as in babashka:
 `(String. (.decode (java.util.Base64/getDecoder) s))` and
-`(.encodeToString (java.util.Base64/getEncoder) (.getBytes s))`.
+`(.encodeToString (java.util.Base64/getEncoder) (.getBytes s))`, and so do
+`(java.net.URLEncoder/encode s "UTF-8")` and `java.net.URLDecoder/decode`
+(UTF-8 only).
 `(catch Exception e …)` catches any error, and `(.getMessage e)` works.
 
 In an [agent profile](agents.md)'s chats the tool is `:compute` unless the

@@ -59,6 +59,18 @@
       (is (= {:parsed {:a [1 2]} :json "{\"q\":\"a%20b\"}"}
              (get-in e [:extension :init :room]))))))
 
+(deftest jvm-url-encoder-is-available-in-the-sandbox
+  (let [dir (tmp-dir)]
+    (write! dir "u.cljs"
+            "(ns u)
+             (def extension
+               {:id :u
+                :init {:room {:enc (java.net.URLEncoder/encode \"a b&c\" \"UTF-8\")
+                              :dec (URLDecoder/decode \"a+b%26c\")}}})")
+    (let [[e] (user/load-dir dir)]
+      (is (nil? (:error e)))
+      (is (= {:enc "a+b%26c" :dec "a b&c"} (get-in e [:extension :init :room]))))))
+
 (deftest the-store-is-available-in-the-sandbox
   (let [dir (tmp-dir)]
     (write! dir "s.cljs"
