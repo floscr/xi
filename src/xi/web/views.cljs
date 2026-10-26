@@ -2247,8 +2247,8 @@
   [:span {:class [(when (>= pct 75) "compose-status-hot")]} (str pct "%")])
 
 (defn- compose-status
-  "The plain-text line under the composer's input row on wide desktops (CSS
-   hides it below): the chat's model, opening the model picker, the yolo
+  "The plain-text line under the composer's input row (CSS hides it on touch
+   screens while typing): the chat's model, opening the model picker, the yolo
    flame, colored while yolo mode is on and turning it off, grey while off
    and turning it on, and the Claude subscription usage from the lobby
    broadcast, opening /usage."
@@ -3788,36 +3788,47 @@
 (defn- process-chip
   "Chat header chip while the room tracks background processes
    (xi.ext.process-manager, started by clj's process/start): the count, and a
-   popover listing them; picking one opens its live log buffer."
+   popover listing them; picking one opens its live log buffer. A single
+   process opens its log straight from the chip."
   [dispatch! room]
   (when-let [procs (seq (get-in room [:ext :process-manager :processes]))]
-    (let [menu-id "process-menu"
-          n       (count procs)
-          title   (str n (if (= 1 n) " background process" " background processes")
-                       " — view a log")]
-      (list
-       (chip/chip {:class "process-chip"
-                   :attrs (merge {:title title :aria-label title
-                                  :replicant/key "process-chip"}
-                                 (popover/trigger-attrs menu-id))}
-         (icon/icon {:icon-name :terminal :size :sm})
-         [:span (str n)])
-       (popover/popover-content
-        {:id    menu-id
-         :side  :bottom
-         :align :end
-         :class "sidebar-more-menu buffer-menu"
-         :attrs {:replicant/key "process-menu"}}
-        (for [{:keys [pid command]} procs]
-          [:button {:class ["sidebar-more-item" "buffer-menu-item"]
-                    :replicant/key (str "proc-" pid)
-                    :title command
-                    :on {:click (fn [^js e]
-                                  (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover))
-                                  (dispatch! {:type :process-manager/open-log
-                                              :room-id (:id room) :pid pid}))}}
-           (icon/icon {:icon-name :terminal :size :sm})
-           [:span {:class ["buffer-menu-title"]} (str "$ " command)]]))))))
+    (let [menu-id  "process-menu"
+          n        (count procs)
+          open-log (fn [pid]
+                     (dispatch! {:type :process-manager/open-log
+                                 :room-id (:id room) :pid pid}))]
+      (if (= 1 n)
+        (let [{:keys [pid command]} (first procs)
+              title                 (str "View the log of $ " command)]
+          (chip/chip {:class    "process-chip"
+                      :attrs    {:title title :aria-label title
+                                 :replicant/key "process-chip"}
+                      :on-click (fn [_] (open-log pid))}
+            (icon/icon {:icon-name :terminal :size :sm})
+            [:span "1"]))
+        (let [title (str n " background processes — view a log")]
+          (list
+           (chip/chip {:class "process-chip"
+                       :attrs (merge {:title title :aria-label title
+                                      :replicant/key "process-chip"}
+                                     (popover/trigger-attrs menu-id))}
+             (icon/icon {:icon-name :terminal :size :sm})
+             [:span (str n)])
+           (popover/popover-content
+            {:id    menu-id
+             :side  :bottom
+             :align :end
+             :class "sidebar-more-menu buffer-menu"
+             :attrs {:replicant/key "process-menu"}}
+            (for [{:keys [pid command]} procs]
+              [:button {:class ["sidebar-more-item" "buffer-menu-item"]
+                        :replicant/key (str "proc-" pid)
+                        :title command
+                        :on {:click (fn [^js e]
+                                      (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover))
+                                      (open-log pid))}}
+               (icon/icon {:icon-name :terminal :size :sm})
+               [:span {:class ["buffer-menu-title"]} (str "$ " command)]]))))))))
 
 (defn shorten-path
   [path]

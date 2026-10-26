@@ -2769,53 +2769,60 @@ body {
 }
 
 /* Model + subscription usage under the input row (views/compose-status):
-   wide desktops only, one line of muted text under the action bar's divider.
-   Text insets match the input row's icons, like .float-actions. */
+   one line of muted text under the input row's divider. Text insets match
+   the input row's icons, like .float-actions. As the frame's last row it
+   takes over the home-indicator inset from .compose-input-row. */
 .compose-status {
-  display: none;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 var(--size-2) env(safe-area-inset-bottom, 0px);
+  border-top: var(--border-0);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
-
-@media (min-width: 1024px) {
-  .compose-status {
-    display: flex;
-    justify-content: space-between;
-    padding: 0 var(--size-2);
-    border-top: var(--border-0);
-    font-size: 11px;
-    font-variant-numeric: tabular-nums;
+.compose-frame:has(> .compose-status) > .compose-input-row {
+  padding-bottom: var(--size-2);
+}
+.compose-status-item {
+  padding: 5px var(--size-2) 6px;
+  border: none;
+  background: none;
+  color: var(--fg-2);
+  font: inherit;
+  cursor: pointer;
+  white-space: pre;
+}
+.compose-status-usage {
+  margin-left: auto;
+}
+/* The yolo flame (views/yolo-flame), sized to the line's text. */
+.compose-status-yolo {
+  display: flex;
+  align-items: center;
+}
+.compose-status-yolo .icon {
+  width: 13px;
+  height: 13px;
+}
+.compose-status-dim {
+  opacity: 0.7;
+}
+.compose-status-hot {
+  color: var(--warning);
+  font-weight: 500;
+}
+@media (hover: hover) {
+  .compose-status-item:hover {
+    color: var(--fg-0);
   }
-  .compose-status-item {
-    padding: 5px var(--size-2) 6px;
-    border: none;
-    background: none;
-    color: var(--fg-2);
-    font: inherit;
-    cursor: pointer;
-    white-space: pre;
-  }
-  .compose-status-usage {
-    margin-left: auto;
-  }
-  /* The yolo flame (views/yolo-flame), sized to the line's text. */
-  .compose-status-yolo {
-    display: flex;
-    align-items: center;
-  }
-  .compose-status-yolo .icon {
-    width: 13px;
-    height: 13px;
-  }
-  .compose-status-dim {
-    opacity: 0.7;
-  }
-  .compose-status-hot {
-    color: var(--warning);
-    font-weight: 500;
-  }
-  @media (hover: hover) {
-    .compose-status-item:hover {
-      color: var(--fg-0);
-    }
+}
+/* Touch screens drop the line while typing: the textarea's focus hides it
+   before the keyboard animates in, .keyboard-open (xi.web.core) while it is
+   up. */
+@media (pointer: coarse) {
+  .keyboard-open .compose-status,
+  .compose-frame:has(textarea:focus) > .compose-status {
+    display: none;
   }
 }
 
@@ -3036,6 +3043,10 @@ body {
     position: absolute;
     inset: calc(-1 * var(--size-2)) calc(-1 * var(--size-1));
     bottom: calc(-1 * max(var(--size-2), env(safe-area-inset-bottom, 0px)));
+  }
+  /* Below a .compose-status line the safe area is the line's; stop at it. */
+  .compose-frame:has(> .compose-status) > .compose-input-row .icon-btn::after {
+    bottom: calc(-1 * var(--size-2));
   }
   .compose-input-row .compose-attach-btn::after {
     inset-inline-start: calc(-1 * var(--size-3));
