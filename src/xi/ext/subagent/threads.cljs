@@ -19,34 +19,12 @@
    instead of in the sub-agent posts (h/inline-sub?)."
   (:require [clojure.string :as str]
             [xi.core.state :as state]
-            [xi.ext.subagent.handlers :as h]
-            [xi.util :as util]))
+            [xi.ext.subagent.handlers :as h]))
 
 ;; ── Nodes ────────────────────────────────────────────────────────────────────
 
-(def ^:private hint-chars 60)
-
-(defn- hint
-  "The start of an entry's text: with its kind, what recognizes the entry
-   in a rebuilt history."
-  [{:keys [kind text tool error]}]
-  (some-> (case kind
-            (:user :text :thinking) text
-            :tool-call (util/strip-mcp-prefix (str tool))
-            :error (:message error)
-            nil)
-          str str/trim not-empty
-          (#(subs % 0 (min hint-chars (count %))))))
-
-(defn entry-node
-  "The node of entry `i` of `history`; with `sub-id`, of that sub-agent's."
-  ([history i] (entry-node nil history i))
-  ([sub-id history i]
-   (when-let [e (get (vec history) i)]
-     (cond-> {:index i :kind (:kind e)}
-       sub-id                    (assoc :sub-id sub-id)
-       (= :tool-call (:kind e))  (assoc :call-id (:id e))
-       (hint e)                  (assoc :hint (hint e))))))
+;; Built in xi.ext.subagent.handlers, whose spawn records one (:after).
+(def entry-node h/entry-node)
 
 (defn agent-node
   "The node of sub-agent `sub-id` itself; its `label` is the hint a thread
@@ -62,9 +40,13 @@
   [node]
   (number? (:index node)))
 
-(defn- matches? [node e]
+(defn- matches?
+  "Same kind and hint; a hint taken while the entry still streamed is a
+   prefix of its final one."
+  [node e]
   (and (= (:kind node) (:kind e))
-       (or (nil? (:hint node)) (= (:hint node) (hint e)))))
+       (or (nil? (:hint node))
+           (some-> (h/hint e) (str/starts-with? (:hint node))))))
 
 (defn- call-index
   "Index of the tool call with id `cid` in `history`, or nil."
@@ -100,10 +82,14 @@
 
 (defn anchor-of
   "Where the web timeline posts `child`'s card in `history`: after its
-   spawn_subagent call when that is found, else at its :anchor, clamped."
+   spawn_subagent call when that is found, else after the entry it spawned
+   after (:after), else at its :anchor, clamped. The history the web shows
+   may be rebuilt from the transcript, shorter than the live one :anchor
+   counted."
   [history child]
   (let [n (count history)]
-    (if-let [idx (call-index history (:call-id child))]
+    (if-let [idx (or (call-index history (:call-id child))
+                     (locate history (:after child)))]
       (inc idx)
       (min n (or (:anchor child) n)))))
 

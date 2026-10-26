@@ -72,6 +72,22 @@
     (is (= 4 (t/ended-anchor-of live-history child))))
   (is (nil? (t/ended-anchor-of live-history {:anchor 1})) "still running"))
 
+(deftest a-card-spawned-mid-turn-stays-where-it-was-spawned
+  (let [mid-turn (conj (subvec live-history 0 3) {:kind :thinking :text "next"})
+        st       (assoc-in (base-state) [:rooms "r1" :history] mid-turn)
+        child    (-> (h/spawn st {:room-id "r1" :sub-id "sa-1" :task "what is x"})
+                     :state room-agents first)]
+    (is (= 4 (:anchor child)))
+    (is (= {:index 2 :kind :tool-call :call-id "t1" :hint "read"} (:after child))
+        "after the last entry but thinking")
+    (is (= 2 (t/anchor-of rebuilt-history child))
+        "rebuilt without thinking: still after the read, not clamped to the end"))
+  (testing "text still streaming at spawn: its start finds the final text"
+    (let [st    (assoc-in (base-state) [:rooms "r1" :history]
+                          (conj (subvec live-history 0 3) {:kind :text :text "Done: con"}))
+          child (-> (h/spawn st {:room-id "r1" :sub-id "sa-1" :task "q"}) :state room-agents first)]
+      (is (= 3 (t/anchor-of (conj rebuilt-history {:kind :user :text "next prompt"}) child))))))
+
 (deftest resolve-node-reads-the-block
   (let [st (with-agents (base-state)
              [{:id "sa-1" :label "Review" :task "review a.clj" :status :done

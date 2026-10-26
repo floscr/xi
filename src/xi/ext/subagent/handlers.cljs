@@ -11,14 +11,15 @@
      [:rooms rid :ext :subagents]
        {:agents [{:id :label :task :status :history [] :result
                   :started :ended :errored? :expanded?
-                  :anchor :ended-anchor :call-id
+                  :anchor :ended-anchor :after :call-id
                   :cli-session-id :session-id :upgraded?
                   :node :thread :question :closed? :exchanges}]}
    status: :running | :done | :error | :stopped
    anchor / ended-anchor: the room history's length at spawn / at the end,
    where the web timeline places the child's card and its result; :call-id
-   is the spawn_subagent call that started it (a stable anchor once the
-   history is rebuilt from the transcript, xi.ext.subagent.threads).
+   is the spawn_subagent call that started it, :after the node of the entry
+   it spawned after (stable anchors once the history is rebuilt from the
+   transcript, xi.ext.subagent.threads/anchor-of).
    session-id: the hidden session the child was saved as when it finished
    (xi.ext.subagent save-fx); the entry is the parent's link to it and is
    saved with the parent chat (`persisted`).
@@ -56,6 +57,40 @@
   (let [t (str/trim (str task))
         one-line (first (str/split-lines t))]
     (if (> (count one-line) 48) (str (subs one-line 0 48) "…") one-line)))
+
+;; ── Nodes (xi.ext.subagent.threads finds them again) ────────────────────────
+
+(def ^:private hint-chars 60)
+
+(defn hint
+  "The start of an entry's text: with its kind, what recognizes the entry
+   in a rebuilt history."
+  [{:keys [kind text tool error]}]
+  (some-> (case kind
+            (:user :text :thinking) text
+            :tool-call (util/strip-mcp-prefix (str tool))
+            :error (:message error)
+            nil)
+          str str/trim not-empty
+          (#(subs % 0 (min hint-chars (count %))))))
+
+(defn entry-node
+  "The node of entry `i` of `history`; with `sub-id`, of that sub-agent's."
+  ([history i] (entry-node nil history i))
+  ([sub-id history i]
+   (when-let [e (get (vec history) i)]
+     (cond-> {:index i :kind (:kind e)}
+       sub-id                    (assoc :sub-id sub-id)
+       (= :tool-call (:kind e))  (assoc :call-id (:id e))
+       (hint e)                  (assoc :hint (hint e))))))
+
+(defn- spawn-point
+  "The node of the entry a child spawned after: the history's last one but
+   thinking, which a history rebuilt from the transcript drops."
+  [history]
+  (let [history (vec history)]
+    (some #(when (not= :thinking (:kind (nth history %))) (entry-node history %))
+          (range (dec (count history)) -1 -1))))
 
 (defn final-text
   "The sub-agent's last assistant text entry since its latest prompt (a
@@ -286,7 +321,8 @@
                          :status  :running
                          :history []
                          :started (.now js/Date)
-                         :anchor  (count (:history room))}
+                         :anchor  (count (:history room))
+                         :after   (spawn-point (:history room))}
                         (select-keys ev [:call-id :node :thread :question :selection
                                          :system :parent-context?]))]
       {:state   (update-in st [:rooms room-id :ext ext-id :agents]
@@ -426,7 +462,7 @@
 
 (def ^:private saved-keys
   [:id :label :task :status :result :started :ended :errored?
-   :anchor :ended-anchor :call-id :session-id :upgraded?
+   :anchor :ended-anchor :after :call-id :session-id :upgraded?
    :node :thread :question :closed? :exchanges])
 
 (defn saved-child
