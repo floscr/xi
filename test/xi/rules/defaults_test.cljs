@@ -406,8 +406,8 @@
     (is (not= :allow (action-type {:tool :write :path "/home/u/.claude/projects/p/x.jsonl"})))))
 
 (deftest skill-data-writable
-  (testing "writes under the skills' data root are allowed"
-    (doseq [tool [:write :edit]
+  (testing "reads and writes under the skills' data root are allowed"
+    (doseq [tool [:read :ls :grep :find :write :edit]
             path ["/home/u/.local/share/xi/skills/design-directions/x/01.html"
                   "/home/u/.local/share/xi/skills"]]
       (is (= :allow (action-type {:tool tool :path path :outside-cwd? true}))
@@ -417,8 +417,10 @@
                               :path "/home/u/.local/share/xi/extensions/x/a"})))
     (is (= :ask (action-type {:tool :write :outside-cwd? true
                               :path "/home/u/.local/share/xi/skills-old/a"}))))
-  (testing "protected writes inside it still ask"
+  (testing "protected writes and secret reads inside it still ask"
     (is (= :ask (action-type {:tool :write :outside-cwd? true
+                              :path "/home/u/.local/share/xi/skills/s/.env"})))
+    (is (= :ask (action-type {:tool :read
                               :path "/home/u/.local/share/xi/skills/s/.env"})))))
 
 (defn- leak-rule

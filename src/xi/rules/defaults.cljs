@@ -616,10 +616,10 @@
               :guard   :sane}}]
 
    ;; A skill's `$SKILL_DATA` dir is where it is told to keep its output, so
-   ;; writing there is the skill doing its job. After the sensitive/protected
-   ;; asks, which still apply inside it.
+   ;; writing and reading it back there is the skill doing its job. After the
+   ;; secret-read and sensitive/protected asks, which still apply inside it.
    ::skill-data
-   [{:match  {:tool #{:write :edit} :path skill-data-re}
+   [{:match  {:tool #{:read :ls :grep :find :write :edit} :path skill-data-re}
      :action {:type :allow}}]
 
    ::outside-writes
