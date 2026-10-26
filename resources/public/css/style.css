@@ -8348,7 +8348,6 @@ code a:hover,
 .subagent-ask-msg { color: var(--fg-0); margin-bottom: var(--size-2); }
 
 .subagent-window,
-.subagent-dismiss,
 .subagent-stop,
 .subagent-upgrade,
 .subagent-open {
@@ -8360,7 +8359,6 @@ code a:hover,
   cursor: pointer;
   color: var(--fg-3);
 }
-.subagent-dismiss:hover { color: var(--fg-0); }
 .subagent-stop:hover { color: var(--danger, #dc2626); }
 .subagent-open:hover,
 .subagent-upgrade:hover { color: var(--accent, var(--fg-0)); }

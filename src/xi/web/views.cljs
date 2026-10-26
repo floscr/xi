@@ -4485,7 +4485,8 @@
 (defn- subagent-actions
   "A sub-agent's buttons, on its row, its result and its view: stop while it
    runs, then open as chat (the session it was saved as when it finished),
-   keep that session as a regular one, and dismiss. Icons by default;
+   keep that session as a regular one. No Dismiss: it would drop the child's
+   link from the parent chat, next to the pane's own ×. Icons by default;
    `{:text? true}` renders the titles instead, `{:window? false}` leaves
    out Show in a window (it is in one already), `{:stop? false}` Stop (its
    composer has it)."
@@ -4519,10 +4520,7 @@
             (when (and session-id (not upgraded?))
               (btn "subagent-upgrade" "Keep as session"
                    {:type :subagent/upgrade :room-id room-id :sub-id id}
-                   (icon/icon {:icon-name :bookmark :size :sm})))
-            (btn "subagent-dismiss" "Dismiss"
-                 {:type :subagent/dismiss :room-id room-id :sub-id id}
-                 (icon/icon {:icon-name :x :size :sm})))))))
+                   (icon/icon {:icon-name :bookmark :size :sm}))))))))
 
 ;; ── Threads on blocks (xi.ext.subagent.threads, xi.web.threads) ──────────────
 
