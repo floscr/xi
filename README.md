@@ -7,7 +7,7 @@ every tool call on your machine, and lets you shape it: permission rules in
 EDN, a sandboxed Clojure REPL as the agent's shell, MCP servers, and
 extensions you write yourself.
 
-Documentation and the user guide: <https://xi.florianschroedl.com>
+Documentation and the user guide: <https://xi-agent.com>
 
 ## Install
 
@@ -27,8 +27,8 @@ xi server     # the terminal client plus the web client
 
 Claude uses your Claude Code login when there is one, otherwise
 `ANTHROPIC_API_KEY`; the other providers and how to pick them are in
-[Models](https://xi.florianschroedl.com/docs/models/). The
-[Getting started](https://xi.florianschroedl.com/docs/getting-started/) page
+[Models](https://xi-agent.com/docs/models/). The
+[Getting started](https://xi-agent.com/docs/getting-started/) page
 walks through the first run, the browser, and pairing another device.
 
 ## From source

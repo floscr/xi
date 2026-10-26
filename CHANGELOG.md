@@ -12,7 +12,7 @@ What changed in each Xi release, newest first.
   - Undo and redo layout changes
   - On narrow screens one window at a time, sidebars as drawers
 
-- [Workspaces](https://xi.florianschroedl.com/docs/workspaces/)
+- [Workspaces](https://xi-agent.com/docs/workspaces/)
   - Tabs that narrow Xi to a set of projects
   - Make one from the palette (<kbd>Ctrl+K</kbd>)
   - Or per project, from `:workspaces` in `config.edn`
@@ -68,8 +68,8 @@ What changed in each Xi release, newest first.
 
 - Extensions
   - Load errors show in the UI instead of on stderr
-  - [Palette menus and drill-downs](https://xi.florianschroedl.com/docs/extensions-reference/#browser-halves), also for [`xi.api.dialog/select`](https://xi.florianschroedl.com/docs/extensions-reference/#xiapidialog)
-  - [`xi.api.store`](https://xi.florianschroedl.com/docs/extensions-reference/#xiapistore), a key-value store
+  - [Palette menus and drill-downs](https://xi-agent.com/docs/extensions-reference/#browser-halves), also for [`xi.api.dialog/select`](https://xi-agent.com/docs/extensions-reference/#xiapidialog)
+  - [`xi.api.store`](https://xi-agent.com/docs/extensions-reference/#xiapistore), a key-value store
   - Alerts, chips, button groups and skeletons on extension pages
 
 - Skills

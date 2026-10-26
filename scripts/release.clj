@@ -10,10 +10,10 @@
             [clojure.string :as str]))
 
 (def remotes ["github" "origin"])
-(def site-url "https://xi.florianschroedl.com")
+(def site-url "https://xi-agent.com")
 (def site-deploy
   [(str (fs/home) "/Code/Projects/uberspace/scripts/subdomain")
-   "deploy" "xi.florianschroedl.com" (str (fs/absolutize "site/dist")) "-y"])
+   "deploy" "xi-agent.com" (str (fs/absolutize "site/dist")) "-y"])
 
 (defn- out [& args]
   (str/trim (:out (apply shell {:out :string} args))))
