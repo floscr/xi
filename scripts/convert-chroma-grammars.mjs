@@ -23,6 +23,7 @@ const OUT_DIR = join(import.meta.dir, "../resources/highlight/grammars");
 const HAND_WRITTEN = {
   markdown: ["markdown", "md", "mkd", "mdown", "markdn", "mdx"],
   lua: ["lua", "wlua"],
+  rust: ["rust", "rs"],
 };
 
 // ── Token type mapping ─────────────────────────────────────────────────────

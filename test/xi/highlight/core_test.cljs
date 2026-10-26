@@ -75,6 +75,42 @@
             [:string "[[x\ny]]"]]
            (lua-tokens "-- hi\n--[==[ a\n]] b ]==]\n[[x\ny]]")))))
 
+(defn- rust-tokens [src]
+  (->> (hl/tokenize (grammars/get-grammar "rs") src)
+       hl/merge-adjacent
+       (remove #(= :text (:type %)))
+       (mapv (juxt :type :value))))
+
+(deftest tokenize-rust
+  (testing "declarations, lifetimes, types"
+    (is (= [[:keyword "pub"] [:keyword-decl "fn"] [:name-fn "parse"]
+            [:operator "<"] [:string-symbol "'a"] [:operator ">"]
+            [:punctuation "("] [:name-var "s"] [:punctuation ":"]
+            [:operator "&"] [:string-symbol "'a"] [:name-builtin "str"]
+            [:punctuation ")"] [:operator "->"] [:name-builtin "Option"]
+            [:operator "<"] [:name-builtin "u32"] [:operator ">"]]
+           (rust-tokens "pub fn parse<'a>(s: &'a str) -> Option<u32>"))))
+
+  (testing "macros, chars, numbers, turbofish calls"
+    (is (= [[:name-builtin "println!"] [:punctuation "("]
+            [:string "\"{}\""] [:punctuation ","] [:string-char "'\\n'"]
+            [:punctuation ");"]]
+           (rust-tokens "println!(\"{}\", '\\n');")))
+    (is (= [[:keyword-decl "let"] [:name-var "v"] [:operator "="]
+            [:punctuation "("] [:number "0"] [:operator ".."]
+            [:number "10_u64"] [:punctuation ")."]
+            [:name-fn "collect"] [:punctuation "::"] [:operator "<"]
+            [:name-builtin "Vec"] [:operator "<"] [:name-var "_"]
+            [:operator ">>"] [:punctuation "()"]]
+           (rust-tokens "let v = (0..10_u64).collect::<Vec<_>>()")))
+    (is (= [[:name-var "a"] [:operator "!="] [:name-var "b"]]
+           (rust-tokens "a != b"))))
+
+  (testing "attributes, comments and raw strings"
+    (is (= [[:reader "#[derive(Debug, Clone)]"] [:comment "/// doc"]
+            [:comment "/* a\nb */"] [:string "r#\"x \"y\"\n\"#"]]
+           (rust-tokens "#[derive(Debug, Clone)]\n/// doc\n/* a\nb */ r#\"x \"y\"\n\"#")))))
+
 (deftest merge-adjacent-test
   (testing "merges consecutive same-type tokens"
     (let [tokens [{:type :text :value "a"} {:type :text :value "b"} {:type :keyword :value "c"}]
