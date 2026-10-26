@@ -66,7 +66,7 @@ Every field present must hold. An absent field is no constraint.
 | `:extension` | A call made by an extension | `true` for any, or its id as string, glob, regex or set. Agent calls never match. |
 | `:extension-data` | `:own` | The target is inside the calling extension's data directory. |
 | `:host` | The host of an extension's request, or of a clj `(sh "curl" …)` call | String, glob, regex or set. For curl, every URL's host must match, and only a read-only request matches: each argument is an http(s) URL (no userinfo, no curl globs) or a safe flag (`-sSfLvikIg`, `-m N`, `-X <METHOD>`, `-o /dev/null`). A background command with shell syntax (`$`, quotes, `;`, `&`, `>` …) never matches. Like `:command`, its allow covers only the exact command. |
-| `:device` | What a `:device` request reads from the browser | `"clock"` (time, time zone, locale), `"location"` or `"camera"` (pictures); string, glob, regex or set. |
+| `:device` | What a `:device` request reads from the browser | `"clock"` (time, time zone, locale) or `"location"`; string, glob, regex or set. |
 | `:mcp-server` | An MCP server id | String or glob. |
 | `:mcp-tool` | An MCP tool name | String or glob; `"*"` for any. |
 | `:mcp-trusted` | `true` / `false` | Whether the server is trusted right now. |

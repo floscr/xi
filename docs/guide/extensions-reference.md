@@ -247,28 +247,16 @@ open in: the user who sent the latest prompt, a visible tab first.
 | --- | --- |
 | `(clock ctx opts)` | `{:epoch-ms :local :weekday :time-zone :utc-offset-minutes :locale}`; `:local` is like `"2026-10-13T14:03:12+02:00"`. |
 | `(location ctx opts)` | `{:latitude :longitude :accuracy-m :altitude-m :altitude-accuracy-m :heading-deg :speed-mps :timestamp}`, without the keys the device doesn't know. |
-| `(camera ctx opts)` | `{:frames [{:data :width :height :taken-at} …] :media-type "image/jpeg" :facing :device}`: one picture, or a burst, from the browser's camera. `:data` is base64, ready for an image block in a tool result; `:device` is a short name like `"iPhone"`. |
 
 `opts` is optional: `:room-id` (default the tool call's chat; an `:fx` passes
 it from its payload) and `:timeout-ms` (default 60 s). `location` also takes
-`:high-accuracy?` and `:max-age-ms` (accept a fix that old). `camera` takes
-`:facing` (`"environment"`, the rear camera, or `"user"`; default the camera
-the page shares, else the rear), `:count` (1 to 8 frames, default 1),
-`:interval-ms` between them (200 to 10000, default 1000), `:max-width` (320
-to 1920, default 1280) and `:quality` (JPEG, 0.3 to 0.95, default 0.75); its
-timeout grows with the burst. Request: `{:tool :device :device "clock"}`,
-`"location"` or `"camera"`, asked by default.
+`:high-accuracy?` and `:max-age-ms` (accept a fix that old). Request:
+`{:tool :device :device "clock"}` or `"location"`, asked by default.
 
-The browser asks for its own location or camera permission too, and gives
-either only on an `https` page or `localhost`. The promise rejects with the
-reason when the user says no, no browser has the chat open, or the browser
-doesn't answer in time.
-
-A camera read goes to the browser that shares its camera on the web client's
-[Camera page](web-client.md#camera), in the chat first, else in any chat of
-the user; without one, to the visible browser like the other reads. The
-camera opened by a read without a shared one closes after 90 seconds without
-another read.
+The browser asks for its own location permission too, and gives it only on
+an `https` page or `localhost`. The promise rejects with the reason when the
+user says no, no browser has the chat open, or the browser doesn't answer in
+time.
 
 ### `xi.api.mcp`
 
