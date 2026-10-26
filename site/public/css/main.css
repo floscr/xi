@@ -102,6 +102,28 @@ code, pre, kbd {
   overflow-wrap: anywhere;
 }
 
+/* <kbd>Alt+Enter</kbd> in markdown, one tile per key (xisite.markdown/keycaps),
+   drawn like the web client's palette shortcuts */
+.keycaps,
+.keycap-chord {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: baseline;
+}
+.keycaps { gap: 6px; }
+.keycap-chord { gap: 3px; }
+.keycap {
+  min-width: 1.6em;
+  padding: 0.1em 0.4em 0.05em;
+  font-size: 0.8em;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--fg-1);
+  border: 1px solid color-mix(in srgb, var(--fg-2) 60%, transparent);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+}
+
 .wrap {
   max-width: var(--wrap);
   margin: 0 auto;

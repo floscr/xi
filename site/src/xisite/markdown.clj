@@ -89,6 +89,24 @@
                         (when (str/starts-with? out "http")
                           " rel=\"noopener\""))))))
 
+;; --- Keys ---
+
+(defn- keycaps
+  "`<kbd>Alt+Enter</kbd>` → one keycap tile per key, as the web client's
+   palette draws them (xi.web.views/keycaps): `+` joins the keys of a chord,
+   a space separates the chords of a sequence (`<kbd>g g</kbd>`)."
+  [html]
+  (str/replace html #"<kbd>(.+?)</kbd>"
+               (fn [[_ display]]
+                 (str "<span class=\"keycaps\">"
+                      (str/join
+                       (for [chord (str/split (str/trim display) #" +")]
+                         (str "<span class=\"keycap-chord\">"
+                              (str/join (for [k (str/split chord #"\+(?=.)")]
+                                          (str "<kbd class=\"keycap\">" k "</kbd>")))
+                              "</span>")))
+                      "</span>"))))
+
 ;; --- Rendering ---
 
 (def ^:private code-fence-re
@@ -116,7 +134,8 @@
                               (str "\n§CODEBLOCK" (dec (count @blocks)) "§\n"))))
         html (md/md-to-html-string (strip-html-comments body) :heading-anchors false)
         html (add-heading-ids html)
-        html (rewrite-links html)]
+        html (rewrite-links html)
+        html (keycaps html)]
     (str/replace html #"(?:<p>)?§CODEBLOCK(\d+)§(?:</p>)?"
                  (fn [[_ idx]]
                    (nth @blocks (parse-long idx))))))
