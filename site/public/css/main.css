@@ -766,7 +766,15 @@ a.btn:hover { text-decoration: none; }
 
 .docs-nav-toggle { display: none; }
 
-.docs-sidebar-wrap { position: sticky; top: 80px; }
+/* sticky and taller than the viewport: scrolls on its own */
+.docs-sidebar-wrap {
+  position: sticky;
+  top: 80px;
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: 24px;
+}
 .docs-sidebar { display: grid; gap: 22px; font-size: 0.92rem; }
 .docs-sidebar a {
   display: block;
@@ -892,11 +900,10 @@ a.btn:hover { text-decoration: none; }
   .split.reverse .feature-code { order: 2; }
   .trio { grid-template-columns: 1fr; gap: 28px; }
   .band .wrap { flex-direction: column; align-items: flex-start; padding: 32px 28px; }
-  .site-nav .btn span { display: none; }
 
   .docs-shell { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-top: 24px; }
   .docs-nav-toggle { display: inline-flex; justify-self: start; }
-  .docs-sidebar-wrap { display: none; position: static; }
+  .docs-sidebar-wrap { display: none; position: static; max-height: none; overflow: visible; }
   .docs-sidebar-wrap.open { display: block; }
   .docs-cards { grid-template-columns: 1fr; }
   .docs-pager { flex-direction: column; }

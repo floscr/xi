@@ -1,7 +1,8 @@
 (ns xisite.ui
   "Layout: head, header, footer, page wrapper. Buttons are
    clj-ui-framework components; their tokens and CSS come from /css/ui.css."
-  (:require [hiccup2.core :as h]
+  (:require [clojure.string :as str]
+            [hiccup2.core :as h]
             [ui.button :as button]
             [xisite.core :as core]
             [xisite.livereload :as livereload]
@@ -62,11 +63,16 @@
      (when core/*dev*
        [:script (h/raw livereload/script)]))))
 
-(defn- nav-button [{:keys [href active?]} & children]
+(defn- nav-button
+  "A `:label` makes it icon-only: the label becomes its aria-label and tooltip."
+  [{:keys [href active? label]} & children]
   (apply button/button
          {:variant :ghost :href href
-          :class (when active? "is-active")
-          :attrs (cond-> {} active? (assoc :aria-current "page"))}
+          :class (some->> [(when active? "is-active") (when label "btn-icon")]
+                     (remove nil?) seq (str/join " "))
+          :attrs (cond-> {}
+                   active? (assoc :aria-current "page")
+                   label (assoc :aria-label label :title label))}
          children))
 
 (defn header [path]
@@ -79,8 +85,8 @@
        (nav-button {:href "/docs/" :active? (and docs? (not= path "/docs/getting-started/"))} "Docs")
        (nav-button {:href "/docs/getting-started/" :active? (= path "/docs/getting-started/")} "Install")
        (nav-button {:href "/changelog/" :active? changelog?} "Changelog")
-       (nav-button {:href core/npm-url} npm-icon [:span "npm"])
-       (nav-button {:href core/repo-url} github-icon [:span "GitHub"])]]]))
+       (nav-button {:href core/npm-url :label "npm"} npm-icon)
+       (nav-button {:href core/repo-url :label "GitHub"} github-icon)]]]))
 
 (defn footer []
   [:footer.site-footer
