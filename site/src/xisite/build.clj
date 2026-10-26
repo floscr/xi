@@ -7,10 +7,11 @@
             [xisite.theme :as theme]))
 
 (def ^:private plain-routes
-  "Pages that don't need the guide parsed."
-  {"/" pages/home
-   "/tour/" pages/tour-page
-   "/changelog/" pages/changelog})
+  "Pages that don't need the guide parsed. Vars, so the dev server's live
+   reload of xisite.pages / xisite.ui reaches them."
+  {"/" #'pages/home
+   "/tour/" #'pages/tour-page
+   "/changelog/" #'pages/changelog})
 
 (defn routes
   "Map of path (trailing slash, root as \"/\") → html string."
