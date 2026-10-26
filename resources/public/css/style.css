@@ -5183,53 +5183,150 @@ code a:hover,
 .accounts-result { margin: var(--size-4) var(--size-4) 0; }
 .accounts-card-head {
   flex-direction: row;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--size-3);
 }
+.accounts-card-title { display: flex; align-items: center; gap: var(--size-2); min-width: 0; }
+.accounts-logo {
+  --logo: var(--accent);
+  width: 1.75rem;
+  height: 1.75rem;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--logo);
+  background: color-mix(in srgb, var(--logo) 16%, transparent);
+}
+.accounts-logo--claude { --logo: #d97757; }
 .accounts-card-name { font-size: var(--font-xs); color: var(--fg-2); }
 .accounts-card-body { display: flex; flex-direction: column; gap: var(--size-3); }
+.accounts-rows { display: flex; flex-direction: column; }
 .accounts-row {
   display: flex;
   align-items: center;
   gap: var(--size-3);
-  padding-bottom: var(--size-3);
-  border-bottom: var(--border-0);
+  padding-block: var(--size-3);
+}
+.accounts-row:first-child { padding-top: 0; }
+.accounts-row + .accounts-row { border-top: var(--border-0); }
+.accounts-avatar {
+  position: relative;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-2);
+  color: var(--fg-1);
+  font-weight: 600;
+}
+.accounts-avatar-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--success);
+  border: 2px solid var(--bg-1);
 }
 .accounts-row-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--size-1);
+  gap: 2px;
 }
 .accounts-row-email {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--fg-0);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .accounts-row-notes,
-.accounts-note { font-size: var(--font-sm); color: var(--fg-1); }
-.accounts-row-actions { display: flex; gap: var(--size-1); flex-shrink: 0; }
-.accounts-sign-in,
-.accounts-sign-in-start {
+.accounts-note { font-size: var(--font-sm); color: var(--fg-2); }
+.accounts-note { display: flex; align-items: center; gap: var(--size-2); }
+.accounts-row-actions { display: flex; align-items: center; gap: var(--size-1); flex-shrink: 0; }
+.accounts-menu-danger { color: var(--danger); }
+.accounts-rename,
+.accounts-add-form,
+.accounts-sign-in-code { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--size-2); }
+.accounts-rename > :first-child,
+.accounts-add-form > :first-child,
+.accounts-sign-in-code > :first-child { flex: 1; min-width: 0; }
+.accounts-add {
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  margin: 0;
+  padding: var(--size-3) 0 0;
+  border: none;
+  border-top: 1px dashed var(--border-color, var(--bg-2));
+  background: none;
+  color: var(--fg-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.accounts-add:hover { color: var(--fg-0); }
+.accounts-add-plus {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px dashed var(--fg-3);
+}
+.accounts-add-form { padding-top: var(--size-3); border-top: var(--border-0); }
+.accounts-sign-in {
   display: flex;
   flex-direction: column;
-  gap: var(--size-2);
+  gap: var(--size-3);
+  padding-top: var(--size-3);
+  border-top: var(--border-0);
 }
-.accounts-sign-in-start { flex-direction: row; align-items: center; }
-.accounts-sign-in-start > :first-child { flex: 1; min-width: 0; }
 .accounts-sign-in-title { font-weight: 600; color: var(--fg-0); }
-.accounts-sign-in-steps {
+.accounts-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--size-3); }
+.accounts-step { display: flex; gap: var(--size-3); }
+.accounts-step-n {
+  width: 1.4rem;
+  height: 1.4rem;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-2);
+  color: var(--fg-2);
+  font-size: var(--font-xs);
+}
+.accounts-step-n--done { background: var(--success); color: var(--bg-0); }
+.accounts-step-body {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--size-2);
 }
-.accounts-sign-in-code { display: flex; gap: var(--size-2); align-items: center; }
-.accounts-sign-in-code > :first-child { flex: 1; min-width: 0; }
+.accounts-step-body > .accounts-sign-in-code { align-self: stretch; }
+.accounts-user-code { display: flex; align-items: center; gap: var(--size-2); }
+.accounts-user-code > code {
+  font-size: var(--font-lg);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  padding: var(--size-1) var(--size-3);
+  border: var(--border-0);
+  border-radius: var(--radius-md);
+  background: var(--bg-0);
+  color: var(--fg-0);
+}
+.accounts-sign-in-foot { display: flex; justify-content: flex-end; }
 
 /* ---- Sidebar drawer: compact cards (Arc/Realm-style) ----
    Same .project-card look as the listings, just tighter for the narrow

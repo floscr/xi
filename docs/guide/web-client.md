@@ -425,10 +425,12 @@ page, for example the other logins of an account pool.
 
 The `/accounts` page ("Accounts" in the command palette and the ⋮ menu)
 lists every provider's stored [accounts](models.md#accounts): Switch makes
-one live, Forget drops it, and "Sign in to another account" starts a
-sign-in with an optional alias. The sign-in shows its page as a button; for
-Claude, paste the code that page shows into the box below it. The palette
-offers "Switch … to …" for each account once the page has loaded them.
+one live and renews an expired token, and an account's ⋮ menu renames it
+(its alias) or forgets it. "Add another account" starts a sign-in with an
+optional alias, in steps: open the sign-in page, then enter the code shown
+here on that page, or, for Claude, paste the code that page shows. The
+palette offers "Switch … to …" for each account once the page has loaded
+them.
 
 ## Camera
 

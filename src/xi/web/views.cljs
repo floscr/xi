@@ -3852,7 +3852,7 @@
   [[tag attrs & children] svg]
   (into [tag attrs svg] children))
 
-(defn- more-vertical-icon
+(defn more-vertical-icon
   []
   [:svg {:class ["icon"]
          :xmlns "http://www.w3.org/2000/svg"
