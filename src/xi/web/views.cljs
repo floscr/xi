@@ -351,10 +351,10 @@
     ("Glob" "find")  (get-arg args :pattern)
     ("ls")           (relativize-path (get-arg args :path) cwd)
     "git_commit"     (get-arg args :message)
-    (let [v (some (fn [k] (let [x (get-arg args k)]
-                            (when (and (string? x) (seq x)) x)))
-                  [:command :file_path :path :pattern :query :url :prompt :description])]
-      v)))
+    (or (some (fn [k] (let [x (get-arg args k)]
+                        (when (and (string? x) (seq x)) x)))
+              [:command :file_path :path :pattern :query :url :prompt :description])
+        (util/argv-line (get-arg args :args)))))
 
 (defn- tool-detail
   "What a tool header shows next to the name under the :tool-args appearance

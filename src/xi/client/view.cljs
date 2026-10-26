@@ -92,7 +92,8 @@
     "git_hunk"        (get-arg arguments :file)
     "git_stage_hunks" (str/join " " (get-arg arguments :files))
     "git_commit" (get-arg arguments :message)
-    (format-tool-args-default arguments)))
+    (or (util/argv-line (get-arg arguments :args))
+        (format-tool-args-default arguments))))
 
 (def ^:private shorten-tool-name util/strip-mcp-prefix)
 

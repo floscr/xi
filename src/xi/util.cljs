@@ -180,6 +180,15 @@
          (str/join " ")
          not-empty)))
 
+(defn argv-line
+  "An argv-style tool argument (`{\"args\": [\"log\", \"-5\"]}`, e.g. an extension's
+   git tool) as one space-joined line for a tool header; nil unless it is a
+   non-empty list of strings."
+  [args]
+  (let [args (if (array? args) (vec args) args)]
+    (when (and (sequential? args) (seq args) (every? string? args))
+      (str/join " " args))))
+
 ;; ── Session edits ──
 ;; Pure history reads shared by xi.fx (commit flow, git lock) and the web
 ;; client's edited-files finder.

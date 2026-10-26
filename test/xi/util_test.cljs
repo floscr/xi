@@ -132,6 +132,17 @@
     (is (nil? (util/tool-args-line {})))
     (is (nil? (util/tool-args-line nil)))))
 
+;; ── argv-line ──
+
+(deftest argv-line-joins-string-lists
+  (is (= "log --oneline -5" (util/argv-line ["log" "--oneline" "-5"])))
+  (is (= "status" (util/argv-line #js ["status"])))
+  (testing "nil for anything but a non-empty list of strings"
+    (is (nil? (util/argv-line [])))
+    (is (nil? (util/argv-line nil)))
+    (is (nil? (util/argv-line "log")))
+    (is (nil? (util/argv-line ["log" 5])))))
+
 ;; ── history-edit-paths / relative-under ──
 
 (deftest history-edit-paths-collects-edit-tools
