@@ -285,6 +285,18 @@
     (is (= "cli-1" (get-in state [:rooms "r" :session :provider-session-id]))
         "the session id stays until the store answers")))
 
+(deftest tree-navigate-drops-the-cut-turns-blocks
+  (let [st (-> (apply-events (with-room)
+                             {:type :prompt/submit :room-id "r" :text "hello"}
+                             {:type :agent/text-delta :room-id "r" :text "world"}
+                             {:type :agent/turn-end :room-id "r" :provider-session-id "cli-1"}
+                             {:type :prompt/submit :room-id "r" :text "show a block"})
+               (assoc-in [:rooms "r" :ext :blocks :blocks]
+                         {"kept" {:id "kept" :anchor 1}
+                          "cut"  {:id "cut" :anchor 3}}))
+        {:keys [state]} (handle st {:type :tree/navigate :room-id "r" :index 2})]
+    (is (= #{"kept"} (set (keys (get-in state [:rooms "r" :ext :blocks :blocks])))))))
+
 (deftest tree-navigate-keeps-only-this-transcripts-prompts
   (let [st (-> (apply-events (with-room)
                              {:type :prompt/submit :room-id "r" :text "hello"}

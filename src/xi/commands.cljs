@@ -35,6 +35,7 @@
    :goto {:label :session-id} is a web button opening that session's chat."
   (:require [clojure.string :as str]
             [xi.accounts :as accounts]
+            [xi.blocks :as blocks]
             [xi.buffers :as buffers]
             [xi.core.state :as state]
             [xi.dialog :as dialog]
@@ -646,6 +647,8 @@
           session (:session room)]
       {:state (-> st
                   (assoc-in [:rooms room-id :history] new-history)
+                  ;; the deleted turns' blocks go with them
+                  (update-in [:rooms room-id] blocks/cut-to new-history)
                   ;; the resumed snapshot no longer prefixes the history
                   (update-in [:rooms room-id] dissoc :msg-hash :msg-count)
                   (update-in [:rooms room-id :ui] dissoc :tree-open?)
@@ -718,6 +721,7 @@
                                       (conj (mapv #(assoc % :no-llm? true) (:history room))
                                             (status-entry truncation-divider-text))
                                       []))
+                          (cond-> (not keep-history?) (update-in [:rooms room-id] blocks/cut-to []))
                           (update-in [:rooms room-id :agent]
                                      assoc :busy? false :queued []))}
         (seq effects) (assoc :effects effects)))))

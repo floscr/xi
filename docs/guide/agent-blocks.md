@@ -139,3 +139,5 @@ jsDelivr).
 
 Beyond a limit the tool fails and tells the agent which one. Blocks are saved
 with the chat and come back when you resume it or the server restarts.
+Editing or deleting a message removes the blocks of the turns it cuts off;
+clearing the chat removes them all.

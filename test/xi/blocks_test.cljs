@@ -151,6 +151,19 @@
     (is (= 9 (get (b/dial-values (:spec r2) (:state r2)) "radius")) "the user's value stays")
     (is (= "blue" (get (b/dial-values (:spec r2) (:state r2)) "bg")) "the producer's change wins")))
 
+(deftest cut-to-drops-the-blocks-of-cut-turns
+  (let [room {:ext {:blocks {:blocks {"a" {:id "a" :anchor 1}
+                                      "b" {:id "b" :anchor 2 :call-id "t1"}
+                                      "c" {:id "c" :anchor 4}
+                                      "d" {:id "d"}}}}}
+        ids  (fn [r] (set (keys (get-in r [:ext :blocks :blocks]))))]
+    (is (= #{"a" "b" "d"} (ids (b/cut-to room [{:kind :user} {:kind :tool-call :id "t1"}])))
+        "past the cut goes; its own call kept, or no anchor (older chats), stays")
+    (is (= #{"a" "d"} (ids (b/cut-to room [{:kind :user} {:kind :assistant}])))
+        "anchored at the cut and its call gone")
+    (is (= #{"d"} (ids (b/cut-to room []))) "a cleared chat")
+    (is (= {} (b/cut-to {} [])) "no blocks, no slice")))
+
 (deftest catalog-lists-every-kind
   (let [c (b/catalog {"gtd/board" "a board"})]
     (doseq [k (b/kind-names)] (is (str/includes? c (str "- " k ": "))))

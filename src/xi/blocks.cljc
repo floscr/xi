@@ -683,3 +683,18 @@
   "The blocks of `room` (the room map), oldest first."
   [room]
   (sort-by (juxt :at :id) (vals (get-in room [:ext ext-id :blocks]))))
+
+(defn cut-to
+  "`room` without the blocks of the turns `history` (the room's history cut
+   short: a rewound or deleted message, a cleared chat) no longer has. A block
+   whose tool call is still there stays; any other goes when it was shown
+   past the cut."
+  [room history]
+  (let [calls (into #{} (keep #(when (= :tool-call (:kind %)) (:id %))) history)
+        n     (count history)
+        gone? (fn [{:keys [call-id anchor]}]
+                (and (not (contains? calls call-id))
+                     (number? anchor) (>= anchor n)))]
+    (cond-> room
+      (seq (get-in room [:ext ext-id :blocks]))
+      (update-in [:ext ext-id :blocks] #(into {} (remove (comp gone? val)) %)))))
