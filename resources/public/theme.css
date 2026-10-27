@@ -3782,6 +3782,23 @@ a.btn-link {
   flex-shrink: 0;
 }
 
+/* ── Inline (opts.container): the host frames the controls ─────────── */
+
+.dial-panel--inline {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+  font-size: var(--font-sm);
+  color: var(--fg-0);
+}
+
+.dial-panel--inline .dial-panel-body {
+  padding: 0;
+  overflow: visible;
+}
+
 /* ── Minimized-to-icon state ───────────────────────────────────────── */
 
 .dial-panel-icon {

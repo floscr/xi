@@ -230,9 +230,188 @@
        (when-let [t (->> (:content tool-result) (keep :text) (str/join "\n") not-empty)]
          (str "\n" t))))
 
+;; dial: a tuning panel, drawn by dialkit (clj-ui-framework's window.__uiDial)
+;; inline in the block. The spec is an ordered tree of controls, each value at
+;; a dotted path ("folder.key"); what users set is kept in :state :values by
+;; path, over the spec's own :value.
+
+(def ^:private dial-types
+  #{"slider" "toggle" "color" "text" "select" "pad" "spring" "easing" "action" "folder"})
+
+(def ^:private max-dial-controls 100)
+
+(def ^:private color-re #"(?i)^\s*(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla|oklch|oklab|color)\().*")
+
+(defn- dial-type [{:keys [type value controls]}]
+  (or (some-> (text-or-nil type) str/lower-case)
+      (cond
+        (sequential? controls) "folder"
+        (number? value)        "slider"
+        (boolean? value)       "toggle"
+        (and (string? value) (re-matches color-re value)) "color"
+        :else                  "text")))
+
+(defn- num-or [x default]
+  (cond (number? x) x
+        (string? x) (or (parse-double x) default)
+        :else default))
+
+(defn- axis
+  "A pad axis: [default min max step?]."
+  [x]
+  (let [[d lo hi step] (if (sequential? x) x [0 -1 1])]
+    (cond-> [(num-or d 0) (num-or lo -1) (num-or hi 1)]
+      (number? step) (conj step))))
+
+(declare norm-dial-controls)
+
+(defn- dial-fields
+  "The type-specific fields of control `c` of type `t`."
+  [t c path depth count*]
+  (case t
+    "slider" (cond-> {:value (num-or (:value c) 0)}
+               (text-or-nil (:unit c)) (assoc :unit (text-or-nil (:unit c)))
+               (some? (:min c))  (assoc :min (num-or (:min c) 0))
+               (some? (:max c))  (assoc :max (num-or (:max c) 100))
+               (some? (:step c)) (assoc :step (num-or (:step c) 1)))
+    "toggle" {:value (truthy? (:value c))}
+    "color"  {:value (or (text-or-nil (:value c)) "#000000")}
+    "text"   (cond-> {:value (->str (:value c))}
+               (text-or-nil (:placeholder c)) (assoc :placeholder (text-or-nil (:placeholder c))))
+    "select" (let [opts (mapv (fn [o] (if (map? o)
+                                        {:value (->str (:value o))
+                                         :label (or (text-or-nil (:label o)) (->str (:value o)))}
+                                        {:value (->str o) :label (->str o)}))
+                              (capped (as-vec (:options c) "options") max-items "options"))]
+               (when (empty? opts) (invalid! (str "select " (:key c) " needs options")))
+               {:options opts :value (or (text-or-nil (:value c)) (:value (first opts)))})
+    "pad"    (let [x (axis (:x c)) y (axis (:y c))]
+               (cond-> {:x x :y y :value {:x (first x) :y (first y)}}
+                 (map? (:labels c)) (assoc :labels (select-keys (:labels c) [:x :y]))))
+    ("spring" "easing") {:value (assoc (if (map? (:value c)) (:value c) {}) :type t)}
+    "action" (if (true? (:send c)) {:send true} {})
+    "folder" (do (when (> depth 2) (invalid! "folders nest at most three deep"))
+                 (cond-> {:controls (norm-dial-controls (str path ".") (inc depth) count* (:controls c))}
+                   (true? (:collapsed c)) (assoc :collapsed true)))))
+
+(defn- norm-dial-control [path-prefix depth count* c]
+  (when-not (map? c) (invalid! "each control must be an object with a key"))
+  (when (> (swap! count* inc) max-dial-controls)
+    (invalid! (str "too many controls (at most " max-dial-controls ")")))
+  (let [k (text-or-nil (:key c))
+        t (dial-type c)]
+    (when-not k (invalid! "each control needs a key"))
+    (when (str/includes? k ".") (invalid! (str "control key " (pr-str k) " must not contain a dot")))
+    (when-not (dial-types t)
+      (invalid! (str "control " k ": type must be one of " (str/join ", " (sort dial-types)))))
+    (let [path (str path-prefix k)]
+      (merge (cond-> {:key k :type t :path path}
+               (text-or-nil (:label c)) (assoc :label (text-or-nil (:label c))))
+             (dial-fields t c path depth count*)))))
+
+(defn- norm-dial-controls [path-prefix depth count* cs]
+  (let [cs (mapv #(norm-dial-control path-prefix depth count* %) (as-vec cs "controls"))
+        ks (map :key cs)]
+    (when (not= (count ks) (count (distinct ks)))
+      (invalid! "control keys must be unique within a folder"))
+    cs))
+
+(defn- norm-dial [data]
+  (let [controls (norm-dial-controls "" 0 (atom 0) (:controls data))]
+    (when (empty? controls) (invalid! "a dial needs controls"))
+    (cond-> {:controls controls}
+      (true? (:locked data)) (assoc :locked true))))
+
+(defn dial-controls
+  "Every control of a dial spec (or folder), each folder before its children."
+  [spec]
+  (mapcat (fn [c] (cons c (when (= "folder" (:type c)) (dial-controls c)))) (:controls spec)))
+
+(defn- valued? [{:keys [type]}] (not (#{"action" "folder"} type)))
+
+(defn dial-values
+  "path → current value: what users set, over the spec's own values."
+  [spec state]
+  (merge (into {} (comp (filter valued?) (map (juxt :path :value))) (dial-controls spec))
+         (:values state)))
+
+(defn- dial-value-ok? [{:keys [type options]} v]
+  (case type
+    "slider" (number? v)
+    "toggle" (boolean? v)
+    ("color" "text") (string? v)
+    "select" (boolean (some #(= v (:value %)) options))
+    "pad"    (and (map? v) (number? (:x v)) (number? (:y v)))
+    ("spring" "easing") (and (map? v)
+                             (every? #(or (scalar? %) (and (sequential? %) (every? number? %))) (vals v)))
+    false))
+
+(defn- coerce-dial-value [{:keys [type]} v]
+  (cond
+    (and (= "slider" type) (string? v)) (parse-double v)
+    (and (= "toggle" type) (string? v)) (truthy? v)
+    (map? v) (update-keys v keyword)
+    :else v))
+
+(defn- act-dial
+  "`set` a control's value (target: its path), or press an action control
+   (action: its path). A locked dial takes neither."
+  [{:keys [spec] :as block} {:keys [action target value]}]
+  (let [by-path (into {} (map (juxt :path identity)) (dial-controls spec))]
+    (cond
+      (:locked spec) nil
+
+      (= "set" action)
+      (when-let [c (get by-path target)]
+        (let [v (coerce-dial-value c value)]
+          (when (and (valued? c) (dial-value-ok? c v))
+            {:block (assoc-in block [:state :values target] v)})))
+
+      :else
+      (when-let [c (get by-path action)]
+        (when (= "action" (:type c))
+          {:block (assoc-in block [:state :last] {:action action})
+           :send? (boolean (:send c))})))))
+
+(defn- carry-dial
+  "A user's value stays while its control does and the producer left that
+   control's own value alone; a value the producer changed wins."
+  [old-spec old-state new-spec]
+  (let [old (into {} (map (juxt :path identity)) (dial-controls old-spec))
+        new (into {} (map (juxt :path identity)) (dial-controls new-spec))]
+    {:values (into {} (filter (fn [[path _]]
+                                (let [o (get old path) n (get new path)]
+                                  (and n (= (:type o) (:type n)) (= (:value o) (:value n))))))
+                   (:values old-state))}))
+
+(defn- dial-value-text [v]
+  (cond (map? v)        (str/join ", " (map (fn [[k x]] (str (->str k) "=" (dial-value-text x))) v))
+        (sequential? v) (str "[" (str/join " " (map dial-value-text v)) "]")
+        :else           (->str v)))
+
+(defn- text-dial [spec state]
+  (let [values (dial-values spec state)]
+    (letfn [(lines [cs indent]
+              (mapcat (fn [{:keys [type key label path] :as c}]
+                        (let [l (or label key)]
+                          (case type
+                            "folder" (cons (str indent l ":") (lines (:controls c) (str indent "  ")))
+                            "action" (when-not (:locked spec) [(str indent "[" l "]")])
+                            [(str indent l ": " (dial-value-text (get values path)) (:unit c))])))
+                      cs))]
+      (str/join "\n" (lines (:controls spec) "")))))
+
+(defn- same-set?
+  "A dial's set of a control replaces the same user's previous set of it in
+   the log: a slider drag is many sets."
+  [prev {:keys [action target user]}]
+  (and (= "set" action) (= ["set" target user] [(:action prev) (:target prev) (:user prev)])))
+
 (def kinds
   "kind name → {:describe :normalize :text …}. The catalog the `ui_block`
-   tool lists, in this order; `:internal?` kinds are built by the host only."
+   tool lists, in this order; `:internal?` kinds are built by the host only.
+   `:replaces-last?` (fn [last-logged action]) folds a repeat into the log's
+   last entry instead of adding one."
   (array-map
    "checklist" {:describe "{items: [{id?, label, done?, note?}]} — a list the user can tick off; read the ticks with ui_state"
                 :normalize norm-checklist :text text-checklist
@@ -243,6 +422,19 @@
    "hiccup"    {:describe "pass `hiccup` instead of data: a tree of JSON arrays like [\"div\", {\"layout\": \"row\"}, [\"strong\", \"Hi\"]]; see the tool description for the allowed tags"
                 :normalize norm-hiccup :text (fn [spec _] (bh/text (:tree spec)))
                 :act act-hiccup}
+   "dial"      {:describe (str "{controls: [{key, label?, type?, value?, …}], locked?} — a tuning panel of live controls; "
+                               "read the values with ui_state; locked: true shows the values read-only (the result). "
+                               "type: slider (value, min, max, step, unit), toggle, "
+                               "color (any CSS color), text (placeholder), select (options: [value | {value, label}]), "
+                               "pad (x, y: [default, min, max, step?], labels: {x, y}), spring "
+                               "(value: {stiffness, damping, mass} or {visualDuration, bounce}), easing "
+                               "(value: {duration, ease: [x1, y1, x2, y2]}), action (a button; send: true posts it "
+                               "to you as a message), folder (controls, collapsed). type is inferred from value "
+                               "(number → slider, boolean → toggle, color string → color); keys are unique per "
+                               "folder, without dots")
+                :normalize norm-dial :text text-dial
+                :init-state (fn [_] {:values {}}) :carry carry-dial :act act-dial
+                :replaces-last? same-set?}
    "app"       {:internal? true :normalize norm-app :text text-app}))
 
 (defn kind-names
@@ -381,21 +573,27 @@
 (defn act
   "Apply a user's block action `{:action :target :value}` (by `user` at `at`)
    to `record`: {:record r :send? bool} or nil when the kind doesn't take it.
-   A block action only ever changes the block itself."
+   A block action only ever changes the block itself. A repeat the kind's
+   :replaces-last? matches takes the log's last entry instead of a new one."
   [record {:keys [action target value]} user at]
   (when-let [f (or (get-in kinds [(:kind record) :act]) (when (:rules record) act-ext))]
     (let [action (some-> action ->str)
           target (some-> target ->str)]
       (when-let [{:keys [block send?]} (f record {:action action :target target :value value})]
-        {:record (-> block
-                     (update :actions (fn [as] (vec (take-last max-actions
-                                                               (conj (vec as) (cond-> {:action action :at at}
-                                                                                target      (assoc :target target)
-                                                                                (some? value) (assoc :value value)
-                                                                                user        (assoc :user user)))))))
-                     (update :unread (fnil inc 0))
-                     (assoc :updated-at at))
-         :send?  (boolean send?)}))))
+        (let [entry    (cond-> {:action action :at at}
+                         target        (assoc :target target)
+                         (some? value) (assoc :value value)
+                         user          (assoc :user user))
+              as       (vec (:actions block))
+              replace? (when-let [same? (get-in kinds [(:kind record) :replaces-last?])]
+                         (and (seq as) (same? (peek as) entry)))]
+          {:record (-> block
+                       (assoc :actions (if replace?
+                                         (conj (pop as) entry)
+                                         (vec (take-last max-actions (conj as entry)))))
+                       (update :unread (fn [n] (if replace? (max 1 (or n 0)) (inc (or n 0)))))
+                       (assoc :updated-at at))
+           :send?  (boolean send?)})))))
 
 (defn note
   "`record` with an action the host recorded itself (an app view's tool

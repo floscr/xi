@@ -229,6 +229,165 @@
      [:p {:class ["ab-note"]} (str "Blocks of kind " kind " aren't drawn any more. Their data:")]
      [:pre {:class ["ab-raw"]} (js/JSON.stringify (clj->js spec) nil 2)]])))
 
+;; dial: clj-ui-framework's dialkit (window.__uiDial, ui-runtime.js) mounted
+;; inline. A local change is sent as a `set` action (throttled); a value from
+;; the server (another user, the block's producer) is set on the panel without
+;; echoing back, unless this browser changed that control just now.
+
+(def ^:private dial-send-ms 80)
+(def ^:private dial-local-hold-ms 600)
+
+;; block id → {:ctrl :shape :last {path value} :local-at {path ms}
+;;             :pending {path value} :timer :quiet?}
+(defonce ^:private dials (atom {}))
+
+(defn- dial-shape
+  "The controls without their values: a change here remounts the panel."
+  [controls]
+  (mapv (fn [c] (cond-> (dissoc c :value)
+                  (:controls c) (update :controls dial-shape)))
+        controls))
+
+(defn- dial-config
+  "dialkit's config object for `controls`, seeded with `values` (path → value)."
+  [controls values]
+  (let [o #js {}]
+    (doseq [{:keys [key type label path] :as c} controls
+            :let [v (get values path)]]
+      (aset o key
+            (case type
+              "folder" (let [f (dial-config (:controls c) values)]
+                         (aset f "_label" (or label key))
+                         (when (:collapsed c) (aset f "_collapsed" true))
+                         f)
+              "pad"    (clj->js (cond-> {:type "pad" :label (or label key)
+                                         :x (assoc (:x c) 0 (:x v (first (:x c))))
+                                         :y (assoc (:y c) 0 (:y v (first (:y c))))}
+                                  (:labels c) (assoc :labels (:labels c))))
+              ("spring" "easing") (clj->js (assoc v :type type :label (or label key)))
+              "action" #js {:type "action" :label (or label key)}
+              (clj->js (merge (select-keys c [:min :max :step :placeholder :options])
+                              {:type type :label (or label key) :default v})))))
+    o))
+
+(defn- dial-read
+  "path → value of `controls` in dialkit's (nested) values object."
+  [controls ^js vals]
+  (into {}
+        (for [{:keys [type path]} (b/dial-controls {:controls controls})
+              :when (not (#{"action" "folder"} type))
+              :let [v (reduce (fn [o k] (when o (aget o k))) vals (str/split path #"\."))]]
+          ;; a spring / easing value is dialkit's whole config object, label too
+          [path (if (object? v) (dissoc (js->clj v :keywordize-keys true) :label) v)])))
+
+(defn- dial-flush! [block-id send!]
+  (let [{:keys [pending]} (get @dials block-id)]
+    (swap! dials update block-id assoc :pending {} :timer nil)
+    (doseq [[path v] pending] (send! path v))))
+
+(defn- dial-changed!
+  "The user moved a control on this panel."
+  [block-id controls send! ^js vals]
+  (let [{:keys [quiet? last timer]} (get @dials block-id)]
+    (when-not quiet?
+      (let [now     (js/Date.now)
+            changed (into {} (remove (fn [[p v]] (= v (get last p)))) (dial-read controls vals))]
+        (when (seq changed)
+          (swap! dials update block-id
+                 (fn [d] (-> d
+                             (update :last merge changed)
+                             (update :pending merge changed)
+                             (update :local-at merge (zipmap (keys changed) (repeat now))))))
+          (when-not timer
+            (swap! dials assoc-in [block-id :timer]
+                   (js/setTimeout #(dial-flush! block-id send!) dial-send-ms))))))))
+
+(defn- dial-mount! [dispatch! room-id {:keys [id spec state]} ^js node]
+  (let [controls (:controls spec)
+        values   (b/dial-values spec state)
+        by-path  (into {} (map (juxt :path identity)) (b/dial-controls spec))
+        send!    (fn [path v] (act! dispatch! room-id id "set" path v))
+        ;; registered first and quiet: dialkit may fire onChange while it builds
+        _        (swap! dials assoc id {:shape (dial-shape controls) :last values
+                                        :local-at {} :pending {} :quiet? true})
+        ctrl     (js/window.__uiDial
+                  (str "ab-dial-" id) (dial-config controls values)
+                  #js {:id (str "ab-dial-" id) :persist false :container node
+                       :onChange (fn [vals] (dial-changed! id controls send! vals))
+                       :onAction (fn [path]
+                                   (if (:send (get by-path path))
+                                     (submit! dispatch! room-id id path)
+                                     (act! dispatch! room-id id path)))})]
+    (swap! dials update id assoc :ctrl ctrl :quiet? false)))
+
+(defn- dial-unmount! [id]
+  (when-let [{:keys [^js ctrl timer]} (get @dials id)]
+    (some-> timer js/clearTimeout)
+    (some-> ctrl .destroy)
+    (swap! dials dissoc id)))
+
+(defn- dial-sync!
+  "A new record: remount when its controls changed, else set the values that
+   came from elsewhere."
+  [dispatch! room-id {:keys [id spec state] :as record} node]
+  (let [{:keys [^js ctrl shape last local-at]} (get @dials id)]
+    (if (or (nil? ctrl) (not= shape (dial-shape (:controls spec))))
+      (do (dial-unmount! id) (dial-mount! dispatch! room-id record node))
+      (let [now      (js/Date.now)
+            incoming (into {} (remove (fn [[p v]]
+                                        (or (= v (get last p))
+                                            (< (- now (get local-at p 0)) dial-local-hold-ms))))
+                           (b/dial-values spec state))]
+        (when (seq incoming)
+          (swap! dials update id assoc :quiet? true)
+          (try
+            (doseq [[p v] incoming] (.setValue ctrl p (clj->js v)))
+            (finally (swap! dials update id assoc :quiet? false)))
+          (swap! dials update-in [id :last] merge incoming))))))
+
+(defn- dial-value-label [{:keys [type unit options]} v]
+  (case type
+    "toggle" (if v "on" "off")
+    "select" (or (some #(when (= v (:value %)) (:label %)) options) (str v))
+    "pad"    (str "x " (:x v) ", y " (:y v))
+    ("spring" "easing")
+    (str/join ", " (for [[k x] (dissoc v :type)]
+                     (str (name k) " " (if (sequential? x) (str/join " " x) x))))
+    (str v unit)))
+
+(defn- dial-result
+  "A locked dial: its values as a list, without the controls."
+  [{:keys [spec state]}]
+  (let [values (b/dial-values spec state)
+        rows   (fn rows [controls]
+                 (mapcat (fn [{:keys [type key label path] :as c}]
+                           (let [l (or label key)
+                                 v (get values path)]
+                             (cond
+                               (= "action" type) nil
+                               (= "folder" type)
+                               (cons [:div {:class ["ab-dial-result-head"] :replicant/key path} l]
+                                     (rows (:controls c)))
+                               (and (string? v) (str/blank? v)) nil
+                               :else
+                               [[:span {:class ["ab-dial-result-label"] :replicant/key (str path "/l")} l]
+                                [:span {:class ["ab-dial-result-value"] :replicant/key (str path "/v")}
+                                 (when (= "color" type)
+                                   [:span {:class ["ab-dial-swatch"] :style {:background v}}])
+                                 (dial-value-label c v)]])))
+                         controls))]
+    (into [:div {:class ["ab-dial-result"]}] (rows (:controls spec)))))
+
+(defn- dial-view [dispatch! room-id {:keys [spec] :as record}]
+  (cond
+    (:locked spec) (dial-result record)
+    (fn? (.-__uiDial js/window))
+    [:div {:class ["ab-dial"]
+           :replicant/on-mount   (fn [{:replicant/keys [node]}] (dial-mount! dispatch! room-id record node))
+           :replicant/on-update  (fn [{:replicant/keys [node]}] (dial-sync! dispatch! room-id record node))
+           :replicant/on-unmount (fn [_] (dial-unmount! (:id record)))}]
+    :else [:pre {:class ["ab-raw"]} (b/body-text record)]))
+
 ;; ── Frame ────────────────────────────────────────────────────────────────────
 
 (defn- source-label [{:keys [type name id server tool]}]
@@ -243,6 +402,7 @@
     "checklist" (checklist-view dispatch! room-id record)
     "choice"    (choice-view dispatch! room-id record)
     "hiccup"    (hiccup-view dispatch! room-id record)
+    "dial"      (dial-view dispatch! room-id record)
     "app"       (frame/view dispatch! room-id record ui)
     (ext-kind-view dispatch! room-id record)))
 

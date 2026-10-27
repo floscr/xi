@@ -3002,44 +3002,30 @@
           } else {
             if (tof(v) === "object") {
               const t3 = v["type"];
-              if (t3 === "text") {
-                return { "ctype": "text", "key": k, "path": path, "label": (() => {
-                  const or__23426__auto__4 = v["label"];
-                  if (truth_(or__23426__auto__4)) {
-                    return or__23426__auto__4;
-                  } else {
-                    return humanize(k);
-                  }
-                  ;
-                })(), "default": (() => {
+              if (t3 === "slider") {
+                const d4 = (() => {
                   const or__23426__auto__5 = v["default"];
                   if (truth_(or__23426__auto__5)) {
                     return or__23426__auto__5;
                   } else {
-                    return "";
+                    return 0;
                   }
                   ;
-                })(), "placeholder": (() => {
-                  const or__23426__auto__6 = v["placeholder"];
-                  if (truth_(or__23426__auto__6)) {
-                    return or__23426__auto__6;
+                })();
+                const r6 = infer_range(d4);
+                const mx7 = !(v["max"] == null) ? v["max"] : r6["max"];
+                return { "ctype": "slider", "key": k, "path": path, "label": (() => {
+                  const or__23426__auto__8 = v["label"];
+                  if (truth_(or__23426__auto__8)) {
+                    return or__23426__auto__8;
                   } else {
-                    return "";
+                    return humanize(k);
                   }
                   ;
-                })() };
+                })(), "default": d4, "min": !(v["min"] == null) ? v["min"] : r6["min"], "max": mx7, "step": !(v["step"] == null) ? v["step"] : infer_step(mx7) };
               } else {
-                if (t3 === "select") {
-                  const os7 = normalize_options((() => {
-                    const or__23426__auto__8 = v["options"];
-                    if (truth_(or__23426__auto__8)) {
-                      return or__23426__auto__8;
-                    } else {
-                      return [];
-                    }
-                    ;
-                  })());
-                  return { "ctype": "select", "key": k, "path": path, "label": (() => {
+                if (t3 === "toggle") {
+                  return { "ctype": "toggle", "key": k, "path": path, "label": (() => {
                     const or__23426__auto__9 = v["label"];
                     if (truth_(or__23426__auto__9)) {
                       return or__23426__auto__9;
@@ -3047,44 +3033,46 @@
                       return humanize(k);
                     }
                     ;
-                  })(), "options": os7, "default": (() => {
-                    const or__23426__auto__10 = v["default"];
-                    if (truth_(or__23426__auto__10)) {
-                      return or__23426__auto__10;
-                    } else {
-                      const or__23426__auto__11 = truth_(seq(os7)) ? first(os7)["value"] : null;
+                  })(), "default": boolean$(v["default"]) };
+                } else {
+                  if (t3 === "text") {
+                    return { "ctype": "text", "key": k, "path": path, "label": (() => {
+                      const or__23426__auto__10 = v["label"];
+                      if (truth_(or__23426__auto__10)) {
+                        return or__23426__auto__10;
+                      } else {
+                        return humanize(k);
+                      }
+                      ;
+                    })(), "default": (() => {
+                      const or__23426__auto__11 = v["default"];
                       if (truth_(or__23426__auto__11)) {
                         return or__23426__auto__11;
                       } else {
                         return "";
                       }
                       ;
-                    }
-                    ;
-                  })() };
-                } else {
-                  if (t3 === "color") {
-                    return { "ctype": "color", "key": k, "path": path, "label": (() => {
-                      const or__23426__auto__12 = v["label"];
+                    })(), "placeholder": (() => {
+                      const or__23426__auto__12 = v["placeholder"];
                       if (truth_(or__23426__auto__12)) {
                         return or__23426__auto__12;
                       } else {
-                        return humanize(k);
-                      }
-                      ;
-                    })(), "default": (() => {
-                      const or__23426__auto__13 = v["default"];
-                      if (truth_(or__23426__auto__13)) {
-                        return or__23426__auto__13;
-                      } else {
-                        return "#000000";
+                        return "";
                       }
                       ;
                     })() };
                   } else {
-                    if (t3 === "image") {
-                      const os14 = truth_(v["options"]) ? normalize_options(v["options"]) : null;
-                      return { "ctype": "image", "key": k, "path": path, "label": (() => {
+                    if (t3 === "select") {
+                      const os13 = normalize_options((() => {
+                        const or__23426__auto__14 = v["options"];
+                        if (truth_(or__23426__auto__14)) {
+                          return or__23426__auto__14;
+                        } else {
+                          return [];
+                        }
+                        ;
+                      })());
+                      return { "ctype": "select", "key": k, "path": path, "label": (() => {
                         const or__23426__auto__15 = v["label"];
                         if (truth_(or__23426__auto__15)) {
                           return or__23426__auto__15;
@@ -3092,12 +3080,12 @@
                           return humanize(k);
                         }
                         ;
-                      })(), "options": os14, "default": (() => {
+                      })(), "options": os13, "default": (() => {
                         const or__23426__auto__16 = v["default"];
                         if (truth_(or__23426__auto__16)) {
                           return or__23426__auto__16;
                         } else {
-                          const or__23426__auto__17 = truth_(seq(os14)) ? first(os14)["value"] : null;
+                          const or__23426__auto__17 = truth_(seq(os13)) ? first(os13)["value"] : null;
                           if (truth_(or__23426__auto__17)) {
                             return or__23426__auto__17;
                           } else {
@@ -3108,99 +3096,154 @@
                         ;
                       })() };
                     } else {
-                      if (t3 === "pad") {
-                        const ax18 = (function(a, def_) {
-                          const tup19 = (() => {
-                            const or__23426__auto__20 = v[a];
-                            if (truth_(or__23426__auto__20)) {
-                              return or__23426__auto__20;
-                            } else {
-                              return def_;
-                            }
-                            ;
-                          })();
-                          return { "default": tup19[0], "min": tup19[1], "max": tup19[2], "step": (() => {
-                            const or__23426__auto__21 = tup19[3];
-                            if (truth_(or__23426__auto__21)) {
-                              return or__23426__auto__21;
-                            } else {
-                              return (tup19[2] - tup19[1]) / 200;
-                            }
-                            ;
-                          })() };
-                        });
-                        const default_axis22 = [0, -1, 1, 0.01];
-                        const xa23 = ax18("x", default_axis22);
-                        const ya24 = ax18("y", default_axis22);
-                        const labels25 = (() => {
-                          const or__23426__auto__26 = v["labels"];
-                          if (truth_(or__23426__auto__26)) {
-                            return or__23426__auto__26;
-                          } else {
-                            return {};
-                          }
-                          ;
-                        })();
-                        return { "y": ya24, "path": path, "key": k, "default": { "x": xa23["default"], "y": ya24["default"] }, "y-label": (() => {
-                          const or__23426__auto__27 = labels25["y"];
-                          if (truth_(or__23426__auto__27)) {
-                            return or__23426__auto__27;
-                          } else {
-                            return "Y";
-                          }
-                          ;
-                        })(), "x-label": (() => {
-                          const or__23426__auto__28 = labels25["x"];
-                          if (truth_(or__23426__auto__28)) {
-                            return or__23426__auto__28;
-                          } else {
-                            return "X";
-                          }
-                          ;
-                        })(), "label": (() => {
-                          const or__23426__auto__29 = v["label"];
-                          if (truth_(or__23426__auto__29)) {
-                            return or__23426__auto__29;
+                      if (t3 === "color") {
+                        return { "ctype": "color", "key": k, "path": path, "label": (() => {
+                          const or__23426__auto__18 = v["label"];
+                          if (truth_(or__23426__auto__18)) {
+                            return or__23426__auto__18;
                           } else {
                             return humanize(k);
                           }
                           ;
-                        })(), "ctype": "pad", "x": xa23 };
-                      } else {
-                        if (truth_((() => {
-                          const or__23426__auto__30 = t3 === "spring";
-                          if (or__23426__auto__30) {
-                            return or__23426__auto__30;
+                        })(), "default": (() => {
+                          const or__23426__auto__19 = v["default"];
+                          if (truth_(or__23426__auto__19)) {
+                            return or__23426__auto__19;
                           } else {
-                            return t3 === "easing";
+                            return "#000000";
                           }
                           ;
-                        })())) {
-                          return { "ctype": "transition", "key": k, "path": path, "label": (() => {
-                            const or__23426__auto__31 = v["label"];
-                            if (truth_(or__23426__auto__31)) {
-                              return or__23426__auto__31;
+                        })() };
+                      } else {
+                        if (t3 === "image") {
+                          const os20 = truth_(v["options"]) ? normalize_options(v["options"]) : null;
+                          return { "ctype": "image", "key": k, "path": path, "label": (() => {
+                            const or__23426__auto__21 = v["label"];
+                            if (truth_(or__23426__auto__21)) {
+                              return or__23426__auto__21;
                             } else {
                               return humanize(k);
                             }
                             ;
-                          })(), "default": JSON.parse(JSON.stringify(v)) };
+                          })(), "options": os20, "default": (() => {
+                            const or__23426__auto__22 = v["default"];
+                            if (truth_(or__23426__auto__22)) {
+                              return or__23426__auto__22;
+                            } else {
+                              const or__23426__auto__23 = truth_(seq(os20)) ? first(os20)["value"] : null;
+                              if (truth_(or__23426__auto__23)) {
+                                return or__23426__auto__23;
+                              } else {
+                                return "";
+                              }
+                              ;
+                            }
+                            ;
+                          })() };
                         } else {
-                          if (t3 === "action") {
-                            return { "ctype": "action", "key": k, "path": path, "label": (() => {
-                              const or__23426__auto__32 = v["label"];
+                          if (t3 === "pad") {
+                            const ax24 = (function(a, def_) {
+                              const tup25 = (() => {
+                                const or__23426__auto__26 = v[a];
+                                if (truth_(or__23426__auto__26)) {
+                                  return or__23426__auto__26;
+                                } else {
+                                  return def_;
+                                }
+                                ;
+                              })();
+                              return { "default": tup25[0], "min": tup25[1], "max": tup25[2], "step": (() => {
+                                const or__23426__auto__27 = tup25[3];
+                                if (truth_(or__23426__auto__27)) {
+                                  return or__23426__auto__27;
+                                } else {
+                                  return (tup25[2] - tup25[1]) / 200;
+                                }
+                                ;
+                              })() };
+                            });
+                            const default_axis28 = [0, -1, 1, 0.01];
+                            const xa29 = ax24("x", default_axis28);
+                            const ya30 = ax24("y", default_axis28);
+                            const labels31 = (() => {
+                              const or__23426__auto__32 = v["labels"];
                               if (truth_(or__23426__auto__32)) {
                                 return or__23426__auto__32;
+                              } else {
+                                return {};
+                              }
+                              ;
+                            })();
+                            return { "y": ya30, "path": path, "key": k, "default": { "x": xa29["default"], "y": ya30["default"] }, "y-label": (() => {
+                              const or__23426__auto__33 = labels31["y"];
+                              if (truth_(or__23426__auto__33)) {
+                                return or__23426__auto__33;
+                              } else {
+                                return "Y";
+                              }
+                              ;
+                            })(), "x-label": (() => {
+                              const or__23426__auto__34 = labels31["x"];
+                              if (truth_(or__23426__auto__34)) {
+                                return or__23426__auto__34;
+                              } else {
+                                return "X";
+                              }
+                              ;
+                            })(), "label": (() => {
+                              const or__23426__auto__35 = v["label"];
+                              if (truth_(or__23426__auto__35)) {
+                                return or__23426__auto__35;
                               } else {
                                 return humanize(k);
                               }
                               ;
-                            })() };
+                            })(), "ctype": "pad", "x": xa29 };
                           } else {
-                            if ("else") {
-                              return { "ctype": "folder", "key": k, "path": path, "label": humanize(k), "collapsed": boolean$(v["_collapsed"]), "children": parse_config(v, path) };
+                            if (truth_((() => {
+                              const or__23426__auto__36 = t3 === "spring";
+                              if (or__23426__auto__36) {
+                                return or__23426__auto__36;
+                              } else {
+                                return t3 === "easing";
+                              }
+                              ;
+                            })())) {
+                              return { "ctype": "transition", "key": k, "path": path, "label": (() => {
+                                const or__23426__auto__37 = v["label"];
+                                if (truth_(or__23426__auto__37)) {
+                                  return or__23426__auto__37;
+                                } else {
+                                  return humanize(k);
+                                }
+                                ;
+                              })(), "default": JSON.parse(JSON.stringify(v)) };
                             } else {
-                              return null;
+                              if (t3 === "action") {
+                                return { "ctype": "action", "key": k, "path": path, "label": (() => {
+                                  const or__23426__auto__38 = v["label"];
+                                  if (truth_(or__23426__auto__38)) {
+                                    return or__23426__auto__38;
+                                  } else {
+                                    return humanize(k);
+                                  }
+                                  ;
+                                })() };
+                              } else {
+                                if ("else") {
+                                  return { "ctype": "folder", "key": k, "path": path, "label": (() => {
+                                    const or__23426__auto__39 = v["_label"];
+                                    if (truth_(or__23426__auto__39)) {
+                                      return or__23426__auto__39;
+                                    } else {
+                                      return humanize(k);
+                                    }
+                                    ;
+                                  })(), "collapsed": boolean$(v["_collapsed"]), "children": parse_config(v, path) };
+                                } else {
+                                  return null;
+                                }
+                              }
                             }
                           }
                         }
@@ -3227,11 +3270,19 @@
     const out1 = [];
     for (let G__2 of iterable(Object.keys(config))) {
       const k3 = G__2;
-      if (k3 === "_collapsed") {
+      if (truth_((() => {
+        const or__23426__auto__4 = k3 === "_collapsed";
+        if (or__23426__auto__4) {
+          return or__23426__auto__4;
+        } else {
+          return k3 === "_label";
+        }
+        ;
+      })())) {
       } else {
-        const node4 = parse_node(k3, config[k3], conj(path, k3));
-        if (truth_(node4)) {
-          out1.push(node4);
+        const node5 = parse_node(k3, config[k3], conj(path, k3));
+        if (truth_(node5)) {
+          out1.push(node5);
         }
       }
     }
@@ -4412,77 +4463,90 @@
     return panel5;
   };
   var mount_panel_BANG_ = function(panel, opts) {
-    const root1 = ensure_root_BANG_();
-    const pos2 = get(panel, "position");
-    const side3 = truth_((() => {
-      const or__23426__auto__4 = pos2 === "top-left";
-      if (or__23426__auto__4) {
-        return or__23426__auto__4;
+    const inline1 = opts["container"];
+    const root2 = (() => {
+      const or__23426__auto__3 = inline1;
+      if (truth_(or__23426__auto__3)) {
+        return or__23426__auto__3;
       } else {
-        return pos2 === "bottom-left";
+        return ensure_root_BANG_();
+      }
+      ;
+    })();
+    const pos4 = get(panel, "position");
+    const side5 = truth_((() => {
+      const or__23426__auto__6 = pos4 === "top-left";
+      if (or__23426__auto__6) {
+        return or__23426__auto__6;
+      } else {
+        return pos4 === "bottom-left";
       }
       ;
     })()) ? "pos-left" : "pos-right";
-    const card5 = mk2("div", `${"dial-panel "}${side3 ?? ""}`);
-    const head6 = mk2("div", "dial-panel-head");
-    const title7 = mk2("div", "dial-panel-title");
-    const tools8 = mk2("div", "dial-panel-tools");
-    const vsel9 = mk2("select", "dial-version");
-    const addb10 = mk2("button", "dial-tool");
-    const copyb11 = mk2("button", "dial-tool");
-    const resetb12 = mk2("button", "dial-tool");
-    const collb13 = mk2("button", "dial-tool");
-    const iconb14 = mk2("button", "dial-panel-icon");
-    const body15 = mk2("div", "dial-panel-body");
-    apply_root_position_BANG_(root1, pos2);
-    txt_BANG_(title7, get(panel, "name"));
-    panel["bodyEl"] = body15;
-    panel["versionSel"] = vsel9;
-    panel["cardEl"] = card5;
-    attr_BANG_(iconb14, "type", "button");
-    attr_BANG_(iconb14, "title", `${"Expand "}${get(panel, "name") ?? ""}`);
-    txt_BANG_(iconb14, get(panel, "icon"));
-    for (let G__16 of iterable([[addb10, "+", "Save version"], [copyb11, "\u29C9", "Copy values"], [resetb12, "\u21BA", "Reset"], [collb13, "\u2013", "Minimize"]])) {
-      const spec17 = G__16;
-      const b18 = spec17[0];
-      attr_BANG_(b18, "type", "button");
-      attr_BANG_(b18, "title", spec17[2]);
-      txt_BANG_(b18, spec17[1]);
+    const card7 = mk2("div", truth_(inline1) ? "dial-panel dial-panel--inline" : `${"dial-panel "}${side5 ?? ""}`);
+    const head8 = mk2("div", "dial-panel-head");
+    const title9 = mk2("div", "dial-panel-title");
+    const tools10 = mk2("div", "dial-panel-tools");
+    const vsel11 = mk2("select", "dial-version");
+    const addb12 = mk2("button", "dial-tool");
+    const copyb13 = mk2("button", "dial-tool");
+    const resetb14 = mk2("button", "dial-tool");
+    const collb15 = mk2("button", "dial-tool");
+    const iconb16 = mk2("button", "dial-panel-icon");
+    const body17 = mk2("div", "dial-panel-body");
+    if (truth_(inline1)) {
+    } else {
+      apply_root_position_BANG_(root2, pos4);
     }
     ;
-    on_BANG_(vsel9, "change", (function(_) {
+    txt_BANG_(title9, get(panel, "name"));
+    panel["bodyEl"] = body17;
+    panel["versionSel"] = vsel11;
+    panel["cardEl"] = card7;
+    attr_BANG_(iconb16, "type", "button");
+    attr_BANG_(iconb16, "title", `${"Expand "}${get(panel, "name") ?? ""}`);
+    txt_BANG_(iconb16, get(panel, "icon"));
+    for (let G__18 of iterable([[addb12, "+", "Save version"], [copyb13, "\u29C9", "Copy values"], [resetb14, "\u21BA", "Reset"], [collb15, "\u2013", "Minimize"]])) {
+      const spec19 = G__18;
+      const b20 = spec19[0];
+      attr_BANG_(b20, "type", "button");
+      attr_BANG_(b20, "title", spec19[2]);
+      txt_BANG_(b20, spec19[1]);
+    }
+    ;
+    on_BANG_(vsel11, "change", (function(_) {
       return select_version_BANG_(panel, (() => {
-        const v19 = vsel9.value;
-        if (truth_(seq(v19))) {
-          return v19;
+        const v21 = vsel11.value;
+        if (truth_(seq(v21))) {
+          return v21;
         }
         ;
       })());
     }));
-    on_BANG_(addb10, "click", (function(_) {
+    on_BANG_(addb12, "click", (function(_) {
       return save_version_BANG_(panel);
     }));
-    on_BANG_(copyb11, "click", (function(_) {
+    on_BANG_(copyb13, "click", (function(_) {
       return copy_config_BANG_(panel);
     }));
-    on_BANG_(resetb12, "click", (function(_) {
+    on_BANG_(resetb14, "click", (function(_) {
       return select_version_BANG_(panel, null);
     }));
-    on_BANG_(collb13, "click", (function(_) {
-      card5.classList.add("is-iconified");
+    on_BANG_(collb15, "click", (function(_) {
+      card7.classList.add("is-iconified");
       return panel["open"] = false;
     }));
-    on_BANG_(iconb14, "click", (function(_) {
-      card5.classList.remove("is-iconified");
+    on_BANG_(iconb16, "click", (function(_) {
+      card7.classList.remove("is-iconified");
       return panel["open"] = true;
     }));
-    on_BANG_(head6, "pointerdown", (function(e) {
+    on_BANG_(head8, "pointerdown", (function(e) {
       if (truth_((() => {
-        const or__23426__auto__20 = _EQ_(e.target, head6);
-        if (or__23426__auto__20) {
-          return or__23426__auto__20;
+        const or__23426__auto__22 = _EQ_(e.target, head8);
+        if (or__23426__auto__22) {
+          return or__23426__auto__22;
         } else {
-          return _EQ_(e.target, title7);
+          return _EQ_(e.target, title9);
         }
         ;
       })())) {
@@ -4490,18 +4554,23 @@
       }
       ;
     }));
-    add_BANG_(tools8, vsel9, addb10, copyb11, resetb12, collb13);
-    add_BANG_(head6, title7, tools8);
-    add_BANG_(card5, head6, body15, iconb14);
-    add_BANG_(root1, card5);
+    add_BANG_(tools10, vsel11, addb12, copyb13, resetb14, collb15);
+    add_BANG_(head8, title9, tools10);
+    if (truth_(inline1)) {
+      add_BANG_(card7, body17);
+    } else {
+      add_BANG_(card7, head8, body17, iconb16);
+    }
+    ;
+    add_BANG_(root2, card7);
     build_body_BANG_(panel);
     render_versions_BANG_(panel);
     if (truth_(opts["defaultCollapsed"])) {
-      card5.classList.add("is-iconified");
+      card7.classList.add("is-iconified");
       panel["open"] = false;
     }
     ;
-    return card5;
+    return card7;
   };
   var setvals_walk_BANG_ = function(panel, prefix, o) {
     for (let G__1 of iterable(Object.keys(o))) {

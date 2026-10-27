@@ -31,9 +31,14 @@ block: permission questions appear on the tool call they belong to.
 | `checklist` | Items with a checkbox | Tick items |
 | `choice` | Options to pick, one or several | Pick, then **Send** |
 | `hiccup` | A layout the agent composes from a fixed set of elements and Xi's own components, for what text can't show: badges, a progress bar, an SVG chart | Press its buttons, use its fields |
+| `dial` | A tuning panel: sliders, toggles, color pickers, text, selects, a 2-D pad, spring and easing curves, buttons, in folders | Drag and pick values; its buttons can post a message |
 
 The agent picks the kind. Asking for one works ("as a checklist", "let me
-pick one").
+pick one", "give me sliders for it").
+
+A `dial` keeps what you set: the agent reads the current values with
+`ui_state`, and a whole slider drag counts as one action. Once the tuning is
+done the agent can lock it, which leaves the values as a plain list.
 
 ## Answering the agent
 
