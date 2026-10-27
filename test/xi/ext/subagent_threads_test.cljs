@@ -86,7 +86,16 @@
     (let [st    (assoc-in (base-state) [:rooms "r1" :history]
                           (conj (subvec live-history 0 3) {:kind :text :text "Done: con"}))
           child (-> (h/spawn st {:room-id "r1" :sub-id "sa-1" :task "q"}) :state room-agents first)]
-      (is (= 3 (t/anchor-of (conj rebuilt-history {:kind :user :text "next prompt"}) child))))))
+      (is (= 3 (t/anchor-of (conj rebuilt-history {:kind :user :text "next prompt"}) child)))))
+  (testing "its entry not in the history (an earlier transcript): the top, not the end"
+    (let [later [{:kind :user :text "nope it crashed again"}
+                 {:kind :tool-call :id "t9" :tool "mcp__xi-tools__read"}
+                 {:kind :text :text "Fixed."}]]
+      (is (= 0 (t/anchor-of later {:id "sa-1" :anchor 411
+                                   :after {:index 410 :kind :text :hint "Stream now works"}})))
+      (is (= 0 (t/anchor-of later {:id "sa-1" :anchor 3
+                                   :after {:index 2 :kind :tool-call :call-id "t1" :hint "read"}}))
+          "a tool call by its id only, not any call of the same tool"))))
 
 (deftest resolve-node-reads-the-block
   (let [st (with-agents (base-state)

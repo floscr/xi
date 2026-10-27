@@ -55,23 +55,32 @@
     (first (keep-indexed (fn [j e] (when (and (= :tool-call (:kind e)) (= cid (:id e))) j))
                          history))))
 
-(defn locate
-  "Index of `node`'s entry in `history`: its tool call by id, else the entry
-   at its :index when kind and hint still match, else the nearest one that
-   does, else its :index clamped. nil for an empty history or a node without
-   an index."
+(defn- find-entry
+  "Index of `node`'s entry when `history` holds it: its tool call by id
+   (a tool call's hint, its tool name, names any call of that tool), else the
+   entry at its :index when kind and hint still match, else the nearest one
+   that does. nil when it is not there."
   [history node]
   (let [history (vec history)
         n       (count history)
         i       (:index node)]
     (when (and (pos? n) (number? i))
-      (or (call-index history (:call-id node))
-          (when (and (< i n) (matches? node (nth history i))) i)
-          (->> (range n)
-               (filter #(matches? node (nth history %)))
-               (sort-by #(js/Math.abs (- % i)))
-               first)
-          (min i (dec n))))))
+      (if-let [cid (:call-id node)]
+        (call-index history cid)
+        (or (when (and (< i n) (matches? node (nth history i))) i)
+            (->> (range n)
+                 (filter #(matches? node (nth history %)))
+                 (sort-by #(js/Math.abs (- % i)))
+                 first))))))
+
+(defn locate
+  "Index of `node`'s entry in `history` (`find-entry`), else its :index
+   clamped. nil for an empty history or a node without an index."
+  [history node]
+  (let [n (count history)
+        i (:index node)]
+    (when (and (pos? n) (number? i))
+      (or (find-entry history node) (min i (dec n))))))
 
 (defn address
   "How agents and the UI name `node`: #12, sa-x#4, sa-x."
@@ -83,15 +92,18 @@
 (defn anchor-of
   "Where the web timeline posts `child`'s card in `history`: after its
    spawn_subagent call when that is found, else after the entry it spawned
-   after (:after), else at its :anchor, clamped. The history the web shows
-   may be rebuilt from the transcript, shorter than the live one :anchor
-   counted."
+   after (:after). An :after entry the history lacks came before all of it
+   (a provider session dropped since starts a new transcript, which the
+   rebuilt history is read from): the top. Without :after, its :anchor,
+   clamped."
   [history child]
   (let [n (count history)]
     (if-let [idx (or (call-index history (:call-id child))
-                     (locate history (:after child)))]
+                     (find-entry history (:after child)))]
       (inc idx)
-      (min n (or (:anchor child) n)))))
+      (if (:after child)
+        0
+        (min n (or (:anchor child) n))))))
 
 (defn ended-anchor-of
   "Where `child`'s result goes: its :ended-anchor moved with its card
