@@ -292,6 +292,10 @@
    :lightbox/close          {:label "Close the image viewer" :surface #{:web}}
    :lightbox/next           {:label "Next image in the viewer" :surface #{:web}}
    :lightbox/prev           {:label "Previous image in the viewer" :surface #{:web}}
+   :lightbox/crop           {:label "Crop the composer image" :surface #{:web}}
+   :lightbox/highlight      {:label "Draw highlight rectangles on the composer image" :surface #{:web}}
+   :lightbox/undo           {:label "Undo the last image edit" :surface #{:web}}
+   :lightbox/redo           {:label "Redo the undone image edit" :surface #{:web}}
    :terminal/leave          {:label "Leave the terminal, keys go back to Xi" :surface #{:web}}
    :terminal/focus          {:label "Type in the terminal" :surface #{:web}}
    ;; windows (xi.web.layout): no default keys
@@ -385,8 +389,9 @@
   "Built-in keys. Shared layers apply to both clients; the :web / :tui
    sections hold one client's own. Every action id here is in `catalog`.
    Keys are modifier chords, arrows and named keys; vim-style single letters
-   belong in user config. docs/guide/keyboard.md's tables are generated
-   from this and `catalog` (`bb docs:gen`)."
+   belong in user config, except in the modal :lightbox layer.
+   docs/guide/keyboard.md's tables are generated from this and `catalog`
+   (`bb docs:gen`)."
   {:global     {"alt+n" :chat/new
                 "alt+/" :keys/show}
    :agent-busy {"alt+x" :agent/abort}
@@ -399,9 +404,13 @@
                               "alt+shift+down" :session/next-sibling
                               "alt+shift+up"   :session/prev-sibling
                               "escape"         :dialog/close}
-         :lightbox           {"escape" :lightbox/close
-                              "right"  :lightbox/next
-                              "left"   :lightbox/prev}
+         :lightbox           {"escape"      :lightbox/close
+                              "right"       :lightbox/next
+                              "left"        :lightbox/prev
+                              "c"           :lightbox/crop
+                              "r"           :lightbox/highlight
+                              "mod+z"       :lightbox/undo
+                              "mod+shift+z" :lightbox/redo}
          :permission-pending {"alt+a"       :permission/allow
                               "alt+s"       :permission/always
                               "alt+shift+a" :permission/allow-repo

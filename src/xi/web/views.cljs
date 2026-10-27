@@ -43,6 +43,7 @@
             [xi.web.theme :as ctheme]
             [xi.web.keymap :as keymap]
             [xi.web.rename :as rename]
+            [xi.web.image-edit :as image-edit]
             [xi.web.router :as router]
             [xi.web.palette-items :as palette-items]
             [xi.web.terminal :as terminal]
@@ -909,8 +910,23 @@
                      (str "data:" media-type ";base64," data))))
         atts))
 
+(defn- image-idxs
+  "The indices of the images among `atts`, in the order of image-srcs."
+  [atts]
+  (into [] (keep-indexed (fn [i {:keys [media-type]}]
+                           (when (str/starts-with? (or media-type "") "image/") i)))
+        atts))
+
 (def ^:private swipe-axis-px 10)
 (def ^:private swipe-commit-px 60)
+
+(defn- snap-back-canvas!
+  "The runtime snaps back only a .lightbox-image; the editor's canvas
+   (xi.web.image-edit) is ours to reset."
+  [^js overlay]
+  (when-let [^js c (.querySelector overlay ".lightbox-canvas")]
+    (set! (.. c -style -transition) "")
+    (set! (.. c -style -transform) "")))
 
 (defn- swipe-handlers
   "The viewer overlay's pointer handlers: a sideways one-finger drag moves the
@@ -918,7 +934,7 @@
    The drag is kept on the overlay node so a re-render mid-drag keeps it; the
    runtime's own pointer-up clears the transform, which is the snap-back."
   [dispatch! has-prev? has-next?]
-  (let [image (fn [^js overlay] (.querySelector overlay ".lightbox-image"))]
+  (let [image (fn [^js overlay] (.querySelector overlay ".lightbox-image, .lightbox-canvas"))]
     {:pointerdown
      (fn [^js e]
        (let [overlay (.-currentTarget e)
@@ -951,18 +967,24 @@
        (let [overlay (.-currentTarget e)
              {:keys [id axis dx]} (aget overlay "__xiSwipe")]
          (aset overlay "__xiSwipe" nil)
+         (snap-back-canvas! overlay)
          (when (and (= id (.-pointerId e)) (= axis :x)
                     (> (js/Math.abs dx) swipe-commit-px))
            (cond
              (and (neg? dx) has-next?) (dispatch! {:type :lightbox/step :delta 1})
              (and (pos? dx) has-prev?) (dispatch! {:type :lightbox/step :delta -1})))))
      :pointercancel
-     (fn [^js e] (aset (.-currentTarget e) "__xiSwipe" nil))}))
+     (fn [^js e]
+       (aset (.-currentTarget e) "__xiSwipe" nil)
+       (snap-back-canvas! (.-currentTarget e)))}))
 
-(defn- image-viewer [dispatch! {:keys [srcs index dir]}]
+(defn- image-viewer
+  "`editor` (xi.web.image-edit/view-props): the shown image is a composer
+   attachment, drawn on an editable canvas under the editor's toolbar."
+  [dispatch! {:keys [srcs index dir]} editor]
   (let [close #(dispatch! {:type :lightbox/close})
         n     (count srcs)]
-    (if (< n 2)
+    (if (and (< n 2) (not editor))
       (lightbox/lightbox {:src (first srcs) :on-close close})
       (let [has-prev? (pos? index)
             has-next? (< index (dec n))
@@ -972,20 +994,34 @@
                                                 (.stopPropagation e)
                                                 (on-click))}}
                          (icon/icon {:icon-name icon-name :size :md})])]
-        [:div {:class ["lightbox-overlay" "lightbox-gallery"]
-               :on (assoc (swipe-handlers dispatch! has-prev? has-next?)
-                          :click (fn [_] (close)))}
-         ;; Keyed by index: each image is a fresh node with its own zoom.
-         [:img {:replicant/key index
-                :class ["lightbox-image"
-                        (case dir
-                          :next "lightbox-image--from-next"
-                          :prev "lightbox-image--from-prev"
-                          nil)]
-                :src (nth srcs index)
-                :alt (str "Image " (inc index) " of " n)
-                :on {:click (fn [^js e] (.stopPropagation e))}}]
-         [:div {:class ["lightbox-counter"]} (str (inc index) " / " n)]
+        [:div (cond-> {:class ["lightbox-overlay" "lightbox-gallery"
+                               (when editor "lightbox-overlay--editing")]
+                       :on (assoc (swipe-handlers dispatch! has-prev? has-next?)
+                                  :click (fn [_] (close)))}
+                ;; Takes focus from the composer, or C / R type into it. A
+                ;; blur alone would not do: render! refocuses the composer.
+                editor
+                (assoc :tabindex "-1"
+                       :replicant/on-mount
+                       (fn [{:replicant/keys [^js node]}]
+                         (.focus node #js {:preventScroll true}))))
+         (if editor
+           (image-edit/canvas dispatch! (:att editor)
+                              (assoc editor :index index :n n :dir dir))
+           ;; Keyed by index: each image is a fresh node with its own zoom.
+           [:img {:replicant/key index
+                  :class ["lightbox-image"
+                          (case dir
+                            :next "lightbox-image--from-next"
+                            :prev "lightbox-image--from-prev"
+                            nil)]
+                  :src (nth srcs index)
+                  :alt (str "Image " (inc index) " of " n)
+                  :on {:click (fn [^js e] (.stopPropagation e))}}])
+         (when editor
+           (image-edit/bar dispatch! (:att editor) editor))
+         (when (> n 1)
+           [:div {:class ["lightbox-counter"]} (str (inc index) " / " n)])
          (when has-prev?
            (button ["lightbox-nav" "lightbox-nav--prev"] "Previous image" :chevron-left
                    #(dispatch! {:type :lightbox/step :delta -1})))
@@ -1443,8 +1479,9 @@
 
 (defn- attachment-strip
   "Staged attachments as a row of thumbs and file chips, each with an ×
-   that calls `(on-remove idx)`. `class` adds a modifier to .compose-images."
-  [dispatch! images {:keys [on-remove class]}]
+   that calls `(on-remove idx)`. `class` adds a modifier to .compose-images;
+   `draft-key` (the composer's images) opens them editable in the lightbox."
+  [dispatch! images {:keys [on-remove class draft-key]}]
   (when (seq images)
     [:div {:class ["compose-images" class]}
      (map-indexed
@@ -1459,8 +1496,11 @@
           [:div {:replicant/key idx :class ["compose-image-thumb"]}
            (let [src (str "data:" media-type ";base64," data)]
              [:img {:src src :alt "attachment" :class ["lightbox-thumb"]
-                    :on {:click (fn [_] (dispatch! {:type :lightbox/open :src src
-                                                    :srcs (image-srcs images)}))}}])
+                    :on {:click (fn [_] (dispatch! (cond-> {:type :lightbox/open :src src
+                                                            :srcs (image-srcs images)}
+                                                     draft-key
+                                                     (assoc :edit {:draft-key draft-key
+                                                                   :idxs (image-idxs images)}))))}}])
            [:button {:class ["compose-image-remove"] :type "button"
                      :on {:click (fn [_] (on-remove idx))}}
             (icon/icon {:icon-name :x :size :sm})]]))
@@ -1468,7 +1508,8 @@
 
 (defn- compose-image-strip [dispatch! draft-key images]
   (attachment-strip dispatch! images
-                    {:on-remove (fn [idx]
+                    {:draft-key draft-key
+                     :on-remove (fn [idx]
                                   (dispatch! {:type :compose/remove-image
                                               :draft-key draft-key :idx idx}))}))
 
@@ -5564,7 +5605,8 @@
           (bubble-menu dispatch! (:id room) menu))
         (when-let [menu (:web/thread-menu state)]
           (thread-menu dispatch! (:id room) menu))
-        (some->> (:web/lightbox state) (image-viewer dispatch!))
+        (when-let [lb (:web/lightbox state)]
+          (image-viewer dispatch! lb (image-edit/view-props state)))
         [:div {:class ["compose-dock"]}
          (when (:web/copy-flash state) (copy-toast))
          ;; Deny-with-reason holds the dock only while its ask is still pending.

@@ -36,6 +36,7 @@
             [xi.web.block-nav :as block-nav]
             [xi.web.terminal :as terminal]
             [xi.web.rename :as rename]
+            [xi.web.image-edit :as image-edit]
             [xi.web.threads :as threads]
             [xi.web.theme :as theme]
             [xi.web.user-state :as user-state]
@@ -323,11 +324,14 @@
 
 (defn- lightbox-open
   "`:srcs` are the images the viewer swipes through (a message's images),
-   `:src` the one it opens on; without `:srcs` it shows `:src` alone."
-  [st {:keys [src srcs]}]
+   `:src` the one it opens on; without `:srcs` it shows `:src` alone. The
+   composer's images come with `:edit {:draft-key :idxs}`, their indices in
+   :web/compose-images, which makes them editable (xi.web.image-edit)."
+  [st {:keys [src srcs edit]}]
   (let [srcs (vec (or (seq srcs) [src]))]
-    {:state (assoc st :web/lightbox {:srcs  srcs
-                                     :index (max 0 (.indexOf srcs src))})}))
+    {:state (assoc st :web/lightbox (cond-> {:srcs  srcs
+                                             :index (max 0 (.indexOf srcs src))}
+                                      edit (assoc :edit edit)))}))
 
 (defn- lightbox-step
   "Show the image `delta` steps away; stops at either end, no wrap-around.
@@ -1241,6 +1245,7 @@
          themes-handlers
          dashboard/handlers
          rename/handlers
+         image-edit/handlers
          threads/handlers
          workspaces/handlers
          {:room/new              room-new
@@ -3488,6 +3493,11 @@
   (keymap/register-action! {:id :lightbox/close :event {:type :lightbox/close}})
   (keymap/register-action! {:id :lightbox/next :event {:type :lightbox/step :delta 1}})
   (keymap/register-action! {:id :lightbox/prev :event {:type :lightbox/step :delta -1}})
+  (doseq [[id event] {:lightbox/crop      {:type :lightbox/tool :tool :crop}
+                      :lightbox/highlight {:type :lightbox/tool :tool :rect}
+                      :lightbox/undo      {:type :lightbox/undo}
+                      :lightbox/redo      {:type :lightbox/redo}}]
+    (keymap/register-action! {:id id :when image-edit/editable? :event event}))
   (keymap/register-action! {:id :keys/show :event {:type :keys/show}})
   ;; Back to the chat; the buffer stays open. Not while an open <dialog> (the
   ;; Ctrl+K palette…) has focus: its Escape closes just the dialog.
@@ -3952,6 +3962,7 @@
                                            composed)})
                          :effects       (merge (:effects transport)
                                                (web-effects routes)
+                                               image-edit/effects
                                                (user-ext/fx {:pages-ref   pages-ref
                                                              :routes-ref  routes-ref
                                                              :app-ref     app-ref

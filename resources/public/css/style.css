@@ -3365,6 +3365,74 @@ html:not([data-alt-held]) .compose-send--alt-only {
   .lightbox-image--from-prev { animation: none; }
 }
 
+/* ---- Image editor (xi.web.image-edit) ----
+   A composer image in the viewer: a canvas under a toolbar at the top. The
+   canvas sizes like .lightbox-image, leaving room for the bar above and the
+   counter below. */
+.lightbox-canvas {
+  max-width: calc(100vw - 2 * var(--size-4));
+  max-height: calc(100dvh - 2 * (var(--size-4) + 52px));
+  border-radius: var(--radius-surface);
+  cursor: default;
+  touch-action: none;
+  transition: transform var(--duration-standard) var(--ease-standard);
+}
+
+.lightbox-canvas[data-tool] { cursor: crosshair; }
+
+.lightbox-overlay--editing:focus { outline: none; }
+
+.lightbox-overlay--editing .lightbox-counter {
+  top: auto;
+  bottom: calc(var(--size-4) + env(safe-area-inset-bottom, 0px));
+}
+
+/* Centred, clear of the close button; narrow screens use the left side too. */
+.image-edit-bar {
+  position: absolute;
+  top: calc(var(--size-4) + env(safe-area-inset-top, 0px));
+  left: calc(36px + 2 * var(--size-4));
+  right: calc(36px + 2 * var(--size-4));
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.image-edit-bar .toolbar {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  cursor: default;
+  pointer-events: auto;
+}
+
+.image-edit-btn {
+  flex: none;
+  padding: var(--size-2);
+}
+
+@media (max-width: 600px) {
+  .image-edit-bar { left: var(--size-2); justify-content: flex-start; }
+  .image-edit-btn { padding: var(--size-2) 6px; }
+}
+
+.image-edit-btn[aria-pressed="true"] {
+  background: var(--bg-2);
+  color: var(--fg-0);
+}
+
+.image-edit-swatch {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+.image-edit-btn[aria-pressed="true"] .image-edit-swatch {
+  box-shadow: 0 0 0 2px var(--bg-2), 0 0 0 3.5px var(--fg-0);
+}
+
 /* A prompt's attachments: right-aligned above its bubble, outside it. */
 .user-attachments {
   display: flex;

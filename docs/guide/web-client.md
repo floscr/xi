@@ -72,6 +72,10 @@ across the top narrows the cards and lists to one
   reads the call and the conversation and says what
   the call does, why the agent wants it and the risk. The answer appears
   under the tool block and stays there after you decide.
+- **Edit an attached image.** Click its thumb in the composer: the toolbar
+  of the viewer crops (`C`) and draws highlight rectangles (`R`) in the
+  color you pick, with undo (`Ctrl+Z`), redo and remove all edits. The
+  message sends the edited image.
 - **Sub-agents in the chat.** When the agent (or `/subagent`) starts a
   [sub-agent](builtin-tools.md#sub-agents), one row stands where that
   happened, in place of the spawn call: its label, status, running time and

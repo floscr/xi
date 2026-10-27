@@ -167,6 +167,10 @@ offers that choice.
 | `Esc` | Close the image viewer | `:lightbox/close` | web |
 | `→` | Next image in the viewer | `:lightbox/next` | web |
 | `←` | Previous image in the viewer | `:lightbox/prev` | web |
+| `c` | Crop the composer image | `:lightbox/crop` | web |
+| `r` | Draw highlight rectangles on the composer image | `:lightbox/highlight` | web |
+| `Ctrl+Z` / `Cmd+Z` | Undo the last image edit | `:lightbox/undo` | web |
+| `Ctrl+Shift+Z` / `Shift+Cmd+Z` | Redo the undone image edit | `:lightbox/redo` | web |
 
 <!-- /gen:keys -->
 
