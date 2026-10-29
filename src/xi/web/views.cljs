@@ -2403,9 +2403,15 @@
                               (do (.preventDefault e)
                                   (dispatch! {:type :cmd/select
                                               :index (mod (inc sel) (count cmd-matches))}))
-                              ("enter" "tab")
+                              "enter"
                               (do (.preventDefault e)
                                   (pick-command! dispatch! room-id draft-key (nth cmd-matches sel)))
+                              ;; Tab only completes the name, so arguments or a
+                              ;; subcommand can follow before Enter.
+                              "tab"
+                              (do (.preventDefault e)
+                                  (dispatch! {:type :compose/prefill :draft-key draft-key
+                                              :text (str "/" (:name (nth cmd-matches sel)) " ")}))
                               "escape"
                               (do (.preventDefault e)
                                   (when-let [^js el (compose-textarea-el)]
@@ -9332,6 +9338,7 @@
    ["Alt" "Palette: hold for key badges, Alt + badge key picks the row"]
    ["Alt+Enter" "Palette, a project's New chat: type a prompt, start the chat in the background"]
    ["Tab" "Message box: expand the snippet word before the cursor"]
+   ["Tab" "Message box, / suggestions: complete the command name without running it"]
    ["Shift+Enter" "Message box: new line"]
    ["Alt+Enter" "Message box, while the agent works: send into the running turn instead of the queue"]
    ["Ctrl+Enter" "On one of your messages: go back to before it and edit it"]])
@@ -9469,7 +9476,7 @@
                    (into [:ul {:class ["keys-list"]}]
                          (for [[k label] fixed-shortcuts]
                            (keys-row {:label label
-                                      :key k
+                                      :key (str k " " label)
                                       :kbds (for [d (str/split k #" / ")]
                                               {:display d})})))]]))]
       (dialog/dialog-overlay
