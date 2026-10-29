@@ -107,21 +107,88 @@
          (js/parseFloat (.-paddingTop cs))
          (/ (if (js/isNaN lh) 24 lh) 2)))))
 
+(defn- time-label
+  "The Ask button's short time for epoch ms `at`: the time today, the
+   weekday within the last week, else the date."
+  [at]
+  (let [d    (js/Date. at)
+        now  (js/Date.)
+        days (/ (- (.getTime now) at) 86400000)]
+    (cond
+      (= (.toDateString d) (.toDateString now))
+      (.toLocaleTimeString d js/undefined #js {:hour "2-digit" :minute "2-digit"})
+      (< days 6) (.toLocaleDateString d js/undefined #js {:weekday "short"})
+      :else      (.toLocaleDateString d js/undefined #js {:day "numeric" :month "short"}))))
+
+(defn- show-time! [^js btn ^js el]
+  (let [at    (some-> (.getAttribute el "data-at") not-empty parse-long)
+        label (.querySelector btn ".ask-hover-time")]
+    (.toggle (.-classList btn) "ask-hover--no-time" (nil? at))
+    (when label
+      (.setAttribute label "data-time" (if at (time-label at) ""))
+      (set! (.-title label)
+            (if at
+              (.toLocaleString (js/Date. at) js/undefined
+                               #js {:dateStyle "full" :timeStyle "medium"})
+              "")))))
+
+(defn- gutter-width
+  "Px between block rect `r` and the visible right edge of the scroller
+   holding `content` (its scrollbar excluded)."
+  [^js content ^js r]
+  (let [^js scroller (or (.closest content ".timeline") (.-parentElement content))
+        sr           (.getBoundingClientRect scroller)]
+    (- (+ (.-left sr) (.-clientLeft scroller) (.-clientWidth scroller))
+       (.-right r))))
+
+(defn- pill!
+  "Lay `btn` down as a pill when the upright stack (its width follows the
+   locale's time) has no room right of block rect `er`; true when it did."
+  [^js btn ^js content ^js er]
+  (let [cls (.-classList btn)]
+    (.remove cls "ask-hover--pill")
+    (let [pill? (< (gutter-width content er) (+ (.-offsetWidth btn) 12))]
+      (.toggle cls "ask-hover--pill" pill?)
+      pill?)))
+
+(defn- place!
+  "Position `btn` for block `el` in `content` (.timeline-content)
+   coordinates, so it scrolls with the block. In the gutter it stands beside
+   the first line (or viewport `y`, a selection's end). As a pill it sits on
+   the block's bottom-right edge, beside a user bubble's bottom, or at `y`."
+  [^js btn ^js el ^js content y]
+  (let [cr     (.getBoundingClientRect content)
+        er     (.getBoundingClientRect el)
+        pill?  (pill! btn content er)
+        w      (.-offsetWidth btn)
+        h      (.-offsetHeight btn)
+        bubble (when (and pill? (not y) (.matches el ".post--user"))
+                 (.querySelector el ":scope > .post-body"))
+        [left top]
+        (cond
+          ;; the ⚡ itself on the line, the time hangs below it
+          (not pill?) [(+ (.-right er) 8)
+                       (- (or y (first-line-center el))
+                          (/ (.-offsetHeight (.-firstElementChild btn)) 2))]
+          bubble      (let [br (.getBoundingClientRect bubble)]
+                        [(- (.-left br) w 6) (- (.-bottom br) h)])
+          :else       [(+ (- (.-right er) w) 6)
+                       (- (or y (.-bottom er)) (/ h 2))])]
+    (set! (.. btn -style -left) (str (- left (.-left cr)) "px"))
+    (set! (.. btn -style -top) (str (max 0 (- top (.-top cr))) "px"))))
+
 (defn- show-hover-button!
-  "Move the timeline's Ask button (views/ask-hover-button) to block `el`,
-   centred on its first line (or at viewport `y`: the end of a selection),
-   and name the block in its data attributes, with the `selection` text the
-   question is about. Its top is relative to the .timeline-content holding
-   both, so it scrolls with the block."
+  "Move the timeline's Ask button (views/ask-hover-button) to block `el`
+   with the block's time, and name the block in its data attributes, with
+   the `selection` text the question is about (`y` the viewport y of its
+   end)."
   ([el] (show-hover-button! el nil))
   ([^js el {:keys [y selection]}]
    (when-let [content (.closest el ".timeline-content")]
      (when-let [btn (.querySelector content ":scope > .ask-hover")]
-       (let [top (- (or y (first-line-center el))
-                    (/ (.-offsetHeight btn) 2)
-                    (.-top (.getBoundingClientRect content)))
-             ds  (.-dataset btn)]
-         (set! (.. btn -style -top) (str (max 0 top) "px"))
+       (let [ds (.-dataset btn)]
+         (show-time! btn el)
+         (place! btn el content y)
          (set! (.-askIndex ds) (or (.getAttribute el "data-ask-index") ""))
          (set! (.-askSub ds) (or (.getAttribute el "data-ask-sub") ""))
          (set! (.-askSelection ds) (or selection ""))

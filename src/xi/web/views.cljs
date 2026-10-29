@@ -1759,11 +1759,12 @@
   "Mark a post as a block one can ask about: entry `index` of the room's
    history, or with `sub-id` of that sub-agent's (no index: the sub-agent
    itself). The floating Ask button and the touch menu (xi.web.threads)
-   read these attributes."
-  [node {:keys [index sub-id]}]
+   read these attributes; the button shows `at` (epoch ms) as its time."
+  [node {:keys [index sub-id at]}]
   (let [attrs (cond-> {}
                 (number? index) (assoc :data-ask-index index)
-                sub-id          (assoc :data-ask-sub sub-id))]
+                sub-id          (assoc :data-ask-sub sub-id)
+                at              (assoc :data-at at))]
     (cond
       (not (vector? node))  node
       (map? (second node))  (update node 1 merge attrs)
@@ -4716,23 +4717,28 @@
                     "Keep as session")]))
 
 (defn- ask-hover-button
-  "The one floating Ask button of a timeline: xi.web.threads moves it to the
-   hovered block and names that block in its data attributes, without a
-   render; a click opens the block's thread composer."
+  "The one floating Ask button of a timeline, with the hovered block's time
+   under it: xi.web.threads moves it to the hovered block, names that block
+   in its data attributes and fills in the time, without a render; a click
+   opens the block's thread composer."
   [dispatch! room-id]
-  [:button {:class ["ask-hover"] :type "button" :replicant/key "tl-ask-hover"
-            :title "Ask a sub-agent about this block" :aria-label "Ask about this block"
-            ;; mousedown would collapse the selection the button may be on
-            :on {:mousedown (fn [^js e] (.preventDefault e))
-                 :click (fn [^js e]
-                          (let [ds (.. e -currentTarget -dataset)]
-                            (dispatch! (cond-> {:type    :thread/compose-open
-                                                :room-id room-id
-                                                :index   (some-> (.-askIndex ds) not-empty parse-long)
-                                                :sub-id  (not-empty (.-askSub ds))}
-                                         (not-empty (.-askSelection ds))
-                                         (assoc :selection (.-askSelection ds))))))}}
-   (icon/icon {:icon-name :zap :size :sm})])
+  [:div {:class ["ask-hover"] :replicant/key "tl-ask-hover"
+         ;; mousedown would collapse the selection the button may be on
+         :on {:mousedown (fn [^js e] (.preventDefault e))}}
+   [:button {:class ["ask-hover-btn"] :type "button"
+             :title "Ask a sub-agent about this block" :aria-label "Ask about this block"
+             :on {:click (fn [^js e]
+                           (let [ds (.-dataset (.closest (.-currentTarget e) ".ask-hover"))]
+                             (dispatch! (cond-> {:type    :thread/compose-open
+                                                 :room-id room-id
+                                                 :index   (some-> (.-askIndex ds) not-empty parse-long)
+                                                 :sub-id  (not-empty (.-askSub ds))}
+                                          (not-empty (.-askSelection ds))
+                                          (assoc :selection (.-askSelection ds))))))}}
+    (icon/icon {:icon-name :zap :size :sm})]
+   ;; its text is the ::after of data-time (xi.web.threads), so a render
+   ;; never fights the DOM over children
+   [:span {:class ["ask-hover-time"]}]])
 
 (defn- subagent-block-ctx
   "What a sub-agent's rows need to follow the chat's block rules, from the
@@ -5582,7 +5588,7 @@
                                   :node (with-post-key (str "h-" p)
                                           (cond-> post
                                             (askable-kinds (:kind entry))
-                                            (with-ask-ref {:index p})))}])))))))
+                                            (with-ask-ref {:index p :at (:at entry)})))}])))))))
                     (range start (inc total))))))
                ;; Every child of .timeline-content is keyed (and nils are
                ;; dropped, see timeline-content): mixing keyed and unkeyed

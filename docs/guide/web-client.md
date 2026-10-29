@@ -104,7 +104,10 @@ across the top narrows the cards and lists to one
   **Keep as session** lists it with your other chats; so does the same
   button on top of the sub-agent's chat.
 - **Ask about any block.** Hover a message, tool call or thinking block and
-  click the ⚡ button at its right edge. On a phone, tap the block (or
+  click the ⚡ button at its right edge; the time the block was sent sits
+  under it (hover it for the full date). In a narrow window or side panel,
+  button and time sit on the block's bottom edge, or beside your message.
+  On a phone, tap the block (or
   long-press a tool header); for a code block or your own message, it is in
   the block's menu. A field opens under the block with suggested questions.
   The question goes to a [sub-agent](builtin-tools.md#sub-agents) that gets
