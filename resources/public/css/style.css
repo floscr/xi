@@ -3131,11 +3131,13 @@ body {
   color: var(--accent);
 }
 
-html[data-alt-held] .compose-send--steer .compose-send-icon {
+html[data-alt-held] .compose-send--steer .compose-send-icon,
+.compose-send--steer[data-holding] .compose-send-icon {
   display: none;
 }
 
-html[data-alt-held] .compose-send--steer .compose-steer-icon {
+html[data-alt-held] .compose-send--steer .compose-steer-icon,
+.compose-send--steer[data-holding] .compose-steer-icon {
   display: inline-flex;
 }
 
@@ -3143,8 +3145,9 @@ html:not([data-alt-held]) .compose-send--alt-only {
   display: none;
 }
 
-/* On touch a tap steers and a hold queues (xi.web.views/send-button-on):
-   the ring fills while held (data-holding). Its duration is send-hold-ms. */
+/* On touch a tap queues and a hold steers (xi.web.views/send-button-on):
+   while held (data-holding) the steer icon shows and the ring fills. Its
+   duration is send-hold-ms. */
 .compose-send--steer {
   position: relative;
   touch-action: none;

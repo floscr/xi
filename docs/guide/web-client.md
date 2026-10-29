@@ -128,8 +128,9 @@ across the top narrows the cards and lists to one
   message the turn could no longer take stays in the queue. Holding Alt
   turns the send button into the steer icon while that works: not while a
   permission request waits, when the message queues as usual. On a touch
-  screen a tap on send steers and holding it queues: a ring fills, and
-  the message queues when it closes. Slide away to cancel.
+  screen a tap on send queues and holding it steers: the steer icon shows,
+  a ring fills, and the message steers when it closes. Slide away to
+  cancel.
 - **Read what the agent did.** Tool calls and thinking are collapsed blocks.
   Open one in place (it stays open when you come back from another chat),
   or switch the appearance settings (gear in the sidebar footer) to keep

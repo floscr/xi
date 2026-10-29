@@ -2138,15 +2138,15 @@
     queued)])
 
 ;; ── Send button on touch while the turn can be steered ──────────────────────
-;; A tap steers the message into the running turn; holding the button for
-;; send-hold-ms queues it, the ring (.compose-send-ring) filling meanwhile.
-;; Sliding the finger away cancels. A mouse keeps click = queue,
+;; A tap queues the message like a click; holding the button for send-hold-ms
+;; steers it into the running turn, the ring (.compose-send-ring) filling
+;; meanwhile. Sliding the finger away cancels. A mouse keeps click = queue,
 ;; Alt+click = steer.
 
 (def ^:private send-hold-ms 450) ; = the ring's transition in style.css
 (def ^:private send-hold-slop-px 24)
 
-;; The touch press on the send button: {:node :x :y :timer :steer!}.
+;; The touch press on the send button: {:node :x :y :timer :queue!}.
 (defonce ^:private send-hold (atom nil))
 
 (defn- end-send-hold! []
@@ -2177,13 +2177,13 @@
                                 {:node   node
                                  :x      (.-clientX e)
                                  :y      (.-clientY e)
-                                 :steer! #(send! {:steer? true})
+                                 :queue! #(send! {:steer? false})
                                  :timer  (js/setTimeout
                                           (fn []
                                             (end-send-hold!)
                                             (when (.-vibrate js/navigator)
                                               (.vibrate js/navigator 15))
-                                            (send! {:steer? false}))
+                                            (send! {:steer? true}))
                                           send-hold-ms)}))))
      :pointermove (fn [^js e]
                     (when-let [{:keys [x y]} @send-hold]
@@ -2191,9 +2191,9 @@
                                send-hold-slop-px)
                         (end-send-hold!))))
      :pointerup     (fn [_]
-                      (when-let [{:keys [steer!]} @send-hold]
+                      (when-let [{:keys [queue!]} @send-hold]
                         (end-send-hold!)
-                        (steer!)))
+                        (queue!)))
      :pointercancel (fn [_] (end-send-hold!))}))
 
 (defn- floating-actions
@@ -2465,8 +2465,8 @@
            spinner-abort
            ;; While the turn can be steered, holding Alt (data-alt-held,
            ;; xi.web.key-hints) turns the send arrow into the steer icon, and
-           ;; an Alt+click steers like Alt+Enter. On touch a tap steers and a
-           ;; hold queues (send-button-on).
+           ;; an Alt+click steers like Alt+Enter. On touch a tap queues and a
+           ;; hold steers (send-button-on).
            (when (or has-input? (seq images) steerable?)
              [:button {:class ["icon-btn" (when steerable? "compose-send--steer")
                                (when-not (or has-input? (seq images)) "compose-send--alt-only")]
