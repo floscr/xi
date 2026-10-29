@@ -30,7 +30,7 @@
   --radius-panel: 14px;
   --radius-pill: 9999px;
   --radius-sm: 5px;
-  --radius-surface: 18px;
+  --radius-surface: 11px;
   --radius-xs: 3px;
   --series-1: var(--accent-500);
   --series-2: var(--blue-500);
@@ -45,9 +45,9 @@
   --success-strong: var(--success-600);
   --teal: var(--teal-500);
   --warning: var(--theme-warning-light, var(--warning-500));
-  --control-lg: var(--size-12);
-  --control-md: var(--size-11);
-  --control-sm: var(--size-9);
+  --control-lg: var(--size-11);
+  --control-md: var(--size-9);
+  --control-sm: var(--size-7);
   --duration-considered: 480ms;
   --duration-fast: 160ms;
   --duration-standard: 240ms;
@@ -79,14 +79,14 @@
   --size-14: 3.5rem;
   --size-15: 3.75rem;
   --size-16: 4rem;
-  --font-xs: 0.64rem;
-  --font-sm: 0.8rem;
-  --font-base: 1rem;
-  --font-md: 1.25rem;
-  --font-lg: 1.563rem;
-  --font-xl: 1.953rem;
-  --font-2xl: 2.441rem;
-  --font-3xl: 3.052rem;
+  --font-xs: 0.75rem;
+  --font-sm: 0.813rem;
+  --font-base: 0.875rem;
+  --font-md: 1rem;
+  --font-lg: 1.25rem;
+  --font-xl: 1.75rem;
+  --font-2xl: 2.25rem;
+  --font-3xl: 3rem;
   --accent-50: oklch(0.965 0.0200 286.0);
   --accent-100: oklch(0.925 0.0400 286.0);
   --accent-200: oklch(0.860 0.0750 286.0);
@@ -221,7 +221,7 @@
   --radius-panel: 14px;
   --radius-pill: 9999px;
   --radius-sm: 5px;
-  --radius-surface: 18px;
+  --radius-surface: 11px;
   --radius-xs: 3px;
   --series-1: var(--accent-400);
   --series-2: var(--blue-400);
@@ -271,7 +271,7 @@
     --radius-panel: 14px;
     --radius-pill: 9999px;
     --radius-sm: 5px;
-    --radius-surface: 18px;
+    --radius-surface: 11px;
     --radius-xs: 3px;
     --series-1: var(--accent-400);
     --series-2: var(--blue-400);
@@ -424,10 +424,13 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Body copy and control labels sit on sm (13px): the Fluid Functionalism
+   body style. base (14px) is the subtitle, md (16px) the section title. */
 body {
   margin: 0;
   background: var(--bg-0);
   color: var(--fg-0);
+  font-size: var(--font-sm);
 }
 
 /* Two weights for UI chrome: regular (400) and medium (500). Hierarchy
@@ -438,12 +441,35 @@ h1, h2, h3, h4, h5, h6, th {
   font-weight: var(--weight-medium);
 }
 
+/* The app type ramp (display / title / subtitle / body / caption).
+   Headings carry no margin: layouts space them with gap (ui.page, card,
+   section), and prose (ui.markdown) sets its own. An h1 is a page title
+   at 28px, not a hero; apps should not restyle it. */
+h1, h2, h3, h4, h5, h6 {
+  margin: 0;
+  text-wrap: balance;
+}
+
+h1 { font-size: var(--font-xl); }
+h2 { font-size: var(--font-md); line-height: var(--leading-body); }
+h3 { font-size: var(--font-base); }
+h4, h5, h6 { font-size: var(--font-sm); }
+
+p {
+  text-wrap: pretty;
+}
+
 /* Display type: large headings get the display face, tight tracking and
    a short leading. */
 h1, h2 {
   font-family: var(--font-display);
   letter-spacing: var(--tracking-display);
   line-height: var(--leading-display);
+}
+
+/* Numbers in columns and counters line up. */
+td, th {
+  font-variant-numeric: tabular-nums;
 }
 
 code, kbd, pre, samp {
@@ -644,8 +670,10 @@ code, kbd, pre, samp {
   font-weight: 500;
   line-height: var(--size-5);
   border-radius: var(--radius-pill);
-  background: var(--accent);
-  color: var(--fg-on-accent);
+  /* Emphasis without shouting: a faint accent tint behind accent text,
+     the same treatment the status tones get. */
+  background: var(--accent-subtle);
+  color: var(--accent);
 }
 
 .badge-icon {
@@ -725,16 +753,28 @@ code, kbd, pre, samp {
 }
 
 
+/* ── Button ─────────────────────────────────────────────────────
+   Quiet by default: the primary action is neutral ink on the page color,
+   secondary is a bordered surface, danger and success are outlined and
+   colored only in their label. `.btn-loud` on primary / danger / success
+   swaps in the filled, saturated version for the one action on a screen
+   that has to shout (a checkout, a destructive confirm).
+
+   Every button pins its height to a control token so a row of buttons,
+   inputs and selects lines up. */
+
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5em;
-  padding: var(--size-2) var(--size-4);
+  gap: var(--size-2);
+  min-height: var(--control-md);
+  padding: 0 var(--size-4);
   font-size: var(--font-sm);
   font-weight: 500;
-  line-height: var(--size-5);
-  border: none;
+  line-height: var(--leading-body);
+  white-space: nowrap;
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
   cursor: pointer;
   font-family: inherit;
@@ -744,6 +784,7 @@ code, kbd, pre, samp {
     background-color var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard),
     border-color var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard),
     transform var(--duration-fast) var(--ease-standard);
 }
 
@@ -753,13 +794,31 @@ code, kbd, pre, samp {
   transform: scale(0.97);
 }
 
+/* ── Primary ─────────────────────────────────────────────────── */
+
 .btn-primary {
-  background: var(--accent);
-  color: var(--fg-on-accent);
+  background: var(--fg-0);
+  color: var(--bg-0);
+  border-color: var(--fg-0);
 }
 @media (hover: hover){.btn-primary:hover:not(:disabled){
-  background: var(--accent-strong);
+  opacity: 0.9;
 }}
+.btn-primary:active:not(:disabled) {
+  opacity: 0.84;
+}
+
+.btn-primary.btn-loud {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  border-color: transparent;
+}
+@media (hover: hover){.btn-primary.btn-loud:hover:not(:disabled){
+  background: var(--accent-strong);
+  opacity: 1;
+}}
+
+/* ── Secondary ───────────────────────────────────────────────── */
 
 .btn-secondary {
   background: var(--bg-1);
@@ -770,12 +829,15 @@ code, kbd, pre, samp {
   background: var(--bg-2);
 }}
 
+/* ── Ghost ───────────────────────────────────────────────────── */
+
 .btn-ghost {
   background: transparent;
-  color: var(--fg-0);
+  color: var(--fg-1);
 }
 @media (hover: hover){.btn-ghost:hover:not(:disabled){
   background: var(--bg-2);
+  color: var(--fg-0);
 }}
 
 /* Pressed state for segmented toggles (e.g. ui.grid layout-toggle). */
@@ -784,23 +846,52 @@ code, kbd, pre, samp {
   color: var(--fg-0);
 }
 
+/* ── Danger ──────────────────────────────────────────────────── */
+
 .btn-danger {
-  background: var(--danger);
-  color: var(--fg-on-danger);
+  background: var(--bg-1);
+  color: var(--danger);
+  border: var(--border-0);
 }
 @media (hover: hover){.btn-danger:hover:not(:disabled){
+  background: var(--bg-2);
+  border-color: var(--danger);
+}}
+
+.btn-danger.btn-loud {
+  background: var(--danger);
+  color: var(--fg-on-danger);
+  border-color: transparent;
+}
+@media (hover: hover){.btn-danger.btn-loud:hover:not(:disabled){
   background: var(--danger-strong);
 }}
 
+/* ── Success ─────────────────────────────────────────────────── */
+
 .btn-success {
-  background: var(--success);
-  color: var(--fg-on-success);
+  background: var(--bg-1);
+  color: var(--success);
+  border: var(--border-0);
 }
 @media (hover: hover){.btn-success:hover:not(:disabled){
+  background: var(--bg-2);
+  border-color: var(--success);
+}}
+
+.btn-success.btn-loud {
+  background: var(--success);
+  color: var(--fg-on-success);
+  border-color: transparent;
+}
+@media (hover: hover){.btn-success.btn-loud:hover:not(:disabled){
   background: var(--success-strong);
 }}
 
+/* ── Link ────────────────────────────────────────────────────── */
+
 .btn-link {
+  min-height: 0;
   background: transparent;
   color: var(--accent);
   text-decoration: underline;
@@ -820,26 +911,29 @@ a.btn-link {
   text-decoration: underline;
 }
 
-/* The radius steps with the size, by the same size-1 the vertical padding
-   steps, so a small button isn't a pill and a large one isn't boxy. */
+/* ── Sizes ───────────────────────────────────────────────────── */
+/* The radius steps with the size, by the same size-1 the height steps,
+   so a small button isn't a pill and a large one isn't boxy. */
+
 .btn-sm {
-  padding: var(--size-1) var(--size-2);
-  font-size: var(--font-xs);
-  line-height: var(--size-4);
+  min-height: var(--control-sm);
+  padding: 0 var(--size-3);
   border-radius: calc(var(--radius-control) - var(--size-1));
 }
 
 .btn-lg {
-  padding: var(--size-3) var(--size-6);
+  min-height: var(--control-lg);
+  padding: 0 var(--size-5);
   font-size: var(--font-base);
-  line-height: var(--size-6);
   border-radius: calc(var(--radius-control) + var(--size-1));
 }
 
 /* ── Icon-only button ────────────────────────────────────────── */
+/* A square the height of its size; the icon sits in the middle. */
 
 .btn-icon {
-  padding: var(--size-2);
+  padding: 0;
+  width: var(--control-md);
   line-height: 1;
   aspect-ratio: 1;
 }
@@ -849,11 +943,11 @@ a.btn-link {
 }
 
 .btn-icon.btn-sm {
-  padding: var(--size-1);
+  width: var(--control-sm);
 }
 
 .btn-icon.btn-lg {
-  padding: var(--size-3);
+  width: var(--control-lg);
 }
 
 .btn-icon-round {
@@ -870,10 +964,27 @@ a.btn-link {
 }
 
 /* ── Disabled ────────────────────────────────────────────────── */
+/* A filled button fades as a whole. Outlined buttons keep their shape
+   and only mute their fill and label, so an unavailable action still
+   reads as a button that is off, not as plain text. */
 
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-secondary:disabled,
+.btn-danger:disabled,
+.btn-success:disabled {
+  opacity: 1;
+  background: var(--bg-2);
+  color: var(--fg-2);
+  border: var(--border-0);
+}
+
+.btn-ghost:disabled {
+  opacity: 1;
+  color: var(--fg-2);
 }
 
 
@@ -2740,13 +2851,6 @@ a.btn-link {
   gap: var(--size-2);
 }
 
-.card-footer .btn,
-.dialog-footer .btn {
-  padding: var(--size-2) var(--size-4);
-  font-size: var(--font-base);
-  line-height: var(--size-5);
-}
-
 /* ─── Card List ───────────────────────────────────────────────── */
 
 .card-list {
@@ -2883,10 +2987,12 @@ a.btn-link {
   background: var(--bg-2);
 }}
 
+/* Selected: an accent tint and border, the label in accent. Reads as
+   chosen without a solid block of color per chip. */
 .chip-active {
-  background: var(--accent);
+  background: var(--accent-subtle);
   border-color: var(--accent);
-  color: var(--fg-on-accent);
+  color: var(--accent);
 }
 
 .chip-dot {
@@ -4435,6 +4541,21 @@ a.btn-link {
   margin: 0;
 }
 
+/* The whole view is empty: take the region's height (a flex child grows,
+   anything else gets at least 320px) and center in it. */
+.empty-state-fill {
+  flex: 1 1 auto;
+  align-self: stretch;
+  justify-content: center;
+  min-height: calc(var(--size-16) * 5);
+}
+
+.empty-state-title {
+  font-size: var(--font-base);
+  font-weight: 500;
+  color: var(--fg-0);
+}
+
 .empty-state-icon {
   opacity: 0.6;
 }
@@ -4871,7 +4992,6 @@ a.btn-link {
 .form-field--error .form-textarea:focus-visible,
 .form-field--error .form-select:focus-visible {
   border-color: var(--danger);
-  box-shadow: inset 0 0 6px color-mix(in srgb, var(--danger) 35%, transparent);
 }
 
 /* ── Label ─────────────────────────────────────────────────────── */
@@ -4885,18 +5005,23 @@ a.btn-link {
 
 /* ── Inputs (text, email, password, date, etc.) ────────────────── */
 
+/* Fields sit on the surface color (not the page color) so they read as
+   controls inside a card instead of holes in it, and share the control
+   height with buttons and selects so mixed rows line up. */
 .form-input,
 .form-textarea,
 .form-select {
   width: 100%;
+  min-height: var(--control-md);
   padding: var(--size-2) var(--size-3);
   font-size: var(--font-sm);
   font-family: inherit;
-  line-height: 1.5;
-  background: var(--bg-0);
+  line-height: var(--leading-body);
+  background: var(--bg-1);
   color: var(--fg-0);
   border: var(--border-1);
   border-radius: var(--radius-control);
+  transition: border-color var(--duration-fast) var(--ease-standard);
 }
 
 .form-input::placeholder,
@@ -4904,12 +5029,12 @@ a.btn-link {
   color: var(--fg-2);
 }
 
+/* Focus is the border turning accent plus the caret: no ring, no glow. */
 .form-input:focus-visible,
 .form-textarea:focus-visible,
 .form-select:focus-visible {
   border-color: var(--accent);
   outline: none;
-  box-shadow: inset 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
   position: relative;
   z-index: 1;
 }
@@ -5519,6 +5644,140 @@ a.btn-link {
 }}
 
 
+/* ── List rows ──────────────────────────────────────────────────
+   Records on one surface: leading icon or thumbnail, title and
+   description, metadata and controls at the end. 36px rows (44px on
+   touch), 48px with a thumbnail or description; hairlines between rows. A row that opens something keeps
+   its <div>: the title is the link or button and stretches over the row
+   (::after), so trailing controls stay real buttons above it. */
+
+.list-rows {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  color: var(--fg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-surface);
+  overflow: hidden;
+}
+
+.list-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--size-3);
+  width: 100%;
+  min-height: var(--control-md);
+  padding: var(--size-2) var(--size-4);
+  color: var(--fg-0);
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.list-row + .list-row {
+  border-top: var(--border-subtle);
+}
+
+@media (hover: hover){.list-row-interactive:hover{
+  background: var(--bg-2);
+}}
+
+.list-row-active{
+  background: var(--accent-subtle);
+}
+@media (hover: hover){.list-row-active:hover{
+  background: var(--accent-subtle);
+}}
+
+/* The icon slot is 24px so a one-line row stays on the control ladder
+   (36px, 44px on touch); a thumbnail is 32px and makes its row 48px. */
+.list-row-leading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--size-6);
+  height: var(--size-6);
+  color: var(--fg-1);
+}
+
+.list-row-thumb {
+  width: var(--size-8);
+  height: var(--size-8);
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+  background: var(--bg-2);
+}
+
+.list-row-text {
+  display: grid;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.list-row-title {
+  display: block;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+  color: inherit;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The link or button covers the whole row. */
+a.list-row-title,
+button.list-row-title {
+  cursor: pointer;
+}
+
+a.list-row-title::after,
+button.list-row-title::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+/* Keyboard focus rings the row, not the title text. */
+a.list-row-title:focus-visible,
+button.list-row-title:focus-visible {
+  outline: none;
+}
+
+.list-row:has(> .list-row-text > .list-row-title:focus-visible) {
+  outline: var(--focus-outline);
+  outline-offset: -2px;
+}
+
+.list-row-description {
+  font-size: var(--font-xs);
+  color: var(--fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Above the stretched title, so trailing buttons get the click. */
+.list-row-trailing {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--size-2);
+  flex-shrink: 0;
+  font-size: var(--font-sm);
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+
 /* ── Markdown Docs ────────────────────────────────────────────────── */
 
 .md-docs {
@@ -5600,6 +5859,83 @@ a.btn-link {
 }
 
 
+/* ── Metric ─────────────────────────────────────────────────────
+   A number with its label, unit, change and hint. One tile is a bordered
+   surface at the panel radius; a metric-row lays tiles out as equal
+   columns. The number is the only large type on the tile. */
+
+.metric {
+  display: grid;
+  gap: var(--size-1);
+  align-content: start;
+  min-width: 0;
+  padding: var(--size-4) var(--size-5);
+  background: var(--bg-1);
+  color: var(--fg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-panel);
+}
+
+/* Inside a card or a list: no surface of its own. */
+.metric-flush {
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.metric-label {
+  font-size: var(--font-sm);
+  color: var(--fg-1);
+}
+
+.metric-value {
+  display: flex;
+  align-items: baseline;
+  gap: var(--size-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-number {
+  font-size: var(--font-xl);
+  font-weight: 500;
+  letter-spacing: var(--tracking-display);
+  line-height: var(--leading-display);
+  color: var(--fg-0);
+}
+
+.metric-unit {
+  font-size: var(--font-sm);
+  color: var(--fg-1);
+}
+
+.metric-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  font-size: var(--font-xs);
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-delta {
+  font-weight: 500;
+  color: var(--fg-1);
+}
+
+.metric-delta-up   { color: var(--success); }
+.metric-delta-down { color: var(--danger); }
+
+/* ── Metric row ─────────────────────────────────────────────── */
+
+.metric-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--size-4) * 10), 1fr));
+  gap: var(--size-4);
+  align-items: stretch;
+}
+
+
 /* ── Mobile base optimizations ────────────────────────────────── */
 /* Applied globally via the generated theme. Complemented by the    */
 /* ui.js.touch runtime module, which hardens the viewport meta and  */
@@ -5609,6 +5945,15 @@ html {
   /* Don't let mobile browsers inflate text on orientation change */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+}
+
+/* Touch devices: controls grow to the phone tap minimum (sm 36px, md
+   44px, lg 48px). Every control reads its height from these tokens, so a
+   whole app gets taller buttons, inputs and selects from this one rule. */
+html.clj-ui-touch {
+  --control-sm: var(--size-9);
+  --control-md: var(--size-11);
+  --control-lg: var(--size-12);
 }
 
 /* Remove the gray/blue tap flash on iOS and Android */
@@ -5640,8 +5985,8 @@ summary,
   align-items: stretch;
   justify-content: space-between;
   width: 100%;
-  height: var(--size-8);
-  background: var(--bg-0);
+  height: var(--control-md);
+  background: var(--bg-1);
   color: var(--fg-0);
   border: var(--border-1);
   border-radius: var(--radius-control);
@@ -5650,7 +5995,6 @@ summary,
 
 .number-field:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* ── Input ─────────────────────────────────────────────────────────── */
@@ -5780,12 +6124,11 @@ summary,
 
 /* ── Sizes ─────────────────────────────────────────────────────────── */
 .number-field--sm {
-  height: var(--size-7);
+  height: var(--control-sm);
 }
 
 .number-field--sm .number-field-input {
   padding: 0 var(--size-2);
-  font-size: var(--font-xs);
 }
 
 .number-field--sm .number-field-btn {
@@ -5793,12 +6136,12 @@ summary,
 }
 
 .number-field--lg {
-  height: var(--size-9);
+  height: var(--control-lg);
 }
 
 .number-field--lg .number-field-input {
   padding: 0 var(--size-3);
-  font-size: var(--font-md);
+  font-size: var(--font-base);
 }
 
 .number-field--lg .number-field-btn {
@@ -5815,6 +6158,141 @@ summary,
   border-color: var(--border-1);
   box-shadow: none;
 }
+
+
+/* ── Page ───────────────────────────────────────────────────────
+   One container per app: it sets the column width and the gutters, and
+   stacks its regions on a 24px grid. Nothing inside adds its own gutter
+   or max width. The widths are 640 / 720 / 1200px at a 16px base. */
+
+.page {
+  width: 100%;
+  max-width: calc(var(--size-4) * 45);
+  margin-inline: auto;
+  padding: var(--size-8) clamp(var(--size-4), 4vw, var(--size-8));
+  display: grid;
+  gap: var(--size-6);
+  --body-padding-inline: clamp(var(--size-4), 4vw, var(--size-8));
+}
+
+/* Long content never pushes the page sideways. */
+.page > * {
+  min-width: 0;
+}
+
+.page-narrow { max-width: calc(var(--size-4) * 40); }
+.page-wide   { max-width: calc(var(--size-4) * 75); }
+.page-full   { max-width: none; }
+
+@media (max-width: 560px) {
+  .page {
+    padding-block: var(--size-5);
+    gap: var(--size-5);
+  }
+}
+
+/* ── Page header ────────────────────────────────────────────── */
+
+/* Title on the left, actions on the right, on one line: the title
+   shrinks and wraps before the actions drop under it. */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--size-3) var(--size-4);
+  flex-wrap: wrap;
+}
+
+.page-header-text {
+  display: grid;
+  gap: var(--size-1);
+  min-width: 0;
+  flex: 1 1 calc(var(--size-4) * 8);
+}
+
+.page-title {
+  overflow-wrap: anywhere;
+}
+
+.page-description {
+  margin: 0;
+  max-width: 60ch;
+  font-size: var(--font-sm);
+  color: var(--fg-1);
+}
+
+.page-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* ── Page section ───────────────────────────────────────────── */
+
+.page-section {
+  display: grid;
+  gap: var(--size-4);
+  min-width: 0;
+}
+
+/* A wide child (a select with a long option, a table) wraps or scrolls
+   inside its region instead of widening the column. */
+.page-section > * {
+  min-width: 0;
+}
+
+/* Sections of a long page sit 32px apart (the page gap plus this). */
+.page-section + .page-section {
+  margin-top: var(--size-2);
+}
+
+.page-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--size-4);
+  flex-wrap: wrap;
+}
+
+.page-section-text {
+  display: grid;
+  gap: var(--size-1);
+  min-width: 0;
+}
+
+.page-section-title {
+  font-size: var(--font-md);
+  line-height: var(--leading-body);
+}
+
+.page-section-description {
+  margin: 0;
+  max-width: 60ch;
+  font-size: var(--font-sm);
+  color: var(--fg-1);
+}
+
+.page-section-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--size-2);
+  flex-shrink: 0;
+}
+
+/* ── Action row ─────────────────────────────────────────────── */
+
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--size-2);
+  flex-wrap: wrap;
+}
+
+.action-row-start   { justify-content: flex-start; }
+.action-row-between { justify-content: space-between; }
 
 
 .pagination {
@@ -6715,12 +7193,13 @@ summary,
   display: flex;
   align-items: center;
   width: 100%;
+  min-height: var(--control-md);
   padding: var(--size-2) var(--size-8) var(--size-2) var(--size-3);
   font-size: var(--font-sm);
   font-family: inherit;
-  line-height: 1.5;
+  line-height: var(--leading-body);
   text-align: left;
-  background-color: var(--bg-0);
+  background-color: var(--bg-1);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right var(--size-2) center;
@@ -6733,7 +7212,6 @@ summary,
 .select-trigger:focus-visible {
   border-color: var(--accent);
   outline: none;
-  box-shadow: inset 0 0 6px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .select-trigger:disabled {
@@ -6846,6 +7324,63 @@ summary,
   :root:not([data-theme="light"]) .separator {
     background: var(--gray-800);
   }
+}
+
+
+/* ── Settings rows ───────────────────────────────────────────────
+   One bordered group per section, rows divided by hairlines, label on
+   the left and the control on the right. Never a card per row. */
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  color: var(--fg-0);
+  border: var(--border-0);
+  border-radius: var(--radius-surface);
+  overflow: hidden;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--size-2) var(--size-4);
+  min-height: var(--size-14);
+  padding: var(--size-3) var(--size-5);
+}
+
+.settings-row + .settings-row {
+  border-top: var(--border-subtle);
+}
+
+.settings-row-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 calc(var(--size-4) * 12);
+}
+
+.settings-row-label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--fg-0);
+}
+
+.settings-row-hint {
+  font-size: var(--font-sm);
+  color: var(--fg-1);
+}
+
+.settings-row-control {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--size-2);
+  margin-left: auto;
+  flex-shrink: 0;
+  max-width: 100%;
 }
 
 
@@ -7737,16 +8272,15 @@ a.sidebar-menu-item {
   flex-wrap: wrap;
   gap: var(--size-2);
   padding: var(--size-1) var(--size-2);
-  border: var(--border-0);
+  border: var(--border-1);
   border-radius: var(--radius-control);
-  background: var(--bg-0);
+  background: var(--bg-1);
   cursor: text;
-  min-height: calc(var(--size-10) + var(--size-1));
+  min-height: var(--control-md);
 }
 
 .tag-input-focused .tag-input-area {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px color-mix(in oklch, var(--accent), transparent 80%);
 }
 
 .tag-input-disabled .tag-input-area {
@@ -8420,7 +8954,10 @@ a.sidebar-menu-item {
   gap: var(--size-1);
 }
 
-/* Boxed variant — a segmented control in a visible track (matches .tabs-boxed). */
+/* Boxed variant — a segmented control in a visible track (matches .tabs-boxed).
+   Concentric on the control ladder: the buttons inside are control-sm, so
+   the track (sm + 2 × size-1 padding) is exactly control-md and lines up
+   with the md buttons and fields beside it. */
 .toolbar-group-boxed {
   background: var(--bg-2);
   border-radius: var(--radius-control);
@@ -8428,8 +8965,8 @@ a.sidebar-menu-item {
 }
 
 .toolbar-group-boxed > .btn {
-  width: var(--size-8);
-  height: var(--size-8);
+  width: var(--control-sm);
+  min-height: var(--control-sm);
   padding: 0;
   border-radius: calc(var(--radius-control) - var(--size-1));
 }

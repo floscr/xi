@@ -3,7 +3,8 @@
         ;; same pin as the xi app's deps.edn; GitHub URL because that sha is pushed there
         io.github.floscr/clj-ui-framework
         {:git/url "https://github.com/floscr/clj-ui-framework.git"
-         :git/sha "dfca787448bbbf2fa48df73fac6065b0622f580e"}
+         :git/tag "v2.0.0"
+         :git/sha "44db724368e922767d3b2fae1bdf6a7424e2da08"}
         markdown-clj/markdown-clj {:mvn/version "1.12.3"}}
  :tasks
  {dev
