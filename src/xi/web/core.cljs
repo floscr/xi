@@ -3036,6 +3036,16 @@
       (.focus ta #js {:preventScroll true})
       (.setSelectionRange ta start end direction))))
 
+(defn- hiccup-error
+  "The error a view throws while `hiccup`'s lazy seqs are realized, or nil.
+   Replicant realizes them mid-render, so a throwing view looks like a failed
+   reconcile; render! tells the two apart with this."
+  [hiccup]
+  (letfn [(walk [x] (cond (or (vector? x) (seq? x)) (run! walk x)
+                          (map? x)                  (run! walk (vals x))))]
+    (try (walk hiccup) nil
+         (catch :default e e))))
+
 (defn- render! [app-state dispatch!]
   (let [root (el "app")
         hiccup (views/root-view app-state dispatch! @pages-ref)
@@ -3057,16 +3067,25 @@
     (try
       (r/render root hiccup)
       (catch :default e
-        ;; A throwing reconcile leaves Replicant's rendering? flag stuck and
-        ;; every later render loops in rAF. Drop its cached vdom for the root
-        ;; and rebuild from a clean baseline; the logged error is the real bug.
-        (js/console.error "[xi-web] render failed — recovering:" e)
-        (vswap! r/state dissoc root)
-        (try
-          (r/render root hiccup)
-          (catch :default e2
-            (js/console.error "[xi-web] recovery render also failed:" e2)
-            (vswap! r/state dissoc root)))))
+        (if-let [view-error (hiccup-error hiccup)]
+          ;; A view threw. A rebuild would throw at the same spot on an
+          ;; emptied root (Replicant attaches a fresh tree only once it is
+          ;; complete): a blank page. Keep the last screen; the next render
+          ;; diffs again and lands here, or in the rebuild once the view
+          ;; renders.
+          (do (js/console.error "[xi-web] a view threw — keeping the last screen:" view-error)
+              (vswap! r/state assoc-in [root :rendering?] false))
+          ;; A throwing reconcile leaves Replicant's rendering? flag stuck and
+          ;; every later render loops in rAF. Drop its cached vdom for the root
+          ;; and rebuild from a clean baseline; the logged error is the real bug.
+          (do
+            (js/console.error "[xi-web] render failed — recovering:" e)
+            (vswap! r/state dissoc root)
+            (try
+              (r/render root hiccup)
+              (catch :default e2
+                (js/console.error "[xi-web] recovery render also failed:" e2)
+                (vswap! r/state dissoc root)))))))
     (some-> caret restore-compose-caret!)
     (flip/play! snap))
   (let [t (title/page-title app-state)]
