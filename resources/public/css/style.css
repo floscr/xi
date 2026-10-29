@@ -8715,6 +8715,17 @@ code a:hover,
    moved there by xi.web.threads: in the gutter beside the block, or, with
    no room for that, as a pill (.ask-hover--pill) on its bottom edge.
    Touch screens use the block menu instead. */
+/* Its layer covers .timeline-content and clips it vertically only (the
+   gutter lies beside the column): a position left over from a block that
+   collapsed, or from the chat before a switch, can't stretch the timeline's
+   scroll area into an empty strip below the last message. */
+.ask-hover-layer {
+  position: absolute;
+  inset: 0;
+  overflow-x: visible;
+  overflow-y: clip;
+  pointer-events: none;
+}
 .ask-hover {
   position: absolute;
   top: 0;

@@ -155,7 +155,8 @@
   "Position `btn` for block `el` in `content` (.timeline-content)
    coordinates, so it scrolls with the block. In the gutter it stands beside
    the first line (or viewport `y`, a selection's end). As a pill it sits on
-   the block's bottom-right edge, beside a user bubble's bottom, or at `y`."
+   the block's bottom-right edge, beside a user bubble's bottom, or at `y`.
+   It stays within the content's height, where its layer clips it."
   [^js btn ^js el ^js content y]
   (let [cr     (.getBoundingClientRect content)
         er     (.getBoundingClientRect el)
@@ -175,7 +176,8 @@
           :else       [(+ (- (.-right er) w) 6)
                        (- (or y (.-bottom er)) (/ h 2))])]
     (set! (.. btn -style -left) (str (- left (.-left cr)) "px"))
-    (set! (.. btn -style -top) (str (max 0 (- top (.-top cr))) "px"))))
+    (set! (.. btn -style -top)
+          (str (-> (- top (.-top cr)) (min (- (.-height cr) h)) (max 0)) "px"))))
 
 (defn- show-hover-button!
   "Move the timeline's Ask button (views/ask-hover-button) to block `el`
@@ -185,7 +187,7 @@
   ([el] (show-hover-button! el nil))
   ([^js el {:keys [y selection]}]
    (when-let [content (.closest el ".timeline-content")]
-     (when-let [btn (.querySelector content ":scope > .ask-hover")]
+     (when-let [btn (.querySelector content ":scope > .ask-hover-layer > .ask-hover")]
        (let [ds (.-dataset btn)]
          (show-time! btn el)
          (place! btn el content y)
