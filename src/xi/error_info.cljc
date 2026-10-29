@@ -49,7 +49,7 @@
    message; only for failures a user can act on."
   [[#"(?i)session limit|usage limit|hit your .*limit"
     :rate-limit "Usage limit reached" "Claude is paused"]
-   [#"(?i)authentication failed|login has expired|not allowed to use the OAuth"
+   [#"(?i)authentication failed|failed to authenticate|login has expired|oauth session expired|not allowed to use the OAuth"
     :auth "You're signed out"
     "Run `claude /login` on the host, or set ANTHROPIC_API_KEY."]
    [#"(?i)requires usage credits"

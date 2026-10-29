@@ -37,6 +37,8 @@
          (:kind (ei/describe {:type "error" :message "You've hit your session limit · resets 3pm"}))))
   (is (= :auth
          (:kind (ei/describe {:type "error" :message "Claude authentication failed — the login has expired."}))))
+  (is (= :auth
+         (:kind (ei/describe {:message "Failed to authenticate: OAuth session expired and could not be refreshed"}))))
   (is (= "Usage credits required"
          (:title (ei/describe {:message "Claude Code returned an error result: Fable 5.1 requires usage credits. Switch to another model."}))))
   (is (= :overloaded (:kind (ei/describe {:message "API Error: 529 Overloaded"}))))
