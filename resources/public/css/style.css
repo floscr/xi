@@ -8486,6 +8486,27 @@ code a:hover,
   cursor: pointer;
 }
 
+/* The chat keeps the type steps it was designed on (clj-ui v1): its posts,
+   tool blocks and code are sized from --font-xs / -sm / -base, tuned to the
+   old 1.25 ramp (10.24 / 12.8 / 16px at the default size). clj-ui v2 made
+   those steps 12 / 13 / 14px app-wide; here they are put back for the chat
+   screen only, derived from --font-md (= the theme's base size) so the
+   theme editor's font size still applies. Declared on the chat root, so it
+   also wins over a color theme's inline --font-* on <html>. */
+:root {
+  --xi-chat-type-unit: var(--font-md);
+}
+
+.chat-drop-zone {
+  --font-xs: calc(var(--xi-chat-type-unit) * 0.64);
+  --font-sm: calc(var(--xi-chat-type-unit) * 0.8);
+  --font-base: var(--xi-chat-type-unit);
+  --font-md: calc(var(--xi-chat-type-unit) * 1.25);
+  --font-lg: calc(var(--xi-chat-type-unit) * 1.5625);
+  --font-xl: calc(var(--xi-chat-type-unit) * 1.953);
+  font-size: var(--font-base);
+}
+
 /* A sub-agent in a sidebar (or the phone's drawer) a step smaller than
    the chat: the type and spacing tokens it is built from, scoped to it. */
 .pane--side .subagent-view {
