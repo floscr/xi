@@ -240,7 +240,7 @@ one out to switch it off:
 {:type     :xi/rules
  :version  1
  :rules    []
- :defaults [:xi.rules.defaults/plan-mode
+ :defaults [:xi.rules.defaults/env
             :xi.rules.defaults/write-gates
             :xi.rules.defaults/bash-guards
             :xi.rules.defaults/mcp-confirm

@@ -21,8 +21,6 @@ describes the built-in defaults; your own rules can change any of it.
 | `grep` | Lines matching a regular expression, via ripgrep, with path and line number. `glob` restricts the files. | Never |
 | `view_image` | Shows the agent a PNG, JPEG, WebP or GIF so it can see it. Large images are scaled down. | Never |
 
-While `/plan` is on, `write` and `edit` are refused except for the plan file.
-
 ## Running things
 
 There is no shell tool. Instead the agent gets a sandboxed Clojure REPL with

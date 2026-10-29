@@ -8,7 +8,7 @@
 
    Extension state is scoped two ways (see xi.core.state):
      room-scoped   [:rooms rid :ext <id>] — rides in :room/joined snapshots,
-                   mirrors to clients (plan-mode :enabled?)
+                   mirrors to clients (yolo :level)
      process-local [:ext <id>]            — never crosses the wire
                    (the rules engine's server-session rules)
 

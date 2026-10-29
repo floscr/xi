@@ -72,7 +72,7 @@ Clojure, one vector per surface (`server`, `client`, `web`):
 
 ```clojure
 (def server
-  [plan-mode/extension    ; extension map → used as-is
+  [yolo/extension         ; extension map → used as-is
    chrome/create          ; factory fn → called with ctx by ext/instantiate
    …])
 ```
@@ -116,7 +116,7 @@ xi.web.core ── web-extensions (xi.config/web) → ext/instantiate → ext/co
 Extension state lives in two places:
 
 - **Room-scoped** `[:rooms rid :ext <id>]` — rides in the `:room/joined`
-  snapshot, mirrors to clients. Used for: plan-mode `:enabled?` and yolo `:level`.
+  snapshot, mirrors to clients. Used for: yolo `:level`.
 - **Process-local** `[:ext <id>]` — never crosses the wire. Used for:
   the rules engine's server-session rules.
 

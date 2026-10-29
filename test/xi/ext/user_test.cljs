@@ -205,8 +205,8 @@
                 :prompt-badge (fn [_] \"!\")
                 :tool-definitions [{:name \"bell_ring\" :description \"r\"}]
                 :tool-registry {\"bell_ring\" (fn [_ _] nil)}})")
-    (write! dir "clash.cljs" "(ns clash) (def extension {:id :plan-mode})")
-    (let [exts (user/mirror-extensions dir #{"bell.cljs" "clash.cljs"} [{:id :plan-mode} nil])]
+    (write! dir "clash.cljs" "(ns clash) (def extension {:id :yolo})")
+    (let [exts (user/mirror-extensions dir #{"bell.cljs" "clash.cljs"} [{:id :yolo} nil])]
       (is (= [:bell] (map :id exts)) "a built-in's id stays taken in the mirror")
       (is (= #{:id :init :handlers :commands :keybindings :prompt-badge}
              (set (keys (first exts))))

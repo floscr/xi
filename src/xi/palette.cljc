@@ -41,7 +41,7 @@
    follow in registration order. A name nothing registers is skipped."
   ["help" "model" "resume" "sessions" "new" "clear" "truncate" "trim"
    "rollover" "lineage" "summary" "diff" "commit" "subagent" "review"
-   "debug" "rules" "plan" "yolo" "allow" "deny"])
+   "debug" "rules" "yolo" "allow" "deny"])
 
 (defn order-commands
   "Command specs with the `featured-commands` first."

@@ -70,7 +70,7 @@ Every field present must hold. An absent field is no constraint.
 | `:mcp-server` | An MCP server id | String or glob. |
 | `:mcp-tool` | An MCP tool name | String or glob; `"*"` for any. |
 | `:mcp-trusted` | `true` / `false` | Whether the server is trusted right now. |
-| `:when` | A sub-map of the chat's extension state | `{:plan-mode {:enabled? true}}`, `{:yolo {:level :sane}}` (or `:relentless`) while [yolo mode](rules.md#yolo-mode) is on, `{:agent {:id "root"}}` for an agent profile's chats, `{:agent {}}` for any profile. |
+| `:when` | A sub-map of the chat's extension state | `{:yolo {:level :sane}}` (or `:relentless`) while [yolo mode](rules.md#yolo-mode) is on, `{:agent {:id "root"}}` for an agent profile's chats, `{:agent {}}` for any profile. |
 | `:user` | The user the call acts for | String (exact or glob), regex or set: the user id. A map: a sub-map of the user's profile in `config.edn` `:users`, `{:id … :name … :meta …}`, e.g. `{:meta {:team "ops"}}`; `{}` is any user. In a map, a set value is one of (`{:meta {:team #{"ops" "infra"}}}`), and a value also matches a collection that holds it (`{:meta {:roles "admin"}}` matches `:roles ["admin" "dev"]`). The user is whoever sent the chat's latest prompt (a sub-agent acts for its parent's), else the server's own user; for `:terminal`, whoever opens it. While `config.edn` is invalid a map matches every user unless the rule is `:allow`, so a restriction keyed on `:meta` keeps applying. |
 | `:outside` | `:cwd` | The target resolves outside the working directory and the temp directory. |
 | `:credential` | `:read` | The target is in a credential directory (`.ssh`, `.gnupg`, `.password-store`, …). |
@@ -164,7 +164,6 @@ list; inline rule maps may be mixed in.
 | `xi-sessions` | Allow: reads under `~/.config/xi/sessions`. |
 | `claude-sessions` | Allow: reads under `~/.claude/projects`. |
 | `env` | Ask, yes or no only, refused when nobody can answer, kept in sane yolo mode, with a warning that the output goes to the LLM provider: a dump of the whole environment — `env`, `printenv`, `export -p`, a bare `set`, `declare -x`, or `/proc/<pid>/environ` read with any tool (`env-dump`); a read of a credential file — the hidden credential directories (`.aws`, `.kube`, `.gnupg`, `.password-store`, `.config/gh`, `.config/xi`, `.netrc`, `.npmrc`), `.env` and `.env.*` (not `.example`, `.sample`, `.template`, `.dist`), `*credentials.json`, `.git-credentials`, `.docker/config.json`, `.pgpass`, `.pypirc` — through the read and grep tools or a command line that names one (`secret-reads`); a command that prints a secret — `pass <name>`, `gopass show`, `op read`, `op item get`, `bw get`, `secret-tool lookup`, `gh auth token`, `vault kv get`, `agenix`/`age`/`sops --decrypt` (`secret-clis`). One variable (`printenv NAME`, `(env "NAME")`) is free. |
-| `plan-mode` | While `/plan` is on: allow `tasks/todo.md`, deny other writes and mutating commands. |
 | `write-gates` | Ask: writes into mail or key directories (`sensitive-writes`) and into `.env`, `.git/`, `node_modules/` (`protected-writes`), both kept in sane yolo mode; writes outside the working directory, with the `r` option (`outside-writes`). Reads and writes under `~/.local/share/xi/skills`, where skills keep their output, are allowed (`skill-data`). |
 | `bash-chained` | Deny: composed `bash` commands; use the clj tool. |
 | `task-trust` | Ask before a task runs from an untrusted `bb.edn`, `package.json` or `deno.json`; `a` trusts the file. |
@@ -182,15 +181,14 @@ list; inline rule maps may be mixed in.
 Names are written `:xi.rules.defaults/<bundle>` in `:defaults`:
 
 ```clojure
-:defaults [:xi.rules.defaults/plan-mode
+:defaults [:xi.rules.defaults/env
            :xi.rules.defaults/write-gates
            {:match {:tool :sh :cli "git" :command #"\bgit push\b"}
             :action {:type :ask :message "Push?"}}
            :xi.rules.defaults/clj-sh]
 ```
 
-Keep `not-installed` and the nudges first and `plan-mode` before the write
-gates, as the built-in order does. `:defaults []` turns the tier off.
+Keep `not-installed` and the nudges first, as the built-in order does. `:defaults []` turns the tier off.
 
 ## Managing rules while Xi runs
 

@@ -16,7 +16,7 @@
 
    Extension state is scoped two ways:
    - room-scoped  [:rooms rid :ext <id>] — rides in :room/joined snapshots,
-                  mirrors to clients (e.g. plan-mode :enabled?)
+                  mirrors to clients (e.g. yolo :level)
    - process-local [:ext <id>]           — never crosses the wire
                   (e.g. the rules engine's server-session rules)
 

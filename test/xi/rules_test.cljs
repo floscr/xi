@@ -228,11 +228,11 @@
   (is (not (rules/matches? {:match {:tool :write :when {:mode :plan}}}
                            {:tool :write :state {:mode :normal}})))
   (testing "a map value matches recursively (nested submap), ignoring extra keys"
-    (is (rules/matches? {:match {:tool :write :when {:plan-mode {:enabled? true}}}}
-                        {:tool :write :state {:plan-mode {:enabled? true :x 1}}}))
-    (is (not (rules/matches? {:match {:tool :write :when {:plan-mode {:enabled? true}}}}
-                             {:tool :write :state {:plan-mode {:enabled? false}}})))
-    (is (not (rules/matches? {:match {:tool :write :when {:plan-mode {:enabled? true}}}}
+    (is (rules/matches? {:match {:tool :write :when {:yolo {:level :sane}}}}
+                        {:tool :write :state {:yolo {:level :sane :x 1}}}))
+    (is (not (rules/matches? {:match {:tool :write :when {:yolo {:level :sane}}}}
+                             {:tool :write :state {:yolo {:level :relentless}}})))
+    (is (not (rules/matches? {:match {:tool :write :when {:yolo {:level :sane}}}}
                              {:tool :write})))))
 
 (deftest match-node-optin

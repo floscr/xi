@@ -65,7 +65,7 @@ run in a sandbox: they have no access to your machine except through a small
 API, and every call through that API passes the rules like an agent's tool
 call does.
 
-Xi's own features (plan mode, the diff viewer, `/commit`, MCP support, the
+Xi's own features (yolo mode, the diff viewer, `/commit`, MCP support, the
 clj tool) are extensions built the same way. See [Extensions](extensions.md).
 
 ## MCP

@@ -31,7 +31,6 @@
         [xi.ext.file-finder :as file-finder]
         [xi.ext.file-view.core :as file-view]
         [xi.ext.mcp :as mcp]
-        [xi.ext.plan-mode :as plan-mode]
         [xi.ext.process-manager :as process-manager]
         [xi.ext.projects :as projects]
         [xi.ext.resume :as resume]
@@ -152,7 +151,6 @@
       ;; calls is core, not an extension surface — xi.cli wires
       ;; xi.ext.rules/tool-policy in front of every tool call.
       rules/create
-      plan-mode/extension
       yolo/extension
       diff/extension
       file-view/extension

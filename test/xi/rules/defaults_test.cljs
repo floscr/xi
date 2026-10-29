@@ -205,31 +205,6 @@
                                    {:tool :other :tool-name t}))
           t))))
 
-(deftest plan-mode-gate
-  (let [on  {:plan-mode {:enabled? true}}
-        off {:plan-mode {:enabled? false}}]
-    (testing "plan mode allows the plan file but denies other writes/edits"
-      (is (= :allow (action-type {:tool :write :path "tasks/todo.md" :state on})))
-      (is (= :allow (action-type {:tool :edit  :path "tasks/todo.md" :state on})))
-      (is (= :deny  (action-type {:tool :write :path "src/foo.cljs" :state on})))
-      (is (= :deny  (action-type {:tool :edit  :path "src/foo.cljs" :state on}))))
-    (testing "plan mode denies mutating bash, lets read-only bash through"
-      (is (= :deny (action-type {:tool :bash :command "rm -rf build" :state on})))
-      (is (= :deny (action-type {:tool :bash :command "echo hi > out.txt" :state on})))
-      (is (= :deny (action-type {:tool :bash :command "sudo reboot" :state on})))
-      (is (nil? (rules/first-match defaults/default-rules
-                                   {:tool :bash :command "ls -la" :state on})))
-      (is (nil? (rules/first-match defaults/default-rules
-                                   {:tool :bash :command "git status" :state on}))))
-    (testing "reads always pass in plan mode"
-      (is (nil? (rules/first-match defaults/default-rules
-                                   {:tool :read :path "src/foo.cljs" :state on}))))
-    (testing "with plan mode off the plan rules do not fire"
-      (is (nil? (rules/first-match defaults/default-rules
-                                   {:tool :write :path "src/foo.cljs" :state off})))
-      (is (nil? (rules/first-match defaults/default-rules
-                                   {:tool :edit :path "src/foo.cljs"}))))))
-
 (deftest sh-softener-gate
   (testing "read-only / rm autorun CLIs are allowed without asking"
     (is (= :allow (action-type {:tool :sh :cli "ls"  :command "ls -la"})))
@@ -521,7 +496,7 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 49 (count defaults/default-rules))))
+    (is (= 46 (count defaults/default-rules))))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
@@ -553,7 +528,7 @@
     (is (thrown-with-msg? js/Error #"unknown default-rules alias"
           (defaults/expand [:xi.rules.defaults/nope])))
     (is (thrown-with-msg? js/Error #"invalid :defaults entry"
-          (defaults/expand ["plan-mode"])))))
+          (defaults/expand ["env"])))))
 
 (deftest not-installed-deny
   (testing "a :sh program that is not on PATH is denied at once, naming it — no dialog"

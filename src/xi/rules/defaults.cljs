@@ -256,32 +256,6 @@
        "directory, /usr, /etc, /nix, …). If it is really meant, ask the user to "
        "run it or to turn yolo mode off."))
 
-;; ── Plan mode (read-only exploration; toggled by xi.ext.plan-mode /plan) ──────
-
-(def ^:private plan-mode-on
-  "`:when` submap that matches while the room's plan-mode flag is set. The
-   plan-mode extension owns the toggle/badge and stores this flag; the read-only
-   policy lives here as data rules."
-  {:plan-mode {:enabled? true}})
-
-(def ^:private plan-file
-  "The one path plan mode still lets the agent write — its scratch/plan file."
-  "tasks/todo.md")
-
-(def ^:private plan-mutating-bash-re
-  "Bash patterns treated as mutations while plan mode is on (everything else,
-   incl. read-only bash, passes through). Mirrors the old plan-mode gate."
-  (alt-re ["rm " "mv " "cp " "chmod " "chown " "kill " "pkill "
-           "sudo " "dd " "> " ">> " "tee " "truncate "]))
-
-(def ^:private plan-write-msg
-  (str "Plan mode is on (read-only exploration). Only " plan-file " may be "
-       "written — this write was blocked. Run /plan to exit plan mode."))
-
-(def ^:private plan-bash-msg
-  (str "Plan mode is on (read-only exploration). This bash command looks like a "
-       "mutation and was blocked. Run /plan to exit plan mode."))
-
 ;; ── Hardened tier (prepended above all config/runtime rules; flag-removable) ───
 
 (def ^:private hardened-remote-clis
@@ -534,8 +508,7 @@
               :message "Blocked: extensions may not read or write credential paths."}}]
 
    ;; A user extension (xi.api.fs) reads/writes its own data dir freely —
-   ;; before plan-mode and the write gates: the dir is outside every repo, and
-   ;; plan mode restricts the agent's work, not an extension's own state.
+   ;; before the write gates: the dir is outside every repo.
    ::extension-data
    [{:match  {:tool #{:read :write :edit :ls} :extension true :extension-data :own}
      :action {:type :allow}}]
@@ -587,18 +560,6 @@
 
    ::env
    [::env-dump ::secret-reads ::secret-clis]
-
-   ;; Plan mode (read-only): allow the plan file, deny other writes/edits and any
-   ;; mutating bash. Must precede the write/bash gates so plan-mode denies win
-   ;; over the softer ask gates; reads/grep/find/ls and read-only bash fall
-   ;; through. Only active while the room's plan-mode flag is set (:when).
-   ::plan-mode
-   [{:match  {:tool #{:write :edit} :path plan-file :when plan-mode-on}
-     :action {:type :allow}}
-    {:match  {:tool #{:write :edit} :when plan-mode-on}
-     :action {:type :deny :message plan-write-msg}}
-    {:match  {:tool :bash :command plan-mutating-bash-re :when plan-mode-on}
-     :action {:type :deny :message plan-bash-msg}}]
 
    ;; Write gates: sensitive → protected → outside the working tree.
    ::sensitive-writes
@@ -817,7 +778,6 @@
    ::xi-sessions
    ::claude-sessions
    ::env
-   ::plan-mode
    ::write-gates
    ::bash-chained
    ::task-trust

@@ -168,7 +168,7 @@ Canonical example: `src/xi/ext/usage/web.cljs`.
 
 | Need | Read |
 |---|---|
-| Handlers + keybinding + badge + room state | `src/xi/ext/plan_mode.cljs` |
+| Handlers + keybinding + badge + room state | `resources/extensions/ping.cljs` |
 | Tools only | `src/xi/ext/session_search.cljs` |
 | Tool gate with confirm | `src/xi/ext/permission_gate.cljs` |
 | Event hook | `src/xi/ext/clipboard_image.cljs` |

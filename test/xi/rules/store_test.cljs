@@ -428,7 +428,7 @@
       (is (re-find #"unknown key\(s\) :default" (err {:type :xi/rules :version 1 :default []})))
       (is (re-find #":rules must be a vector" (err {:type :xi/rules :version 1 :rules {:a 1}})))
       (is (re-find #"aliases under :defaults"
-                   (err {:type :xi/rules :version 1 :rules [:xi.rules.defaults/plan-mode]})))
+                   (err {:type :xi/rules :version 1 :rules [:xi.rules.defaults/env]})))
       (is (re-find #"unknown default-rules alias"
                    (err {:type :xi/rules :version 1 :defaults [:xi.rules.defaults/nope]}))))
     (testing "a valid file parses; :defaults nil unless set"
@@ -436,9 +436,9 @@
       (is (= {:rules [{:match {:tool :read}}] :defaults nil}
              (store/parse-rules-config {:type :xi/rules :version 1 :rules [{:match {:tool :read}}]})))
       (is (= [] (:defaults (store/parse-rules-config {:type :xi/rules :version 1 :defaults []}))))
-      (is (= (defaults/expand [:xi.rules.defaults/plan-mode])
+      (is (= (defaults/expand [:xi.rules.defaults/env])
              (:defaults (store/parse-rules-config
-                         {:type :xi/rules :version 1 :defaults [:xi.rules.defaults/plan-mode]})))))))
+                         {:type :xi/rules :version 1 :defaults [:xi.rules.defaults/env]})))))))
 
 (deftest parse-rules-config-expands-dir
   ;; :dir is a prefix of the absolute cwd, so a `~/…` spec only matches once
@@ -559,11 +559,11 @@
         (is (= "\\.md$" (.-source (get-in data [:rules 0 :match :path]))))
         (is (not (contains? data :defaults))))))
   (with-repo-rules
-    "{:type :xi/rules :version 1 :defaults [:xi.rules.defaults/plan-mode] :rules [{:match {:tool :read} :action {:type :allow}}]}"
+    "{:type :xi/rules :version 1 :defaults [:xi.rules.defaults/env] :rules [{:match {:tool :read} :action {:type :allow}}]}"
     (fn [repo file]
       (store/append-rule-file! :repo repo {:match {:tool :ls} :action {:type :allow}})
       (let [data (store/read-rule-edn (str (fs/readFileSync file "utf8")))]
-        (is (= [:xi.rules.defaults/plan-mode] (:defaults data))
+        (is (= [:xi.rules.defaults/env] (:defaults data))
             ":defaults kept as written (unexpanded aliases)")
         (is (= [:ls :read] (map #(get-in % [:match :tool]) (:rules data)))
             "new rule prepended")))))
