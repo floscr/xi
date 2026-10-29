@@ -487,3 +487,31 @@
   (is (= "AGENTS.md" (views/agents-file-label "/p" "/p/AGENTS.md")))
   (is (= "/home/u/AGENTS.md" (views/agents-file-label "/p" "/home/u/AGENTS.md")))
   (is (= "/p/AGENTS.md" (views/agents-file-label nil "/p/AGENTS.md"))))
+
+;; ── code-running tools show their program highlighted ───────────────────────
+
+(deftest code-tool-block-highlights-its-code
+  (let [entry->post @#'views/entry->post
+        nodes       (fn [hiccup] (tree-seq #(or (vector? %) (seq? %)) seq hiccup))
+        with-class  (fn [hiccup cls]
+                      (filter #(and (vector? %) (map? (second %))
+                                    (some #{cls} (:class (second %))))
+                              (nodes hiccup)))
+        call        {:kind :tool-call :id "t1" :status :done
+                     :tool "mcp__blender__execute_blender_code"
+                     :arguments {"code" "import bpy\nsc = bpy.context.scene"
+                                 "user_prompt" "make it red"}
+                     :result "Code executed successfully: ok"}
+        post        (entry->post (fn [_]) call)]
+    (testing "the header previews the code's first line, not the other arguments"
+      (is (= ["import bpy"] (map last (with-class post "clj-head-preview")))))
+    (testing "the code shows in its own block, tokenized by the tool's grammar"
+      (let [[input] (with-class post "tool-call-input")
+            spans   (filter #(and (vector? %) (= :span (first %)) (map? (second %)))
+                            (nodes input))]
+        (is (some? input))
+        (is (seq spans) "highlighted, not plain text")
+        (is (some #(= "import" (last %)) spans))))
+    (testing "a tool outside the table shows its result only"
+      (is (empty? (with-class (entry->post (fn [_]) (assoc call :tool "mcp__other__run"))
+                              "tool-call-input"))))))

@@ -380,6 +380,14 @@
                nil)]
     (when path (grammars/get-grammar (file-ext path)))))
 
+(def ^:private code-tools
+  "Tools whose call is a program the model wrote: the argument holding it and
+   its language. Their block shows that code highlighted above the result and
+   its first line in the header, as the clj tool's does (clj itself is handled
+   apart: embedded-string highlighting and the ask's focus ranges)."
+  {"execute_blender_code" {:arg :code :lang "python"}
+   "evaluate_script"      {:arg :function :lang "javascript"}})
+
 (def ^:private code-cache-max 400)
 
 (def ^:private hl-cache
@@ -1048,7 +1056,9 @@
         bash?     (contains? #{"Bash" "bash"} name)
         clj?      (= "clj" name)
         clj-code  (when clj? (not-empty (str (get-arg arguments :code))))
-        clj-preview (when clj-code (first (str/split-lines clj-code)))
+        code-tool (get code-tools name)
+        tool-code (when code-tool (not-empty (str (get-arg arguments (:arg code-tool)))))
+        code-preview (when-let [code (or clj-code tool-code)] (first (str/split-lines code)))
         imgs      (seq (result-images result))
         ext-view  (when (and (not running?) (seq text) (not imgs))
                     (tool-views/render {:tool name :arguments arguments
@@ -1061,9 +1071,9 @@
         preview   (when (not= :done status)
                     (or diff (get-in permission [:dialog :diff])))
         denied?   (and (some? resolved-permission) (not (:value resolved-permission)))
-        has-content? (boolean (or clj-code preview (seq text) ext-view permission imgs))
+        has-content? (boolean (or clj-code tool-code preview (seq text) ext-view permission imgs))
         file-path (when (not= :all tool-args) (tool-file-path name arguments))
-        label     (if clj?
+        label     (if (or clj? code-tool)
                     name
                     (str name (when (seq summary)
                                 (str " " (if bash?
@@ -1096,8 +1106,8 @@
        [:span {:class (cond-> ["tool-call-toggle-label"] bash? (conj "tool-call-toggle-label--wrap"))}
         [:span {:class ["tool-call-action"]} name]
         (subs label (count name))]
-       (when clj-preview
-         [:span {:class ["clj-head-preview"]} clj-preview])
+       (when code-preview
+         [:span {:class ["clj-head-preview"]} code-preview])
        ;; No clock while the call waits on its ask; the allow restamps :started-at.
        (when running?
          [:span {:class ["tool-call-running"]}
@@ -1130,6 +1140,12 @@
             (if (or ranges block-ranges)
               (focused-clj-code shown ranges block-ranges)
               (or (highlight-clj-code shown) (plain-code shown)))]]))
+      (when tool-code
+        (let [shown (truncate-lines tool-code 100)
+              g     (grammars/get-grammar (:lang code-tool))]
+          [:div {:class ["tool-call-content" "tool-call-input"]}
+           [:pre {:class ["tool-call-code"]}
+            (if g (highlight-code g shown) (plain-code shown))]]))
       (when preview
         [:div {:class ["tool-call-content"]} (diff-preview dispatch! preview id md-diff-code?)])
       (cond
