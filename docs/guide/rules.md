@@ -69,13 +69,14 @@ from relentless. It works while the agent is busy, and raising the level
 allows the open asks it would have skipped. The terminal prompt shows 🔥
 (sane) or 🔥🔥 (relentless), the web chat header a `Yolo` or `Relentless`
 chip (click it to turn yolo off). The level is saved with the chat: it
-stays across turns, chat switches and server restarts.
+stays across turns, chat switches and server restarts. New chats start
+off, or at the level you made the default ([Chat settings](web-client.md#chat-settings)).
 
 It skips confirmations only: rule asks, the [clj tool](clj-tool.md)'s own
 prompts (programs, paths outside the project, directory deletions) and
-sub-agent starts. A rule that denies or nudges still does, plan mode still
-blocks writes, and the hardened tier still asks for its own dialogs (writes
-into `.git/hooks` or `.git/config`) at both levels.
+sub-agent starts. A rule that denies or nudges still does, and the hardened
+tier still asks for its own dialogs (writes into `.git/hooks` or
+`.git/config`) at both levels.
 
 To keep one of your own asks in sane mode, give its action `:guard :sane`;
 `:guard :always` keeps it in relentless mode too:

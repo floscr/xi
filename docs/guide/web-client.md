@@ -211,6 +211,27 @@ across the top narrows the cards and lists to one
   cleanup at once: mark all as read, hide all from Recent (pinned chats are
   skipped), close idle rooms.
 
+## Chat settings
+
+The model and [yolo mode](rules.md#yolo-mode) are set per chat. A pick
+changes only the chat you are in, unless you choose otherwise:
+
+| Scope | How |
+| --- | --- |
+| This chat | Click or `Enter` |
+| This chat and new chats | `Alt`+click or `Alt+Enter` |
+| Pick a scope, also all open chats | `Tab` on the value |
+
+"Chat settings" in the command palette lists both settings with this
+chat's value; "Change model" goes to the models. The flame under the
+message box and in the chat header takes `Alt`+click too. Default for new
+chats is marked in the lists. All open chats means the chats open in a
+window or still running; the others keep their own value. New chats start
+from your defaults, which are kept per [user](server.md#users).
+
+In the terminal the same keys work in `/model` and under Chat settings in
+the palette (`Ctrl+P`).
+
 ## Buffers
 
 A chat can hold views next to its conversation: the diffs you opened
@@ -543,7 +564,8 @@ Your themes are per [user](#what-follows-you), up to twenty.
 These choices belong to your [user](server.md#users), not to the browser:
 the theme and your color themes, the appearance settings, which sidebar
 groups are collapsed, which home cards you switched off, the
-model new chats start with, your [workspaces](workspaces.md) (not the
+model and yolo level new chats start with ([Chat settings](#chat-settings)),
+your [workspaces](workspaces.md) (not the
 selected tab, which is each window's own), and your recently used commands
 and skills. So do
 the chats you have read (the unread dots), the chats you hid from Recent and

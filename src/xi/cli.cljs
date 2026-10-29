@@ -55,6 +55,7 @@
             [xi.agent-profile :as profile]
             [xi.auth :as auth]
             [xi.blocks :as blocks]
+            [xi.chat-settings :as chat-settings]
             [xi.client.tui :as client-tui]
             [xi.crash-log :as crash-log]
             [xi.client.ws-transport :as ws-transport]
@@ -412,12 +413,12 @@ See docs/guide/command-line.md for the full reference.")
                         ws/DEFAULT_PORT)))
 
 (defn- resolve-model-opts
-  "Model and effort this process starts with: --model, else its user's last
-   pick (xi.user-state :preferred-model), else the first provider's
+  "Model and effort this process starts with: --model, else its user's default
+   (xi.chat-settings, user state :chat-defaults), else the first provider's
    defaultModel (xi.providers.routing/default-model)."
   [{:keys [model] :as opts}]
   {:model  (or model
-               (:preferred-model (user-store/load-state (own-user opts)))
+               (get-in (user-store/load-state (own-user opts)) [:chat-defaults :model])
                (:default-model (loaded-providers)))
    :effort "high"})
 
@@ -451,6 +452,7 @@ See docs/guide/command-line.md for the full reference.")
    (-> (merge events/core-handlers
               agent/handlers
               (commands/command-handlers extra-commands)
+              chat-settings/handlers
               compaction/handlers
               naming/handlers
               summary/handlers
@@ -561,7 +563,11 @@ See docs/guide/command-line.md for the full reference.")
                        :system-parts system-parts
                        :agents-files agents-files
                        :ext (cond-> (:room-ext-init composed)
-                              prof (merge (profile/room-ext prof)))
+                              prof (profile/merge-room-ext prof)
+                              ;; a resumed chat keeps its own level
+                              (nil? session-id)
+                              (chat-settings/seed-ext
+                               (:chat-defaults (user-store/load-state (own-user opts)))))
                        :agent-id agent
                        :only-tools (:tools prof)
                        :session sess}})

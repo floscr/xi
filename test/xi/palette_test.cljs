@@ -8,10 +8,10 @@
   (testing "no room: only the room-independent actions"
     (is (= [:new-chat :keys :reload] (keys-of (palette/actions false)))))
   (testing "a room shows everything"
-    (is (= [:new-chat :change-model :skills :git-status :copy-debug :keys :reload]
+    (is (= [:new-chat :change-model :chat-settings :skills :git-status :copy-debug :keys :reload]
            (keys-of (palette/actions true)))))
   (testing "a pending (not-yet-created) web chat can still change its model"
-    (is (= [:new-chat :change-model :keys :reload]
+    (is (= [:new-chat :change-model :chat-settings :keys :reload]
            (keys-of (palette/actions false true))))))
 
 (deftest order-commands-test

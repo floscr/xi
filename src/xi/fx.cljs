@@ -12,6 +12,7 @@
             ["node:path" :as node-path]
             [xi.accounts :as accounts]
             [xi.accounts.run :as account-run]
+            [xi.chat-settings :as chat-settings]
             [xi.core.log :as log]
             [xi.image :as image]
             [xi.session :as session]
@@ -339,11 +340,13 @@
       (fn [ids]
         (let [items (mapv (fn [id]
                             {:label id
+                             :value id
                              :event {:type :command/run :room-id room-id
                                      :name "model" :args id}})
                           ids)]
           (dispatch! {:type :ui/menu-populate :room-id room-id :id :model
-                      :menu {:prompt "model> " :items items}})))))
+                      :menu {:prompt "model> " :items items
+                             :key-bindings (chat-settings/menu-bindings :model)}})))))
 
    ;; `/account`, `/login`, `/logout` (xi.commands): a provider's sign-ins
    ;; and stored accounts (xi.accounts.run). A sign-in's page arrives as a
@@ -365,15 +368,13 @@
                     (when (= "login" (:op cmd)) (expire!))
                     (status! result))))))
 
-   ;; The model a user's new chats start with: kept in their own state
-   ;; (xi.user-state :preferred-model), the same key the web client syncs.
-   :model/persist-preferred
-   (fn [{:keys [dispatch!]} {:keys [model user]}]
-     (when (seq model)
-       (let [user (util/user-id user)]
-         (when (user-store/set-key! user :preferred-model model)
-           (dispatch! {:type :user/ui-set :user user
-                       :key :preferred-model :value model})))))
+   ;; Persist one piece of a user's state (xi.chat-settings' defaults).
+   ;; xi.server.ws replaces it with one that also tells the user's devices.
+   :user-state/save
+   (fn [{:keys [dispatch!]} {:keys [user key value]}]
+     (let [user (util/user-id user)]
+       (when (user-store/set-key! user key value)
+         (dispatch! {:type :user/ui-set :user user :key key :value value}))))
 
    :cwd/change
    (fn [{:keys [dispatch! state]} {:keys [room-id path]}]

@@ -223,7 +223,7 @@
 (defn- cmd-reload [st {:keys [room-id]}]
   {:effects [[:app/reload {:session-id (get-in st [:rooms room-id :session :id])}]]})
 
-(defn- cmd-model [st {:keys [room-id args user]}]
+(defn- cmd-model [st {:keys [room-id args]}]
   (if (seq args)
     (let [provider (routing/provider-for-model (:providers st) args)
           has-session? (get-in st [:rooms room-id :session :provider-session-id])]
@@ -231,7 +231,7 @@
                   (assoc-in [:rooms room-id :agent :model] args)
                   (assoc-in [:rooms room-id :agent :provider] provider)
                   (append-history room-id (status-entry (str "Model set to: " args))))
-       :effects (cond-> [[:model/persist-preferred {:model args :user user}]]
+       :effects (cond-> []
                   has-session? (conj [:session/sync {:room-id room-id}]))})
     {:effects [[:models/fetch {:room-id room-id}]]}))
 

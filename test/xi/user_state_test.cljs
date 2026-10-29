@@ -13,7 +13,8 @@
   (is (user-state/valid? :appearance {:tool-blocks-except []}))
   (is (user-state/valid? :sidebar-collapsed [:projects :recent]))
   (is (user-state/valid? :dashboard-hidden [:home/projects :usage/subscriptions]))
-  (is (user-state/valid? :preferred-model "claude-opus-4-6"))
+  (is (user-state/valid? :chat-defaults {:model "claude-opus-4-6" :yolo :sane}))
+  (is (user-state/valid? :chat-defaults {}))
   (is (user-state/valid? :recent-commands ["model" "clear"]))
   (is (user-state/valid? :recent-skills []))
   (is (user-state/valid? :workspaces [{:id "w-1" :label "Penpot" :dirs ["/home/u/penpot"]}]))
@@ -40,7 +41,9 @@
     (is (not (user-state/valid? :sidebar-collapsed ["projects"])))
     (is (not (user-state/valid? :dashboard-hidden ["home/projects"])))
     (is (not (user-state/valid? :dashboard-hidden :home/projects)))
-    (is (not (user-state/valid? :preferred-model "")))
+    (is (not (user-state/valid? :chat-defaults {:model ""})))
+    (is (not (user-state/valid? :chat-defaults {:yolo :off})) "off is no key")
+    (is (not (user-state/valid? :chat-defaults {:effort "high"})))
     (is (not (user-state/valid? :recent-commands [1 2])))
     (is (not (user-state/valid? :workspaces [{:id "w" :label "x"}])))
     (is (not (user-state/valid? :workspaces [{:id "w" :label "x" :dirs ["/a"] :icon :pen}])))
@@ -57,7 +60,15 @@
     (is (not (user-state/valid? :recent-commands (vec (repeat 21 "x")))))
     (is (not (user-state/valid? :themes {:themes (into {} (map (fn [i] [(str "t" i) {}]) (range 21)))})))
     (is (not (user-state/valid? :recent-skills [(apply str (repeat 101 "x"))])))
-    (is (not (user-state/valid? :preferred-model (apply str (repeat 201 "x")))))))
+    (is (not (user-state/valid? :chat-defaults {:model (apply str (repeat 201 "x"))})))))
+
+(deftest normalize-migrates-the-preferred-model
+  (is (= {:chat-defaults {:model "opus"}}
+         (user-state/normalize {:preferred-model "opus"})))
+  (is (= {:chat-defaults {:model "sonnet" :yolo :sane}}
+         (user-state/normalize {:preferred-model "opus"
+                                :chat-defaults {:model "sonnet" :yolo :sane}}))
+      "a stored default wins"))
 
 (deftest plain-data-is-what-survives-the-state-file
   (is (user-state/plain-data? nil))

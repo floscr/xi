@@ -359,6 +359,7 @@
       :action  (case (second action)
                  :new-chat     (run "new")
                  :change-model (run "model")
+                 :chat-settings {:type :chat-settings/menu :room-id room-id}
                  :skills       (run "skill")
                  :git-status   (run "diff" "git")
                  :copy-debug   (run "debug")
@@ -386,7 +387,7 @@
 ;; Commands/actions whose selection opens a sub-picker: in the palette they
 ;; drill in-place (push a frame, keep the palette open) instead of closing.
 (def ^:private palette-drill-commands #{"model" "resume" "sessions"})
-(def ^:private palette-drill-actions  #{:change-model :skills})
+(def ^:private palette-drill-actions  #{:change-model :chat-settings :skills})
 
 (defn- palette-menu
   "Command palette (Ctrl+P): the shared xi.palette sections mapped to

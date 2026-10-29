@@ -55,8 +55,9 @@
    ;; so it is kept apart from the live :web/layouts
    :layouts           {:path :web/layouts-remote :default {}
                        :fx   (fn [v] [[:app/dispatch {:type :layout/seed :layouts v}]])}
-   :preferred-model   {:path :web/preferred-model :default nil
-                       :fx   (fn [v] [[:cache/preferred-model {:model v}]])}
+   ;; what new chats start with (xi.chat-settings)
+   :chat-defaults     {:path :web/chat-defaults :default {}
+                       :fx   (fn [v] [[:cache/chat-defaults {:defaults v}]])}
    :recent-commands   {:path :web/command-usage :default []
                        :coerce vec
                        :fx   (fn [v] [[:cache/recent-commands {:commands v}]])}

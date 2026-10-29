@@ -143,7 +143,7 @@ shows a card for each stored account.
 
 | Use | Model |
 | --- | --- |
-| A chat | The one you picked, else your last `/model` pick (kept per [user](server.md#users), in the web client and the terminal alike), else the first provider's default (Claude Opus); with none, Xi asks you to pick one |
+| A chat | The one you picked for it, else your default for new chats ([Chat settings](web-client.md#chat-settings), kept per [user](server.md#users)), else the first provider's default (Claude Opus); with none, Xi asks you to pick one |
 | Naming a chat, `/summary`, `/truncate`, quick replies | The side-turn provider's fast model (Claude Haiku) |
 | `/compact`, a `/rollover` summary | The side-turn provider's strong model (Claude Sonnet) |
 | An [agent profile](agents.md) | Its `:model`, unless `--model` says otherwise |

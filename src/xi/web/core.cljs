@@ -10,6 +10,7 @@
             [replicant.dom :as r]
             [xi.agent :as agent]
             [xi.buffers :as buffers]
+            [xi.chat-settings :as chat-settings]
             [xi.client.ws-transport :as ws-transport]
             [xi.commands :as commands]
             [xi.compaction :as compaction]
@@ -148,7 +149,7 @@
 
 (defn- fresh-pending-room [st cwd]
   (cond-> {:id (random-uuid) :cwd cwd}
-    (:web/preferred-model st) (assoc :model (:web/preferred-model st))))
+    (get-in st [:web/chat-defaults :model]) (assoc :model (get-in st [:web/chat-defaults :model]))))
 
 (defn- room-new
   "Open a fresh virtual chat: no server room until the first prompt, which
@@ -990,37 +991,68 @@
     (when (= (get-in active [:session :id]) sid) active)))
 
 (defn- models-select
-  "Pick a model from the palette: /model on the viewed room (reflected on the
-   client room at once), or remembered on the pending room for a virtual new
-   chat. The pick becomes the sticky default for future new chats."
+  "Pick a model from the palette for this chat: /model on the viewed room
+   (reflected on the client room at once), or remembered on the pending room
+   for a virtual new chat. Whether it also becomes the default is
+   chat-setting-pick's scope."
   [st {:keys [model]}]
-  (let [text    (str "/model " model)
-        active  (state/active-room st)
-        rid     (:id (viewed-room st))
-        base    (-> st
-                    (dissoc :web/palette-page :web/palette-open?)
-                    (assoc :web/preferred-model model))
-        persist [:cache/preferred-model {:model model}]
-        sync    (user-state/set-effect :preferred-model model)]
+  (let [text   (str "/model " model)
+        active (state/active-room st)
+        rid    (:id (viewed-room st))
+        base   (dissoc st :web/palette-page :web/palette-open?)]
     (models/with-check
       (cond
         rid
         {:state (assoc-in base [:rooms rid :agent :model] model)
-         :effects [persist sync
-                   [:palette/close nil]
+         :effects [[:palette/close nil]
                    [:ws/send {:type :input/submit :room-id rid :text text}]]}
 
         (:web/pending-room base)
         {:state (assoc-in base [:web/pending-room :model] model)
-         :effects [persist sync [:palette/close nil]]}
+         :effects [[:palette/close nil]]}
 
         :else
         {:state base
-         :effects (cond-> [persist sync [:palette/close nil]]
+         :effects (cond-> [[:palette/close nil]]
                     (:id active)
                     (conj [:ws/send {:type :input/submit
                                      :room-id (:id active) :text text}]))})
       model)))
+
+(defn- yolo-select
+  "Set this chat's yolo level: /yolo on the viewed room. A virtual new chat
+   gets its room first (web-command), except when the level becomes the
+   default: its room then starts from it (xi.chat-settings/seed-ext)."
+  [st {:keys [value scope]}]
+  (let [st   (dissoc st :web/palette-page :web/palette-open?)
+        rid  (:id (viewed-room st))
+        here (cond
+               rid
+               {:state st
+                :effects [[:app/dispatch {:type :command/run :room-id rid
+                                          :name "yolo" :args (name value)}]]}
+               (= :chat (or scope :chat))
+               (web-command st {:name "yolo" :args (name value)})
+               :else {:state st})]
+    (update here :effects #(into [[:palette/close nil]] %))))
+
+(defn- chat-setting-pick
+  "`:chat-settings/pick {:key :value :scope}` — a value picked in the palette or
+   on a chat's controls. Every scope sets this chat; :default and :all also
+   store the default, :all runs it in every open chat (xi.chat-settings, on
+   the server)."
+  [st {:keys [key value scope] :as ev}]
+  (let [here (case key
+               :model (models-select st {:model value})
+               :yolo  (yolo-select st ev)
+               nil)]
+    (when here
+      (if (#{:default :all} scope)
+        (-> here
+            (update :state update :web/chat-defaults chat-settings/with-default key value)
+            (update :effects conj [:ws/send {:type :chat-settings/apply
+                                             :key key :value value :scope scope}]))
+        here))))
 
 (defn- submit-to-viewed-room
   "Effect submitting `text` (+ `images`) to the viewed room, or via
@@ -1542,7 +1574,7 @@
           :queue/toggle-popover  (fn [st _] {:state (update st :web/queue-popover? not)})
           :queue/close-popover   (fn [st _] {:state (dissoc st :web/queue-popover?)})
           :models/web-list-result (fn [st ev] (models/list-result st ev (:event/ts ev)))
-          :models/select         models-select
+          :chat-settings/pick    chat-setting-pick
           :skill/web-list-result skill-web-list-result
           :skill/select          skill-select
           :skill/web-get-result  skill-web-get-result
@@ -1691,7 +1723,24 @@
                                                (dissoc :web/palette-page))
                                     :effects [[:palette/reopen nil]
                                               [:palette/reset-filter nil]]})
-          :palette/open-models   (fn [st ev] (models/open st (:event/ts ev)))
+          ;; :back? (from the Chat settings page) returns there
+          :palette/open-models   (fn [st ev]
+                                   (cond-> (models/open st (:event/ts ev))
+                                     (:back? ev)
+                                     (assoc-in [:state :web/palette-page :back]
+                                               (:web/palette-page st))))
+          ;; A sub-page that returns to the current one (the chat settings
+          ;; pages). :reopen? false when no row click closed the dialog (Tab).
+          :palette/push-page     (fn [st {:keys [page reopen?]}]
+                                   {:state   (cond-> (assoc st :web/palette-page
+                                                            (assoc page :back (:web/palette-page st))
+                                                            :web/palette-open? true)
+                                               (not (false? reopen?))
+                                               (assoc :web/palette-drilling? true))
+                                    :effects (if (false? reopen?)
+                                               [[:palette/reset-filter nil]]
+                                               [[:palette/reopen nil]
+                                                [:palette/reset-filter nil]])})
           ;; color themes (xi.web.theme): Default + the user's, picked like a model
           :palette/open-themes   (fn [st _]
                                    {:state   (assoc st :web/palette-page {:kind :theme}
@@ -2253,7 +2302,7 @@
    :cache/recent-commands (fn [_ {:keys [commands]}] (cache/save-recent-commands! commands))
    :cache/command-counts  (fn [_ {:keys [counts]}] (cache/save-command-counts! counts))
    :cache/recent-skills   (fn [_ {:keys [skills]}] (cache/save-recent-skills! skills))
-   :cache/preferred-model (fn [_ {:keys [model]}] (cache/save-preferred-model! model))
+   :cache/chat-defaults (fn [_ {:keys [defaults]}] (cache/save-chat-defaults! defaults))
    :cache/model-list (fn [_ {:keys [models at]}] (cache/save-model-list! models at))
    :cache/sidebar-collapsed (fn [_ {:keys [groups]}] (cache/save-sidebar-collapsed! groups))
    :cache/window-workspace  (fn [_ m] (cache/save-window-workspace! m))

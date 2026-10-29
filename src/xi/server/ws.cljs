@@ -47,6 +47,7 @@
             [xi.accounts.run :as account-run]
             [xi.agent-profile :as profile]
             [xi.auth :as auth]
+            [xi.chat-settings :as chat-settings]
             [xi.core.state :as core-state]
             [xi.ext.diff.git :as diff-git]
             [xi.ext.user.guard :as user-guard]
@@ -115,7 +116,8 @@
 (def ^:private base-no-broadcast
   "Room-scoped event types that are connection bookkeeping, not room state.
    Extensions add theirs via :no-broadcast."
-  #{:room/join :room/attach :room/leave :room/list :agent/session-init})
+  #{:room/join :room/attach :room/leave :room/list :agent/session-init
+    :chat-settings/apply})
 
 (def ^:private base-lobby-relevant
   "Events after which lobby (roomless) clients get a fresh :lobby/state.
@@ -158,7 +160,7 @@
     :dismissed/toggle :pinned/toggle :session/delete :session/mark-read
     :session/rename :session/suggest-name
     :session/buffer-close
-    :rooms/prune :chat/start})
+    :rooms/prune :chat/start :chat-settings/apply})
 
 (def ^:private git-log-limit
   "Commits the web's git log page lists (newest first)."
@@ -251,8 +253,8 @@
                 (update :sessions user-state/annotate-session-flags flags))
       lobby?                    (update :rooms user-state/annotate-session-flags flags)
       lobby?                    (assoc :read (read-state-of stored))
-      (and lobby? (:preferred-model stored))
-      (assoc :model (:preferred-model stored)))))
+      (and lobby? (get-in stored [:chat-defaults :model]))
+      (assoc :model (get-in stored [:chat-defaults :model])))))
 
 (defn- lobby-base
   "The :lobby/state payload shared by every user: live rooms + saved sessions +
@@ -379,6 +381,7 @@
                                      (when ext-system-prompt-parts
                                        (ext-system-prompt-parts cwd))))
                 system (system-prompt/parts->system system-parts)
+                defaults (:chat-defaults (user-store/load-state user))
                 session (if summary
                           (session/load-session summary)
                           (cond-> (session/create-session
@@ -393,7 +396,7 @@
             {:cwd     cwd
              :session session
              :room    {:model        (or model
-                                         (:preferred-model (user-store/load-state user))
+                                         (:model defaults)
                                          (:model server-opts))
                        :effort       (or effort (:effort server-opts))
                        :cwd          cwd
@@ -403,7 +406,9 @@
                                        (system-prompt/find-agents-md cwd))
                        :session      session
                        :ext          (cond-> (if (fn? room-ext-init) (room-ext-init) room-ext-init)
-                                       prof (merge (profile/room-ext prof)))
+                                       prof (profile/merge-room-ext prof)
+                                       ;; a saved chat keeps its own level
+                                       (nil? summary) (chat-settings/seed-ext defaults))
                        :agent-id     agent-id
                        :only-tools   (:tools prof)
                        :created      (js/Date.now)}}))

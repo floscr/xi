@@ -182,8 +182,16 @@
    :diff-layout      {:valid? #{:split :stacked}}
    ;; the chats split into windows, {session-id layout} (xi.layout)
    :layouts          {:valid? layout/valid-store?}
-   ;; the model a new chat starts with
-   :preferred-model  {:valid? (fn [v] (and (string? v) (<= 1 (count v) 200)))}
+   ;; what a new chat starts with, {:model id :yolo :sane|:relentless}
+   ;; (xi.chat-settings)
+   :chat-defaults    {:valid? (fn [m]
+                                (and (map? m)
+                                     (every? (fn [[k v]]
+                                               (case k
+                                                 :model (and (string? v) (<= 1 (count v) 200))
+                                                 :yolo  (contains? #{:sane :relentless} v)
+                                                 false))
+                                             m)))}
    ;; most-recent-first command / skill names for the quick bar and palette
    :recent-commands  {:valid? (fn [v] (bounded-strings? v 20 100))}
    :recent-skills    {:valid? (fn [v] (bounded-strings? v 20 100))}
@@ -237,11 +245,20 @@
   (boolean (and (valid? k v)
                 (not (false? (get-in registry [k :client-writable?]))))))
 
+(defn- migrate
+  "Older state files: :preferred-model became :chat-defaults :model."
+  [m]
+  (if-let [model (:preferred-model m)]
+    (-> m
+        (dissoc :preferred-model)
+        (update :chat-defaults #(merge {:model model} (when (map? %) %))))
+    m))
+
 (defn normalize
   "Keep only the known keys of `m` whose values are valid. Tolerates nil and
    non-map input (a missing, hand-edited or corrupt state file)."
   [m]
-  (into {} (filter (fn [[k v]] (valid? k v))) (when (map? m) m)))
+  (into {} (filter (fn [[k v]] (valid? k v))) (when (map? m) (migrate m))))
 
 (defn client-view
   "The part of a user's state a client may see: everything but `:ext`."

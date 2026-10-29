@@ -5,6 +5,7 @@
             [xi.agent :as agent]
             [xi.avatar :as avatar]
             [xi.buffers :as buffers]
+            [xi.chat-settings :as chat-settings]
             [xi.commands :as commands]
             [xi.error-info :as error-info]
             [xi.ext.subagent.handlers :as sa]
@@ -2272,11 +2273,33 @@
                 "M10 2c0 -.88 1.056 -1.331 1.692 -.722c1.958 1.876 3.096 5.995 1.75 9.12l-.08 .174l.012 .003c.625 .133 1.203 -.43 2.303 -2.173l.14 -.224a1 1 0 0 1 1.582 -.153c1.334 1.435 2.601 4.377 2.601 6.27c0 4.265 -3.591 7.705 -8 7.705s-8 -3.44 -8 -7.706c0 -2.252 1.022 -4.716 2.632 -6.301l.605 -.589c.241 -.236 .434 -.43 .618 -.624c1.43 -1.512 2.145 -2.924 2.145 -4.78"
                 "M12 10.941c2.333 -3.308 .167 -7.823 -1 -8.941c0 3.395 -2.235 5.299 -3.667 6.706c-1.43 1.408 -2.333 3.294 -2.333 5.588c0 3.704 3.134 6.706 7 6.706c3.866 0 7 -3.002 7 -6.706c0 -1.712 -1.232 -4.403 -2.333 -5.588c-2.084 3.353 -3.257 3.353 -4.667 2.235")}]])
 
-(defn- yolo-flame
-  "The room's yolo level (xi.ext.yolo) → [flame title], nil when off: the
-   flame outlined for yolo, filled for relentless."
+(defn- yolo-disabled?
+  "True in an agent's chat whose profile sets `:yolo false` (xi.ext.yolo)."
   [room]
-  (case (get-in room [:ext :yolo :level])
+  (boolean (get-in room [:ext :yolo :disabled?])))
+
+(defn- yolo-level
+  "The yolo level (xi.ext.yolo) of `room`, nil when off or disabled; a new
+   chat without a room shows the level it will start with."
+  [state room]
+  (if room
+    (when-not (yolo-disabled? room) (get-in room [:ext :yolo :level]))
+    (get-in state [:web/chat-defaults :yolo])))
+
+(defn- yolo-pick!
+  "Set the yolo level from a click: this chat, with Alt also the default for
+   new chats (xi.chat-settings)."
+  [dispatch! ^js e level]
+  (dispatch! {:type :chat-settings/pick :key :yolo :value level
+              :scope (if (some-> e .-altKey) :default :chat)}))
+
+(def ^:private alt-default-hint " Alt+click: also for new chats.")
+
+(defn- yolo-flame
+  "A yolo level → [flame title], nil when off: the flame outlined for yolo,
+   filled for relentless."
+  [level]
+  (case level
     :sane       [(flame-icon false ["yolo-chip-flame"])
                  "Yolo mode: tool calls run without asking, except risky ones."]
     :relentless [(flame-icon true ["yolo-chip-flame" "yolo-chip-flame--relentless"])
@@ -2292,27 +2315,28 @@
   "The plain-text line under the composer's input row (CSS hides it on touch
    screens while typing): the chat's model, opening the model picker, the yolo
    flame, colored while yolo mode is on and turning it off, grey while off
-   and turning it on, and the Claude subscription usage from the lobby
-   broadcast, opening /usage."
-  [dispatch! room model claude-usage]
+   and turning it on, absent where it is disabled, and the Claude
+   subscription usage from the lobby broadcast, opening /usage."
+  [dispatch! room model claude-usage yolo]
   (let [{:keys [session weekly session-resets-at weekly-resets-at]} claude-usage
         session (when-not (usage-window-outdated? session-resets-at) session)
         weekly  (when-not (usage-window-outdated? weekly-resets-at) weekly)
-        [flame title command] (if-let [[flame title] (yolo-flame room)]
-                                [flame (str title " Click to turn it off.") "yolo off"]
-                                [(flame-icon false [])
-                                 "Yolo mode is off. Click to turn it on." "yolo sane"])]
+        [flame title next] (if-let [[flame title] (yolo-flame yolo)]
+                             [flame (str title " Click to turn it off." alt-default-hint) :off]
+                             [(flame-icon false [])
+                              (str "Yolo mode is off. Click to turn it on." alt-default-hint) :sane])]
     [:div {:class ["compose-status"]}
      (when model
        [:button {:class ["compose-status-item"]
                  :title (str model " — change model")
                  :on {:click (fn [_] (dispatch! {:type :palette/open-models}))}}
         (str/lower-case (rename/model-label model))])
-     [:button {:class ["compose-status-item" "compose-status-yolo"]
-               :title title
-               :aria-label title
-               :on {:click (fn [_] (dispatch-command! dispatch! (:id room) command))}}
-      flame]
+     (when-not (yolo-disabled? room)
+       [:button {:class ["compose-status-item" "compose-status-yolo"]
+                 :title title
+                 :aria-label title
+                 :on {:click (fn [e] (yolo-pick! dispatch! e next))}}
+        flame])
      (when claude-usage
        [:button {:class ["compose-status-item" "compose-status-usage"]
                  :title "Claude usage — all usage"
@@ -3823,14 +3847,14 @@
 
 (defn- yolo-chip
   "Chat header chip while the room's yolo mode is on: just the flame
-   (yolo-flame); a click runs /yolo off."
-  [dispatch! room]
-  (when-let [[flame title] (yolo-flame room)]
-    (let [title (str title " Click to turn it off.")]
+   (yolo-flame); a click turns it off."
+  [state dispatch! room]
+  (when-let [[flame title] (some->> room (yolo-level state) yolo-flame)]
+    (let [title (str title " Click to turn it off." alt-default-hint)]
       (chip/chip {:attrs    {:class      ["yolo-chip"]
                              :title      title
                              :aria-label title}
-                  :on-click (fn [_] (dispatch-command! dispatch! (:id room) "yolo off"))}
+                  :on-click (fn [e] (yolo-pick! dispatch! e :off))}
         flame))))
 
 (defn- process-chip
@@ -5674,7 +5698,8 @@
                           (false? (:web/connected? state))
                           (slash-ctx state)
                           (compose-status dispatch! room model
-                                          (get-in state [:lobby :claude-usage]))
+                                          (get-in state [:lobby :claude-usage])
+                                          (yolo-level state room))
                           (agents-button dispatch! room history sub-agents))))]))
 
 ;; ── Windows (xi.layout, xi.web.layout) ───────────────────────────────────────
@@ -5916,7 +5941,7 @@
        (when (and resuming? (seq history))
          [:span {:class ["topbar-sync-bar"] :role "progressbar" :aria-label "Updating"}])]
       (offline-badge state)
-      (yolo-chip dispatch! room)
+      (yolo-chip state dispatch! room)
       (process-chip dispatch! room)
       ;; each window carries its own pill (pane-header) once the chat is split
       (when (and has-tabs? (not split?))
@@ -7307,6 +7332,22 @@
                                           :session-id session-id}))}
            (or name "(untitled)")))))))
 
+(defn- setting-row
+  "A value row of a chat setting (xi.chat-settings): Enter or a click sets this
+   chat, Alt+Enter / Alt+click also the default for new chats
+   (palette-alt-enter!), Tab opens the scopes (palette-keydown)."
+  [dispatch! k v {:keys [label current default icon]}]
+  (cmd/command-item
+   {:icon        (if (= v current) :check icon)
+    :value       label
+    :description (when (= v default) "default for new chats")
+    :attrs       {:data-chat-setting       (name k)
+                  :data-chat-setting-value (if (keyword? v) (name v) v)}
+    :on-click    (fn [^js e]
+                   (dispatch! {:type :chat-settings/pick :key k :value v
+                               :scope (if (.-altKey e) :default :chat)}))}
+   label))
+
 (defn- palette-model-page
   "Model list as a palette sub-page, painted from the cached :web/model-list
    (xi.web.models); :web/model-error shows when a pick turned out unavailable."
@@ -7315,7 +7356,8 @@
         models  (:web/model-list state)
         error   (:web/model-error state)
         current (or (get-in state [:web/pending-room :model])
-                    (get-in room [:agent :model]))]
+                    (get-in room [:agent :model]))
+        default (get-in state [:web/chat-defaults :model])]
     (cond
       (nil? models)   [:div {:class ["command-loading"]} (spinner)]
       (empty? models) [:div {:class ["command-empty"]} "No models available"]
@@ -7324,12 +7366,54 @@
        (when error [:div {:class ["command-error"]} error])
        (apply cmd/command-group {:heading "Model"}
          (for [m models]
-           (cmd/command-item
-            {:icon (if (= m current) :check :layers)
-             :value m
-             :on-click (fn [_] (dispatch! {:type :models/select
-                                           :model m :room-id (:id room)}))}
-            m)))])))
+           (setting-row dispatch! :model m {:label m :current current
+                                            :default default :icon :layers})))])))
+
+(defn- viewed-yolo
+  "The yolo level of the chat in view (:off when off), nil where disabled."
+  [state]
+  (let [room (state/active-room state)]
+    (when-not (and room (yolo-disabled? room))
+      (or (yolo-level state room) :off))))
+
+(defn- palette-chat-settings-page
+  "Chat settings (xi.chat-settings): each setting with the chat's value,
+   drilling into its values."
+  [state dispatch!]
+  (let [room  (state/active-room state)
+        model (or (get-in state [:web/pending-room :model])
+                  (get-in room [:agent :model]))
+        yolo  (viewed-yolo state)]
+    (cmd/command-group {:heading "Chat settings"}
+      (cmd/command-item {:icon :layers :value "Model" :description model
+                         :on-click (fn [_] (dispatch! {:type :palette/open-models :back? true}))}
+                        "Model")
+      (when yolo
+        (cmd/command-item {:icon :zap :value "Yolo mode" :description (name yolo)
+                           :on-click (fn [_] (dispatch! {:type :palette/push-page
+                                                         :page {:kind :chat-setting :key :yolo}}))}
+                          "Yolo mode")))))
+
+(defn- palette-yolo-page
+  "Yolo mode's levels as setting rows."
+  [state dispatch!]
+  (let [default (get-in state [:web/chat-defaults :yolo] :off)]
+    (apply cmd/command-group {:heading "Yolo mode"}
+      (for [level chat-settings/yolo-levels]
+        (setting-row dispatch! :yolo level {:label (name level) :current (viewed-yolo state)
+                                            :default default :icon :zap})))))
+
+(defn- palette-scope-page
+  "Where a picked setting value applies (Tab on a setting row)."
+  [dispatch! {:keys [key value]}]
+  (apply cmd/command-group {:heading (str (get-in chat-settings/settings [key :label]) ": "
+                                          (if (keyword? value) (name value) value))}
+    (for [{:keys [scope label]} chat-settings/scopes]
+      (cmd/command-item {:icon (case scope :chat :file-text :default :plus :all :layers)
+                         :value label
+                         :on-click (fn [_] (dispatch! {:type :chat-settings/pick :key key
+                                                       :value value :scope scope}))}
+                        label))))
 
 
 (defn- with-shortcut
@@ -7937,10 +8021,18 @@
       (when-not (.querySelector dialog ".command-item--active")
         (.add (.-classList item) "command-item--active")))))
 
+(defn- row-setting
+  "The chat setting a palette row picks (setting-row): {:key :value}, or nil."
+  [^js row]
+  (when-let [k (some-> row (.. -dataset -chatSetting) keyword)]
+    (let [v (.. row -dataset -chatSettingValue)]
+      {:key k :value (if (= :yolo k) (keyword v) v)})))
+
 (defn- palette-keydown
   "Extra keyboard layer over ui-runtime.js: Tab drills the active project,
-   session or extension menu row (or opens its file finder on the picker page, or
-   flips the search page's toggle); Shift+Tab / Backspace-on-empty backs out of a sub-page."
+   session, extension menu or chat setting row (or opens its file finder on the
+   picker page, or flips the search page's toggle); Shift+Tab /
+   Backspace-on-empty backs out of a sub-page."
   [dispatch! palette-page]
   (fn [^js e]
     (let [dialog (.-currentTarget e)
@@ -7952,6 +8044,11 @@
         (and tab? (some-> ^js (active) (.. -dataset -paletteExtDrill)))
         (do (.preventDefault e)
             (.click ^js (active)))
+
+        (and tab? (row-setting (active)))
+        (do (.preventDefault e)
+            (dispatch! {:type :palette/push-page :reopen? false
+                        :page (assoc (row-setting (active)) :kind :chat-setting-scopes)}))
 
         (and (nil? palette-page) tab?)
         (when-let [^js row (active)]
@@ -7983,21 +8080,26 @@
 
 (defn- palette-alt-enter!
   "Alt+Enter on a row carrying `data-palette-new-chat` (a project's New chat)
-   opens the background-chat prompt page for its cwd. Listens on window in the
-   capture phase: ui-runtime.js takes Enter on document capture and would
-   pick the row."
+   opens the background-chat prompt page for its cwd; on a chat setting row
+   (setting-row) it sets the value for this chat and new chats. Listens on
+   window in the capture phase: ui-runtime.js takes Enter on document capture
+   and would pick the row."
   [dispatch! ^js dialog]
   (.addEventListener
    js/window "keydown"
    (fn [^js e]
      (when (and (.-open dialog) (= "Enter" (.-key e)) (.-altKey e)
                 (not (or (.-ctrlKey e) (.-metaKey e) (.-shiftKey e))))
-       (when-let [cwd (some-> (.querySelector dialog ".command-item--active")
-                              (.. -dataset -paletteNewChat))]
-         (.preventDefault e)
-         (.stopPropagation e)
-         (dispatch! {:type :palette/open-new-chat :cwd cwd
-                     :label (shorten-path cwd)}))))
+       (let [row (.querySelector dialog ".command-item--active")]
+         (if-let [setting (row-setting row)]
+           (do (.preventDefault e)
+               (.stopPropagation e)
+               (dispatch! (assoc setting :type :chat-settings/pick :scope :default)))
+           (when-let [cwd (some-> row (.. -dataset -paletteNewChat))]
+             (.preventDefault e)
+             (.stopPropagation e)
+             (dispatch! {:type :palette/open-new-chat :cwd cwd
+                         :label (shorten-path cwd)}))))))
    true))
 
 (def ^:private palette-quick-keys
@@ -8124,6 +8226,9 @@
                  (palette-search-toggle state dispatch!))))
        (case (:kind palette-page)
          :model          (palette-model-page state dispatch!)
+         :chat-settings  (palette-chat-settings-page state dispatch!)
+         :chat-setting   (palette-yolo-page state dispatch!)
+         :chat-setting-scopes (palette-scope-page dispatch! palette-page)
          :theme          (palette-theme-page state dispatch!)
          :workspaces     (palette-workspace-page state dispatch!)
          :skill          (palette-skill-page state dispatch!)
@@ -8241,6 +8346,8 @@
              (case key
                :new-chat     (fn [_] (dispatch! {:type :room/new}))
                :change-model (fn [_] (dispatch! {:type :palette/open-models}))
+               :chat-settings (fn [_] (dispatch! {:type :palette/push-page
+                                                 :page {:kind :chat-settings}}))
                :skills       (fn [_] (dispatch! {:type :palette/open-skills}))
                :git-status   (fn [_] (dispatch! {:type :diff/reopen
                                                  :room-id (:id room)

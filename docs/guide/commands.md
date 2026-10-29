@@ -12,7 +12,7 @@ message. `/help` lists everything that is available in the current setup.
 | `/sessions` | List previous chats |
 | `/cd <dir>` | Change the working directory of this chat |
 | `/project` | Pick one of your [projects](projects.md) (also `Alt+p`) |
-| `/model [name]` | Show or switch the [model](models.md) |
+| `/model [name]` | Show or switch this chat's [model](models.md); in the list `Alt+Enter` also makes it the default for new chats ([Chat settings](web-client.md#chat-settings)) |
 | `/account [provider …]` | List, switch, sign in to, name and forget a provider's stored accounts (Claude, OpenCode Go); see [Accounts](models.md#accounts) |
 | `/login <provider>`, `/logout <provider>` | Sign in to another account, or forget one; `/account <provider> login` and `forget` |
 | `/fork` | Continue the conversation in a new chat, keeping this one as it is |

@@ -346,7 +346,7 @@ the tool ctx's turn user, else the room's, else the process' own), and the
   an event's user: the stamp, else the sole user in its room, else the process'
   own user (slash commands that submit prompts run server-side with no stamp).
 - **UI state**: the web client's browser-only state (theme, appearance,
-  collapsed groups, preferred model, recent commands/skills) is per user.
+  collapsed groups, chat defaults, recent commands/skills) is per user.
   `xi.user-state` is the registry (known keys + validators, browser-safe);
   `xi.user-state.store` keeps one EDN file per user under
   `~/.config/xi/state/users/`. Clients send `:user-state/set {:key :value}`
@@ -375,10 +375,16 @@ the tool ctx's turn user, else the room's, else the process' own), and the
   `:session/mark-read` and `:dismissed/toggle` act for `state/event-user`; a
   prompt un-hides its session for its sender. A user who never marked a chat
   starts from the old global `~/.config/xi/read-state.json` (read-only now).
-  `/model` writes the sender's `:preferred-model` (`:model/persist-preferred`
-  in `xi.fx`, the same key the web client syncs); a new room and the lobby's
-  `:model` read it before the server's default (`build-room`, `for-user`). The
-  old global `preferred-model.json` is gone and not migrated.
+  **Chat settings** (`xi.chat-settings`): model and yolo level have three
+  scopes. `:chat-settings/apply {:key :value :scope :chat|:default|:all}`
+  (roomless; only the sender's rooms are targets, `user-rooms`) runs the
+  setting's command (`/model`, `/yolo`) in this room or every open one and,
+  for `:default`/`:all`, writes `:chat-defaults` through `:user-state/save`.
+  `/model` alone no longer touches the default. A new room reads
+  `:chat-defaults` before the server's default (`build-room`, `for-user`,
+  `cli/resolve-model-opts`; yolo via `seed-ext`, skipped for a resumed chat
+  and where an agent profile disabled yolo). A stored `:preferred-model` is
+  migrated to `:chat-defaults :model` by `xi.user-state/normalize`.
   Server-global state that predates this (snippets, recent projects) is
   unchanged. See [web-client-internals.md](web-client-internals.md).
 

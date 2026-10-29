@@ -73,6 +73,7 @@
    surface can show its key next to the item."
   [{:key :new-chat     :label "New chat"           :icon :plus    :action :chat/new}
    {:key :change-model :label "Change model"       :icon :layers  :room? true :pending? true}
+   {:key :chat-settings :label "Chat settings"     :icon :settings :room? true :pending? true}
    {:key :skills       :label "Skills"             :icon :zap     :room? true}
    {:key :git-status   :label "Git status"         :icon :code    :room? true}
    {:key :copy-debug   :label "Copy debug info"    :icon :copy    :room? true}

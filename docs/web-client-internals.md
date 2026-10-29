@@ -72,7 +72,7 @@ Browser: create-app (:mode :client) · one atom · pure handlers · taps
   `xi.ext.usage.web` (Usage). `/projects` is the project list
   (`:dir :projects`).
 - **Per-user UI state** (`xi.user-state`, `xi.web.user-state`): theme,
-  appearance, collapsed sidebar groups, hidden dashboard cards, preferred model and recent
+  appearance, collapsed sidebar groups, hidden dashboard cards, chat defaults (`xi.chat-settings`) and recent
   commands/skills live on the server per user
   (`~/.config/xi/state/users/<user>.edn`, `xi.user-state.store`);
   localStorage is the instant cache. `xi.web.user-state/bindings` maps each

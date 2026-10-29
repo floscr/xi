@@ -197,16 +197,11 @@
     (is (= "opus" (get-in state [:rooms "r" :agent :model])))
     (is (= :status (:kind (peek (history state)))))))
 
-(deftest model-command-remembers-the-model-for-the-sender
-  (let [persist (fn [ev]
-                  (->> (:effects (handle (with-room) (merge {:type :command/run :room-id "r"
-                                                             :name "model" :args "opus"} ev)))
-                       (filter #(= :model/persist-preferred (first %)))))]
-    (is (= [[:model/persist-preferred {:model "opus" :user "alice"}]]
-           (persist {:user "alice"})))
-    (testing "an unstamped command is the process' own user's"
-      (is (= [[:model/persist-preferred {:model "opus" :user "root"}]]
-             (persist {}))))))
+(deftest model-command-leaves-the-default-alone
+  (let [{:keys [effects]} (handle (with-room) {:type :command/run :room-id "r" :user "alice"
+                                               :name "model" :args "opus"})]
+    (is (not-any? #(= :user-state/save (first %)) effects)
+        "the default for new chats is a scope of xi.chat-settings")))
 
 (deftest model-command-bare-fetches-models
   (let [{:keys [effects]} (handle (with-room)

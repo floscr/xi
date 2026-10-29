@@ -11,7 +11,7 @@
   {:web/theme-mode "dark"
    :web/appearance {:super-collapsed? false}
    :web/sidebar-collapsed #{:recent}
-   :web/preferred-model "opus"
+   :web/chat-defaults {:model "opus"}
    :web/command-usage ["model"]
    :web/recent-skills ["review"]})
 
@@ -19,12 +19,12 @@
   (let [{:keys [state effects]}
         (run browser {:type :user-state/state :user "alice"
                       :state {:theme "light" :appearance {:tool-blocks :open}
-                              :sidebar-collapsed [:projects] :preferred-model "sonnet"
+                              :sidebar-collapsed [:projects] :chat-defaults {:model "sonnet"}
                               :recent-commands ["clear"] :recent-skills ["x"]}})]
     (is (= "light" (:web/theme-mode state)))
     (is (= {:tool-blocks :open} (:web/appearance state)))
     (is (= #{:projects} (:web/sidebar-collapsed state)) "vectors become the set the views expect")
-    (is (= "sonnet" (:web/preferred-model state)))
+    (is (= {:model "sonnet"} (:web/chat-defaults state)))
     (is (= ["clear"] (:web/command-usage state)))
     (is (= ["clear"] (:web/recent-commands state)) "a connect may reorder the frozen quick bar")
     (is (some #{[:theme/apply "light"]} effects) "the theme is applied to the page")
@@ -38,7 +38,7 @@
     (is (= "light" (:web/theme-mode state)) "what the server has is not overwritten")
     (is (= {:appearance {:super-collapsed? false}
             :sidebar-collapsed [:recent]
-            :preferred-model "opus"
+            :chat-defaults {:model "opus"}
             :recent-commands ["model"]
             :recent-skills ["review"]}
            sent)
@@ -47,7 +47,7 @@
 (deftest defaults-are-not-seeded
   (let [{:keys [effects]} (run {:web/theme-mode "auto" :web/appearance {}
                                 :web/sidebar-collapsed #{} :web/command-usage []
-                                :web/recent-skills []}
+                                :web/recent-skills [] :web/chat-defaults {}}
                                {:type :user-state/state :user "root" :state {}})]
     (is (not-any? #(= :ws/send (first %)) effects))))
 
@@ -60,12 +60,12 @@
     (is (= {} (:web/watched state)) "and what she had read")
     (is (some #{[:cache/clear-watched {}]} effects))
     (is (= {} (:web/appearance state)))
-    (is (nil? (:web/preferred-model state)))
+    (is (= {} (:web/chat-defaults state)))
     (is (= [] (:web/command-usage state)))
     (is (= [] (:web/recent-commands state)))
     (is (= #{:projects} (:web/sidebar-collapsed state)) "bob's own state is applied")
     (is (some #{[:theme/apply "auto"]} effects) "the page leaves alice's theme")
-    (is (some #{[:cache/preferred-model {:model nil}]} effects) "and the cache is cleared")
+    (is (some #{[:cache/chat-defaults {:defaults {}}]} effects) "and the cache is cleared")
     (is (not-any? #(= :ws/send (first %)) effects) "alice's values are never seeded into bob")
     (is (some #{[:cache/user {:user "bob"}]} effects))))
 

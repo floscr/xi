@@ -338,16 +338,23 @@
 (defn save-recent-skills! [skills]
   (store-set! recent-skills-key (vec skills)))
 
-;; ── Preferred model (default for new chats) ──────────────────────────────────
+;; ── Chat defaults (what new chats start with, xi.chat-settings) ──────────────
 
-(def ^:private preferred-model-key "xi/preferred-model")
+(def ^:private chat-defaults-key "xi/chat-defaults")
 
-(defn load-preferred-model [] (store-get preferred-model-key))
+(defn- load-chat-defaults
+  "The cached defaults, else the model of the key they replaced."
+  []
+  (or (store-get chat-defaults-key)
+      (when-let [model (store-get "xi/preferred-model")]
+        (when (string? model) {:model model}))
+      {}))
 
-(defn save-preferred-model! [model]
-  (if (string? model)
-    (store-set! preferred-model-key model)
-    (store-remove! preferred-model-key)))
+(defn save-chat-defaults! [defaults]
+  (store-remove! "xi/preferred-model")
+  (if (seq defaults)
+    (store-set! chat-defaults-key defaults)
+    (store-remove! chat-defaults-key)))
 
 ;; ── Model picker list ────────────────────────────────────────────────────────
 ;; Paints the picker without a server round-trip; xi.web.models decides when
@@ -500,7 +507,7 @@
                         :web/command-counts (load-command-counts)
                         :commands (load-commands)
                         :web/recent-skills (load-recent-skills)
-                        :web/preferred-model (load-preferred-model)
+                        :web/chat-defaults (load-chat-defaults)
                         :web/model-list (:models models)
                         :web/model-list-at (:at models)
                         :web/sidebar-collapsed (load-sidebar-collapsed)

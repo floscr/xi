@@ -58,11 +58,12 @@
 
 (def ^:private local-ui-events
   "Events applied locally instead of forwarded: menus (built client-side; a
-   round-trip lost keystrokes typed right after '/'), `:theme/set` (this
+   round-trip lost keystrokes typed right after '/'; the :chat-settings/ ones
+   push one), `:theme/set` (this
    terminal's) and `:ui/buffer-switch` (which buffer this client views is its
    own, xi.buffers). Server-originated frames still mirror in as :remote?."
   #{:ui/menu-open :ui/menu-push :ui/menu-pop :ui/menu-populate :ui/menu-close
-    :theme/set :ui/buffer-switch})
+    :theme/set :ui/buffer-switch :chat-settings/scopes :chat-settings/menu})
 
 (defn- wrap-local-apply
   "remote? → mirror; else run the base handler locally — no forwarding."
