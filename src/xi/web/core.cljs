@@ -3655,8 +3655,9 @@
    back gesture; that edge's native swipe is suppressed best-effort with a
    non-passive touchstart. Gated on horizontal dominance and a distance
    threshold, ignored inside horizontally scrollable elements, while
-   selecting text, and while a window drawer is open: its swipe right closes
-   the drawer (install-right-edge-swipe!), not opens this."
+   selecting text or the command palette is open, and while a window drawer
+   is open: its swipe right closes the drawer (install-right-edge-swipe!),
+   not opens this."
   [state dispatch!]
   (let [thresh-px 60
         start     (atom nil)]
@@ -3692,6 +3693,7 @@
          (let [open-zone (min 100 (* 0.2 (or (.-innerWidth js/window) 0)))]
            (when (and (not scroll?)
                       (not (selecting-text?))
+                      (not (:web/palette-open? @state))
                       (> (js/Math.abs dx) (js/Math.abs dy)))
              (cond
                (and (not (:web/sidebar-open? @state))
@@ -3707,6 +3709,7 @@
      (fn [e]
        (when-let [t (aget (.-touches e) 0)]
          (when (and (not (:web/sidebar-open? @state))
+                    (not (:web/palette-open? @state))
                     (<= (.-pageX t) 20))
            (.preventDefault e))))
      #js {:passive false})))
@@ -3745,6 +3748,7 @@
                open? (wlayout/drawer-open? st :right)
                has?  (some? (some-> (wlayout/current st) (layout/side-pane :right)))]
            (when (and has? (not (:web/wide? st)) (not scroll?) (not (selecting-text?))
+                      (not (:web/palette-open? st))
                       (> (js/Math.abs dx) (js/Math.abs dy)))
              (cond
                (and (not open?) (>= x zone) (<= dx (- thresh-px)))
