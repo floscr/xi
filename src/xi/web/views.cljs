@@ -4509,7 +4509,7 @@
            (icon/icon {:icon-name :code :size :sm})
            [:span "View diff"]])
         (for [{:keys [label icon event]}
-              (block-menu/items (select-keys menu [:text :path :line :lang :diff-path]) state)]
+              (block-menu/items (select-keys menu [:text :path :line :lang :markdown :diff-path]) state)]
           [:button {:class ["bubble-menu-item"]
                     :on {:click (fn [e]
                                   (.stopPropagation e)

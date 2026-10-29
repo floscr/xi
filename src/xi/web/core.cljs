@@ -1329,13 +1329,14 @@
           ;; Inline code naming a file (xi.session-links/code-path, no tool
           ;; block path) is probed on the server; :file/exists-result below
           ;; adds View file to the open menu when it is there.
-          :code/menu-open        (fn [st {:keys [text path line lang diff-path diff-text x y
+          :code/menu-open        (fn [st {:keys [text path line lang markdown diff-path diff-text x y
                                                  ask-index ask-sub file? dir? table? tsv]}]
                                    (let [probe (when-not (or path table?)
                                                  (session-links/code-path (str/trim (or text ""))))
                                          cwd   (view-cwd st)]
                                      (cond-> {:state (assoc st :web/code-menu
                                                             (cond-> {:text text :path path :line line :lang lang
+                                                                     :markdown markdown
                                                                      :diff-path diff-path
                                                                      :diff-text diff-text
                                                                      :ask-index ask-index
@@ -2892,6 +2893,12 @@
                               lang (some->> (some-> node (.closest "pre") .-className)
                                             (re-find #"\blanguage-(\S+)")
                                             second)
+                              ;; a message's markdown, not a tool block's output
+                              markdown (cond
+                                         (.closest node "pre.md-code-block") :block
+                                         (and (.matches node "code.md-code")
+                                              (not (.closest node "pre")))
+                                         :inline)
                               text (if (.matches node ".md-diff")
                                      diff-text
                                      (.-textContent node))]
@@ -2903,6 +2910,7 @@
                                  path (assoc :path path)
                                  (and path line) (assoc :line line)
                                  lang (assoc :lang lang)
+                                 markdown (assoc :markdown markdown)
                                  diff-text (assoc :diff-path diff-path
                                                   :diff-text diff-text)
                                  ask-index (assoc :ask-index ask-index)

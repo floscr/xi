@@ -3,8 +3,10 @@
    block, xi.web.views/code-copy-menu). A provider is an extension's
    `:block-menu-items`: (fn [block state] → [{:label str :icon kw :event {…}}
    …]), asked each time the menu opens, where `block` is {:text :path :line
-   :lang :diff-path} — :path when the block belongs to a tool call or diff
-   naming a file (:line for a diff line), :lang for a fenced code block. Its
+   :lang :markdown :diff-path} — :path when the block belongs to a tool call
+   or diff naming a file (:line for a diff line), :lang for a fenced code
+   block, :markdown :block / :inline for a message's fenced block / inline
+   code (not a tool block's output). Its
    entries show below the core ones; one with `:header? true` is also a
    button in a file's header (diff, file buffer), asked with {:path}
    (xi.web.views/file-header-actions).

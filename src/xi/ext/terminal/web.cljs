@@ -2,10 +2,12 @@
   "Browser half of the terminal extension (xi.ext.terminal): forwards
    `:terminal/open` / `:terminal/restart` to the server with the active room,
    remembers terminals the server no longer runs (`:web/terminals-gone`,
-   after a server restart) until a restart brings them back, and offers the
-   keys a touch keyboard lacks in the terminal's toolbar. The view itself is
-   core (xi.web.terminal)."
-  (:require [xi.web.terminal :as terminal]))
+   after a server restart) until a restart brings them back, offers the
+   keys a touch keyboard lacks in the terminal's toolbar, and Run in
+   terminal in a shell code block's menu (xi.web.block-menu). The view
+   itself is core (xi.web.terminal)."
+  (:require [xi.ext.terminal.core :as core]
+            [xi.web.terminal :as terminal]))
 
 (defn- forward [st {:keys [remote?] :as ev}]
   (when-not remote?
@@ -33,6 +35,11 @@
    {:label "↑"   :send "\u001b[A" :title "Up"}
    {:label "↓"   :send "\u001b[B" :title "Down"}])
 
+(defn- block-menu-items [block _state]
+  (when-let [command (core/block-command block)]
+    [{:label "Run in terminal" :icon :terminal
+      :event {:type :terminal/open :command command}}]))
+
 (def extension
   {:id       :terminal
    :handlers {:terminal/open    forward
@@ -48,4 +55,5 @@
                 :event {:type :terminal/open}}
                {:menu :overflow :mode :room :label "New terminal" :icon :terminal
                 :event {:type :terminal/open}}]
-   :terminal-toolbar-items (fn [_buffer _state] (when (touch?) touch-keys))})
+   :terminal-toolbar-items (fn [_buffer _state] (when (touch?) touch-keys))
+   :block-menu-items block-menu-items})

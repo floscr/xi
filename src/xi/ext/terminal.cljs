@@ -3,7 +3,8 @@
    :title :tag}` runs a program (the user's shell without `:argv`) under a
    PTY and shows it as a `:terminal` buffer of the room (xi.buffers,
    `term:<id>`), switched to on the client that asked. The web client renders
-   it with xterm.js (xi.web.terminal).
+   it with xterm.js (xi.web.terminal). `:command` instead of `:argv` runs a
+   script with `$SHELL -c` and keeps the buffer when it ends (`:hold?`).
 
    Opening one is a rules request `{:tool :terminal :cli :command :argv}`
    made for the event's user: no default rule matches it, so it runs unless
@@ -34,17 +35,22 @@
 ;; ── Handlers (pure) ──────────────────────────────────────────────────────────
 
 (defn- terminal-open
-  [st {:keys [room-id argv cwd title tag client-id user]}]
+  [st {:keys [room-id argv command cwd title tag client-id user]}]
   (when-let [room (state/get-room st room-id)]
-    (if (and (some? argv) (not (core/valid-argv? argv)))
-      {:effects [[:app/dispatch {:type :ui/status :room-id room-id
-                                 :text ":terminal/open needs :argv as a vector of strings"}]]}
+    (if-let [problem (cond
+                       (and (some? argv) (not (core/valid-argv? argv)))
+                       ":terminal/open needs :argv as a vector of strings"
+                       (and (some? command) (not (core/valid-command? command)))
+                       ":terminal/open needs :command as a non-blank string")]
+      {:effects [[:app/dispatch {:type :ui/status :room-id room-id :text problem}]]}
       {:effects [[:terminal/spawn
                   (cond-> {:room-id    room-id
                            :term-id    (new-term-id)
                            :argv       argv
                            :cwd        (if cwd (tfs/resolve-path cwd (:cwd room)) (:cwd room))
                            :session-id (get-in room [:session :id])}
+                    (and command (not argv)) (assoc :command command :hold? true
+                                                    :title (core/command-title command))
                     title     (assoc :title title)
                     tag       (assoc :tag tag)
                     client-id (assoc :client-id client-id)
@@ -56,7 +62,7 @@
   (when-let [buf (get-in st [:rooms room-id :ui :buffers buffer-id])]
     (when (= :terminal (:kind buf))
       {:effects [[:terminal/spawn
-                  (cond-> (-> (select-keys buf [:term-id :argv :cwd :title :tag])
+                  (cond-> (-> (select-keys buf [:term-id :argv :cwd :title :tag :hold?])
                               (assoc :room-id room-id
                                      :session-id (get-in st [:rooms room-id :session :id])))
                     client-id (assoc :client-id client-id)
@@ -70,21 +76,26 @@
 
 (defn terminal-exited
   "The program of `term-id` ended: exit 0 closes its buffer (in its room, or
-   parked), another code is kept on the buffer for the view to show."
+   parked), another code is kept on the buffer for the view to show. A
+   `:hold?` buffer (a command's, :terminal/open :command) keeps every code,
+   so its output stays readable."
   [st {:keys [term-id code]}]
-  (let [bid (buffers/terminal-id term-id)
-        rid (room-with-buffer st bid)
-        sid (when-not rid (session-with-buffer st bid))]
+  (let [bid   (buffers/terminal-id term-id)
+        rid   (room-with-buffer st bid)
+        sid   (when-not rid (session-with-buffer st bid))
+        buf   (if rid
+                (get-in st [:rooms rid :ui :buffers bid])
+                (get-in st [:parked-buffers sid bid]))
+        done? (and (= 0 code) (not (:hold? buf)))]
     (cond
-      (and rid (= 0 code))
+      (and rid done?)
       {:effects [[:app/dispatch {:type :ui/buffer-close :room-id rid :buffer-id bid}]]}
 
       rid
       {:effects [[:app/dispatch {:type :ui/buffer-set :room-id rid :buffer-id bid
-                                 :buffer (assoc (get-in st [:rooms rid :ui :buffers bid])
-                                                :exit-code code)}]]}
+                                 :buffer (assoc buf :exit-code code)}]]}
 
-      (and sid (= 0 code))
+      (and sid done?)
       {:effects [[:app/dispatch {:type :session/buffer-close :session-id sid :buffer-id bid}]]}
 
       sid nil
@@ -172,8 +183,11 @@
 (defn- spawn-fx [ask! send!]
   (fn [{:keys [dispatch!] :as ctx}
        {:keys [room-id term-id client-id session-id cwd user] :as p}]
-    (let [argv  (or (:argv p) (core/shell-argv (aget js/process.env "SHELL")))
-          p     (assoc p :argv argv)
+    (let [shell (aget js/process.env "SHELL")
+          argv  (or (:argv p)
+                    (some->> (:command p) (core/command-argv shell))
+                    (core/shell-argv shell))
+          p     (-> p (assoc :argv argv) (dissoc :command))
           token (socket/new-token)
           bid   (buffers/terminal-id term-id)
           show! (fn [extra]

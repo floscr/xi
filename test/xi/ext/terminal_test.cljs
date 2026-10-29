@@ -39,6 +39,37 @@
   (is (not (core/valid-argv? "ls")))
   (is (not (core/valid-argv? ["ls" ""]))))
 
+(deftest command-helpers
+  (is (= ["/bin/zsh" "-c" "ls\npwd"] (core/command-argv "/bin/zsh" "ls\npwd")))
+  (is (= "git status" (core/command-title "\n  git status\n")))
+  (is (= "cd x …" (core/command-title "cd x\nmake")))
+  (is (core/valid-command? "ls"))
+  (is (not (core/valid-command? "  ")))
+  (is (not (core/valid-command? ["ls"]))))
+
+(deftest block-command-picks-shell-blocks
+  (testing "a shell block runs its text"
+    (is (= "ls -la\npwd" (core/block-command {:text "ls -la\npwd\n" :lang "bash"})))
+    (is (= "ls" (core/block-command {:text "ls" :lang "Shell"}))))
+  (testing "a console session runs its prompt lines, without the prompt"
+    (is (= "npm i\nnpm test"
+           (core/block-command {:text "$ npm i\nadded 3\n$ npm test\nok\n" :lang "console"})))
+    (is (nil? (core/block-command {:text "just output" :lang "console"}))))
+  (testing "a message's fenced block without a language runs"
+    (is (= "make" (core/block-command {:text "make\n" :markdown :block}))))
+  (testing "a message's inline code runs when it reads as a command"
+    (is (= "hey re:deploy-hetzner"
+           (core/block-command {:text "hey re:deploy-hetzner" :markdown :inline})))
+    (is (nil? (core/block-command {:text "localStorage" :markdown :inline})))
+    (is (nil? (core/block-command {:text "\"a b\"" :markdown :inline}))))
+  (testing "other code, blank text, tool output and tool blocks naming a file don't"
+    (is (nil? (core/block-command {:text "(+ 1 2)" :lang "clojure"})))
+    (is (nil? (core/block-command {:text "(+ 1 2)" :lang "clojure" :markdown :block})))
+    (is (nil? (core/block-command {:text "ls"})))
+    (is (nil? (core/block-command {:text "ls -la"})))
+    (is (nil? (core/block-command {:text "  " :lang "sh"})))
+    (is (nil? (core/block-command {:text "ls" :lang "sh" :path "a.sh"})))))
+
 (deftest buffer-and-rules-request
   (is (= {:kind :terminal :term-id "t1" :title "nvim a.clj" :argv ["nvim" "a.clj"]
           :cwd "/p" :tag :vim}
@@ -72,8 +103,15 @@
     (let [[[_ p]] (:effects (run :terminal/open st {:room-id "r1"}))]
       (is (nil? (:argv p)))
       (is (= "/proj" (:cwd p)))))
-  (testing "a bad :argv is reported, nothing runs"
+  (testing "a :command runs in the shell (chosen by the effect) and holds its buffer"
+    (let [[[_ p]] (:effects (run :terminal/open st {:room-id "r1" :command "make\nmake test"}))]
+      (is (nil? (:argv p)))
+      (is (= {:command "make\nmake test" :hold? true :title "make …"}
+             (select-keys p [:command :hold? :title])))))
+  (testing "a bad :argv or :command is reported, nothing runs"
     (is (= :ui/status (-> (run :terminal/open st {:room-id "r1" :argv "nvim"})
+                          :effects first second :type)))
+    (is (= :ui/status (-> (run :terminal/open st {:room-id "r1" :command " "})
                           :effects first second :type))))
   (testing "unknown room → nothing"
     (is (nil? (run :terminal/open st {:room-id "nope"})))))
@@ -94,6 +132,11 @@
       (let [ev (dispatched (terminal/terminal-exited st {:term-id "t1" :code 2}))]
         (is (= :ui/buffer-set (:type ev)))
         (is (= 2 (get-in ev [:buffer :exit-code])))))
+    (testing "a held buffer (a command's) stays after exit 0"
+      (let [held (assoc-in st [:rooms "r1" :ui :buffers "term:t1" :hold?] true)
+            ev   (dispatched (terminal/terminal-exited held {:term-id "t1" :code 0}))]
+        (is (= :ui/buffer-set (:type ev)))
+        (is (= 0 (get-in ev [:buffer :exit-code])))))
     (testing "a signal (nil code) is not a clean exit"
       (is (= :ui/buffer-set (:type (dispatched (terminal/terminal-exited st {:term-id "t1" :code nil}))))))
     (testing "a parked buffer closes through its session"

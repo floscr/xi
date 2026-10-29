@@ -51,24 +51,77 @@
   [shell]
   [(if (str/blank? shell) "/bin/sh" shell)])
 
+(defn valid-command? [command]
+  (and (string? command) (not (str/blank? command))))
+
+(defn command-argv
+  "`command` (a script, any number of lines) run by the user's shell."
+  [shell command]
+  (conj (shell-argv shell) "-c" command))
+
+(defn- clip-title [s]
+  (if (> (count s) 48) (str (subs s 0 47) "…") s))
+
 (defn argv-title
   "A terminal's buffer title: the program's name and its arguments."
   [argv]
-  (let [s (str/join " " (cons (last (str/split (first argv) #"/")) (rest argv)))]
-    (if (> (count s) 48) (str (subs s 0 47) "…") s)))
+  (clip-title (str/join " " (cons (last (str/split (first argv) #"/")) (rest argv)))))
+
+(defn command-title
+  "A command terminal's buffer title: the script's first line."
+  [command]
+  (let [lines (remove str/blank? (str/split-lines command))]
+    (clip-title (str (str/trim (first lines)) (when (next lines) " …")))))
+
+;; ── Code blocks ──────────────────────────────────────────────────────────────
+
+(def ^:private shell-langs #{"sh" "bash" "zsh" "shell" "fish"})
+(def ^:private session-langs #{"console" "shell-session" "shellsession"})
+
+(defn- inline-command?
+  "Inline code that reads as a command: one line with an argument
+   (`ssh host`), not a bare name (`gui`, `localStorage`)."
+  [text]
+  (boolean (re-matches #"[^\s\"'].*\s.*\S" text)))
+
+(defn block-command
+  "The command a chat code block runs in a terminal (the code menu's Run in
+   terminal, xi.ext.terminal.web): a shell block's text, a console session's
+   `$ ` lines without the prompt, a message's fenced block without a
+   language, its inline code that reads as a command. nil for other
+   blocks, and for a tool block naming a file (`:path`)."
+  [{:keys [text lang path markdown]}]
+  (let [lang (some-> lang str/lower-case)
+        text (str/trim (or text ""))]
+    (when-not (or path (str/blank? text))
+      (cond
+        (shell-langs lang) text
+
+        (session-langs lang)
+        (some->> (str/split-lines text)
+                 (keep #(second (re-find #"^\s*\$\s+(.*\S)" %)))
+                 seq
+                 (str/join "\n"))
+
+        lang nil
+
+        (= :block markdown) text
+
+        (= :inline markdown) (when (inline-command? text) text)))))
 
 ;; ── Buffer + rules ───────────────────────────────────────────────────────────
 
 (defn buffer
   "The room buffer of terminal `term-id`. `tag` is free for extensions to
    recognise their own terminals by (`:vim`)."
-  [{:keys [term-id argv cwd title tag]}]
+  [{:keys [term-id argv cwd title tag hold?]}]
   (cond-> {:kind    :terminal
            :term-id term-id
            :title   (or title (argv-title argv))
            :argv    argv
            :cwd     cwd}
-    tag (assoc :tag tag)))
+    tag   (assoc :tag tag)
+    hold? (assoc :hold? true)))
 
 (defn rules-request
   "The decision request (xi.rules.store/request) for opening `argv` in `cwd`."

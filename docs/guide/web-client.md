@@ -135,8 +135,8 @@ across the top narrows the cards and lists to one
   or switch the appearance settings (gear in the sidebar footer) to keep
   them open.
 - **Review changes.** An edit shows a diff where it happened. Right-click (or
-  long-press) a code block to copy it, open the file, or open the diff as a
-  buffer (below); inline code naming a file that exists under the cwd
+  long-press) a code block to copy it, open the file, open the diff as a
+  buffer (below), or run a command in a [terminal](#terminals); inline code naming a file that exists under the cwd
   (`src/a.cljs:12`) offers to open it too. Right-click (or long-press) the
   header row of a tool block that names a file, or the bar above a rendered
   Markdown diff, to open the file, copy its path, open the diff, or ask about
@@ -314,7 +314,12 @@ eight windows; the chat appears in one of them at most.
 A terminal is a buffer running a program on the server, in the chat's
 directory. `/term` opens your shell (`$SHELL`), `/term <command …>` runs that
 command instead (quotes keep spaces: `/term nvim "my notes.md"`). **New
-terminal** in the ⋮ menu and the command palette opens a shell.
+terminal** in the ⋮ menu and the command palette opens a shell. **Run in
+terminal** in the menu of a code block in a message (right-click or tap
+it) runs the block with `$SHELL -c`. It is offered for blocks tagged `sh`,
+`bash`, `zsh`, `shell` or `fish`, blocks without a language, and inline
+code with a space in it (`ssh home-server`); in a `console` block it runs
+the lines starting with `$ `, without the prompt.
 
 - **Typing.** While the terminal has focus, keys go to the program, plain
   Ctrl keys too (Firefox's Ctrl+D does not bookmark). `` Ctrl+` `` or `Alt+\`
@@ -326,7 +331,8 @@ terminal** in the ⋮ menu and the command palette opens a shell.
   leave the chat or reload the page, and every device in the chat sees the
   same screen. It takes the size of the window you use last: the one you
   resize, type in or come back to. When it exits with code 0, its buffer closes; any other exit
-  keeps the output with **Restart** and **Close**. Closing the buffer ends the
+  keeps the output with **Restart** and **Close**. A code block's terminal
+  stays open on every exit; **Restart** runs the block again. Closing the buffer ends the
   program. A server restart ends every terminal.
 - **Colours.** The terminal takes its colours and its font size (the
   theme's code size, see [Color themes](#color-themes)) from the current
