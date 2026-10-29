@@ -57,7 +57,7 @@ helpers, and `fs/delete-tree` asks like `rm`.
 | Kind | `fs/` functions |
 | --- | --- |
 | Paths | `path` `file` `file-name` `parent` `extension` `strip-ext` `split-ext` `absolute?` `relative?` `absolutize` `normalize` `relativize` `components` `expand-home` `hidden?` `home` `cwd` `temp-dir` |
-| Reads | `exists?` `directory?` `regular-file?` `sym-link?` `readable?` `writable?` `executable?` `size` `canonicalize` `read-all-lines` `list-dir` `glob` `which` |
+| Reads | `exists?` `directory?` `regular-file?` `sym-link?` `read-link` `readable?` `writable?` `executable?` `size` `canonicalize` `read-all-lines` `list-dir` `glob` `which` |
 | Writes | `create-dirs` `create-dir` `create-file` `create-temp-dir` `write-lines` `delete` `delete-if-exists` `delete-tree` `copy` `copy-tree` `move` |
 
 **Where they may go.** The working directory and the temp directory are

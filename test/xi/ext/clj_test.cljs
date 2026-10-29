@@ -1336,6 +1336,15 @@
     (is (str/includes? (result-text res)
                        "[false true true [\"b.txt\"] [\"b.txt\"] [\"txt\" \"b\" nil] false nil false]"))))
 
+(deftest babashka-fs-read-link
+  (let [d    (fs/mkdtempSync (node-path/join (os/tmpdir) "xi-read-link-"))
+        link (node-path/join d "link")]
+    (fs/symlinkSync "target.txt" link)
+    (let [res (eval! (str "[(fs/sym-link? \"" link "\") (fs/read-link \"" link "\")]"))]
+      (fs/rmSync d #js {:recursive true :force true})
+      (is (not (:is-error res)) (result-text res))
+      (is (str/includes? (result-text res) "[true \"target.txt\"]")))))
+
 (deftest babashka-fs-copy-move
   (let [res (eval! "(let [d (tmpdir) src (str d \"/src\") dst (str d \"/dst\")]
                       (fs/create-dirs (str src \"/sub\"))

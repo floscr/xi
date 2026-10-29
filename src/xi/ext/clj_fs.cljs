@@ -119,6 +119,8 @@
      'regular-file? (fn [p & [o]] (boolean (some-> (stat p 'fs/regular-file? o) .isFile)))
      'sym-link?     (fn [p] (boolean (some-> (stat-of (entry p 'fs/sym-link?) true)
                                              .isSymbolicLink)))
+     ;; the link's target as stored (possibly relative), not resolved
+     'read-link     (fn [p] (fs/readlinkSync (entry p 'fs/read-link)))
      'readable?     (fn [p] (access? (read p 'fs/readable?) (.-R_OK fs/constants)))
      'writable?     (fn [p] (access? (read p 'fs/writable?) (.-W_OK fs/constants)))
      'executable?   (fn [p] (access? (read p 'fs/executable?) (.-X_OK fs/constants)))
