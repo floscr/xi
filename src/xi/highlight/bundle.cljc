@@ -1,6 +1,7 @@
 (ns xi.highlight.bundle
   "Bundled grammars for environments without filesystem access (browser).
-   Grammars are inlined at compile time via macros."
+   Grammars are inlined at compile time via macros, so an edited grammar EDN
+   reaches the web build only after this namespace changes (see bundle.clj)."
   #?(:cljs (:require-macros [xi.highlight.bundle :refer [inline-registry inline-grammars]])))
 
 ;; Common languages bundled at compile time (~35KB of grammar data)

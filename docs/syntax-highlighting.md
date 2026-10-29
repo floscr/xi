@@ -157,6 +157,7 @@ Custom aliases (e.g. `cljs`, `cljc` → clojure) are added automatically by the 
 - `markdown.edn` (aliases `md`, `mkd`, `mdown`, `markdn`, `mdx`) — chroma's markdown lexer needs bygroups/delegation. Highlights headings, fenced code, blockquotes, list markers, inline code, bold/italic, links and bare URLs, and inline HTML tags.
 - `lua.edn` (alias `wlua`) — chroma's lua lexer is multi-state; its flattened root state was only the shebang rule. Highlights `--` and `--[==[ … ]==]` comments, quoted and long-bracket strings, numbers, keywords, `local`/`function`, `true`/`false`/`nil`, declared and called function names, standard-library builtins, and `::labels::`.
 - `rust.edn` (alias `rs`) — chroma's rust lexer is multi-state too. Highlights line/doc and block comments, `#[attributes]`, plain/byte/raw (`r#"…"#`) strings, chars vs. lifetimes, suffixed numbers, keywords, declared and called function names (incl. turbofish), macro invocations (`println!`), `true`/`false`/`Some`/`None`/`Ok`/`Err`, and primitive + common std types.
+- `python.edn` (aliases `py`, `python3`, `pyi`, …) — chroma's python lexer keeps strings and `def`/`class`/`import` in pushed states, so its flattened root had no string rule and no declaration keywords. Highlights comments, plain/prefixed/triple-quoted strings, numbers, keywords, `True`/`False`/`None`, defined and called names, builtins and exceptions, `self`/`cls`, and decorators.
 
 ## Adding a New Grammar
 

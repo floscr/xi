@@ -24,6 +24,9 @@ const HAND_WRITTEN = {
   markdown: ["markdown", "md", "mkd", "mdown", "markdn", "mdx"],
   lua: ["lua", "wlua"],
   rust: ["rust", "rs"],
+  python: ["python", "py", "sage", "python3", "py3", "starlark", "pyi", "pyw",
+           "jy", "sc", "sconstruct", "sconscript", "bzl", "buck", "workspace",
+           "star", "tac"],
 };
 
 // ── Token type mapping ─────────────────────────────────────────────────────

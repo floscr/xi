@@ -111,6 +111,42 @@
             [:comment "/* a\nb */"] [:string "r#\"x \"y\"\n\"#"]]
            (rust-tokens "#[derive(Debug, Clone)]\n/// doc\n/* a\nb */ r#\"x \"y\"\n\"#")))))
 
+(defn- python-tokens [src]
+  (->> (hl/tokenize (grammars/get-grammar "py") src)
+       hl/merge-adjacent
+       (remove #(= :text (:type %)))
+       (mapv (juxt :type :value))))
+
+(deftest tokenize-python
+  (testing "imports and declarations"
+    (is (= [[:keyword "import"] [:name-var "bpy"] [:punctuation ","] [:name-var "os"]]
+           (python-tokens "import bpy, os")))
+    (is (= [[:keyword-decl "def"] [:name-fn "render_rgba"] [:punctuation "("]
+            [:name-var "path"] [:punctuation "):"]]
+           (python-tokens "def render_rgba(path):"))))
+
+  (testing "attribute calls, strings and comments"
+    (is (= [[:name-var "OUT"] [:operator "="] [:name-var "bpy"] [:punctuation "."]
+            [:name-var "path"] [:punctuation "."] [:name-fn "abspath"]
+            [:punctuation "("] [:string "\"//../x.png\""] [:punctuation ")"]
+            [:comment "# out"]]
+           (python-tokens "OUT = bpy.path.abspath(\"//../x.png\")  # out"))))
+
+  (testing "prefixed strings, word operators, constants, numbers"
+    (is (= [[:name-var "x"] [:operator "="] [:string "f\"{n:.2f}\""] [:keyword "if"]
+            [:name-var "n"] [:keyword "is"] [:keyword "not"] [:keyword-special "None"]
+            [:keyword "else"] [:number "0x1F"]]
+           (python-tokens "x = f\"{n:.2f}\" if n is not None else 0x1F")))
+    (is (= [[:name-builtin "dict"] [:punctuation "("] [:name-var "lift"] [:operator "="]
+            [:number "1.02"] [:punctuation ")"]]
+           (python-tokens "dict(lift=1.02)"))))
+
+  (testing "decorators, self and docstrings spanning lines"
+    (is (= [[:name-builtin "@property"] [:keyword-decl "def"] [:name-fn "f"]
+            [:punctuation "("] [:name-builtin "self"] [:punctuation "):"]
+            [:string "\"\"\"a\n    b\"\"\""]]
+           (python-tokens "@property\ndef f(self):\n    \"\"\"a\n    b\"\"\"")))))
+
 (deftest merge-adjacent-test
   (testing "merges consecutive same-type tokens"
     (let [tokens [{:type :text :value "a"} {:type :text :value "b"} {:type :keyword :value "c"}]
