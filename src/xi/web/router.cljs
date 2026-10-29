@@ -372,6 +372,16 @@
       (and sid (open-view? room view))
       (assoc-in [:rooms room-id :ui :active-buffer] view))))
 
+(defn joining-view
+  "The view chat `sid` opens on once joined: with-buffer's pending buffer,
+   else the one restore-view brings back. While it is not the chat, the page
+   holds off painting the cached chat it would replace (xi.web.views)."
+  [st sid]
+  (let [{pending-sid :session-id buffer-id :buffer-id} (:web/pending-buffer st)]
+    (if (= sid pending-sid)
+      buffer-id
+      (get-in st [:web/session-views sid] buffers/chat))))
+
 (defn with-buffer
   "Wrap a navigate result to also open buffer `buffer-id` of the target chat,
    :web/pending-buffer until it is open (view-change waits on it): switch now

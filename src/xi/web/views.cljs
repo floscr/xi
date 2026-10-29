@@ -5368,11 +5368,17 @@
         sub-view   (when-not active-buffer
                      (some #(when (= active-buf (:id %)) %) sub-agents))
         has-tabs?  (boolean (or (seq buffers) (seq sub-agents)))
+        ;; A chat joining onto a buffer paints blank until the join, not the
+        ;; cached chat that buffer replaces; offline the join never comes.
+        joining?   (and sid (nil? room)
+                        (not (false? (:web/connected? state)))
+                        (not= buffers/chat (router/joining-view state sid)))
         nav-ctx (prompt-nav-ctx state history)
         ;; Drops stage on the composer, so only while it is actually showing.
         deny-reason (:web/deny-reason state)
         drop-zone? (and (nil? buffer-kind)
                         (nil? sub-view)
+                        (not joining?)
                         (not (string? (:text active-buffer)))
                         (not (:web/skill-form state))
                         (not (and room (= (:room-id deny-reason) (:id room))
@@ -5383,7 +5389,7 @@
      :loading? loading? :busy? busy? :new? new? :model model :ready? ready?
      :pa? pa? :dkey dkey :buffers buffers :active-buf active-buf
      :sub-agents sub-agents :has-tabs? has-tabs? :nav-ctx nav-ctx
-     :drop-zone? drop-zone? :file-drag? file-drag?}))
+     :joining? joining? :drop-zone? drop-zone? :file-drag? file-drag?}))
 
 (defn- chat-body
   "The chat itself: the timeline, its overlays and the compose dock."
@@ -5776,6 +5782,9 @@
 
         (and layout (= :empty view))
         (empty-pane dispatch! ctx layout pane-id)
+
+        (:joining? ctx)
+        [:div {:class ["file-tab"] :replicant/key "joining-view"}]
 
         :else
         (chat-body state dispatch! ctx)))))

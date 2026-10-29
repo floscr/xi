@@ -409,6 +409,19 @@
                 (:effects (nav (on "diff:session-edits")
                                {:page :chat :session-id "s1" :buffer-id :chat})))))))
 
+(deftest joining-view-names-the-view-a-join-opens-on
+  (let [room (-> (state/make-room "r1" {:session {:id "s1"}})
+                 (assoc-in [:ui :active-buffer] "file:a"))
+        left (:state (nav (-> (state/initial-state)
+                              (assoc-in [:rooms "r1"] room)
+                              (assoc :active-room "r1"))
+                          {:page :chat :session-id "s2"}))]
+    (is (= "file:a" (router/joining-view left "s1")) "the view s1 was left on")
+    (is (= :chat (router/joining-view left "s2")) "never viewed: the chat")
+    (testing "a navigation's pending buffer wins"
+      (let [st (:state (nav left {:page :chat :session-id "s1" :buffer-id :chat}))]
+        (is (= :chat (router/joining-view st "s1")))))))
+
 (deftest view-sync-follows-buffer-switches
   (let [room   (-> (state/make-room "r1" {:session {:id "s1"}})
                    (assoc-in [:ui :buffers "diff:git"] {:kind :diff :title "d"}))
