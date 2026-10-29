@@ -1680,6 +1680,11 @@
                                                [[:palette/reopen nil]
                                                 [:palette/reset-filter nil]]
                                                [[:palette/reset-filter nil]])})
+          ;; Tab on a session row: its actions page (views/palette-session-page).
+          :palette/open-session  (fn [st {:keys [session-id]}]
+                                   {:state   (assoc st :web/palette-page
+                                                    {:kind :session :session-id session-id})
+                                    :effects [[:palette/reset-filter nil]]})
           :palette/open          (fn [st _]
                                    {:state (-> st
                                                (assoc :web/palette-open? true)

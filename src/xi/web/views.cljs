@@ -7160,6 +7160,8 @@
      [:button (cond-> {:class ["command-item"] :role "option" :type "button"
                        :data-command-value
                        (if search? (str label " " (some-> cwd shorten-path)) "")
+                       ;; Tab drills into the session's actions (palette-keydown)
+                       :data-palette-session session-id
                        :on {:click (fn [_] (dispatch! {:type :route/navigate
                                                        :page :chat
                                                        :session-id session-id}))}}
@@ -7852,6 +7854,34 @@
        (apply cmd/command-group {:heading title}
          (map #(palette-ext-row state dispatch! %) rows))])))
 
+(defn- palette-session-page
+  "A session's actions as a palette sub-page (Tab on a session row): Open, then
+   the sidebar card's context menu (session-menu-items), one group per section."
+  [state dispatch! {:keys [session-id]}]
+  (if-let [card (first (active-first state (filter #(= session-id (:session-id %))
+                                                   (get-in state [:lobby :sessions]))))]
+    (let [items    (session-menu-items dispatch! (:web/session-menu-items state)
+                                       (assoc card :dismissable? true))
+          sections (remove #(= :separator (:type (first %)))
+                           (partition-by #(= :separator (:type %)) items))
+          row      (fn [{:keys [label icon on-click] question :confirm}]
+                     (cmd/command-item
+                      {:icon icon
+                       :on-click (fn [_] (when (or (nil? question) (js/confirm question))
+                                           (on-click)))}
+                      label))]
+      (into [:div {:replicant/key [:session-page session-id]}
+             (cmd/command-group {:heading (or (:name card) "New session")}
+               (cmd/command-item
+                {:icon :chevron-right
+                 :description (some-> (:cwd card) shorten-path)
+                 :on-click (fn [_] (dispatch! {:type :route/navigate :page :chat
+                                               :session-id session-id}))}
+                "Open"))]
+            (for [section sections]
+              (apply cmd/command-group {} (map row section)))))
+    [:div {:class ["command-empty"]} "Session not found"]))
+
 (defn- palette-dialog-page
   "A pending :menu? select dialog (xi.api.dialog/select) as a palette page:
    its options in order, picking one answers it. Empty once it is answered."
@@ -7890,8 +7920,8 @@
         (.add (.-classList item) "command-item--active")))))
 
 (defn- palette-keydown
-  "Extra keyboard layer over ui-runtime.js: Tab drills the active project row
-   or extension menu row (or opens its file finder on the picker page, or
+  "Extra keyboard layer over ui-runtime.js: Tab drills the active project,
+   session or extension menu row (or opens its file finder on the picker page, or
    flips the search page's toggle); Shift+Tab / Backspace-on-empty backs out of a sub-page."
   [dispatch! palette-page]
   (fn [^js e]
@@ -7907,10 +7937,13 @@
 
         (and (nil? palette-page) tab?)
         (when-let [^js row (active)]
-          (when-let [cwd (.. row -dataset -paletteDrill)]
-            (.preventDefault e)
-            (dispatch! {:type :palette/drill :cwd cwd
-                        :label (.. row -dataset -paletteLabel)})))
+          (if-let [sid (.. row -dataset -paletteSession)]
+            (do (.preventDefault e)
+                (dispatch! {:type :palette/open-session :session-id sid}))
+            (when-let [cwd (.. row -dataset -paletteDrill)]
+              (.preventDefault e)
+              (dispatch! {:type :palette/drill :cwd cwd
+                          :label (.. row -dataset -paletteLabel)}))))
 
         (and (= :projects (:kind palette-page)) tab?)
         (when-let [cwd (some-> ^js (active) (.. -dataset -paletteDrill))]
@@ -8088,6 +8121,7 @@
          :new-chat       (palette-new-chat-page state dispatch! palette-page)
          :ext-menu       (palette-ext-menu-page state dispatch! palette-page)
          :dialog         (palette-dialog-page state dispatch! palette-page)
+         :session        (palette-session-page state dispatch! palette-page)
          (apply cmd/command-group {:heading (str "Project · " (:label palette-page))}
            (palette-project-actions state dispatch! (:cwd palette-page)))))
 

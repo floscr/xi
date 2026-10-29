@@ -474,6 +474,7 @@ These keys belong to a control and are not in the keymap:
 | `Ctrl+Enter` (on one of your messages) | Edit it in place: its attachments stay above the bubble with an × each, and `Ctrl+V` in the bubble adds a pasted image. Save goes back to before the message and sends the new text with them |
 | `↑`/`↓`, `Alt+k`/`Alt+j` or `Ctrl+p`/`Ctrl+n` (in the `/` command list) | Move through the matching commands; `Enter` or `Tab` runs the selected one |
 | `Tab` or `Enter` (in the palette, on a project) | Open that project's actions: new chat, git status, search its sessions, open its sessions |
+| `Tab` (in the palette, on a session) | Open that session's actions: open, pin, rename, hide from Recent, copy its ID or link, delete |
 | `Alt+Enter` (in a project's actions, on New chat) | Type a prompt instead (`Ctrl+V` attaches images, shown below it); `Enter` starts the chat in the background and you stay where you are. The chat shows up under Recent |
 | `Tab` (in a project picker, on a project) | Find a file in that project instead: the picker's own action applies to the file, so from the compose box's Projects button it inserts the file's path |
 | `Alt` (held, in the palette) | Show a key badge on each of the first rows; `Alt` + that key picks the row. Badges follow the filtered list, so type first, then hold Alt |
