@@ -15,6 +15,7 @@
             [xi.buffers :as buffers]
             [xi.core.state :as state]
             [xi.paths :as paths]
+            [xi.server.files :as files]
             [xi.tools.fs :as tfs]
             [xi.tools.util :as tools-util]))
 
@@ -43,22 +44,24 @@
 
 (defn- file-load-fx
   "Read the file relative to the room's cwd and install it as a :file buffer
-   (one per path, xi.buffers/file-id), then show it on the asking client. On
-   failure the buffer's text carries the error: the web client has no status
-   line, so a :ui/status would fail silently there."
+   (one per path, xi.buffers/file-id), then show it on the asking client. An
+   image comes as base64 :data + :media-type (xi.server.files/read-contents).
+   On failure the buffer's text carries the error: the web client has no
+   status line, so a :ui/status would fail silently there."
   [{:keys [dispatch! state]} {:keys [room-id path client-id]}]
   (let [room     (state/get-room state room-id)
         cwd      (or (:cwd room) (.cwd js/process))
         resolved (locate-file path cwd)
-        text     (try
-                   (if (fs/existsSync resolved)
-                     (fs/readFileSync resolved "utf8")
-                     (str "File not found:\n" resolved))
-                   (catch :default e
-                     (str "Could not read " resolved ":\n" (.-message e))))
+        contents (if (fs/existsSync resolved)
+                   (let [{:keys [error] :as c} (files/read-contents resolved)]
+                     (if error
+                       {:text (str "Could not read " resolved ":\n" error)}
+                       c))
+                   {:text (str "File not found:\n" resolved)})
         id       (buffers/file-id path)]
     (dispatch! {:type :ui/buffer-set :room-id room-id :buffer-id id
-                :buffer {:kind :file :title path :path path :abs-path resolved :text text}})
+                :buffer (merge {:kind :file :title path :path path :abs-path resolved}
+                               contents)})
     (dispatch! (cond-> {:type :ui/buffer-switch :room-id room-id :buffer-id id}
                  client-id (assoc :client-id client-id)))))
 

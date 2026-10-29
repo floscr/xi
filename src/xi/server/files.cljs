@@ -137,21 +137,74 @@
   "Cap the viewer at 2 MB so a stray huge/binary file can't wedge the client."
   (* 2 1024 1024))
 
+(def ^:private max-image-bytes
+  "Images travel as base64 in the buffer (every client gets it), so they get
+   a cap of their own: screenshots and renders, not raw camera dumps."
+  (* 10 1024 1024))
+
+(def ^:private image-media-types
+  {"png"  "image/png"
+   "jpg"  "image/jpeg"
+   "jpeg" "image/jpeg"
+   "gif"  "image/gif"
+   "webp" "image/webp"
+   "svg"  "image/svg+xml"
+   "bmp"  "image/bmp"
+   "avif" "image/avif"
+   "ico"  "image/x-icon"})
+
+(defn image-media-type
+  "The media type of `path` when its extension names an image the browser
+   can show, else nil."
+  [path]
+  (let [ext (-> (.extname node-path (or path "")) (subs 1) str/lower-case)]
+    (get image-media-types ext)))
+
+(defn- size-label [bytes]
+  (cond
+    (< bytes 1024)    (str bytes " B")
+    (< bytes 1048576) (str (js/Math.round (/ bytes 1024)) " KB")
+    :else             (str (.toFixed (/ bytes 1048576) 1) " MB")))
+
+(defn read-contents
+  "What the viewer shows for the file at `abs`: {:text s} for a text file,
+   {:data base64 :media-type mime :text note} for an image (the web client
+   renders it from a data: URL like a prompt's attachment, the TUI shows the
+   note), or {:error message} (a directory, too large, unreadable)."
+  [abs]
+  (try
+    (let [st    (fs/statSync abs)
+          size  (.-size st)
+          image (image-media-type abs)]
+      (cond
+        (.isDirectory st)
+        {:error "Is a directory"}
+
+        (and image (> size max-image-bytes))
+        {:error "Image too large to view (> 10 MB)"}
+
+        image
+        {:data       (.toString (fs/readFileSync abs) "base64")
+         :media-type image
+         :text       (str "Image · " image " · " (size-label size))}
+
+        (> size max-file-bytes)
+        {:error "File too large to view (> 2 MB)"}
+
+        :else
+        {:text (fs/readFileSync abs "utf8")}))
+    (catch :default e
+      {:error (.-message e)})))
+
 (defn read-file
-  "Read a file's UTF-8 contents for the viewer. Returns {:path abs :text ...} or
-   {:path abs :error message} (missing, a directory, too large, or unreadable)."
+  "Read a file for the viewer. Returns {:path abs} merged with read-contents:
+   :text, an image's :data + :media-type, or :error (missing, a directory,
+   too large, or unreadable)."
   [path cwd]
   ;; path.resolve joins right-to-left; when path is absolute cwd is ignored,
   ;; which is what the browser always sends.
   (let [abs (.resolve node-path (or cwd (.cwd js/process)) (or path ""))]
-    (try
-      (let [st (fs/statSync abs)]
-        (cond
-          (.isDirectory st) {:path abs :error "Is a directory"}
-          (> (.-size st) max-file-bytes) {:path abs :error "File too large to view (> 2 MB)"}
-          :else {:path abs :text (fs/readFileSync abs "utf8")}))
-      (catch :default e
-        {:path abs :error (.-message e)}))))
+    (assoc (read-contents abs) :path abs)))
 
 (defn exists
   "Whether `path` (as inline code names it) is a file: `~` expanded, then

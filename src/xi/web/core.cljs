@@ -1821,10 +1821,11 @@
                                                   [:ws/send {:type :file/web-read :cwd cwd :path path}])]}))
           ;; A client-local file buffer, one per path (xi.buffers/file-id): the
           ;; virtual new chat's (:web/pending-room) until it has a room.
-          :file/web-read-result  (fn [st {:keys [path text error] :as ev}]
+          :file/web-read-result  (fn [st {:keys [path text error data media-type] :as ev}]
                                    (let [id     (buffers/file-id path)
-                                         buf    {:kind :file :title path :path path
-                                                 :text (or text (str "Could not read file:\n" error))}
+                                         buf    (cond-> {:kind :file :title path :path path
+                                                         :text (or text (str "Could not read file:\n" error))}
+                                                  media-type (assoc :data data :media-type media-type))
                                          open   (fn [room]
                                                   (-> room
                                                       (buffers/install id buf (:event/ts ev))

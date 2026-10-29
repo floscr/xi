@@ -243,7 +243,9 @@ heading), the system prompt (`/prompt`),
 terminals (`/term`) and the review canvas (`/canvas-review`).
 These are its **buffers**. Each file and each diff source is its own buffer,
 so opening a second file keeps the first; opening the same one again
-refreshes it in place.
+refreshes it in place. A Markdown file shows rendered, code highlighted, an
+image (PNG, JPEG, GIF, WebP, SVG, up to 10 MB) as the picture; click it to
+zoom.
 
 - **Switching.** Once a chat has a buffer, the pill in the top bar names the
   view you are looking at. Click it for the list: the chat, every buffer in

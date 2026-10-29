@@ -3707,17 +3707,32 @@
                          fragment (assoc :anchor fragment)))))))))
 
 (defn- file-tab-view
-  [dispatch! state {:keys [path abs-path text]}]
+  "A :file buffer: markdown rendered, code highlighted, an image (base64
+   :data + :media-type from xi.server.files/read-contents) shown and opening
+   the lightbox for zoom; anything else as plain text."
+  [dispatch! state {:keys [path abs-path text data media-type]}]
   (let [ext     (file-ext path)
-        grammar (grammars/get-grammar ext)]
+        grammar (grammars/get-grammar ext)
+        image   (when (str/starts-with? (or media-type "") "image/")
+                  (str "data:" media-type ";base64," data))]
     ;; data-file-path: the code-block menu offers the file to extensions
     [:div {:class ["file-tab"] :data-file-path path}
      (file-header dispatch! state path {:class "file-tab-header" :view? false :abs-path abs-path}
                   [:span {:class ["file-tab-path"]} path]
                   (file-header-actions dispatch! state path))
-     (if (contains? md-diff/markdown-exts ext)
+     (cond
+       image
+       [:div {:class ["file-tab-image"]}
+        [:img {:class ["file-tab-image-img" "lightbox-thumb"]
+               :src image
+               :alt path
+               :on {:click (fn [_] (dispatch! {:type :lightbox/open :src image}))}}]]
+
+       (contains? md-diff/markdown-exts ext)
        [:div {:class ["file-tab-md"]}
         [:div {:class ["post-content"]} (md/render text)]]
+
+       :else
        [:pre {:class ["file-tab-code"]}
         (if grammar (highlight-code grammar text) text)])]))
 
@@ -5665,8 +5680,6 @@
           (bubble-menu dispatch! (:id room) menu))
         (when-let [menu (:web/thread-menu state)]
           (thread-menu dispatch! (:id room) menu))
-        (when-let [lb (:web/lightbox state)]
-          (image-viewer dispatch! lb (image-edit/view-props state)))
         [:div {:class ["compose-dock"]}
          (when (:web/copy-flash state) (copy-toast))
          ;; Deny-with-reason holds the dock only while its ask is still pending.
@@ -9656,5 +9669,9 @@
             (workspace-dialog state dispatch!)
             (auth-request-banner state dispatch!)
             (auth-overlay state)
+            ;; the image viewer serves every page: a chat's images and a
+            ;; file tab's picture alike
+            (when-let [lb (:web/lightbox state)]
+              (image-viewer dispatch! lb (image-edit/view-props state)))
             ;; extension overlays (xi.web.overlays), over every page
             (overlays/views state dispatch!))]))
