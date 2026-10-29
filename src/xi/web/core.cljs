@@ -3855,6 +3855,49 @@
            (.preventDefault e)))))
    #js {:passive false}))
 
+(defn- install-keyboard-mode-tracker!
+  "A keypress puts <html> in keyboard mode (data-keyboard) until the mouse
+   really moves or presses; style.css then lets menu rows ignore a resting
+   pointer, so it neither paints a second :hover row next to the keyboard
+   selection nor grabs the selection when the list scrolls under it.
+   Firefox fires mousemoves on reflow too, hence the screen-position check."
+  []
+  (let [root     (.-documentElement js/document)
+        last-xy  (atom nil)
+        retarget (atom nil)
+        leave!   #(.removeAttribute root "data-keyboard")]
+    (.addEventListener js/document "keydown"
+                       (fn [^js e]
+                         (when-not (#{"Shift" "Control" "Alt" "Meta"} (.-key e))
+                           (.setAttribute root "data-keyboard" "")))
+                       #js {:capture true :passive true})
+    (.addEventListener js/document "mousemove"
+                       (fn [^js e]
+                         (let [xy [(.-screenX e) (.-screenY e)]]
+                           (when (not= xy @last-xy)
+                             (reset! last-xy xy)
+                             (leave!))))
+                       #js {:capture true :passive true})
+    ;; A press without a move first was hit-tested past the rows: its click
+    ;; belongs to the row under the pointer once keyboard mode is left.
+    (.addEventListener js/document "pointerdown"
+                       (fn [^js e]
+                         (reset! retarget
+                                 (when (.hasAttribute root "data-keyboard")
+                                   (leave!)
+                                   (let [under (.elementFromPoint js/document (.-clientX e) (.-clientY e))]
+                                     (when (not= under (.-target e)) under)))))
+                       #js {:capture true :passive true})
+    (.addEventListener js/document "click"
+                       (fn [^js e]
+                         (when-let [^js under @retarget]
+                           (reset! retarget nil)
+                           (when (.contains (.-target e) under)
+                             (.stopImmediatePropagation e)
+                             (.preventDefault e)
+                             (.click under))))
+                       #js {:capture true})))
+
 ;; TEMP: on-screen palette scroll diagnostics for iOS — remove after. Off
 ;; unless localStorage has "xi/debug-palette-scroll" (any value).
 (defn- install-palette-scroll-debug! []
@@ -4062,6 +4105,7 @@
     (install-right-edge-swipe! state dispatch!)
     (attach-pane-listeners! dispatch!)
     (install-palette-touch-guard!)
+    (install-keyboard-mode-tracker!)
     (when (some? (.getItem js/localStorage "xi/debug-palette-scroll"))
       (install-palette-scroll-debug!))
     ;; Prevent iOS Safari smart-zoom (double-tap & pinch).

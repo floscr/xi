@@ -2652,6 +2652,16 @@ body {
   background-color: var(--bg-2, rgba(128,128,128,0.1));
 }
 
+/* Keyboard mode (core/install-keyboard-mode-tracker!): menu rows ignore the
+   resting mouse until it moves, so only the keyboard selection lights up. */
+@media (hover: hover) {
+  :root[data-keyboard] :is(.command-item, .context-menu-item, .select-option,
+                           .tag-dropdown-item, .slash-item, .confirm-menu-item,
+                           .buffer-menu-item) {
+    pointer-events: none;
+  }
+}
+
 .slash-item-name {
   font-weight: 600;
   font-size: var(--font-sm);
