@@ -338,7 +338,7 @@
    first. The prompt joins the history as a :user entry and :exchanges
    (see the ns doc). :ended-anchor stays until the turn ends, so the result
    post doesn't jump while the answer streams into it."
-  [st {:keys [room-id sub-id text images]}]
+  [st {:keys [room-id sub-id text images] at :event/ts}]
   (let [text  (some-> text str/trim not-empty)
         room  (state/get-room st room-id)
         child (find-child st room-id sub-id)]
@@ -361,7 +361,8 @@
                                               #(conj (or % [{:answer (:result c)
                                                              :status (:status c)}])
                                                      {:question text}))
-                                      (update :history (fnil conj []) {:kind :user :text text}))))
+                                      (update :history (fnil conj [])
+                                              (cond-> {:kind :user :text text} at (assoc :at at))))))
          :effects [(update (start-effect room child text images) 1 assoc
                            :resume (select-keys child [:cli-session-id :session-id])
                            :history prior)]}))))
@@ -369,30 +370,32 @@
 (defn- steered
   "The running turn took a steering message (:subagent/steer): it joins the
    child's history where the turn stood."
-  [st {:keys [room-id sub-id text images]}]
+  [st {:keys [room-id sub-id text images] at :event/ts}]
   (when (find-child st room-id sub-id)
     {:state (update-child st room-id sub-id
                           #(update % :history (fnil conj [])
                                    (cond-> {:kind :user :text text :steered? true}
-                                     (seq images) (assoc :images images))))}))
+                                     (seq images) (assoc :images images)
+                                     at           (assoc :at at))))}))
 
-(defn- text-delta [st {:keys [room-id sub-id text]}]
+(defn- text-delta [st {:keys [room-id sub-id text] at :event/ts}]
   (when (find-child st room-id sub-id)
     {:state (update-child st room-id sub-id
-                          #(update % :history agent/fold-delta :text text))}))
+                          #(update % :history agent/fold-delta :text text at))}))
 
-(defn- thinking-delta [st {:keys [room-id sub-id text]}]
+(defn- thinking-delta [st {:keys [room-id sub-id text] at :event/ts}]
   ;; Blank deltas → no entry; see xi.agent/thinking-delta.
   (when (and (find-child st room-id sub-id) (seq text))
     {:state (update-child st room-id sub-id
-                          #(update % :history agent/fold-delta :thinking text))}))
+                          #(update % :history agent/fold-delta :thinking text at))}))
 
-(defn- tool-start [st {:keys [room-id sub-id id tool arguments]}]
+(defn- tool-start [st {:keys [room-id sub-id id tool arguments] at :event/ts}]
   (when (find-child st room-id sub-id)
     {:state (update-child st room-id sub-id
                           #(update % :history conj
-                                   {:kind :tool-call :id id :tool tool
-                                    :arguments arguments :status :running}))}))
+                                   (cond-> {:kind :tool-call :id id :tool tool
+                                            :arguments arguments :status :running}
+                                     at (assoc :at at))))}))
 
 (defn- tool-args [st {:keys [room-id sub-id id arguments]}]
   (when (find-child st room-id sub-id)

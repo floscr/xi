@@ -14,7 +14,8 @@
                        the provider :store cuts the transcript) ─►
                        :session/rewound (queued prompts drained)
 
-   History entries (room :history) are flat maps:
+   History entries (room :history) are flat maps, each with :at (epoch ms it
+   began; the web's hover time) when known:
      {:kind :user      :text :images}         ;; :steered? when sent mid-turn
      {:kind :text      :text :done?}          ;; assistant text, folded deltas
      {:kind :thinking  :text :done?}
@@ -38,12 +39,14 @@
 ;; ── History folding (pure) ───────────────────────────────────────────────────
 
 (defn fold-delta
-  "Extend the trailing open entry of `kind`, or start a new one."
-  [history kind text]
-  (let [last-entry (peek history)]
-    (if (and (= kind (:kind last-entry)) (not (:done? last-entry)))
-      (conj (pop history) (update last-entry :text str text))
-      (conj history {:kind kind :text text}))))
+  "Extend the trailing open entry of `kind`, or start a new one, stamped
+   :at `at` when given."
+  ([history kind text] (fold-delta history kind text nil))
+  ([history kind text at]
+   (let [last-entry (peek history)]
+     (if (and (= kind (:kind last-entry)) (not (:done? last-entry)))
+       (conj (pop history) (update last-entry :text str text))
+       (conj history (cond-> {:kind kind :text text} at (assoc :at at)))))))
 
 (defn update-tool-call
   [history id f]
@@ -205,7 +208,7 @@
                                   (get-in room [:session :inject-history?]))
                          (:history room))})))
 
-(defn- begin-turn [st room prompt]
+(defn- begin-turn [st room prompt at]
   ;; A live turn diverges the history from the resumed snapshot, so the
   ;; cached :msg-hash/:msg-count are cleared (else the web cache's prefix
   ;; check would double-append the tail).
@@ -220,7 +223,8 @@
                                       ;; who sent it — clients label prompts from
                                       ;; other users by this id
                                       :user (:user prompt)}
-                               label (assoc :collapsed-label label)))
+                               label (assoc :collapsed-label label)
+                               at    (assoc :at at)))
                   (update-in [:rooms (:id room)] dissoc :msg-hash :msg-count)
                   (assoc-in [:rooms (:id room) :agent :busy?] true))
      :effects [(start-turn-effect room provider-prompt)]}))
@@ -275,12 +279,12 @@
         {:state (update-in st [:rooms room-id :agent :queued] (fnil conj []) prompt)}
 
         :else
-        (begin-turn st room prompt)))))
+        (begin-turn st room prompt (:event/ts ev))))))
 
 (defn- steered
   "The running turn took a steering prompt (:provider/steer): it leaves the
    queue and joins the history where the turn stood."
-  [st {:keys [room-id prompt]}]
+  [st {:keys [room-id prompt] at :event/ts}]
   (when-let [room (state/get-room st room-id)]
     (let [queued (vec (get-in room [:agent :queued]))
           idx    (first (keep-indexed (fn [i q] (when (= q prompt) i)) queued))]
@@ -289,27 +293,29 @@
                     (assoc-in [:rooms room-id :agent :queued]
                               (into (subvec queued 0 idx) (subvec queued (inc idx))))
                     (update-in [:rooms room-id :history] conj
-                               {:kind :user :text (:text prompt) :images (:images prompt)
-                                :user (:user prompt) :steered? true})
+                               (cond-> {:kind :user :text (:text prompt) :images (:images prompt)
+                                        :user (:user prompt) :steered? true}
+                                 at (assoc :at at)))
                     ;; the history diverged from the cached transcript slice
                     (update-in [:rooms room-id] dissoc :msg-hash :msg-count))}))))
 
-(defn- text-delta [st {:keys [room-id text]}]
+(defn- text-delta [st {:keys [room-id text] at :event/ts}]
   (when (state/get-room st room-id)
-    {:state (update-in st [:rooms room-id :history] fold-delta :text text)}))
+    {:state (update-in st [:rooms room-id :history] fold-delta :text text at)}))
 
-(defn- thinking-delta [st {:keys [room-id text]}]
+(defn- thinking-delta [st {:keys [room-id text] at :event/ts}]
   ;; Some models stream thinking deltas as empty strings (reasoning
   ;; withheld); ignore them.
   (when (and (state/get-room st room-id) (seq text))
-    {:state (update-in st [:rooms room-id :history] fold-delta :thinking text)}))
+    {:state (update-in st [:rooms room-id :history] fold-delta :thinking text at)}))
 
-(defn- tool-start [st {:keys [room-id id tool arguments at]}]
+(defn- tool-start [st {:keys [room-id id tool arguments at] ts :event/ts}]
   (when (state/get-room st room-id)
     {:state (update-in st [:rooms room-id :history] conj
                        (cond-> {:kind :tool-call :id id :tool tool
                                 :arguments arguments :status :running}
-                         at (assoc :started-at at)))}))
+                         at (assoc :started-at at)
+                         ts (assoc :at ts)))}))
 
 (defn- tool-args [st {:keys [room-id id arguments]}]
   (when (state/get-room st room-id)
@@ -323,10 +329,10 @@
                                :is-error (boolean is-error)
                                :status (if is-error :error :done)))}))
 
-(defn- agent-error [st {:keys [room-id error]}]
+(defn- agent-error [st {:keys [room-id error] at :event/ts}]
   (when (state/get-room st room-id)
     {:state (update-in st [:rooms room-id :history] conj
-                       {:kind :error :error error})}))
+                       (cond-> {:kind :error :error error} at (assoc :at at)))}))
 
 (defn- turn-end [st {:keys [room-id usage cost provider-session-id aborted?]}]
   (when-let [room (state/get-room st room-id)]

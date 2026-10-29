@@ -631,6 +631,19 @@
             {:kind :user :text "new q"}]
            h))))
 
+(deftest messages->history-keeps-transcript-times
+  ;; A block's transcript time (xi.session) becomes its entry's :at, which
+  ;; the web's Ask button shows; a tool call takes its tool_use line's time.
+  (is (= [{:kind :user :text "q" :at 1000}
+          {:kind :text :text "a" :done? true :at 2000}
+          {:kind :tool-call :id "t1" :tool "bash" :arguments {} :status :done
+           :result "ok" :is-error false :at 3000}]
+         (commands/messages->history
+          [{:type :text :role "user" :text "q" :at 1000}
+           {:type :text :role "assistant" :text "a" :at 2000}
+           {:type :tool-use :tool-use-id "t1" :name "bash" :arguments {} :at 3000}
+           {:type :tool-result :tool-use-id "t1" :content "ok" :is-error false :at 4000}]))))
+
 (deftest session-resumed-rebuilds-history
   (let [messages [{:type :text :role "user" :text "question"}
                   {:type :text :role "assistant" :text "answer"}

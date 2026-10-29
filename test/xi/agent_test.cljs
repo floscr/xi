@@ -52,6 +52,18 @@
                            {:type :prompt/submit :room-id "r" :text "hi"})]
       (is (= "carol" (:user (first (history st))))))))
 
+(deftest entries-take-the-event-time
+  ;; The dispatcher stamps :event/ts (xi.core.app); an entry keeps the time
+  ;; it began as :at, and a folded delta doesn't move it.
+  (let [st (apply-events (with-room)
+                         {:type :prompt/submit :room-id "r" :text "hi" :event/ts 100}
+                         {:type :agent/text-delta :room-id "r" :text "Hel" :event/ts 200}
+                         {:type :agent/text-delta :room-id "r" :text "lo" :event/ts 300}
+                         {:type :agent/tool-start :room-id "r" :id "t1" :tool "bash"
+                          :arguments {} :event/ts 400})]
+    (is (= [100 200 400] (mapv :at (history st))))
+    (is (= "Hello" (:text (second (history st)))))))
+
 (deftest deltas-fold-into-entries
   (let [st (apply-events (with-room)
                          {:type :agent/text-delta :room-id "r" :text "Hel"}

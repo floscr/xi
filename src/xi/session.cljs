@@ -921,10 +921,19 @@
      :name (:name summary)
      :source :claude}))
 
+(defn- with-line-time
+  "Stamp a transcript line's blocks with its ISO :timestamp as :at (epoch ms)."
+  [line blocks]
+  (let [at (some-> (:timestamp line) js/Date.parse)]
+    (if (and at (not (js/isNaN at)))
+      (map #(assoc % :at at) blocks)
+      blocks)))
+
 (defn- read-claude-session-messages
   "Conversation messages of a Claude CLI session file as block maps: {:type
    :text :role :text}, {:type :tool-use :name :tool-use-id :arguments}, {:type
-   :tool-result :tool-use-id :content :is-error}, {:type :api-error :message}."
+   :tool-result :tool-use-id :content :is-error}, {:type :api-error :message},
+   each with :at, the line's time in epoch ms."
   [filepath]
   (try
     (let [content (fs/readFileSync filepath "utf8")
@@ -941,79 +950,81 @@
            (filter #(and (contains? #{"user" "assistant"} (:type %))
                          (not (:isMeta %))))
            (mapcat (fn [line]
-                     (let [content (get-in line [:message :content])
-                           role (:type line)]
-                       (cond
-                         ;; Plain text user message
-                         (and (= "user" role) (string? content)
-                              (not (str/starts-with? content "The conversation history")))
-                         [{:type :text :role "user" :text content}]
+                     (with-line-time
+                      line
+                      (let [content (get-in line [:message :content])
+                            role (:type line)]
+                        (cond
+                          ;; Plain text user message
+                          (and (= "user" role) (string? content)
+                               (not (str/starts-with? content "The conversation history")))
+                          [{:type :text :role "user" :text content}]
 
-                         ;; A failure the CLI stored as a synthetic assistant
-                         ;; message (usage limit, credits, …): its text is the
-                         ;; notice, rendered as an error card (xi.error-info).
-                         (and (= "assistant" role) (:isApiErrorMessage line)
-                              (sequential? content))
-                         [{:type :api-error
-                           :message (->> content
-                                         (filter #(= "text" (:type %)))
-                                         (map :text)
-                                         (apply str))}]
+                          ;; A failure the CLI stored as a synthetic assistant
+                          ;; message (usage limit, credits, …): its text is the
+                          ;; notice, rendered as an error card (xi.error-info).
+                          (and (= "assistant" role) (:isApiErrorMessage line)
+                               (sequential? content))
+                          [{:type :api-error
+                            :message (->> content
+                                          (filter #(= "text" (:type %)))
+                                          (map :text)
+                                          (apply str))}]
 
-                         ;; Sequential content — extract all block types
-                         (and (sequential? content))
-                         (->> content
-                              (keep (fn [block]
-                                      (case (:type block)
-                                        "text"
-                                        {:type :text :role role :text (:text block)}
+                          ;; Sequential content — extract all block types
+                          (and (sequential? content))
+                          (->> content
+                               (keep (fn [block]
+                                       (case (:type block)
+                                         "text"
+                                         {:type :text :role role :text (:text block)}
 
-                                        "image"
-                                        (let [source (:source block)]
-                                          (when (and source (= "base64" (:type source)))
-                                            {:type :image
-                                             :role role
-                                             :media-type (:media_type source)
-                                             :data (:data source)}))
+                                         "image"
+                                         (let [source (:source block)]
+                                           (when (and source (= "base64" (:type source)))
+                                             {:type :image
+                                              :role role
+                                              :media-type (:media_type source)
+                                              :data (:data source)}))
 
-                                        "tool_use"
-                                        {:type :tool-use
-                                         :name (:name block)
-                                         :tool-use-id (:id block)
-                                         :arguments (or (:input block) {})}
+                                         "tool_use"
+                                         {:type :tool-use
+                                          :name (:name block)
+                                          :tool-use-id (:id block)
+                                          :arguments (or (:input block) {})}
 
-                                        "tool_result"
-                                        (let [c (:content block)
-                                              text (cond
-                                                     (string? c) c
-                                                     (sequential? c)
-                                                     (->> c
-                                                          (keep (fn [b]
-                                                                  (cond
-                                                                    (string? b) b
-                                                                    (= "text" (:type b)) (:text b)
-                                                                    :else nil)))
-                                                          (str/join "\n"))
-                                                     :else nil)
-                                              ;; Image blocks are kept so a resumed view_image result shows
-                                              ;; its picture (the API {:source {:media_type …}} shape).
-                                              images (when (sequential? c)
-                                                       (filterv #(and (map? %)
-                                                                      (= "image" (:type %)))
-                                                                c))]
-                                          {:type :tool-result
-                                           :tool-use-id (:tool_use_id block)
-                                           :content (if (seq images)
-                                                      (cond-> []
-                                                        (seq text) (conj {:type "text" :text text})
-                                                        true       (into images))
-                                                      (or text ""))
-                                           :is-error (boolean (:is_error block))})
+                                         "tool_result"
+                                         (let [c (:content block)
+                                               text (cond
+                                                      (string? c) c
+                                                      (sequential? c)
+                                                      (->> c
+                                                           (keep (fn [b]
+                                                                   (cond
+                                                                     (string? b) b
+                                                                     (= "text" (:type b)) (:text b)
+                                                                     :else nil)))
+                                                           (str/join "\n"))
+                                                      :else nil)
+                                               ;; Image blocks are kept so a resumed view_image result shows
+                                               ;; its picture (the API {:source {:media_type …}} shape).
+                                               images (when (sequential? c)
+                                                        (filterv #(and (map? %)
+                                                                       (= "image" (:type %)))
+                                                                 c))]
+                                           {:type :tool-result
+                                            :tool-use-id (:tool_use_id block)
+                                            :content (if (seq images)
+                                                       (cond-> []
+                                                         (seq text) (conj {:type "text" :text text})
+                                                         true       (into images))
+                                                       (or text ""))
+                                            :is-error (boolean (:is_error block))})
 
-                                        ;; Skip thinking, etc.
-                                        nil))))
+                                         ;; Skip thinking, etc.
+                                         nil))))
 
-                         :else nil))))
+                          :else nil)))))
            vec))
     (catch :default _e [])))
 

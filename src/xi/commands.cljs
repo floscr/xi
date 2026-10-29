@@ -97,8 +97,11 @@
                             messages)
         ;; Blocks read from a pre-truncation ancestor session are display-only:
         ;; tag their history entries :no-llm? so xi.agent never replays them.
+        ;; The block's transcript time goes along as :at.
         flag (fn [entry block]
-               (cond-> entry (:pre-truncation? block) (assoc :no-llm? true)))
+               (cond-> entry
+                 (:pre-truncation? block) (assoc :no-llm? true)
+                 (:at block)              (assoc :at (:at block))))
         ;; Attach buffered image blocks to the most recent user entry — in the
         ;; transcript they immediately follow that message's text block —
         ;; ahead of its file attachments.
