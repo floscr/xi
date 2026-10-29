@@ -719,7 +719,7 @@ See docs/guide/command-line.md for the full reference.")
                        :system-parts system-parts
                        :agents-files agents-files
                        :ext (cond-> (:room-ext-init composed)
-                              prof (merge (profile/room-ext prof)))
+                              prof (profile/merge-room-ext prof))
                        :agent-id agent
                        :only-tools (:tools prof)
                        :session sess}})

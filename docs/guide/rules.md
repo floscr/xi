@@ -85,6 +85,9 @@ To keep one of your own asks in sane mode, give its action `:guard :sane`;
  :action {:type :ask :guard :always}}
 ```
 
+An [agent profile](agents.md) with `:yolo false` has no yolo mode: `/yolo`
+refuses and the web client shows no flame.
+
 A `:guard :always` ask can't be shadowed. An allow above it asks in its place,
 an ask above it takes its guard, and only a deny or nudge above it wins. For
 example, `bb serve:restart` always asks, even with a changed `bb.edn` or a

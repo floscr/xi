@@ -35,6 +35,8 @@
      :clj                :compute (default) or :full. :compute limits the clj
                          tool to Clojure, curl and the data namespaces: no
                          files, programs or sockets (xi.ext.clj).
+     :yolo               false keeps yolo mode off in the agent's chats
+                         (xi.ext.yolo). Default true.
      :system-prompt      prompt text; replaces the project prompt parts.
      :system-prompt-file path to a file holding the prompt (`~` expanded;
                          relative paths resolve against ~/.config/xi/).
@@ -113,12 +115,22 @@ Be concise, direct, and friendly. When unsure, say so.")
     (= :full mode)                   [:full []]
     :else [:compute [(str ":clj must be :compute or :full, got " (pr-str mode))]]))
 
+(defn- yolo-allowed
+  "Normalize a profile's :yolo → [allowed? errors]: true when absent, false
+   for anything but a boolean (fail closed)."
+  [v]
+  (cond
+    (nil? v)     [true []]
+    (boolean? v) [v []]
+    :else [false [(str ":yolo must be true or false, got " (pr-str v))]]))
+
 (defn parse
   "Pure normalization of a raw profile map (the `[:agents id]` entry, nil when
-   absent) → {:id :tools :extensions :clj :system-prompt :system-prompt-file
-   :model :errors}. :tools is nil (= every tool) or a set of names; a missing
-   profile is reported in :errors and gets no tools. :extensions is nil (= the
-   global list) or a set of file names. :clj is :compute or :full.
+   absent) → {:id :tools :extensions :clj :yolo :system-prompt
+   :system-prompt-file :model :errors}. :tools is nil (= every tool) or a set
+   of names; a missing profile is reported in :errors and gets no tools.
+   :extensions is nil (= the global list) or a set of file names. :clj is
+   :compute or :full. :yolo is whether /yolo may turn on.
    :system-prompt-file is the resolved path when set and no inline prompt wins
    (the caller reads it)."
   [id raw]
@@ -127,6 +139,7 @@ Be concise, direct, and friendly. When unsure, say so.")
         [tools tool-errors] (tool-set (:tools raw))
         [exts ext-errors]   (extension-set (:extensions raw))
         [clj clj-errors]    (clj-mode (:clj raw))
+        [yolo yolo-errors]  (yolo-allowed (:yolo raw))
         inline   (some-> (:system-prompt raw) str str/trim not-empty)
         pfile    (when-not inline
                    (some-> (:system-prompt-file raw) str not-empty resolve-prompt-file))
@@ -135,10 +148,12 @@ Be concise, direct, and friendly. When unsure, say so.")
      :tools              tools
      :extensions         exts
      :clj                clj
+     :yolo               yolo
      :system-prompt      inline
      :system-prompt-file pfile
      :model              model
-     :errors             (cond-> (-> tool-errors (into ext-errors) (into clj-errors))
+     :errors             (cond-> (-> tool-errors (into ext-errors) (into clj-errors)
+                                     (into yolo-errors))
                            missing?
                            (conj (str "no profile under [:agents " (pr-str id)
                                       "] in " (user-config/config-file)
@@ -191,6 +206,13 @@ Be concise, direct, and friendly. When unsure, say so.")
   "Room ext state marking an agent room, merged into the room's [:ext] so
    rules can match it with `:when {:agent {:id \"…\"}}`. :clj is read by the
    clj tool (xi.ext.clj) and session_search scopes to :id
-   (xi.ext.session-search)."
-  [{:keys [id clj]}]
-  {:agent {:id id :clj (or clj :compute)}})
+   (xi.ext.session-search); `:yolo false` disables yolo mode (xi.ext.yolo)."
+  [{:keys [id clj yolo]}]
+  (cond-> {:agent {:id id :clj (or clj :compute)}}
+    (false? yolo) (assoc :yolo {:disabled? true})))
+
+(defn merge-room-ext
+  "The room's initial [:ext] (`init`, the composed extensions' :init) with the
+   profile's room-ext merged in per extension slice."
+  [init prof]
+  (merge-with merge init (room-ext prof)))

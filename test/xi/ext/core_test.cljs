@@ -249,7 +249,11 @@
     (is (= [true false false] (mapv #(answers? :sane %) [nil :sane :always])))
     (is (= [true true false] (mapv #(answers? :relentless %) [nil :sane :always])))
     (is (= [false false false] (mapv #(answers? nil %) [nil :sane :always])))
-    (is (false? (answers? :bogus nil)) "an unknown level answers nothing")))
+    (is (false? (answers? :bogus nil)) "an unknown level answers nothing")
+    (testing "a room with yolo disabled answers nothing, whatever level it carries"
+      (is (false? (dialog/auto-confirm?
+                   (assoc-in (yolo-room :relentless) [:rooms "r" :ext :yolo :disabled?] true)
+                   "r" {:type :confirm :message "?"}))))))
 
 (deftest dialog-ask-server-no-clients-stays-open
   ;; a phone that went to sleep leaves the server with no clients; the ask

@@ -58,6 +58,20 @@
     (is (nil? (yolo/level (:state ((set-handler) (with-room nil) {:room-id "r1" :level :max}))
                           "r1")))))
 
+(deftest disabled-room-stays-off
+  (let [st (assoc-in (with-room :sane) [:rooms "r1" :ext :yolo :disabled?] true)]
+    (is (yolo/disabled? st "r1"))
+    (is (nil? (yolo/level st "r1")) "a saved level reads as off")
+    (is (nil? ((:prompt-badge yolo/extension) st)) "no badge")
+    (testing "/yolo says it is disabled instead of setting a level"
+      (let [[[_ ev]] (:effects ((command-handler) st {:room-id "r1" :args "relentless"}))]
+        (is (= :ui/status (:type ev)))
+        (is (re-find #"disabled" (:text ev)))))
+    (testing "the reducer refuses too, server and web mirror"
+      (is (nil? ((set-handler) st {:room-id "r1" :level :relentless})))
+      (is (nil? ((get-in yolo-web/extension [:handlers :ext.yolo/set])
+                 st {:room-id "r1" :level :relentless :remote? true}))))))
+
 (deftest status-entry-carries-the-banner
   (testing "sane: a warning banner, the denied rule as a danger row"
     (let [e (yolo/status-entry :sane)]

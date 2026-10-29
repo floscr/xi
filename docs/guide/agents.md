@@ -27,6 +27,7 @@ xi prompt --agent research "what changed in Bun 1.3?"
 | `:tools` | The tools the model gets, by name, or `:all`. A tool not listed is not offered, so it cannot be called. **No key means no tools.** |
 | `:extensions` | The extension files this profile loads, instead of the top-level list. `[]` loads none. |
 | `:clj` | What the `clj` tool may do. `:compute` (the default): Clojure, `curl` and the JSON namespaces, with no files, programs or sockets. `:full`: the coding agent's `clj`. |
+| `:yolo` | `false` turns [yolo mode](rules.md#yolo-mode) off for the profile's chats. |
 | `:system-prompt` | The instructions. They replace the project's `AGENTS.md`, skills and extension prompts entirely. |
 | `:system-prompt-file` | The same, read from a file; relative paths are under `~/.config/xi/`. |
 | `:model` | The model to use, unless `--model` says otherwise. |

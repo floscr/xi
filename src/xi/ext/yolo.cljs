@@ -8,7 +8,9 @@
    restarts).
 
    This extension owns the room-scoped level ([:rooms rid :ext :yolo]
-   {:level :sane|:relentless}), the /yolo command and the prompt badge. /yolo
+   {:level :sane|:relentless :disabled? bool}), the /yolo command and the
+   prompt badge. :disabled? (an agent profile's `:yolo false`,
+   xi.agent-profile/room-ext) keeps the level off: /yolo refuses. /yolo
    dispatches :ext.yolo/set, whose reducer `set-level` stores the level and
    appends the status line; the server echoes that event, so the TUI mirror
    and the web half (xi.ext.yolo.web) apply the same reducer and every client
@@ -29,10 +31,15 @@
 
 (def ^:private levels #{:sane :relentless})
 
+(defn disabled? [state room-id]
+  (boolean (:disabled? (state/room-ext state room-id ext-id))))
+
 (defn level
-  "The room's yolo level: :sane, :relentless or nil (off)."
+  "The room's yolo level: :sane, :relentless or nil (off, or disabled)."
   [state room-id]
-  (levels (:level (state/room-ext state room-id ext-id))))
+  (let [slice (state/room-ext state room-id ext-id)]
+    (when-not (:disabled? slice)
+      (levels (:level slice)))))
 
 (defn enabled? [state room-id]
   (some? (level state room-id)))
@@ -79,7 +86,7 @@
    xi.ext.persist then drops the chat's saved slice, and a hydrate only fills
    keys the room lacks."
   [st {:keys [room-id level]}]
-  (when (state/get-room st room-id)
+  (when (and (state/get-room st room-id) (not (disabled? st room-id)))
     (let [level (levels level)
           st'   (-> st
                     (update-in [:rooms room-id :ext ext-id]
@@ -106,7 +113,9 @@
    of the command (effects stripped) is a no-op."
   [st {:keys [room-id args]}]
   (when (state/get-room st room-id)
-    (let [[tag v] (requested-level (level st room-id) args)]
+    (let [[tag v] (if (disabled? st room-id)
+                    [:error "Yolo mode is disabled for this agent."]
+                    (requested-level (level st room-id) args))]
       {:state   st
        :effects [[:app/dispatch
                   (if (= :ok tag)

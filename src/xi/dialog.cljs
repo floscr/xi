@@ -18,10 +18,13 @@
   "True when `dialog` resolves to yes without opening: a :confirm, not tagged
    :hardened? by the rules engine, in a room whose yolo level (xi.ext.yolo, at
    [:rooms rid :ext :yolo :level]) answers its :guard — :sane answers only
-   unguarded asks, :relentless all but `:guard :always`."
+   unguarded asks, :relentless all but `:guard :always`. Never in a room
+   with yolo disabled ([:ext :yolo :disabled?], an agent profile's `:yolo
+   false`), whatever level a saved chat carries."
   [state room-id dialog]
   (boolean (and (= :confirm (:type dialog))
                 (not (:hardened? dialog))
+                (not (get-in state [:rooms room-id :ext :yolo :disabled?]))
                 (case (get-in state [:rooms room-id :ext :yolo :level])
                   :sane       (nil? (:guard dialog))
                   :relentless (not= :always (:guard dialog))

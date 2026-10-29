@@ -59,6 +59,16 @@
       (is (= :compute (:clj p)))
       (is (some #(str/includes? % ":clj") (:errors p))))))
 
+(deftest parse-yolo
+  (testing "absent = allowed"
+    (is (true? (:yolo (profile/parse "a" {})))))
+  (testing "false is kept"
+    (is (false? (:yolo (profile/parse "a" {:yolo false})))))
+  (testing "malformed = disabled, with an error"
+    (let [p (profile/parse "a" {:yolo :off})]
+      (is (false? (:yolo p)))
+      (is (some #(str/includes? % ":yolo") (:errors p))))))
+
 (deftest parse-model
   (is (= "claude-haiku-4-5-20251001"
          (:model (profile/parse "a" {:model "claude-haiku-4-5-20251001"}))))
@@ -69,5 +79,12 @@
          (profile/system-parts {:id "root" :system-prompt "p"})))
   (is (= {:agent {:id "coach" :clj :compute}} (profile/room-ext {:id "coach"})))
   (is (= {:agent {:id "dev" :clj :full}} (profile/room-ext {:id "dev" :clj :full})))
+  (is (= {:agent {:id "pa" :clj :compute} :yolo {:disabled? true}}
+         (profile/room-ext {:id "pa" :yolo false})))
+  (is (= {:plan-mode {:enabled? false} :yolo {:x 1 :disabled? true}
+          :agent {:id "pa" :clj :compute}}
+         (profile/merge-room-ext {:plan-mode {:enabled? false} :yolo {:x 1}}
+                                 {:id "pa" :yolo false}))
+      "merged per slice, an extension's :init kept")
   (is (str/ends-with? (profile/agent-dir nil) "/personal-agent/root"))
   (is (str/ends-with? (profile/agent-dir "coach") "/personal-agent/coach")))
