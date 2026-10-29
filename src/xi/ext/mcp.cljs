@@ -225,9 +225,9 @@
    (xi.ext.blocks) to show its view: `:ext.blocks/app-open`, a server-side
    request the blocks reducer turns into the block. A sub-agent's call opens
    it in the parent room."
-  [{:keys [dispatch! room-id call]} {:keys [server tool resource-uri args result]}]
+  [{:keys [dispatch! room-id sub-id call]} {:keys [server tool resource-uri args result]}]
   (when (and dispatch! room-id (not (:is-error result)))
-    (dispatch! {:type :ext.blocks/app-open :room-id room-id :call call
+    (dispatch! {:type :ext.blocks/app-open :room-id room-id :sub-id sub-id :call call
                 :source {:type :mcp :server server :tool tool}
                 :resource-uri resource-uri
                 :tool-input args

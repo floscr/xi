@@ -8,10 +8,15 @@
    action only ever changes its own block (xi.blocks/act).
 
    Each change also stamps the block's text on its tool call's history entry
-   as :block-text, which the TUI shows under the call (xi.client.view)."
+   as :block-text, which the TUI shows under the call (xi.client.view).
+
+   A sub-agent's tools act in the parent room (xi.subagent), so its blocks
+   live with the room's, marked :sub-id: their :call-id and :anchor are in
+   that sub-agent's own history, and its view draws them, not the chat's."
   (:require [xi.blocks :as b]
             [xi.core.state :as state]
-            [xi.dialog :as dialog]))
+            [xi.dialog :as dialog]
+            [xi.ext.subagent.handlers :as sa]))
 
 (def ext-id b/ext-id)
 
@@ -23,19 +28,34 @@
 
 (defn- from-client? [ev] (some? (:client-id ev)))
 
+(defn call-history
+  "The history the tool calls of `sub-id` run in: that sub-agent's own, or
+   the room's without one."
+  [st room-id sub-id]
+  (if sub-id
+    (:history (sa/find-child st room-id sub-id))
+    (get-in st [:rooms room-id :history])))
+
+(defn- update-call-history [st room-id sub-id f]
+  (if sub-id
+    (update-in st [:rooms room-id :ext sa/ext-id :agents]
+               (fn [as] (mapv #(if (= sub-id (:id %)) (update % :history f) %) as)))
+    (update-in st [:rooms room-id :history] f)))
+
 (defn- stamp-entry
   "Put `record`'s text on the history entry of the tool call that made it."
-  [st room-id {:keys [call-id] :as record}]
+  [st room-id {:keys [call-id sub-id] :as record}]
   (if-not call-id
     st
-    (update-in st [:rooms room-id :history]
-               (fn [history]
-                 (if (vector? history)
-                   (if-let [i (some (fn [[i e]] (when (and (= :tool-call (:kind e)) (= call-id (:id e))) i))
-                                    (map-indexed vector history))]
-                     (assoc-in history [i :block-text] (b/text record))
-                     history)
-                   history)))))
+    (update-call-history
+     st room-id sub-id
+     (fn [history]
+       (if (vector? history)
+         (if-let [i (some (fn [[i e]] (when (and (= :tool-call (:kind e)) (= call-id (:id e))) i))
+                          (map-indexed vector history))]
+           (assoc-in history [i :block-text] (b/text record))
+           history)
+         history)))))
 
 (defn- put-block [st room-id record]
   (-> st
@@ -84,9 +104,9 @@
 
 (defn running-call-id
   "The id of the still-running tool call `call` ({:name :arguments}) in the
-   room's history, or nil (a sub-agent's call is in its own history)."
-  [st room-id call]
-  (let [entries (vec (get-in st [:rooms room-id :history]))
+   room's history, or in sub-agent `sub-id`'s; nil when none matches."
+  [st room-id sub-id call]
+  (let [entries (vec (call-history st room-id sub-id))
         i       (when call (dialog/permission-tool-index {:call call} entries 0))]
     (when (and i (= :running (:status (nth entries i))))
       (:id (nth entries i)))))
@@ -95,10 +115,10 @@
   "A tool with a UI ran (xi.ext.mcp, a user extension's tool): resolve its
    view's resource in an effect, which adds the block (xi.ext.blocks.app).
    The call is still running now, not once the resource is read, so its id
-   is taken here."
-  [st {:keys [room-id call] :as ev}]
+   is taken here; a sub-agent's call (:sub-id) in that sub-agent's history."
+  [st {:keys [room-id sub-id call] :as ev}]
   (when (and (state/get-room st room-id) (not (from-client? ev)))
-    {:effects [[:ext.blocks/app-open (-> ev (dissoc :type) (assoc :call-id (running-call-id st room-id call)))]]}))
+    {:effects [[:ext.blocks/app-open (-> ev (dissoc :type) (assoc :call-id (running-call-id st room-id sub-id call)))]]}))
 
 (def handlers
   {:ext.blocks/add    add-block

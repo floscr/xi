@@ -95,9 +95,8 @@
   (if (= "hiccup" kind) (or hiccup data) data))
 
 (defn- show-block
-  [extra args {:keys [dispatch! get-state room-id call]}]
+  [extra args {:keys [dispatch! get-state room-id call sub-id]}]
   (let [st     (get-state)
-        room   (get-in st [:rooms room-id])
         kind   (some-> (:kind args) str str/trim str/lower-case)
         id     (or (b/safe-id (:id args)) (gen-id))
         now    (js/Date.now)]
@@ -119,8 +118,9 @@
             (b/make-record {:id id :kind kind :title (:title args)
                             :data (payload (assoc args :kind kind))
                             :source {:type :tool :name "ui_block"}
-                            :call-id (h/running-call-id st room-id call)
-                            :anchor (count (:history room))
+                            :call-id (h/running-call-id st room-id sub-id call)
+                            :anchor (count (h/call-history st room-id sub-id))
+                            :sub-id sub-id
                             :at now :extra extra})]
         (if error
           (fail (str "Block not shown: " error))

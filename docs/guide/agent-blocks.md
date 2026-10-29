@@ -3,7 +3,8 @@
 The agent can put something in the chat that you act on: a checklist you
 tick off, options to pick, a layout with buttons and fields. A block
 appears right after the tool call that made it, the agent can change it while
-it works, and it can read what you did with it. Tables, lists and notes you
+it works, and it can read what you did with it. A sub-agent's block appears
+in its view, after its own tool call. Tables, lists and notes you
 only read come as ordinary text in the agent's answer.
 
 ```text

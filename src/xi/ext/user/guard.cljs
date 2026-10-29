@@ -204,9 +204,9 @@
    the agent, ask the agent blocks to show it (xi.ext.blocks.app), with the
    host's own dispatch: :ext.blocks/* aren't the extension's events. Not
    when the call came from that view itself."
-  [id tool resource-uri args {:keys [dispatch! room-id call from-app?]} result]
+  [id tool resource-uri args {:keys [dispatch! room-id sub-id call from-app?]} result]
   (when (and dispatch! room-id (not from-app?) (map? result) (not (:is-error result)))
-    (dispatch! {:type :ext.blocks/app-open :room-id room-id :call call
+    (dispatch! {:type :ext.blocks/app-open :room-id room-id :sub-id sub-id :call call
                 :source {:type :ext :id id}
                 :resource-uri resource-uri
                 :tool-input args

@@ -61,7 +61,7 @@ provider effects, and TUI.
    :block-menu-items (fn [block state] → [{:label :icon :event}])  ; code-block menu (xi.web.block-menu)
    :terminal-toolbar-items (fn [buffer state] → [{:label :icon :title :send|:event}])  ; xi.web.terminal
    :buffer-views     {kind {:view (fn [state dispatch! room id buffer] → hiccup) :icon kw}}  ; xi.web.buffer-views
-   :timeline-posts   (fn [state dispatch! room entries] → [{:pos :key :node}])  ; xi.web.timeline-posts
+   :timeline-posts   (fn [state dispatch! room entries sub-id] → [{:pos :key :node}])  ; xi.web.timeline-posts
    :overlays         {kw (fn [state dispatch!] → hiccup|nil)}})  ; xi.web.overlays, over every page
 ```
 
@@ -470,11 +470,12 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
   `xi.web.buffer-views`; built-in web halves only. Example: the review canvas
   (`:canvas`, `xi.ext.canvas-review.web`), whose buffer the shared
   `:canvas-review/load` / `:canvas-review/hydrate` reducers install.
-- **`:timeline-posts`** — `(fn [state dispatch! room entries] → [{:pos p
+- **`:timeline-posts`** — `(fn [state dispatch! room entries sub-id] → [{:pos p
   :key str :node hiccup}])`, posts placed in the chat timeline before history
   entry `p` (`p` = the history length: at the end), outside any folded tool
-  group; a `p` above the rendered window pins at its top. Keys are unique per
-  room. Registered in `xi.web.timeline-posts`; built-in web halves only.
+  group; a `p` above the rendered window pins at its top. A sub-agent's view
+  asks with its `sub-id` and its history as `entries`, the chat with nil.
+  Keys are unique per room. Registered in `xi.web.timeline-posts`; built-in web halves only.
   Example: the agent blocks (`xi.ext.blocks.web`), each after its tool call.
 
 - **`:overlays`** — `{kw (fn [state dispatch!] → hiccup | nil)}`, views the

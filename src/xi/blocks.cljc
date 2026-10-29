@@ -12,6 +12,7 @@
      {:id \"b-3f9a\" :kind \"checklist\" :title \"…\"
       :source {:type :tool :name \"ui_block\"}  ; or {:type :ext :id …}
       :call-id \"toolu_…\" :anchor 12            ; where the chat shows it
+      :sub-id \"sa-…\"                          ; a sub-agent's: in its history
       :spec {…} :state {…}                      ; payload, interaction state
       :actions [{:action :target :value :user :at} …] :unread 0
       :at ms :updated-at ms}"
@@ -540,8 +541,8 @@
 
 (defn make-record
   "A new block record, or {:error …}. `opts`: :id (already safe) :kind :title
-   :data :source :call-id :anchor :at, and :extra (extension kinds)."
-  [{:keys [id kind title data source call-id anchor at extra]}]
+   :data :source :call-id :anchor :sub-id :at, and :extra (extension kinds)."
+  [{:keys [id kind title data source call-id anchor sub-id at extra]}]
   (let [{:keys [spec error]} (normalize kind data extra)]
     (if error
       {:error error}
@@ -551,7 +552,8 @@
                             :at at :updated-at at}
                      (text-or-nil title) (assoc :title (text-or-nil title))
                      call-id             (assoc :call-id call-id)
-                     (number? anchor)    (assoc :anchor anchor))
+                     (number? anchor)    (assoc :anchor anchor)
+                     sub-id              (assoc :sub-id sub-id))
                    (with-ext-form extra))})))
 
 (defn update-record
@@ -680,21 +682,27 @@
 (def ext-id :blocks)
 
 (defn room-blocks
-  "The blocks of `room` (the room map), oldest first."
-  [room]
-  (sort-by (juxt :at :id) (vals (get-in room [:ext ext-id :blocks]))))
+  "The blocks of `room` (the room map), oldest first: the chat's own, or with
+   `sub-id` those of that sub-agent."
+  ([room] (room-blocks room nil))
+  ([room sub-id]
+   (sort-by (juxt :at :id) (filter #(= sub-id (:sub-id %)) (vals (get-in room [:ext ext-id :blocks]))))))
 
 (defn cut-to
   "`room` without the blocks of the turns `history` (the room's history cut
    short: a rewound or deleted message, a cleared chat) no longer has. A block
    whose tool call is still there stays; any other goes when it was shown
-   past the cut."
+   past the cut. A sub-agent's block goes with its sub-agent
+   (xi.ext.subagent.handlers keeps them at [:ext :subagents :agents])."
   [room history]
   (let [calls (into #{} (keep #(when (= :tool-call (:kind %)) (:id %))) history)
         n     (count history)
-        gone? (fn [{:keys [call-id anchor]}]
-                (and (not (contains? calls call-id))
-                     (number? anchor) (>= anchor n)))]
+        subs  (into #{} (map :id) (get-in room [:ext :subagents :agents]))
+        gone? (fn [{:keys [call-id anchor sub-id]}]
+                (if sub-id
+                  (not (contains? subs sub-id))
+                  (and (not (contains? calls call-id))
+                       (number? anchor) (>= anchor n))))]
     (cond-> room
       (seq (get-in room [:ext ext-id :blocks]))
       (update-in [:ext ext-id :blocks] #(into {} (remove (comp gone? val)) %)))))

@@ -51,6 +51,24 @@
       (is (zero? (get-in @st [:rooms "r" :ext :blocks :blocks "rel" :unread])))
       (is (str/includes? (text (call hs "ui_state" {})) "rel  checklist  \"Release 2\""))))
 
+(deftest a-sub-agents-block-is-in-its-history
+  (let [args  {:kind "checklist" :id "note" :data {:items ["Tag"]}}
+        {:keys [st] :as hs} (harness [{:kind :user :text "go"}])
+        _     (swap! st assoc-in [:rooms "r" :ext :subagents :agents]
+                     [{:id "sa-1" :history [{:kind :text :text "on it"}
+                                            {:kind :tool-call :id "toolu_9" :tool "ui_block"
+                                             :arguments args :status :running}]}])
+        ;; a sub-agent's tool ctx: the parent room, its own :sub-id (xi.subagent)
+        r     (call (assoc-in hs [:ctx :sub-id] "sa-1") "ui_block" args {:name "ui_block" :arguments args})
+        block (get-in @st [:rooms "r" :ext :blocks :blocks "note"])]
+    (is (not (:is-error r)))
+    (is (= {:sub-id "sa-1" :call-id "toolu_9" :anchor 2}
+           (select-keys block [:sub-id :call-id :anchor]))
+        "its call and anchor are the sub-agent's")
+    (is (some? (get-in @st [:rooms "r" :ext :subagents :agents 0 :history 1 :block-text]))
+        "the sub-agent's call is stamped")
+    (is (nil? (get-in @st [:rooms "r" :history 0 :block-text])))))
+
 (deftest errors-are-worded-for-the-model
   (let [hs (harness [])]
     (is (str/includes? (text (call hs "ui_block" {:kind "pie" :data {}})) "unknown kind"))

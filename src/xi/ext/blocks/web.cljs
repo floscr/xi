@@ -491,9 +491,10 @@
 (defn- timeline-posts
   "Each block in place of its tool call (the call's row only says it showed
    the block), or at its :anchor when that call isn't in the history (a
-   sub-agent's, or a rebuilt history without it)."
-  [state dispatch! room entries]
-  (let [blocks (b/room-blocks room)]
+   rebuilt history without it). With `sub-id` the blocks of that sub-agent,
+   whose history `entries` is."
+  [state dispatch! room entries sub-id]
+  (let [blocks (b/room-blocks room sub-id)]
     (when (seq blocks)
       (let [calls (into {} (keep-indexed (fn [i e] (when (= :tool-call (:kind e)) [(:id e) i]))) entries)
             n     (count entries)]

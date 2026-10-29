@@ -4760,30 +4760,43 @@
    the appearance (appearance/block-collapsed?), shows its arguments per
    :tool-args, and the user's toggle is remembered in the session's
    :web/block-open under `sa-<sub-id>-<i>` (remember-open). `ctx` is a
-   subagent-block-ctx; with `ask?` each row can be asked about (with-ask-ref)."
-  [dispatch! {:keys [room-id cwd app session-key block-open]} prefix ask?
+   subagent-block-ctx; with `ask?` each row can be asked about (with-ask-ref).
+   `xposts` are the sub-agent's extension posts (xi.web.timeline-posts, its
+   agent blocks), each before its entry and in place of the one it hides."
+  [dispatch! {:keys [room-id cwd app session-key block-open]} prefix ask? xposts
    {:keys [id history]}]
-  (keep-indexed
-   (fn [i entry]
-     (let [block?     (contains? #{:tool-call :thinking} (:kind entry))
-           k          (when block? (str "sa-" id "-" i))
-           collapsed? (and block? (appearance/block-collapsed? app entry))
-           key        (str prefix i)]
-       (when-let [post (entry->post
-                        dispatch!
-                        (cond-> (assoc entry :room-id room-id :cwd cwd
-                                       :tool-args (:tool-args app))
-                          block? (assoc :grouped? true
-                                        :collapsed? collapsed?
-                                        :open-choice (get block-open k)
-                                        :toggle! (remember-open dispatch! session-key k))))]
-         {:key        key
-          :group?     block?
-          :collapsed? collapsed?
-          :info       (when block? (block-info entry cwd (:tool-args app)))
-          :node       (with-post-key key (cond-> post
-                                           ask? (with-ask-ref {:sub-id id :index i})))})))
-   history))
+  (let [by-pos (group-by :pos xposts)
+        hides  (into #{} (keep :hides) xposts)
+        xitems (fn [p]
+                 (map (fn [{:keys [key node]}]
+                        (let [k (str prefix "xp-" key)]
+                          {:key k :group? false :node (with-post-key k node)}))
+                      (get by-pos p)))
+        row    (fn [i entry]
+                 (let [block?     (contains? #{:tool-call :thinking} (:kind entry))
+                       k          (when block? (str "sa-" id "-" i))
+                       collapsed? (and block? (appearance/block-collapsed? app entry))
+                       key        (str prefix i)]
+                   (when-let [post (entry->post
+                                    dispatch!
+                                    (cond-> (assoc entry :room-id room-id :cwd cwd
+                                                   :tool-args (:tool-args app))
+                                      block? (assoc :grouped? true
+                                                    :collapsed? collapsed?
+                                                    :open-choice (get block-open k)
+                                                    :toggle! (remember-open dispatch! session-key k))))]
+                     {:key        key
+                      :group?     block?
+                      :collapsed? collapsed?
+                      :info       (when block? (block-info entry cwd (:tool-args app)))
+                      :node       (with-post-key key (cond-> post
+                                                       ask? (with-ask-ref {:sub-id id :index i :at (:at entry)})))})))]
+    (concat
+     (mapcat (fn [i entry]
+               (concat (xitems i)
+                       (when-not (hides i) (some-> (row i entry) list))))
+             (range) history)
+     (xitems (count history)))))
 
 
 (defn- subagent-open-event
@@ -5252,7 +5265,9 @@
         {:super?     (:super-collapsed? (:app ctx))
          :block-open (:block-open ctx)
          :toggle-fn  (fn [k] (remember-open dispatch! (:session-key ctx) k))}
-        (subagent-items dispatch! ctx "sv-" true child))
+        (subagent-items dispatch! ctx "sv-" true
+                        (timeline-posts/items state dispatch! room history id)
+                        child))
        (when (and (empty? history) (empty? result))
          [:div {:class ["subagent-empty"] :replicant/key "sv-empty"}
           (cond session-id            "Promoted to its own session: open it as a chat."

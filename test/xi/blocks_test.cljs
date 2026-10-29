@@ -164,6 +164,16 @@
     (is (= #{"d"} (ids (b/cut-to room []))) "a cleared chat")
     (is (= {} (b/cut-to {} [])) "no blocks, no slice")))
 
+(deftest a-sub-agents-blocks-go-with-it
+  (let [room {:ext {:blocks    {:blocks {"own"  {:id "own" :anchor 0 :at 1}
+                                         "kept" {:id "kept" :anchor 5 :sub-id "sa-1" :at 2}
+                                         "gone" {:id "gone" :anchor 0 :sub-id "sa-2" :at 3}}}
+                    :subagents {:agents [{:id "sa-1"}]}}}]
+    (is (= #{"own" "kept"} (set (keys (get-in (b/cut-to room [{:kind :user}]) [:ext :blocks :blocks]))))
+        "its anchor is in its own history, not the chat's")
+    (is (= ["own"] (map :id (b/room-blocks room))) "the chat draws its own")
+    (is (= ["kept"] (map :id (b/room-blocks room "sa-1"))) "a sub-agent's view its own")))
+
 (deftest catalog-lists-every-kind
   (let [c (b/catalog {"gtd/board" "a board"})]
     (doseq [k (b/kind-names)] (is (str/includes? c (str "- " k ": "))))

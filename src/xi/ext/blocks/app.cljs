@@ -77,7 +77,7 @@
 
 (defn open-fx
   "Resolve the view of a tool that ran and add its block."
-  [mgr {:keys [dispatch! get-state]} {:keys [room-id call call-id source resource-uri tool-input tool-result]}]
+  [mgr {:keys [dispatch! get-state]} {:keys [room-id sub-id call call-id source resource-uri tool-input tool-result]}]
   (-> (resolve-resource mgr source resource-uri)
       (.then
        (fn [{:keys [csp prefers-border]}]
@@ -93,7 +93,8 @@
                                           :tool {:name (or (:tool source) (:name call))}}
                                    :source source
                                    :call-id call-id
-                                   :anchor (count (:history room))
+                                   :anchor (count (h/call-history st room-id sub-id))
+                                   :sub-id sub-id
                                    :at (js/Date.now)})]
                (if error
                  (js/console.error "[blocks] app view not shown:" error)
