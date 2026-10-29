@@ -83,16 +83,22 @@
    extension block kinds this way). A def's `:ui` (the view of a tool with a
    UI, xi.ext.blocks.app) stays here; one whose `:visibility` leaves out
    \"model\" is callable from its view only: neither advertised nor in the
-   turn's registry, so a model that guesses its name gets Unknown tool."
-  [{:keys [only-tools extra-tool-definitions extra-tool-registry remove-tools]}]
+   turn's registry, so a model that guesses its name gets Unknown tool.
+   A def's `:available?` (fn [tool-ctx] → bool, the turn's `:tool-ctx`:
+   `:room-id`, `:get-state`, …; a sub-agent's names the parent room) hides it
+   the same way from turns it answers false for, e.g. a tool that only
+   works in rooms an extension set up. Without a tool-ctx every def counts."
+  [{:keys [only-tools extra-tool-definitions extra-tool-registry remove-tools tool-ctx]}]
   (let [all-extra  (if (fn? extra-tool-definitions)
                      (extra-tool-definitions) extra-tool-definitions)
         view-only? #(when-let [v (get-in % [:ui :visibility])] (not (some #{"model"} v)))
-        view-only  (into #{} (comp (filter view-only?) (map :name)) all-extra)
+        hidden?    #(or (view-only? %)
+                        (when-let [f (and tool-ctx (:available? %))] (not (f tool-ctx))))
+        hidden     (into #{} (comp (filter hidden?) (map :name)) all-extra)
         extra-defs (into []
-                         (comp (remove view-only?)
+                         (comp (remove hidden?)
                                (map (fn [d] (if-let [f (:resolve d)] (merge (dissoc d :resolve) (f)) d)))
-                               (map #(dissoc % :ui)))
+                               (map #(dissoc % :ui :available?)))
                          all-extra)
         removed (if (fn? remove-tools) (remove-tools) remove-tools)
         all-defs (into (tool-definitions) extra-defs)
@@ -102,7 +108,7 @@
         defs (if only-tools
                (filterv #(contains? only-tools (:name %)) all-defs)
                all-defs)]
-    {:defs defs :registry (apply dissoc (with-extensions extra-tool-registry) view-only)}))
+    {:defs defs :registry (apply dissoc (with-extensions extra-tool-registry) hidden)}))
 
 (defn run-tool
   "Run a tool's `exec-fn` with `args`/`ctx` and normalize its result to a

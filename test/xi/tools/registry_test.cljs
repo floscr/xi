@@ -127,3 +127,18 @@
                                 :extra-tool-registry {"refresh" (fn [_ _] nil)}}))
                    "refresh"))
         "nor callable by a model that guesses the name")))
+
+(deftest resolve-tooling-offers-room-scoped-tools-where-available
+  (let [d       {:name "plan_items" :description ""
+                 :available? (fn [{:keys [room-id]}] (= "plan-room" room-id))}
+        opts    {:extra-tool-definitions [d]
+                 :extra-tool-registry {"plan_items" (fn [_ _] nil)}}
+        tooling #(registry/resolve-tooling (cond-> opts % (assoc :tool-ctx {:room-id %})))
+        def-of  #(some (fn [d] (when (= "plan_items" (:name d)) d)) (:defs %))]
+    (is (some? (def-of (tooling "plan-room"))))
+    (is (not (contains? (def-of (tooling "plan-room")) :available?))
+        "offered where it applies, the fn never reaches a provider")
+    (is (nil? (def-of (tooling "other-room"))) "hidden in other rooms")
+    (is (nil? (get (:registry (tooling "other-room")) "plan_items"))
+        "and not callable there")
+    (is (some? (def-of (tooling nil))) "without a tool-ctx every def counts")))

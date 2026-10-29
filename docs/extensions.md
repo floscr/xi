@@ -32,7 +32,8 @@ provider effects, and TUI.
    :handlers         {event-type handler-fn}  ; chained AFTER base handlers
    :fx               {fx-type (fn [ctx payload])}
    :event-hooks      {event-type (fn [event state] → event'|nil)}
-   :tool-definitions [{:name :description :input_schema}]  ; :resolve (fn [] → keys), merged in per turn
+   :tool-definitions [{:name :description :input_schema}]  ; :resolve (fn [] → keys), merged in per turn;
+                                                           ; :available? (fn [tool-ctx] → bool) hides it from other rooms' turns
    :tool-registry    {name (fn [args ctx] → result|Promise)} ; ctx: {:cwd :client-pid :dispatch! :get-state :room-id :confirm!}
    :remove-tools     #{tool-name}      ; builtin tools to hide from the model
    :commands         [{:name :description :handler   ; see xi.commands for the listing keys:
