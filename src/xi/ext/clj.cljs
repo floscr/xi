@@ -913,14 +913,9 @@
                                        :cwd   (fn [] (opts-cwd opts))})
         ctx (sandbox/init {:namespaces
                        {'user helpers
-                        ;; Shadow the core vars the helpers collide with, plus the parse-* fns
-                        ;; SCI's core lacks.
+                        ;; Shadow the core vars the helpers collide with.
                         'clojure.core (merge (select-keys helpers '[cat find])
-                                             {'parse-long    parse-long
-                                              'parse-double  parse-double
-                                              'parse-boolean parse-boolean
-                                              'parse-uuid    parse-uuid
-                                              'format        sandbox-format})
+                                             {'format sandbox-format})
                         'clojure.instant instant-namespace
                         'clojure.data.json json-data-namespace
                         'cheshire.core cheshire-namespace
@@ -937,11 +932,6 @@
                                  {'Math (sandbox/null-proto-copy js/Math)
                                   'Thread  (sandbox/null-proto {:sleep (fn [ms] (proc/sleep-abortable opts ms))})
                                   'System  (system-class opts compute?)
-                                  'Long    (sandbox/null-proto {:parseLong   (fn [s & [radix]]
-                                                                       (js/parseInt s (or radix 10)))})
-                                  'Integer (sandbox/null-proto {:parseInt    (fn [s & [radix]]
-                                                                       (js/parseInt s (or radix 10)))})
-                                  'Double  (sandbox/null-proto {:parseDouble (fn [s] (js/parseFloat s))})
                                   ;; :constructor keeps (Date.) working; the 'Date key (the ctor's .name)
                                   ;; allows instance interop.
                                   'Date           {:class (sandbox/null-proto {}) :constructor date-ctor}

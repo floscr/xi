@@ -90,18 +90,52 @@
      'ExceptionInfo ex-info-class
      'clojure.lang.ExceptionInfo ex-info-class}))
 
+(def ^:private default-core
+  "clojure.core fns SCI's core lacks."
+  {'parse-long    parse-long
+   'parse-double  parse-double
+   'parse-boolean parse-boolean
+   'parse-uuid    parse-uuid})
+
+(defn- number-format-error [s]
+  (js/Error. (str "For input string: \"" s "\"")))
+
+(def ^:private radix-digits "0123456789abcdefghijklmnopqrstuvwxyz")
+
+(defn- parse-integer
+  "Long/parseLong semantics: an optional sign and digits of `radix`, nothing
+   else (no whitespace, no trailing junk), within the safe-integer range;
+   anything else throws instead of js/parseInt's best effort."
+  ([s] (parse-integer s 10))
+  ([s radix]
+   (let [digits (when (and (int? radix) (<= 2 radix 36)) (subs radix-digits 0 radix))
+         n      (when (and digits (string? s)
+                           (re-matches (js/RegExp. (str "[+-]?[" digits "]+") "i") s))
+                  (js/parseInt s radix))]
+     (if (and n (js/Number.isSafeInteger n)) n (throw (number-format-error s))))))
+
+(defn- parse-double-strict
+  "Double/parseDouble semantics: parse-double's grammar, throws instead of nil."
+  [s]
+  (or (when (string? s) (parse-double s)) (throw (number-format-error s))))
+
 (def ^:private default-classes
-  "JVM statics every sandbox gets (xi.sandbox.url)."
+  "JVM statics every sandbox gets (xi.sandbox.url, strict number parsing)."
   (let [encoder {:class (null-proto {:encode url/encode})}
         decoder {:class (null-proto {:decode url/decode})}]
     {'URLEncoder encoder 'java.net.URLEncoder encoder
-     'URLDecoder decoder 'java.net.URLDecoder decoder}))
+     'URLDecoder decoder 'java.net.URLDecoder decoder
+     'Long    {:class (null-proto {:parseLong parse-integer})}
+     'Integer {:class (null-proto {:parseInt parse-integer})}
+     'Double  {:class (null-proto {:parseDouble parse-double-strict})}}))
 
 (defn init
   "sci/init with the shared hardening applied: `denied-core` merged into
-   `:deny`, SCI's default Error class overridden, `default-classes` added.
-   Callers still supply their own `:classes` as null-proto values."
+   `:deny`, SCI's default Error class overridden, `default-classes` and
+   `default-core` added (the caller's own entries win). Callers still supply
+   their own `:classes` as null-proto values."
   [opts]
   (sci/init (-> opts
+                (update-in [:namespaces 'clojure.core] #(merge default-core %))
                 (update :classes #(merge default-classes default-class-overrides %))
                 (update :deny (fnil into #{}) denied-core))))

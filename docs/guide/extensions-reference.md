@@ -355,7 +355,9 @@ Available: `clojure.core`, `clojure.string`, `clojure.set`, `clojure.walk`,
 `room-ext`, `mode`, `port`, `own-user`, `user-record`, `user-ext`),
 `xi.core.events`, and `xi.api.*`. `java.net.URLEncoder/encode` and
 `java.net.URLDecoder/decode` work as in babashka (UTF-8 only), in browser
-halves too.
+halves too, as do `parse-long`, `parse-double`, `parse-boolean`,
+`parse-uuid`, and the strict `Long/parseLong`, `Integer/parseInt` and
+`Double/parseDouble`.
 
 Not available: `js/` interop, `node:*` and npm requires, `aget`, `eval`,
 `resolve`, class constructors, environment variables, `.then`.

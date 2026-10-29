@@ -271,6 +271,11 @@
     (is (not (:is-error res)) (result-text res))
     (is (str/includes? (result-text res) "=> 1024"))))
 
+(deftest double-parse-double-static-rejects-trailing-junk
+  (let [res (eval! "(Double/parseDouble \"1.5abc\")")]
+    (is (:is-error res))
+    (is (str/includes? (result-text res) "For input string"))))
+
 (deftest read-instant-date-fn
   (let [res (eval! "(.getTime (clojure.instant/read-instant-date \"2024-01-02T03:04:05Z\"))")]
     (is (not (:is-error res)) (result-text res))

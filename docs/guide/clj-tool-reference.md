@@ -14,7 +14,8 @@ the separators) exist; `System/getenv` does not (use `env`). Base64 works as in 
 `(String. (.decode (java.util.Base64/getDecoder) s))` and
 `(.encodeToString (java.util.Base64/getEncoder) (.getBytes s))`, and so do
 `(java.net.URLEncoder/encode s "UTF-8")` and `java.net.URLDecoder/decode`
-(UTF-8 only).
+(UTF-8 only). `Long/parseLong` (with a radix), `Integer/parseInt` and
+`Double/parseDouble` throw on input the JVM rejects, like `"1.5abc"`.
 `(catch Exception e …)` catches any error, and `(.getMessage e)` works.
 
 In an [agent profile](agents.md)'s chats the tool is `:compute` unless the

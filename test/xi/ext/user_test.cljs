@@ -71,6 +71,17 @@
       (is (nil? (:error e)))
       (is (= {:enc "a+b%26c" :dec "a b&c"} (get-in e [:extension :init :room]))))))
 
+(deftest parse-fns-are-available-in-the-sandbox
+  (let [dir (tmp-dir)]
+    (write! dir "p.cljs"
+            "(ns p)
+             (def extension
+               {:id :p
+                :init {:room {:n [(parse-long \"3\") (parse-double \"1.5\") (Long/parseLong \"4\")]}}})")
+    (let [[e] (user/load-dir dir)]
+      (is (nil? (:error e)))
+      (is (= [3 1.5 4] (get-in e [:extension :init :room :n]))))))
+
 (deftest the-store-is-available-in-the-sandbox
   (let [dir (tmp-dir)]
     (write! dir "s.cljs"
