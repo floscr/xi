@@ -5937,45 +5937,45 @@
    :on-click #(dispatch! (assoc event :session-id session-id))})
 
 (defn- session-menu-items
-  "ui.context-menu entries for a session card: the extensions' items,
-   rename, pin/unpin, hide/show in Recent (where the caller opts in via
-   :dismissable?), copy session ID, and Delete. Hiding is gated on idle;
-   Delete is always offered (the server keeps a busy room alive, see
-   room_manager/session-delete)."
+  "ui.context-menu entries for a session card, in separated sections: the
+   session's own actions (pin, rename, hide from Recent where the caller opts
+   in via :dismissable?, remove from workspace), the extensions' items, the
+   copy actions, and Delete. Hiding is gated on idle; Delete is always offered
+   (the server keeps a busy room alive, see room_manager/session-delete)."
   [dispatch! ext-items {:keys [session-id name dismissed? pinned? dismissable? busy? has-dialog?
                                workspace-id] :as card}]
-  (let [idle? (not (or busy? has-dialog?))]
-    (cond-> (mapv #(ext-session-menu-item dispatch! card %) ext-items)
-      ;; a card of the sidebar's Workspace section (recent-sidebar*)
-      workspace-id
-      (conj {:label    "Remove from workspace"
-             :icon     :x
-             :on-click #(dispatch! {:type :workspace/forget :id workspace-id
-                                    :session-id session-id})})
-      true
-      (conj {:label    "Rename…"
-             :icon     :edit
-             :on-click #(dispatch! {:type :rename/open :session-id session-id :name name})}
-            {:label    (if pinned? "Unpin session" "Pin session")
-             :icon     :bookmark
-             :on-click #(dispatch! {:type :pinned/toggle :session-id session-id})})
-      (and dismissable? idle?)
-      (conj {:label    (if dismissed? "Show in recent" "Hide from recent")
-             :icon     (if dismissed? :eye :eye-off)
-             :on-click #(dispatch! {:type :dismissed/toggle :session-id session-id})})
-      true
-      (conj {:label    "Copy session ID"
-             :icon     :copy
-             :on-click #(copy! dispatch! session-id)})
-      true
-      (into (session-link-items dispatch! session-id name))
-      true
-      (conj {:type :separator}
-            {:label    "Delete"
-             :icon     :trash
-             :variant  :danger
-             :confirm  "Delete this session permanently?"
-             :on-click #(dispatch! {:type :session/delete :session-id session-id})}))))
+  (let [idle?    (not (or busy? has-dialog?))
+        sections [(cond-> [{:label    (if pinned? "Unpin session" "Pin session")
+                            :icon     :bookmark
+                            :on-click #(dispatch! {:type :pinned/toggle :session-id session-id})}
+                           {:label    "Rename…"
+                            :icon     :edit
+                            :on-click #(dispatch! {:type :rename/open :session-id session-id
+                                                   :name name})}]
+                    (and dismissable? idle?)
+                    (conj {:label    (if dismissed? "Show in recent" "Hide from recent")
+                           :icon     (if dismissed? :eye :eye-off)
+                           :on-click #(dispatch! {:type :dismissed/toggle :session-id session-id})})
+                    ;; a card of the sidebar's Workspace section (recent-sidebar*)
+                    workspace-id
+                    (conj {:label    "Remove from workspace"
+                           :icon     :x
+                           :on-click #(dispatch! {:type :workspace/forget :id workspace-id
+                                                  :session-id session-id})}))
+                  (mapv #(ext-session-menu-item dispatch! card %) ext-items)
+                  (into [{:label    "Copy session ID"
+                          :icon     :copy
+                          :on-click #(copy! dispatch! session-id)}]
+                        (session-link-items dispatch! session-id name))
+                  [{:label    "Delete"
+                    :icon     :trash
+                    :variant  :danger
+                    :confirm  "Delete this session permanently?"
+                    :on-click #(dispatch! {:type :session/delete :session-id session-id})}]]]
+    (->> sections
+         (remove empty?)
+         (interpose [{:type :separator}])
+         (into [] cat))))
 
 (defn- open-card-menu!
   [^js e]

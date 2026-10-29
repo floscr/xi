@@ -437,8 +437,9 @@ mirrored `[:ext <id>]` state plus any request/reply pair they define).
   in their Recent / Earlier group, so ALT+j/k skips the extension groups. The
   group collapses like the core ones (its `:id` is the collapse key).
 - **`:session-menu-items`** — data-only entries of every session card's
-  context menu (right-click, long-press, the ⋮ button), listed above the core
-  ones: `{:label str :label-on str :flag session-key :icon kw :event {…}}`.
+  context menu (right-click, long-press, the ⋮ button), in their own section
+  between the session actions (pin, rename, …) and the copy actions:
+  `{:label str :label-on str :flag session-key :icon kw :event {…}}`.
   `:event` is dispatched with the card's `:session-id` merged in; `:label-on`
   replaces `:label` while the card's `:flag` key is truthy (Add to favorites →
   Remove from favorites). Both are also open to
