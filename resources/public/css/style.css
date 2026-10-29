@@ -4766,31 +4766,35 @@ code a:hover,
 @media (hover: hover) {
   .sidebar-footer-btn:hover { background: var(--bg-2); color: var(--fg-0); }
 }
-/* ⋯ popover: labelled bulk session actions */
+/* ⋯ popover: labelled bulk session actions. Rows match the framework's
+   context menu (ui.context-menu): full width, --bg-2 on hover (the popover
+   itself is --bg-1, so a --bg-1 hover never showed), hairlines edge to edge. */
 .sidebar-more-menu {
   min-width: 14rem;
-  padding: var(--size-1);
+  padding: var(--size-1) 0;
+  overflow: hidden;
 }
 .sidebar-more-item {
   display: flex;
   align-items: center;
   gap: var(--size-2);
   width: 100%;
-  padding: 7px var(--size-2);
+  padding: var(--size-2) var(--size-3);
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 0;
   background: none;
   color: var(--fg-0);
   font: inherit;
   font-size: var(--font-sm);
+  line-height: 1.25;
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
 }
-.sidebar-more-item .icon { color: var(--fg-2); }
-.sidebar-more-item:focus-visible { outline: none; background: var(--bg-1); }
+.sidebar-more-item .icon { color: var(--fg-1); }
+.sidebar-more-item:focus-visible { outline: none; background: var(--bg-2); }
 @media (hover: hover) {
-  .sidebar-more-item:hover { background: var(--bg-1); }
+  .sidebar-more-item:hover { background: var(--bg-2); }
 }
 .sidebar-more-item--danger,
 .sidebar-more-item--danger .icon { color: var(--danger); }
@@ -4798,16 +4802,16 @@ code a:hover,
   margin-left: auto;
   padding: 0 7px;
   border-radius: 9999px;
-  background: var(--accent-100);
+  background: var(--accent-subtle);
   color: var(--accent);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--font-xs);
+  font-weight: 500;
   line-height: 18px;
 }
 .sidebar-more-sep {
-  height: 1px;
-  margin: var(--size-1) 2px;
-  background: var(--bg-2);
+  height: 0;
+  margin: var(--size-1) 0;
+  border-top: var(--border-0);
 }
 
 /* User switcher: the current user's avatar left of the usage; the popover
