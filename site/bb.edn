@@ -27,7 +27,7 @@
            (when (fs/exists? backup) (fs/delete-tree backup)))}
 
   extensions:sync
-  {:doc "Copy xi-extensions' catalog.edn and screenshots into the site (from ../../xi-extensions, else GitHub)"
+  {:doc "Copy xi-extensions' catalog.edn and screenshots into the site (from ../../xi-extensions, else GitHub); with the checkout, also the blog's <breadboard-view> bundle"
    :requires ([xisite.extensions :as extensions])
    :task (extensions/sync!)}
 

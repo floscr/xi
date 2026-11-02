@@ -107,7 +107,8 @@
   (str "<!DOCTYPE html>" (h/html {:mode :html} hiccup)))
 
 (defn layout
-  [{:keys [title description path body-class]} & body]
+  "`scripts`: hiccup for the end of <body>, after the site's own."
+  [{:keys [title description path body-class scripts]} & body]
   [:html {:lang "en"}
    [:head (head {:title title :description description :path path})]
    [:body {:class body-class}
@@ -115,4 +116,5 @@
     (into [:main] body)
     (footer)
     [:script {:src "/js/ui-runtime.js"}]
-    [:script {:src "/js/site.js" :defer true}]]])
+    [:script {:src "/js/site.js" :defer true}]
+    scripts]])

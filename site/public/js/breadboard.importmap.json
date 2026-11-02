@@ -1,0 +1,8 @@
+{
+  "imports" : {
+    "three" : "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/" : "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "squint-cljs" : "https://cdn.jsdelivr.net/npm/squint-cljs@0.14.208/index.js",
+    "squint-cljs/" : "https://cdn.jsdelivr.net/npm/squint-cljs@0.14.208/"
+  }
+}

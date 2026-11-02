@@ -3,9 +3,11 @@
    card each. They come from a copy of that repo's catalog.edn
    (site/extensions.edn) and its screenshots (public/extensions/), refreshed
    by `bb extensions:sync`, so a site build needs neither the repo nor the
-   network."
+   network. The sync also builds the Breadboard MCP's <breadboard-view>
+   bundle for the blog's live boards (public/js/breadboard.*)."
   (:require [babashka.fs :as fs]
             [babashka.http-client :as http]
+            [babashka.process :as p]
             [clojure.edn :as edn]
             [clojure.string :as str]
             [ui.badge :as badge]
@@ -34,7 +36,13 @@
      (doseq [{:keys [id image]} entries :when image]
        (fs/write-bytes (str "public/extensions/" id "." (fs/extension image)) (read image)))
      (spit catalog-file text)
-     (println (str "Synced " (count entries) " extensions from " (if from-disk? local repo-url))))))
+     (println (str "Synced " (count entries) " extensions from " (if from-disk? local repo-url)))
+     (if from-disk?
+       (let [dir (fs/path local "mcp" "breadboard")]
+         (p/shell {:dir (str dir)} "bb" "bundle")
+         (fs/copy (fs/path dir "dist" "breadboard.js") "public/js/breadboard.js" {:replace-existing true})
+         (fs/copy (fs/path dir "dist" "importmap.json") "public/js/breadboard.importmap.json" {:replace-existing true}))
+       (println "No xi-extensions checkout: kept public/js/breadboard.js")))))
 
 (def ^:private kinds {:mcp "MCP server" :extension "User extension"})
 

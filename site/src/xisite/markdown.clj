@@ -2,7 +2,8 @@
   "Markdown → html for the guide pages: fenced code blocks with build-time
    highlighting, github-style heading ids, and link rewriting so the plain
    `.md` links the guide uses keep working on the site."
-  (:require [clojure.string :as str]
+  (:require [cheshire.core :as json]
+            [clojure.string :as str]
             [hiccup2.core :as h]
             [markdown.core :as md]
             [xisite.core :as core]
@@ -25,6 +26,23 @@
     (when output
       [:pre.code-output [:code {:data-language (or lang "text")}
                          (seq (highlight/highlight lang output))]])]))
+
+;; --- Live boards ---
+
+(defn breadboard-hiccup
+  "A ```breadboard fence: its JSON layout as a live <breadboard-view> (the
+   Breadboard MCP's element, public/js/breadboard.js), the JSON itself in a
+   <details> below, `open?` from a ```breadboard open fence. An invalid
+   layout fails the build."
+  [source title open?]
+  (json/parse-string source)
+  [:figure.breadboard-live
+   [:breadboard-view {:theme "system" :sidebar "closed"}
+    [:script {:type "application/json"} (h/raw (str/replace source "</" "<\\/"))]]
+   (when title [:figcaption title])
+   [:details.breadboard-json (when open? {:open true})
+    [:summary "Layout JSON"]
+    (code-block-hiccup "json" source)]])
 
 ;; --- Heading ids (github-slugger style) ---
 
@@ -110,8 +128,8 @@
 ;; --- Rendering ---
 
 (def ^:private code-fence-re
-  "A fence (optionally with a `title=\"…\"` header), optionally followed directly by an ```output fence (the result of the code above it)."
-  #"(?ms)^```([\w-]*)(?:[ \t]+title=\"([^\"\n]*)\")?[ \t]*\n(.*?)^```[ \t]*$(?:\n+^```output[ \t]*\n(.*?)^```[ \t]*$)?")
+  "A fence (optionally with a `title=\"…\"` header, then an `open` flag), optionally followed directly by an ```output fence (the result of the code above it)."
+  #"(?ms)^```([\w-]*)(?:[ \t]+title=\"([^\"\n]*)\")?([ \t]+open)?[ \t]*\n(.*?)^```[ \t]*$(?:\n+^```output[ \t]*\n(.*?)^```[ \t]*$)?")
 
 (defn- strip-html-comments
   "Drops `<!-- … -->` (the docs:gen markers, scripts/docs_gen.clj), which
@@ -125,11 +143,13 @@
   [body]
   (let [blocks (atom [])
         body (str/replace body code-fence-re
-                          (fn [[_ lang title source output]]
+                          (fn [[_ lang title open source output]]
                             (let [lang (when (seq lang) lang)
                                   source (str/replace source #"\n\z" "")
                                   output (some-> output (str/replace #"\n\z" ""))
-                                  html (str (h/html (code-block-hiccup lang source output title)))]
+                                  html (str (h/html (if (= lang "breadboard")
+                                                      (breadboard-hiccup source title (some? open))
+                                                      (code-block-hiccup lang source output title))))]
                               (swap! blocks conj html)
                               (str "\n§CODEBLOCK" (dec (count @blocks)) "§\n"))))
         html (md/md-to-html-string (strip-html-comments body) :heading-anchors false)

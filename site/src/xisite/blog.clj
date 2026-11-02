@@ -1,7 +1,8 @@
 (ns xisite.blog
   "/blog/: posts as markdown in site/blog/, named YYYY-MM-DD-slug.md. A post
    starts with `# Title` and a summary paragraph (xisite.markdown/split-title);
-   its images go in public/blog/<slug>/."
+   its images go in public/blog/<slug>/. A ```breadboard fence is a live 3D
+   board (xisite.markdown/breadboard-hiccup)."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
             [hiccup2.core :as h]
@@ -81,15 +82,24 @@
        (when newest (featured newest))
        (earlier older)]))))
 
+(defn- board-scripts
+  "<breadboard-view>'s import map (three.js and squint from jsDelivr) and
+   bundle, both copied from xi-extensions by `bb extensions:sync`."
+  []
+  (list [:script {:type "importmap"} (h/raw (slurp "public/js/breadboard.importmap.json"))]
+        [:script {:type "module" :src "/js/breadboard.js"}]))
+
 (defn post-page [{:keys [path title summary body date]}]
-  (ui/render-page
-   (ui/layout
-    {:title (str title " · Xi") :description summary :path path :body-class "blog"}
-    [:div.changelog-shell
-     [:article.docs-content.blog-post
-      [:p.blog-meta [:a {:href "/blog/"} "Blog"] " · " (display-date date)]
-      [:h1 title]
-      (h/raw (md/render-body body))]])))
+  (let [html (md/render-body body)]
+    (ui/render-page
+     (ui/layout
+      {:title (str title " · Xi") :description summary :path path :body-class "blog"
+       :scripts (when (str/includes? html "<breadboard-view") (board-scripts))}
+      [:div.changelog-shell
+       [:article.docs-content.blog-post
+        [:p.blog-meta [:a {:href "/blog/"} "Blog"] " · " (display-date date)]
+        [:h1 title]
+        (h/raw html)]]))))
 
 (defn routes []
   (into {"/blog/" (index)}
