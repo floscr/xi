@@ -78,6 +78,12 @@
   [src dest nofollow?]
   (if (existing-dir? dest nofollow?) (node-path/join dest (node-path/basename src)) dest))
 
+(defn- ->date
+  "A file time as the sandbox's FileTime stand-in, a js/Date: from a Date or
+   epoch millis."
+  [t]
+  (if (instance? js/Date t) t (js/Date. t)))
+
 (defn sci-namespace
   "`read` / `write` resolve and gate a path for helper `op`, as
    xi.ext.clj/resolve-read and resolve-write (`write` takes {:nofollow? true}
@@ -126,6 +132,16 @@
      'executable?   (fn [p] (access? (read p 'fs/executable?) (.-X_OK fs/constants)))
      'size          (fn [p] (.-size (fs/statSync (read p 'fs/size))))
      'canonicalize  (fn [p] (read p 'fs/canonicalize))
+     ;; file times are js/Dates (cljs insts) where babashka returns FileTimes
+     'last-modified-time (fn [p & [o]]
+                           (if-let [s (stat p 'fs/last-modified-time o)]
+                             (.-mtime s)
+                             (throw (ex-info (str "fs/last-modified-time: no such file: " p)
+                                             {:path (str p)}))))
+     'file-time->millis  (fn [t] (.getTime (->date t)))
+     'file-time->instant ->date
+     'millis->file-time  ->date
+     'instant->file-time ->date
      'read-all-lines (fn [p] (str/split-lines (fs/readFileSync (read p 'fs/read-all-lines) "utf8")))
      'list-dir      (fn [dir & [filt]]
                       (let [names (sort (fs/readdirSync (read dir 'fs/list-dir)))
@@ -154,6 +170,10 @@
      'create-file (fn [p] (fs/writeFileSync (write p 'fs/create-file) "" #js {:flag "wx"}) (str p))
      'create-temp-dir (fn [& [{:keys [prefix]}]]
                         (fs/mkdtempSync (node-path/join (os/tmpdir) (or prefix "xi-clj-"))))
+     'set-last-modified-time (fn [p t]
+                               (let [f (write p 'fs/set-last-modified-time)]
+                                 (fs/utimesSync f (.-atime (fs/statSync f)) (->date t))
+                                 (str p)))
      'write-lines (fn [p lines & [{:keys [append]}]]
                     (fs/writeFileSync (write p 'fs/write-lines)
                                       (apply str (map #(str % "\n") lines))

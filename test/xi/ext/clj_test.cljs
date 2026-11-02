@@ -1345,6 +1345,17 @@
       (is (not (:is-error res)) (result-text res))
       (is (str/includes? (result-text res) "[true \"target.txt\"]")))))
 
+(deftest babashka-fs-file-times
+  (let [res (eval! "(let [f (str (tmpdir) \"/t.txt\")]
+                      (spit f \"x\")
+                      (fs/set-last-modified-time f (fs/millis->file-time 1700000000000))
+                      [(fs/file-time->millis (fs/last-modified-time f))
+                       (inst? (fs/last-modified-time f))
+                       (try (fs/last-modified-time (str f \".missing\")) :found
+                            (catch :default e (boolean (re-find #\"no such file\" (ex-message e)))))])")]
+    (is (not (:is-error res)) (result-text res))
+    (is (str/includes? (result-text res) "[1700000000000 true true]"))))
+
 (deftest babashka-fs-copy-move
   (let [res (eval! "(let [d (tmpdir) src (str d \"/src\") dst (str d \"/dst\")]
                       (fs/create-dirs (str src \"/sub\"))

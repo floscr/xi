@@ -1511,6 +1511,7 @@
    'touch [0]
    'rm    :all
    'fs/create-dirs [0] 'fs/create-dir [0] 'fs/create-file [0] 'fs/write-lines [0]
+   'fs/set-last-modified-time [0]
    'fs/delete [0] 'fs/delete-if-exists [0] 'fs/delete-tree [0]
    'fs/copy [1] 'fs/copy-tree [1] 'fs/move [0 1]})
 
@@ -1529,6 +1530,7 @@
    'cp       [0]
    'fs/exists? [0] 'fs/directory? [0] 'fs/regular-file? [0] 'fs/sym-link? [0] 'fs/read-link [0]
    'fs/readable? [0] 'fs/writable? [0] 'fs/executable? [0] 'fs/size [0]
+   'fs/last-modified-time [0]
    'fs/canonicalize [0] 'fs/read-all-lines [0] 'fs/list-dir [0] 'fs/glob [0]
    'fs/copy [0] 'fs/copy-tree [0]})
 
