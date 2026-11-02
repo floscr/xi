@@ -248,13 +248,13 @@
 
 (defn steerable?
   "True when a message may go into `room`'s running turn (Alt+Enter): the
-   agent is working, the transcript isn't being cut, and no dialog (a
-   permission ask) holds the turn. The web composer shows the steer icon by
-   it; otherwise the message queues."
+   agent is working and the transcript isn't being cut. An open permission
+   ask doesn't stop it: the provider holds the message until the gated tool
+   call is done. The web composer shows the steer icon by it; otherwise the
+   message queues."
   [room]
   (boolean (and (get-in room [:agent :busy?])
-                (not (get-in room [:agent :rewinding?]))
-                (empty? (get-in room [:ui :dialogs])))))
+                (not (get-in room [:agent :rewinding?])))))
 
 (defn- prompt-submit [st {:keys [room-id text images collapsed-label steer?] :as ev}]
   (when-let [room (state/get-room st room-id)]

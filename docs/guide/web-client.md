@@ -125,9 +125,9 @@ across the top narrows the cards and lists to one
   × drops it. `Alt+Enter` (or Alt+click on send) sends the message into
   the running turn instead: the agent reads it after its current tool call
   and goes on with it in mind. It appears in the chat at that point; a
-  message the turn could no longer take stays in the queue. Holding Alt
-  turns the send button into the steer icon while that works: not while a
-  permission request waits, when the message queues as usual. On a touch
+  message the turn could no longer take stays in the queue. While a
+  permission request waits, the agent reads it once that tool call is
+  done. Holding Alt turns the send button into the steer icon. On a touch
   screen a tap on send queues and holding it steers: the steer icon shows,
   a ring fills, and the message steers when it closes. Slide away to
   cancel.
@@ -495,7 +495,7 @@ These keys belong to a control and are not in the keymap:
 | --- | --- |
 | `Ctrl/Cmd+k` | Command palette. Binding `:palette/open` to a modifier chord in `:global` (`"ctrl+x"`) makes that the palette's key instead, in text fields too, and frees `Ctrl+k` |
 | `Tab` (in the message box) | Expand the snippet word before the cursor: `c` becomes `continue`, `rec` becomes `in a recent change`. Anywhere else Tab moves focus as usual. |
-| `Alt+Enter` (in the message box, while the agent works) | Send the message into the running turn instead of the queue; holding Alt shows the steer icon on the send button. While the agent is idle, or a permission request waits, it sends like `Enter` |
+| `Alt+Enter` (in the message box, while the agent works) | Send the message into the running turn instead of the queue; holding Alt shows the steer icon on the send button. While the agent is idle, it sends like `Enter` |
 | `Ctrl+Enter` (on one of your messages) | Edit it in place: its attachments stay above the bubble with an × each, and `Ctrl+V` in the bubble adds a pasted image. Save goes back to before the message and sends the new text with them |
 | `↑`/`↓`, `Alt+k`/`Alt+j` or `Ctrl+p`/`Ctrl+n` (in the `/` command list) | Move through the matching commands; `Enter` or `Tab` runs the selected one |
 | `Tab` or `Enter` (in the palette, on a project) | Open that project's actions: new chat, git status, search its sessions, open its sessions |

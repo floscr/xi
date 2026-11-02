@@ -476,20 +476,21 @@
       (is (= [{:text "left" :images nil :user "root"}] (get-in state [:rooms "r" :agent :queued])))
       (is (empty? effects)))))
 
-(deftest steering-needs-a-running-turn-and-no-open-dialog
+(deftest steering-needs-a-running-turn
   (let [busy (apply-events (with-room) {:type :prompt/submit :room-id "r" :text "go"})]
     (is (true? (agent/steerable? (state/get-room busy "r"))))
     (is (false? (agent/steerable? (state/get-room (with-room) "r"))) "idle")
-    (testing "a permission ask holds the turn: the message queues, nothing is steered"
+    (testing "an open permission ask doesn't hold it back: the turn takes it after the gated call"
       (let [st (apply-events busy {:type :ui/dialog-open :room-id "r"
                                    :dialog {:id "dlg-1" :type :confirm :message "Edit /a?"
                                             :call {:name "edit" :arguments {:path "/a"}}}})
             {:keys [state effects]}
             (events/handle-event all-handlers st
-                                 {:type :prompt/submit :room-id "r" :text "left" :steer? true})]
-        (is (false? (agent/steerable? (state/get-room st "r"))))
-        (is (= [{:text "left" :images nil :user "root"}] (get-in state [:rooms "r" :agent :queued])))
-        (is (empty? effects))))))
+                                 {:type :prompt/submit :room-id "r" :text "left" :steer? true})
+            steered {:text "left" :images nil :user "root" :steer? true}]
+        (is (true? (agent/steerable? (state/get-room st "r"))))
+        (is (= [steered] (get-in state [:rooms "r" :agent :queued])))
+        (is (= [[:provider/steer {:room-id "r" :prompt steered}]] effects))))))
 
 (deftest queue-steer-sends-a-queued-prompt-into-the-turn
   (let [st (apply-events (with-room)
@@ -508,10 +509,9 @@
                                              {:type :agent/steered :room-id "r" :prompt flagged}))]
         (is (= [{:text "a" :images nil :user "root"}] (get-in st' [:rooms "r" :agent :queued])))
         (is (= "b" (:text (last (history st')))))))
-    (testing "not while a dialog holds the turn, nor out of range"
-      (let [held (apply-events st {:type :ui/dialog-open :room-id "r"
-                                   :dialog {:id "d" :type :confirm :message "?"}})]
-        (is (empty? (:effects (events/handle-event all-handlers held
+    (testing "not while idle, nor out of range"
+      (let [idle (assoc-in st [:rooms "r" :agent :busy?] false)]
+        (is (empty? (:effects (events/handle-event all-handlers idle
                                                    {:type :prompt/queue-steer :room-id "r" :index 0}))))
         (is (empty? (:effects (events/handle-event all-handlers st
                                                    {:type :prompt/queue-steer :room-id "r" :index 5}))))))))
