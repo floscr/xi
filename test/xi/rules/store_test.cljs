@@ -340,6 +340,10 @@
     (testing "sudo denied for both clj sh-outs and the bash tool"
       (is (= :deny (:type (:action (hit {:tool :sh :cli "sudo" :command "sudo rm"})))))
       (is (= :deny (:type (:action (hit {:tool :bash :command "sudo apt install"}))))))
+    (testing "a commit message that says sudo is not a sudo call"
+      (let [argv ["git" "commit" "-q" "-m" "fix(yubikey): sudo asks for the password first"]]
+        (is (not= :hardened (:scope (hit {:tool :sh :cli "git" :argv argv
+                                          :command (str/join " " argv)}))))))
     (testing "remote-copy shells denied"
       (is (= :deny (:type (:action (hit {:tool :sh :cli "rsync" :command "rsync a b"})))))
       (is (= :deny (:type (:action (hit {:tool :bash :command "scp a b"}))))))

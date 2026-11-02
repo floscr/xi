@@ -55,6 +55,7 @@
           :mcp-tool :state :nodes :user :user-record}. This namespace does no I/O."
   (:require [clojure.string :as str]
             [xi.rules.curl :as curl]
+            [xi.rules.message-args :as message-args]
             [xi.rules.readonly :as readonly]))
 
 (defn canonical
@@ -103,6 +104,17 @@
     (regexp? spec) (boolean (re-find spec (str s)))
     (string? spec) (str/includes? (str s) spec)
     :else          false))
+
+(defn- command-text
+  "What `:command` specs match: the request's command, or its argv with the
+   commit messages and PR bodies masked (xi.rules.message-args) when it has
+   any."
+  [req]
+  (let [argv   (readonly/request-argv req)
+        masked (some-> argv message-args/mask)]
+    (if (and masked (not= masked argv))
+      (str/join " " masked)
+      (:command req))))
 
 (defn- match-substring
   "Repo spec: regex → re-find, string → substring of the repo root path."
@@ -431,7 +443,8 @@
          (match-read-only  (:read-only m)  req)
          (match-task       (:task m)       req)
          (match-path*      (:path m)       req)
-         (match-command    (:command m)    (:command req))
+         (or (nil? (:command m))
+             (match-command (:command m) (command-text req)))
          (match-substring  (:repo m)       (:repo req))
          (match-dir        (:dir m)        req)
          (match-name       (:mcp-server m) (:mcp-server req))
