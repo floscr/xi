@@ -2311,16 +2311,26 @@
 
 (def ^:private alt-default-hint " Alt+click: also for new chats.")
 
+(defn- yolo-sticky?
+  "True when `level` is on and also the default for new chats (Alt+click)."
+  [state level]
+  (and (some? level) (= level (get-in state [:web/chat-defaults :yolo]))))
+
 (defn- yolo-flame
   "A yolo level → [flame title], nil when off: the flame outlined for yolo,
-   filled for relentless."
-  [level]
-  (case level
-    :sane       [(flame-icon false ["yolo-chip-flame"])
-                 "Yolo mode: tool calls run without asking, except risky ones."]
-    :relentless [(flame-icon true ["yolo-chip-flame" "yolo-chip-flame--relentless"])
-                 "Relentless yolo mode: every tool call runs without asking."]
-    nil))
+   filled for relentless, with an ember dot under it when `sticky?`."
+  [level sticky?]
+  (when-let [[flame title]
+             (case level
+               :sane       [(flame-icon false ["yolo-chip-flame"])
+                            "Yolo mode: tool calls run without asking, except risky ones."]
+               :relentless [(flame-icon true ["yolo-chip-flame" "yolo-chip-flame--relentless"])
+                            "Relentless yolo mode: every tool call runs without asking."]
+               nil)]
+    (if sticky?
+      [[:span {:class ["yolo-sticky" (when (= :relentless level) "yolo-sticky--relentless")]} flame]
+       (str title " Also the default for new chats.")]
+      [flame title])))
 
 (defn- compose-status-pct
   "A window's percent, amber from 75% on."
@@ -2333,11 +2343,11 @@
    flame, colored while yolo mode is on and turning it off, grey while off
    and turning it on, absent where it is disabled, and the Claude
    subscription usage from the lobby broadcast, opening /usage."
-  [dispatch! room model claude-usage yolo]
+  [dispatch! room model claude-usage yolo sticky?]
   (let [{:keys [session weekly session-resets-at weekly-resets-at]} claude-usage
         session (when-not (usage-window-outdated? session-resets-at) session)
         weekly  (when-not (usage-window-outdated? weekly-resets-at) weekly)
-        [flame title next] (if-let [[flame title] (yolo-flame yolo)]
+        [flame title next] (if-let [[flame title] (yolo-flame yolo sticky?)]
                              [flame (str title " Click to turn it off." alt-default-hint) :off]
                              [(flame-icon false [])
                               (str "Yolo mode is off. Click to turn it on." alt-default-hint) :sane])]
@@ -3880,7 +3890,9 @@
   "Chat header chip while the room's yolo mode is on: just the flame
    (yolo-flame); a click turns it off."
   [state dispatch! room]
-  (when-let [[flame title] (some->> room (yolo-level state) yolo-flame)]
+  (when-let [[flame title] (when room
+                             (let [level (yolo-level state room)]
+                               (yolo-flame level (yolo-sticky? state level))))]
     (let [title (str title " Click to turn it off." alt-default-hint)]
       (chip/chip {:attrs    {:class      ["yolo-chip"]
                              :title      title
@@ -5728,7 +5740,8 @@
                           (slash-ctx state)
                           (compose-status dispatch! room model
                                           (get-in state [:lobby :claude-usage])
-                                          (yolo-level state room))
+                                          (yolo-level state room)
+                                          (yolo-sticky? state (yolo-level state room)))
                           (agents-button dispatch! room history sub-agents))))]))
 
 ;; ── Windows (xi.layout, xi.web.layout) ───────────────────────────────────────

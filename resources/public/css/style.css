@@ -330,6 +330,32 @@ body {
   color: var(--danger);
 }
 
+/* Sticky yolo (views/yolo-flame): the level is also the default for new
+   chats — an ember dot under the flame and a faint glow on it. */
+.yolo-sticky {
+  --ember: var(--orange);
+  position: relative;
+  display: inline-flex;
+}
+.yolo-sticky--relentless {
+  --ember: var(--danger);
+}
+.yolo-sticky .icon {
+  filter: drop-shadow(0 0 1.5px color-mix(in srgb, var(--ember) 55%, transparent));
+}
+.yolo-sticky::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: var(--ember);
+  box-shadow: 0 0 3px var(--ember), 0 0 6px color-mix(in srgb, var(--ember) 60%, transparent);
+}
+
 /* Background processes (xi.web.views/process-chip): icon + count, as tall as
    the yolo chip. */
 .topbar--chat .process-chip {
