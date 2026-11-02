@@ -7895,6 +7895,11 @@
     })();
     flag_BANG_(root1, "data-paused", v2.paused);
     flag_BANG_(root1, "data-muted", muted_QMARK_3);
+    if (truth_(muted_QMARK_3)) {
+    } else {
+      flag_BANG_(root1, "data-autoplay-muted", false);
+    }
+    ;
     flag_BANG_(root1, "data-fullscreen", document.fullscreenElement === root1);
     qa(root1, "[data-vp-act=play]").forEach((function(b) {
       const l5 = truth_(v2.paused) ? "Play" : "Pause";
@@ -7997,6 +8002,55 @@
     }
     ;
   };
+  var autoplay_BANG_ = function(p) {
+    const v1 = p.video;
+    const r2 = v1.play();
+    if (truth_((() => {
+      const and__23442__auto__3 = r2;
+      if (truth_(and__23442__auto__3)) {
+        return r2.catch;
+      } else {
+        return and__23442__auto__3;
+      }
+      ;
+    })())) {
+      return r2.catch((function(e) {
+        if ("NotAllowedError" === e.name) {
+          v1.muted = true;
+          flag_BANG_(p.root, "data-autoplay-muted", true);
+          const r24 = v1.play();
+          if (truth_((() => {
+            const and__23442__auto__5 = r24;
+            if (truth_(and__23442__auto__5)) {
+              return r24.catch;
+            } else {
+              return and__23442__auto__5;
+            }
+            ;
+          })())) {
+            return r24.catch((function(_) {
+              return null;
+            }));
+          }
+          ;
+        }
+        ;
+      }));
+    }
+    ;
+  };
+  var unmute_BANG_ = function(p) {
+    const v1 = p.video;
+    v1.muted = false;
+    if (v1.volume === 0) {
+      v1.volume = 1;
+    }
+    ;
+    return flag_BANG_(p.root, "data-autoplay-muted", false);
+  };
+  var auto_muted_QMARK_ = function(p) {
+    return p.root.hasAttribute("data-autoplay-muted");
+  };
   var seek_by_BANG_ = function(p, s) {
     const v1 = p.video;
     return v1.currentTime = clamp6(v1.currentTime + s, 0, (() => {
@@ -8065,14 +8119,14 @@
           }
           ;
         })())) {
-          v1.muted = false;
-          if (v1.volume === 0) {
-            v1.volume = 1;
-          }
+          unmute_BANG_(p);
         } else {
           v1.muted = true;
         }
         ;
+        break;
+      case "unmute":
+        unmute_BANG_(p);
         break;
       case "next":
         go_next_BANG_(p);
@@ -8433,21 +8487,7 @@
     const autoplay_QMARK_11 = "true" === root1.dataset.autoplay;
     const play_BANG_12 = (function() {
       if (autoplay_QMARK_11) {
-        const r13 = v2.play();
-        if (truth_((() => {
-          const and__23442__auto__14 = r13;
-          if (truth_(and__23442__auto__14)) {
-            return r13.catch;
-          } else {
-            return and__23442__auto__14;
-          }
-          ;
-        })())) {
-          return r13.catch((function(_) {
-            return null;
-          }));
-        }
-        ;
+        return autoplay_BANG_(p);
       }
       ;
     });
@@ -8455,101 +8495,113 @@
     p.dismissed = false;
     p.sub = -1;
     flag_BANG_(root1, "data-error", false);
-    if (truth_((() => {
-      const and__23442__auto__15 = hls_QMARK_8;
-      if (truth_(and__23442__auto__15)) {
-        const and__23442__auto__16 = Hls10;
-        if (truth_(and__23442__auto__16)) {
-          return Hls10.isSupported();
-        } else {
-          return and__23442__auto__16;
-        }
-        ;
-      } else {
-        return and__23442__auto__15;
+    flag_BANG_(root1, "data-loading", autoplay_QMARK_11 && !_EQ_("", src3));
+    if (_EQ_("", src3)) {
+      const temp__23062__auto__13 = q2(root1, "[data-vp-builtin=quality]");
+      if (truth_(temp__23062__auto__13)) {
+        const b14 = temp__23062__auto__13;
+        b14.hidden = true;
       }
       ;
-    })())) {
-      const h17 = new Hls10({ "startPosition": start7 > 0 ? start7 : -1, "maxBufferLength": 30 });
-      p.hls = h17;
-      p.fails = 0;
-      h17.loadSource(src3);
-      h17.attachMedia(v2);
-      h17.on(Hls10.Events.MANIFEST_PARSED, (function() {
-        const temp__23062__auto__18 = q2(root1, "[data-vp-builtin=quality]");
-        if (truth_(temp__23062__auto__18)) {
-          const b19 = temp__23062__auto__18;
-          b19.hidden = levels(p).length < 2;
+      v2.removeAttribute("src");
+      return v2.load();
+    } else {
+      if (truth_((() => {
+        const and__23442__auto__15 = hls_QMARK_8;
+        if (truth_(and__23442__auto__15)) {
+          const and__23442__auto__16 = Hls10;
+          if (truth_(and__23442__auto__16)) {
+            return Hls10.isSupported();
+          } else {
+            return and__23442__auto__16;
+          }
+          ;
+        } else {
+          return and__23442__auto__15;
         }
         ;
-        sync_BANG_3(p);
-        return play_BANG_12();
-      }));
-      h17.on(Hls10.Events.LEVEL_SWITCHED, (function() {
-        return sync_BANG_3(p);
-      }));
-      h17.on(Hls10.Events.FRAG_LOADED, (function() {
-        return p.fails = 0;
-      }));
-      return h17.on(Hls10.Events.ERROR, (function(_, d) {
-        if (truth_(d.fatal)) {
-          p.fails = p.fails + 1;
-          if (p.fails > 8) {
-            flag_BANG_(root1, "data-error", true);
-            return toast_BANG_(p, `${"Playback error: "}${d.details ?? ""}`);
-          } else {
-            if (_EQ_(d.type, Hls10.ErrorTypes.MEDIA_ERROR)) {
-              return h17.recoverMediaError();
+      })())) {
+        const h17 = new Hls10({ "startPosition": start7 > 0 ? start7 : -1, "maxBufferLength": 30 });
+        p.hls = h17;
+        p.fails = 0;
+        h17.loadSource(src3);
+        h17.attachMedia(v2);
+        h17.on(Hls10.Events.MANIFEST_PARSED, (function() {
+          const temp__23062__auto__18 = q2(root1, "[data-vp-builtin=quality]");
+          if (truth_(temp__23062__auto__18)) {
+            const b19 = temp__23062__auto__18;
+            b19.hidden = levels(p).length < 2;
+          }
+          ;
+          sync_BANG_3(p);
+          return play_BANG_12();
+        }));
+        h17.on(Hls10.Events.LEVEL_SWITCHED, (function() {
+          return sync_BANG_3(p);
+        }));
+        h17.on(Hls10.Events.FRAG_LOADED, (function() {
+          return p.fails = 0;
+        }));
+        return h17.on(Hls10.Events.ERROR, (function(_, d) {
+          if (truth_(d.fatal)) {
+            p.fails = p.fails + 1;
+            if (p.fails > 8) {
+              flag_BANG_(root1, "data-error", true);
+              return toast_BANG_(p, `${"Playback error: "}${d.details ?? ""}`);
             } else {
-              if ("else") {
-                toast_BANG_(p, "Reconnecting\u2026");
-                return setTimeout((function() {
-                  if (p.hls === h17) {
-                    return h17.startLoad(v2.currentTime);
-                  }
-                  ;
-                }), Math.min(8e3, 500 * p.fails));
+              if (_EQ_(d.type, Hls10.ErrorTypes.MEDIA_ERROR)) {
+                return h17.recoverMediaError();
               } else {
-                return null;
+                if ("else") {
+                  toast_BANG_(p, "Reconnecting\u2026");
+                  return setTimeout((function() {
+                    if (p.hls === h17) {
+                      return h17.startLoad(v2.currentTime);
+                    }
+                    ;
+                  }), Math.min(8e3, 500 * p.fails));
+                } else {
+                  return null;
+                }
               }
             }
+            ;
           }
           ;
-        }
-        ;
-      }));
-    } else {
-      if ("else") {
-        const temp__23062__auto__20 = q2(root1, "[data-vp-builtin=quality]");
-        if (truth_(temp__23062__auto__20)) {
-          const b21 = temp__23062__auto__20;
-          b21.hidden = true;
-        }
-        ;
-        if (truth_((() => {
-          const and__23442__auto__22 = hls_QMARK_8;
-          if (truth_(and__23442__auto__22)) {
-            return _EQ_("", v2.canPlayType("application/vnd.apple.mpegurl"));
-          } else {
-            return and__23442__auto__22;
-          }
-          ;
-        })())) {
-          flag_BANG_(root1, "data-error", true);
-          return toast_BANG_(p, "This browser can't play HLS");
-        } else {
-          v2.src = src3;
-          if (start7 > 0) {
-            v2.addEventListener("loadedmetadata", (function() {
-              return v2.currentTime = start7;
-            }), { "once": true });
-          }
-          ;
-          return play_BANG_12();
-        }
-        ;
+        }));
       } else {
-        return null;
+        if ("else") {
+          const temp__23062__auto__20 = q2(root1, "[data-vp-builtin=quality]");
+          if (truth_(temp__23062__auto__20)) {
+            const b21 = temp__23062__auto__20;
+            b21.hidden = true;
+          }
+          ;
+          if (truth_((() => {
+            const and__23442__auto__22 = hls_QMARK_8;
+            if (truth_(and__23442__auto__22)) {
+              return _EQ_("", v2.canPlayType("application/vnd.apple.mpegurl"));
+            } else {
+              return and__23442__auto__22;
+            }
+            ;
+          })())) {
+            flag_BANG_(root1, "data-error", true);
+            return toast_BANG_(p, "This browser can't play HLS");
+          } else {
+            v2.src = src3;
+            if (start7 > 0) {
+              v2.addEventListener("loadedmetadata", (function() {
+                return v2.currentTime = start7;
+              }), { "once": true });
+            }
+            ;
+            return play_BANG_12();
+          }
+          ;
+        } else {
+          return null;
+        }
       }
     }
     ;
@@ -8578,10 +8630,18 @@
         if (truth_(p2.open)) {
           return close_panel_BANG_(p2);
         } else {
-          if (truth_(e.target.closest("[data-vp=surface]"))) {
-            return toggle_play_BANG_(p2);
-          } else {
+          if (not(e.target.closest("[data-vp=surface]"))) {
             return null;
+          } else {
+            if (truth_(auto_muted_QMARK_(p2))) {
+              return unmute_BANG_(p2);
+            } else {
+              if ("else") {
+                return toggle_play_BANG_(p2);
+              } else {
+                return null;
+              }
+            }
           }
         }
       } else {
@@ -8787,7 +8847,7 @@
     if (truth_(temp__23062__auto__40)) {
       const p1 = temp__23062__auto__40;
       return { "video": p1.video, "play": (function() {
-        return p1.video.play();
+        return autoplay_BANG_(p1);
       }), "pause": (function() {
         return p1.video.pause();
       }), "seek": (function(t) {

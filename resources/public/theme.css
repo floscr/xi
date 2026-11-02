@@ -9645,6 +9645,26 @@ a.sidebar-menu-item {
 
 @keyframes video-player-spin { to { transform: rotate(360deg); } }
 
+/* ── Unmute pill (autoplay fell back to muted) ──────────────── */
+/* Stays visible while idle: it's the one thing to tap. */
+
+.video-player .video-player-unmute {
+  position: absolute;
+  top: var(--size-3);
+  right: var(--size-3);
+  z-index: 6;
+  display: none;
+  gap: var(--size-2);
+  height: 40px;
+  padding: 0 var(--size-4) 0 var(--size-3);
+  border-radius: var(--radius-pill);
+  font-weight: 500;
+  animation: video-player-pop var(--duration-standard) var(--ease-enter);
+}
+
+.video-player[data-autoplay-muted] .video-player-unmute { display: inline-flex; }
+.video-player-plain .video-player-unmute { background: var(--vp-solid); }
+
 /* ── Up next ───────────────────────────────────────────────────── */
 
 .video-player-upnext {
