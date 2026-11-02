@@ -66,8 +66,10 @@ and `:remove-tools` are not available: whether a tool call runs is the
   from commands, keybindings,
   effects a command started, and handlers of own events a client sent (a
   click in a page). Never from tools.
-- `:chat/start` takes `:text`, `:cwd`, `:client-id` and `:user`, and two
-  keys for an extension's own chat: `:buffer-id` + `:buffer` open one of its
+- `:chat/start` takes `:text`, `:cwd`, `:client-id` and `:user`, `:name`
+  to name the chat up front (as a rename does: no title is generated for
+  it, e.g. `"Commit plan 2026-11-02"`), and two keys for an extension's own
+  chat: `:buffer-id` + `:buffer` open one of its
   buffers (below) in the new chat, and the client lands on it; `:on-created`,
   one of its own events, is dispatched with the new chat's `:room-id` and
   `:session-id` and counts as user-initiated, so its handler may spawn

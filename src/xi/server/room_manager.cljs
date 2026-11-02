@@ -473,12 +473,14 @@
    is sent to the new chat unless :background? (the web palette's
    fire-and-forget chat). `:buffer-id` + `:buffer` open a buffer in it, which
    the client lands on; `:on-created`, an extension's own event, is dispatched
-   with the new chat's `:room-id` (xi.ext.user.guard/confine)."
-  [st {:keys [room-id client-id cwd text images user background? buffer-id buffer on-created]}]
+   with the new chat's `:room-id` (xi.ext.user.guard/confine). `:name` names
+   the chat up front, as a rename would: no title is generated for it."
+  [st {:keys [room-id client-id cwd text images user background? buffer-id buffer on-created name]}]
   (when (or (and (string? text) (seq text)) (seq images))
     {:effects [[:chat/start (cond-> {:text (or text "")
                                      :cwd  (or cwd (get-in st [:rooms room-id :cwd]))}
                               (seq images) (assoc :images (vec images))
+                              (and (string? name) (not (str/blank? name))) (assoc :name (str/trim name))
                               (and client-id (not background?)) (assoc :client-id client-id)
                               user (assoc :user user)
                               (and (string? buffer-id) (map? buffer))

@@ -519,10 +519,13 @@
       ;; Open a background chat seeded with a user message (:chat/start,
       ;; xi.server.room-manager); the requesting client, if any, is sent to it.
       :chat/start
-      (fn [{:keys [dispatch!]} {:keys [client-id cwd text images user buffer-id buffer on-created]}]
+      (fn [{:keys [dispatch!]} {:keys [client-id cwd text images user buffer-id buffer on-created name]}]
         (let [room-id (fresh-room-id)
               {:keys [session room]} (build-room {:cwd cwd :user user})]
           (dispatch! {:type :room/create :room-id room-id :room room})
+          ;; a real name before the first prompt: no title turn replaces it
+          (when name
+            (dispatch! {:type :session/name-set :room-id room-id :name name}))
           (when buffer
             (dispatch! {:type :ui/buffer-set :room-id room-id :buffer-id buffer-id :buffer buffer}))
           (dispatch! (cond-> {:type :prompt/submit :room-id room-id :text text}

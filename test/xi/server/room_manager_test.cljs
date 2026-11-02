@@ -56,6 +56,11 @@
                                  :buffer-id "x:plan" :buffer {:kind :x/plan}
                                  :on-created {:type :ext.x/created}})))
         "a buffer to open and an extension event to run with the new chat")
+    (is (= [[:chat/start {:text "go" :cwd "/y" :name "Commit plan 2026-11-02"}]]
+           (:effects (handle st {:type :chat/start :cwd "/y" :text "go" :name " Commit plan 2026-11-02 "}))))
+    (is (= [[:chat/start {:text "go" :cwd "/y"}]]
+           (:effects (handle st {:type :chat/start :cwd "/y" :text "go" :name "  "})))
+        "a blank name leaves the chat to be titled")
     (is (= [[:chat/start {:text "go" :cwd "/y"}]]
            (:effects (handle st {:type :chat/start :cwd "/y" :text "go"
                                  :on-created {:type :room/close}})))
