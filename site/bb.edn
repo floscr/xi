@@ -26,6 +26,11 @@
            (fs/move staging "dist")
            (when (fs/exists? backup) (fs/delete-tree backup)))}
 
+  extensions:sync
+  {:doc "Copy xi-extensions' catalog.edn and screenshots into the site (from ../../xi-extensions, else GitHub)"
+   :requires ([xisite.extensions :as extensions])
+   :task (extensions/sync!)}
+
   open
   {:doc "Open the dev server in the browser"
    :task (shell "xdg-open" "http://localhost:4322")}}}

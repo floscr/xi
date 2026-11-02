@@ -77,13 +77,16 @@
 
 (defn header [path]
   (let [docs? (.startsWith ^String path "/docs")
-        changelog? (= path "/changelog/")]
+        changelog? (= path "/changelog/")
+        blog? (.startsWith ^String path "/blog")]
     [:header.site-header
      [:div.site-header-inner
       [:a.brand {:href "/" :aria-label "Xi home"} logo]
       [:nav.site-nav
        (nav-button {:href "/docs/" :active? (and docs? (not= path "/docs/getting-started/"))} "Docs")
        (nav-button {:href "/docs/getting-started/" :active? (= path "/docs/getting-started/")} "Install")
+       (nav-button {:href "/extensions/" :active? (= path "/extensions/")} "Extensions")
+       (nav-button {:href "/blog/" :active? blog?} "Blog")
        (nav-button {:href "/changelog/" :active? changelog?} "Changelog")
        (nav-button {:href core/npm-url :label "npm"} npm-icon)
        (nav-button {:href core/repo-url :label "GitHub"} github-icon)]]]))
@@ -96,6 +99,8 @@
     [:span [:a {:href core/repo-url :rel "noopener"} "Source"] " · "
      [:a {:href core/npm-url :rel "noopener"} "npm"] " · "
      [:a {:href "/docs/"} "Docs"] " · "
+     [:a {:href "/extensions/"} "Extensions"] " · "
+     [:a {:href "/blog/"} "Blog"] " · "
      [:a {:href "/changelog/"} "Changelog"]]]])
 
 (defn render-page [hiccup]

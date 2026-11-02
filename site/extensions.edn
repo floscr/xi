@@ -1,0 +1,17 @@
+;; The extensions and MCP servers in this repo, for the Xi website's
+;; extensions page (xi site/src/xisite/extensions.clj reads a copy).
+[{:id "three"
+  :kind :mcp
+  :title "three: 3D views"
+  :summary "Interactive 3D views in the chat: breadboards, perfboards and stripboards wired hole by hole, with build steps and an underside view; plus free-form 3D scenes."
+  :tools ["breadboard_show" "breadboard_html" "breadboard_target" "breadboard_eval" "scene_show"]
+  :features ["A board, its parts and wires as data: the agent writes the layout, the view draws it"
+             "Click a hole, pin or wire to light up everything it connects to"
+             "Top view, and the underside as you solder it"
+             "Build steps with Prev/Next, and a sidebar to show and hide parts and wires"
+             "The same board in an HTML document, driven by links in the page"
+             "The agent points at things in an open view, or runs squint in it"]
+  :path "mcp/three"
+  :image "mcp/three/docs/breadboard.png"
+  :requires ["babashka"]
+  :mcp-entry "{:three {:command \"bb\"\n         :args [\"--config\" \"/path/to/xi-extensions/mcp/three/bb.edn\" \"serve\"]\n         :code-paths [\"/path/to/xi-extensions/mcp/three/bb\"\n                      \"/path/to/xi-extensions/mcp/three/src\"]}}"}]

@@ -410,7 +410,7 @@ xi server
         [["Tools, commands, keys, pages." "An extension is a plain map. Give the agent a tool, add a slash command, bind a key, or ship a page for the web client."]
          ["Sandboxed." "Extensions have no host access of their own. Files, shell commands and network requests go through the same rules as the agent's tool calls."]
          ["Your data stays yours." "Each extension gets a data directory it may use freely. Everything else asks, or is pre-allowed by a rule you wrote."]])
-       [:p [:a {:href "/docs/extensions/"} "Writing extensions →"]]]
+       [:p [:a {:href "/docs/extensions/"} "Writing extensions →"] " · " [:a {:href "/extensions/"} "Browse extensions →"]]]
       [:div.feature-code (code "clojure" extension-sample)]]]
 
     [:section.feature.alt {:id "mcp"}

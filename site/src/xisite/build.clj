@@ -2,7 +2,9 @@
   "Static build: render every route into a staging directory."
   (:require [babashka.fs :as fs]
             [clojure.string :as str]
+            [xisite.blog :as blog]
             [xisite.docs :as docs]
+            [xisite.extensions :as extensions]
             [xisite.pages :as pages]
             [xisite.theme :as theme]))
 
@@ -11,7 +13,8 @@
    reload of xisite.pages / xisite.ui reaches them."
   {"/" #'pages/home
    "/tour/" #'pages/tour-page
-   "/changelog/" #'pages/changelog})
+   "/changelog/" #'pages/changelog
+   "/extensions/" #'extensions/page})
 
 (defn routes
   "Map of path (trailing slash, root as \"/\") → html string."
@@ -21,6 +24,7 @@
     (merge
      (update-vals plain-routes #(%))
      {"/docs/" (pages/docs-index sections)}
+     (blog/routes)
      (into {} (for [page pages]
                 [(:path page) (pages/docs-page sections page)])))))
 

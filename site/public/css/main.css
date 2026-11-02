@@ -852,6 +852,45 @@ a.btn:hover { text-decoration: none; }
   padding: 40px 24px 80px;
 }
 
+/* /extensions/ (xisite.extensions): an intro, then a card per extension,
+   the screenshot over the text, side by side when there is room */
+.extensions-shell {
+  max-width: var(--wrap);
+  margin: 0 auto;
+  padding: 40px 24px 80px;
+}
+.extensions-intro { max-width: 760px; margin-bottom: 40px; }
+.extensions-intro h1 { font-size: 2.4rem; margin-bottom: 12px; }
+.extensions-intro > p:not(.eyebrow) { color: var(--fg-1); font-size: 1.1rem; }
+.extensions-intro .eyebrow { color: var(--accent); font-size: 12px; margin-bottom: 12px; }
+.extension {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 32px;
+  padding: 32px 0;
+  border-top: var(--border-0);
+}
+.extension-shot img { display: block; width: 100%; border-radius: var(--radius-md); border: var(--border-0); }
+.extension-body { min-width: 0; }
+.extension-body h2 { font-size: 1.6rem; margin: 8px 0 10px; }
+.extension-body h3 { font-size: 1.05rem; margin: 20px 0 8px; }
+.extension-summary { color: var(--fg-1); margin-bottom: 18px; }
+.extension-tools { color: var(--fg-1); font-size: 0.92rem; }
+.extension-links { margin-top: 16px; }
+@media (max-width: 860px) {
+  .extension { grid-template-columns: 1fr; }
+}
+
+/* /blog/ (xisite.blog): the post list, and a post's date line */
+.blog-list { list-style: none; padding: 0; }
+.blog-list li { padding: 16px 0; border-top: var(--border-0); }
+.blog-list strong { font-size: 1.2rem; }
+.blog-list small { display: block; color: var(--fg-2); margin: 2px 0 6px; }
+.blog-list p { color: var(--fg-1); margin: 0; }
+.blog-meta { color: var(--fg-2); font-size: 0.9rem; margin-bottom: 8px; }
+/* portrait photos would fill a screen each: cap them, centred */
+.blog-post img { display: block; max-width: 100%; max-height: 520px; width: auto; margin: 8px auto 24px; }
+
 /* A release's video under its heading (xisite.pages/slideshow, site.js):
    the tour stage, a title over it as each slide starts, chapters below. */
 .slideshow { margin: 20px 0 32px; }
