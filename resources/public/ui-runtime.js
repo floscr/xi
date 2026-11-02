@@ -652,6 +652,10 @@
     if (coll instanceof Map) return true;
     return false;
   }
+  function into_array(type, aseq) {
+    const theSeq = aseq || type;
+    return vec(theSeq);
+  }
   function compare(x, y) {
     if (x === y) {
       return 0;
@@ -703,6 +707,12 @@
   var _metaSym = Symbol("meta");
   function mod(x, y) {
     return (x % y + y) % y;
+  }
+  function not_empty(x) {
+    const isSeq = seq(x);
+    if (isSeq) {
+      return x;
+    } else return null;
   }
   var SortedSet = class _SortedSet {
     constructor(xs) {
@@ -902,13 +912,13 @@
   var hex2 = function(n) {
     return clamp(Math.round(n), 0, 255).toString(16).padStart(2, "0");
   };
-  var compose = function(h, s, v, a, fmt) {
+  var compose = function(h, s, v, a, fmt2) {
     const rgb1 = hsv__GT_rgb(h, s, v);
     const r2 = rgb1[0];
     const g3 = rgb1[1];
     const b4 = rgb1[2];
     const translucent_QMARK_5 = a < 0.999;
-    const G__16 = fmt;
+    const G__16 = fmt2;
     switch (G__16) {
       case "oklch":
         const lch8 = rgb__GT_oklch(r2, g3, b4);
@@ -1601,20 +1611,20 @@
       ;
     })().toLowerCase();
   };
-  var match_score = function(el, q2) {
+  var match_score = function(el, q3) {
     const label1 = item_label(el);
-    if (_EQ_(label1, q2)) {
+    if (_EQ_(label1, q3)) {
       return 0;
     } else {
-      if (truth_(label1.startsWith(q2))) {
+      if (truth_(label1.startsWith(q3))) {
         return 1;
       } else {
         if (truth_(label1.split(/[^a-z0-9]+/).some((function(w) {
-          return w.startsWith(q2);
+          return w.startsWith(q3);
         })))) {
           return 2;
         } else {
-          if (truth_(label1.includes(q2))) {
+          if (truth_(label1.includes(q3))) {
             return 3;
           } else {
             if ("else") {
@@ -7300,4 +7310,1500 @@
     }));
   }
   mq.addEventListener("change", sync_BANG_2);
+
+  // .compiled/video_player.mjs
+  var players = /* @__PURE__ */ new Map();
+  var idle_ms = 2600;
+  var upnext_secs = 10;
+  var check_svg = '<svg class="icon video-player-icon video-player-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  var volume_key = "ui-video-player:volume";
+  var q2 = function(el, sel) {
+    return el.querySelector(sel);
+  };
+  var qa = function(el, sel) {
+    return Array.from(el.querySelectorAll(sel));
+  };
+  var flag_BANG_ = function(el, k, on_QMARK_) {
+    if (truth_(on_QMARK_)) {
+      return el.setAttribute(k, "");
+    } else {
+      return el.removeAttribute(k);
+    }
+    ;
+  };
+  var esc = function(s) {
+    return `${s ?? ""}`.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  };
+  var pad2 = function(n) {
+    if (n < 10) {
+      return `0${n ?? ""}`;
+    } else {
+      return `${n ?? ""}`;
+    }
+    ;
+  };
+  var fmt = function(t) {
+    if (not(isFinite(t))) {
+      return "0:00";
+    } else {
+      const t1 = Math.max(0, Math.floor(t));
+      const h2 = Math.floor(t1 / 3600);
+      const m3 = Math.floor(mod(t1, 3600) / 60);
+      const s4 = mod(t1, 60);
+      if (h2 > 0) {
+        return `${h2 ?? ""}${":"}${pad2(m3) ?? ""}${":"}${pad2(s4) ?? ""}`;
+      } else {
+        return `${m3 ?? ""}${":"}${pad2(s4) ?? ""}`;
+      }
+      ;
+    }
+    ;
+  };
+  var clamp6 = function(v, lo, hi) {
+    return Math.max(lo, Math.min(hi, v));
+  };
+  var emit_BANG_3 = function(p, detail) {
+    return p.root.dispatchEvent(new CustomEvent("change", { "detail": detail }));
+  };
+  var text_tracks = function(p) {
+    return Array.from(p.video.textTracks).filter((function(t) {
+      const or__23426__auto__1 = t.kind === "subtitles";
+      if (or__23426__auto__1) {
+        return or__23426__auto__1;
+      } else {
+        return t.kind === "captions";
+      }
+      ;
+    }));
+  };
+  var levels = function(p) {
+    const temp__23007__auto__1 = p.hls;
+    if (truth_(temp__23007__auto__1)) {
+      const h2 = temp__23007__auto__1;
+      const or__23426__auto__3 = h2.levels;
+      if (truth_(or__23426__auto__3)) {
+        return or__23426__auto__3;
+      } else {
+        return [];
+      }
+      ;
+    } else {
+      return [];
+    }
+    ;
+  };
+  var toast_BANG_ = function(p, msg) {
+    const temp__23062__auto__1 = q2(p.root, "[data-vp=toast]");
+    if (truth_(temp__23062__auto__1)) {
+      const n2 = temp__23062__auto__1;
+      n2.textContent = msg;
+      n2.classList.remove("is-on");
+      n2.offsetWidth;
+      n2.classList.add("is-on");
+      clearTimeout(p.toastT);
+      return p.toastT = setTimeout((function() {
+        return n2.classList.remove("is-on");
+      }), 1600);
+    }
+    ;
+  };
+  var rates = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  var rate_label = function(r) {
+    if (r === 1) {
+      return "Normal";
+    } else {
+      return `${r ?? ""}${"\xD7"}`;
+    }
+    ;
+  };
+  var builtin_options = function(p, id) {
+    const G__331 = id;
+    switch (G__331) {
+      case "quality":
+        const lv3 = levels(p);
+        const h4 = p.hls;
+        const cur5 = truth_(h4) ? lv3[h4.currentLevel] : null;
+        const auto_QMARK_6 = (() => {
+          const or__23426__auto__7 = not(h4);
+          if (or__23426__auto__7) {
+            return or__23426__auto__7;
+          } else {
+            return h4.autoLevelEnabled;
+          }
+          ;
+        })();
+        const rows8 = lv3.map((function(l, i) {
+          return { "value": i, "height": l.height };
+        })).sort((function(a, b) {
+          return b.height - a.height;
+        }));
+        return [{ "value": -1, "label": "Auto", "default": true, "hint": truth_((() => {
+          const and__23442__auto__9 = auto_QMARK_6;
+          if (truth_(and__23442__auto__9)) {
+            return cur5;
+          } else {
+            return and__23442__auto__9;
+          }
+          ;
+        })()) ? `${cur5.height ?? ""}p` : null }].concat(rows8.map((function(r) {
+          return { "value": r.value, "label": `${r.height ?? ""}p`, "hint": r.height >= 720 ? "HD" : null };
+        })));
+        break;
+      case "subtitles":
+        return [{ "value": -1, "label": "Off", "default": true }].concat(text_tracks(p).map((function(t, i) {
+          return { "value": i, "label": (() => {
+            const or__23426__auto__10 = not_empty(t.label);
+            if (truth_(or__23426__auto__10)) {
+              return or__23426__auto__10;
+            } else {
+              const or__23426__auto__11 = not_empty(t.language);
+              if (truth_(or__23426__auto__11)) {
+                return or__23426__auto__11;
+              } else {
+                return `${"Track "}${i + 1}`;
+              }
+              ;
+            }
+            ;
+          })() };
+        })));
+        break;
+      case "speed":
+        return into_array(rates).map((function(r) {
+          return { "value": r, "label": rate_label(r), "default": r === 1 };
+        }));
+        break;
+      default:
+        return [];
+    }
+    ;
+  };
+  var builtin_value = function(p, id) {
+    const G__341 = id;
+    switch (G__341) {
+      case "quality":
+        const h3 = p.hls;
+        if (truth_((() => {
+          const or__23426__auto__4 = not(h3);
+          if (or__23426__auto__4) {
+            return or__23426__auto__4;
+          } else {
+            return h3.autoLevelEnabled;
+          }
+          ;
+        })())) {
+          return -1;
+        } else {
+          return h3.currentLevel;
+        }
+        ;
+        break;
+      case "subtitles":
+        return p.sub;
+        break;
+      case "speed":
+        return p.video.playbackRate;
+        break;
+    }
+    ;
+  };
+  var builtin_summary = function(p, id) {
+    const G__351 = id;
+    switch (G__351) {
+      case "quality":
+        const h3 = p.hls;
+        const cur4 = truth_(h3) ? levels(p)[h3.currentLevel] : null;
+        if (not(cur4)) {
+          return "Auto";
+        } else {
+          if (truth_(h3.autoLevelEnabled)) {
+            return `${"Auto \xB7 "}${cur4.height ?? ""}p`;
+          } else {
+            if ("else") {
+              return `${cur4.height ?? ""}p`;
+            } else {
+              return null;
+            }
+          }
+        }
+        ;
+        break;
+    }
+    ;
+  };
+  var set_sub_BANG_ = function(p, i, say_QMARK_) {
+    const ts1 = text_tracks(p);
+    ts1.forEach((function(t, j) {
+      return t.mode = _EQ_(j, i) ? "hidden" : "disabled";
+    }));
+    p.sub = i;
+    if (i >= 0) {
+      p.lastSub = i;
+    }
+    ;
+    draw_cue_BANG_(p);
+    if (truth_(say_QMARK_)) {
+      return toast_BANG_(p, i < 0 ? "Subtitles off" : `${"Subtitles: "}${ts1[i].label ?? ""}`);
+    }
+    ;
+  };
+  var builtin_select_BANG_ = function(p, id, v) {
+    const G__361 = id;
+    switch (G__361) {
+      case "quality":
+        const temp__23062__auto__3 = p.hls;
+        if (truth_(temp__23062__auto__3)) {
+          const h4 = temp__23062__auto__3;
+          h4.currentLevel = v;
+          return toast_BANG_(p, v < 0 ? "Quality: Auto" : `${"Quality: "}${levels(p)[v].height ?? ""}p`);
+        }
+        ;
+        break;
+      case "subtitles":
+        return set_sub_BANG_(p, v, true);
+        break;
+      case "speed":
+        p.video.playbackRate = v;
+        return toast_BANG_(p, `${"Speed: "}${rate_label(v) ?? ""}`);
+        break;
+    }
+    ;
+  };
+  var fill_panel_BANG_ = function(p, panel, id) {
+    const cur1 = builtin_value(p, id);
+    const html2 = builtin_options(p, id).map((function(o) {
+      return `${'<button type="button" class="video-player-option" role="menuitemradio"'}${' aria-checked="'}${_EQ_(o.value, cur1)}${'"'}${' data-vp-value="'}${esc(o.value) ?? ""}${'"'}${(truth_(o.default) ? ' data-vp-default="true"' : null) ?? ""}${">"}${'<span class="video-player-option-label">'}${esc(o.label) ?? ""}${"</span>"}${(truth_(o.hint) ? `${'<span class="video-player-option-hint">'}${esc(o.hint) ?? ""}${"</span>"}` : null) ?? ""}${check_svg ?? ""}${"</button>"}`;
+    })).join("");
+    const title3 = q2(panel, ".video-player-panel-title");
+    panel.innerHTML = "";
+    if (truth_(title3)) {
+      panel.appendChild(title3);
+    }
+    ;
+    return panel.insertAdjacentHTML("beforeend", html2);
+  };
+  var place_BANG_ = function(p, panel, trigger) {
+    const r1 = p.root.getBoundingClientRect();
+    const b2 = trigger.getBoundingClientRect();
+    const w3 = panel.offsetWidth;
+    const left4 = b2.left + b2.width / 2 - w3 / 2 - r1.left;
+    panel.style.bottom = `${r1.bottom - b2.top + 12}px`;
+    return panel.style.left = `${clamp6(left4, 8, r1.width - w3 - 8) ?? ""}px`;
+  };
+  var arm_hide_BANG_ = function(p) {
+    clearTimeout(p.hideT);
+    return p.hideT = setTimeout((function() {
+      if (truth_(not(p.video.paused) && not(p.open))) {
+        return flag_BANG_(p.root, "data-idle", true);
+      }
+      ;
+    }), idle_ms);
+  };
+  var show_ui_BANG_ = function(p) {
+    flag_BANG_(p.root, "data-idle", false);
+    return arm_hide_BANG_(p);
+  };
+  var close_panel_BANG_ = function(p) {
+    const temp__23062__auto__1 = p.open;
+    if (truth_(temp__23062__auto__1)) {
+      const o2 = temp__23062__auto__1;
+      o2.panel.hidden = true;
+      o2.trigger.setAttribute("aria-expanded", "false");
+      p.open = null;
+      flag_BANG_(p.root, "data-panel-open", false);
+      return arm_hide_BANG_(p);
+    }
+    ;
+  };
+  var open_panel_BANG_ = function(p, id, trigger) {
+    const panel1 = q2(p.root, `${'[data-vp-panel="'}${id ?? ""}${'"]'}`);
+    const same_QMARK_2 = (() => {
+      const and__23442__auto__3 = p.open;
+      if (truth_(and__23442__auto__3)) {
+        return p.open.panel === panel1;
+      } else {
+        return and__23442__auto__3;
+      }
+      ;
+    })();
+    close_panel_BANG_(p);
+    if (truth_((() => {
+      const and__23442__auto__4 = panel1;
+      if (truth_(and__23442__auto__4)) {
+        return not(same_QMARK_2);
+      } else {
+        return and__23442__auto__4;
+      }
+      ;
+    })())) {
+      if (truth_(trigger.hasAttribute("data-vp-builtin"))) {
+        fill_panel_BANG_(p, panel1, id);
+      }
+      ;
+      panel1.hidden = false;
+      place_BANG_(p, panel1, trigger);
+      trigger.setAttribute("aria-expanded", "true");
+      p.open = { "panel": panel1, "trigger": trigger, "id": id };
+      flag_BANG_(p.root, "data-panel-open", true);
+      show_ui_BANG_(p);
+      const temp__23062__auto__5 = (() => {
+        const or__23426__auto__6 = q2(panel1, "[aria-checked=true]");
+        if (truth_(or__23426__auto__6)) {
+          return or__23426__auto__6;
+        } else {
+          return q2(panel1, ".video-player-option");
+        }
+        ;
+      })();
+      if (truth_(temp__23062__auto__5)) {
+        const c7 = temp__23062__auto__5;
+        return c7.focus({ "preventScroll": true });
+      }
+      ;
+    }
+    ;
+  };
+  var refresh_trigger_BANG_ = function(p, id) {
+    const root1 = p.root;
+    const trigger2 = q2(root1, `${'[data-vp-open="'}${id ?? ""}${'"]'}`);
+    const panel3 = q2(root1, `${'[data-vp-panel="'}${id ?? ""}${'"]'}`);
+    if (truth_((() => {
+      const and__23442__auto__4 = trigger2;
+      if (truth_(and__23442__auto__4)) {
+        return panel3;
+      } else {
+        return and__23442__auto__4;
+      }
+      ;
+    })())) {
+      if (truth_(trigger2.hasAttribute("data-vp-builtin"))) {
+        const opts5 = builtin_options(p, id);
+        const cur6 = builtin_value(p, id);
+        const picked7 = opts5.find((function(o) {
+          return _EQ_(o.value, cur6);
+        }));
+        trigger2.setAttribute("aria-pressed", `${boolean$((() => {
+          const and__23442__auto__8 = picked7;
+          if (truth_(and__23442__auto__8)) {
+            return not(picked7.default);
+          } else {
+            return and__23442__auto__8;
+          }
+          ;
+        })()) ?? ""}`);
+        const temp__23062__auto__9 = q2(trigger2, "[data-vp-summary]");
+        if (truth_(temp__23062__auto__9)) {
+          const s10 = temp__23062__auto__9;
+          return s10.textContent = (() => {
+            const or__23426__auto__11 = builtin_summary(p, id);
+            if (truth_(or__23426__auto__11)) {
+              return or__23426__auto__11;
+            } else {
+              const or__23426__auto__12 = truth_(picked7) ? picked7.label : null;
+              if (truth_(or__23426__auto__12)) {
+                return or__23426__auto__12;
+              } else {
+                return "";
+              }
+              ;
+            }
+            ;
+          })();
+        }
+        ;
+      } else {
+        const checked13 = q2(panel3, "[aria-checked=true]");
+        const dflt14 = (() => {
+          const or__23426__auto__15 = q2(panel3, "[data-vp-default]");
+          if (truth_(or__23426__auto__15)) {
+            return or__23426__auto__15;
+          } else {
+            return q2(panel3, ".video-player-option");
+          }
+          ;
+        })();
+        trigger2.setAttribute("aria-pressed", `${boolean$((() => {
+          const and__23442__auto__16 = checked13;
+          if (truth_(and__23442__auto__16)) {
+            return !(checked13 === dflt14);
+          } else {
+            return and__23442__auto__16;
+          }
+          ;
+        })()) ?? ""}`);
+        const temp__23062__auto__17 = q2(trigger2, "[data-vp-summary]");
+        if (truth_(temp__23062__auto__17)) {
+          const s18 = temp__23062__auto__17;
+          if (truth_(checked13)) {
+            return s18.textContent = q2(checked13, ".video-player-option-label").textContent;
+          }
+          ;
+        }
+        ;
+      }
+      ;
+    }
+    ;
+  };
+  var pick_BANG_ = function(p, panel, opt) {
+    const id1 = p.open.id;
+    const trigger2 = p.open.trigger;
+    const raw3 = opt.getAttribute("data-vp-value");
+    if (truth_(trigger2.hasAttribute("data-vp-builtin"))) {
+      const v4 = parseFloat(raw3);
+      builtin_select_BANG_(p, id1, v4);
+      emit_BANG_3(p, { "kind": "select", "id": id1, "value": v4 });
+    } else {
+      qa(panel, ".video-player-option").forEach((function(o) {
+        return o.setAttribute("aria-checked", `${o === opt}`);
+      }));
+      emit_BANG_3(p, { "kind": "select", "id": id1, "value": raw3 });
+    }
+    ;
+    close_panel_BANG_(p);
+    trigger2.focus({ "preventScroll": true });
+    return sync_BANG_3(p);
+  };
+  var draw_cue_BANG_ = function(p) {
+    const temp__23062__auto__1 = q2(p.root, "[data-vp=caption]");
+    if (truth_(temp__23062__auto__1)) {
+      const box2 = temp__23062__auto__1;
+      const t3 = text_tracks(p)[p.sub];
+      const cues4 = truth_(t3) ? t3.activeCues : null;
+      const text5 = truth_((() => {
+        const and__23442__auto__6 = cues4;
+        if (truth_(and__23442__auto__6)) {
+          return cues4.length > 0;
+        } else {
+          return and__23442__auto__6;
+        }
+        ;
+      })()) ? Array.from(cues4).map((function(c) {
+        return c.text;
+      })).join("\n") : null;
+      return box2.innerHTML = truth_(text5) ? `${"<span>"}${esc(text5.replace(new RegExp("<[^>]+>", "g"), "")).replaceAll("\n", "<br>") ?? ""}${"</span>"}` : "";
+    }
+    ;
+  };
+  var wire_track_BANG_ = function(p, t) {
+    if (truth_(t.__vp)) {
+      return null;
+    } else {
+      t.__vp = true;
+      return t.addEventListener("cuechange", (function() {
+        return draw_cue_BANG_(p);
+      }));
+    }
+    ;
+  };
+  var init_tracks_BANG_ = function(p) {
+    const ts1 = text_tracks(p);
+    ts1.forEach((function(t) {
+      return wire_track_BANG_(p, t);
+    }));
+    if (p.sub < 0) {
+      const i2 = ts1.findIndex((function(t) {
+        return t.mode === "showing";
+      }));
+      if (i2 >= 0) {
+        set_sub_BANG_(p, i2, false);
+      } else {
+        ts1.forEach((function(t) {
+          return t.mode = "disabled";
+        }));
+      }
+    }
+    ;
+    const temp__23062__auto__3 = q2(p.root, "[data-vp-builtin=subtitles]");
+    if (truth_(temp__23062__auto__3)) {
+      const b4 = temp__23062__auto__3;
+      return b4.hidden = ts1.length === 0;
+    }
+    ;
+  };
+  var has_next_QMARK_ = function(p) {
+    return !(q2(p.root, "[data-vp=upnext]") == null);
+  };
+  var go_next_BANG_ = function(p) {
+    p.dismissed = false;
+    emit_BANG_3(p, { "kind": "next" });
+    const temp__23062__auto__1 = p.root.dataset.nextHref;
+    if (truth_(temp__23062__auto__1)) {
+      const href2 = temp__23062__auto__1;
+      return location.href = href2;
+    }
+    ;
+  };
+  var upnext_BANG_ = function(p) {
+    const temp__23062__auto__1 = q2(p.root, "[data-vp=upnext]");
+    if (truth_(temp__23062__auto__1)) {
+      const card2 = temp__23062__auto__1;
+      const v3 = p.video;
+      const d4 = (() => {
+        const or__23426__auto__5 = v3.duration;
+        if (truth_(or__23426__auto__5)) {
+          return or__23426__auto__5;
+        } else {
+          return 0;
+        }
+        ;
+      })();
+      const left6 = d4 - v3.currentTime;
+      const show_QMARK_7 = (() => {
+        const and__23442__auto__8 = p.auto;
+        if (truth_(and__23442__auto__8)) {
+          return not(p.dismissed) && (() => {
+            const and__23442__auto__9 = isFinite(d4);
+            if (truth_(and__23442__auto__9)) {
+              return d4 > 0 && left6 <= upnext_secs;
+            } else {
+              return and__23442__auto__9;
+            }
+            ;
+          })();
+        } else {
+          return and__23442__auto__8;
+        }
+        ;
+      })();
+      card2.hidden = not(show_QMARK_7);
+      flag_BANG_(p.root, "data-upnext", show_QMARK_7);
+      if (truth_(show_QMARK_7)) {
+        card2.style.setProperty("--vp-countdown", 1 - left6 / upnext_secs);
+        const temp__23062__auto__10 = q2(card2, "[data-vp=upnext-secs]");
+        if (truth_(temp__23062__auto__10)) {
+          const s11 = temp__23062__auto__10;
+          return s11.textContent = Math.ceil(left6);
+        }
+        ;
+      }
+      ;
+    }
+    ;
+  };
+  var sync_BANG_3 = function(p) {
+    const root1 = p.root;
+    const v2 = p.video;
+    const muted_QMARK_3 = (() => {
+      const or__23426__auto__4 = v2.muted;
+      if (truth_(or__23426__auto__4)) {
+        return or__23426__auto__4;
+      } else {
+        return v2.volume === 0;
+      }
+      ;
+    })();
+    flag_BANG_(root1, "data-paused", v2.paused);
+    flag_BANG_(root1, "data-muted", muted_QMARK_3);
+    flag_BANG_(root1, "data-fullscreen", document.fullscreenElement === root1);
+    qa(root1, "[data-vp-act=play]").forEach((function(b) {
+      const l5 = truth_(v2.paused) ? "Play" : "Pause";
+      b.setAttribute("aria-label", l5);
+      return b.setAttribute("title", `${l5 ?? ""}${" (space)"}`);
+    }));
+    const temp__23062__auto__6 = q2(root1, "[data-vp-toggle=autonext]");
+    if (truth_(temp__23062__auto__6)) {
+      const b7 = temp__23062__auto__6;
+      b7.setAttribute("aria-pressed", `${p.auto ?? ""}`);
+    }
+    ;
+    const temp__23062__auto__8 = q2(root1, "[data-vp=volume]");
+    if (truth_(temp__23062__auto__8)) {
+      const vol9 = temp__23062__auto__8;
+      const x10 = truth_(muted_QMARK_3) ? 0 : v2.volume;
+      vol9.style.setProperty("--vp-volume", x10);
+      vol9.setAttribute("aria-valuenow", Math.round(100 * x10));
+    }
+    ;
+    qa(root1, "[data-vp-open]").forEach((function(b) {
+      return refresh_trigger_BANG_(p, b.getAttribute("data-vp-open"));
+    }));
+    const temp__23062__auto__11 = p.open;
+    if (truth_(temp__23062__auto__11)) {
+      const o12 = temp__23062__auto__11;
+      if (truth_(o12.trigger.hasAttribute("data-vp-builtin"))) {
+        fill_panel_BANG_(p, o12.panel, o12.id);
+      }
+    }
+    ;
+    return upnext_BANG_(p);
+  };
+  var tick_BANG_ = function(p) {
+    const root1 = p.root;
+    const v2 = p.video;
+    const d3 = truth_(isFinite(v2.duration)) ? v2.duration : 0;
+    const t4 = v2.currentTime;
+    const scrub5 = q2(root1, "[data-vp=scrub]");
+    const temp__23062__auto__6 = q2(root1, "[data-vp=time]");
+    if (truth_(temp__23062__auto__6)) {
+      const n7 = temp__23062__auto__6;
+      n7.textContent = fmt(t4);
+    }
+    ;
+    const temp__23062__auto__8 = q2(root1, "[data-vp=left]");
+    if (truth_(temp__23062__auto__8)) {
+      const n9 = temp__23062__auto__8;
+      n9.textContent = `-${fmt(d3 - t4) ?? ""}`;
+    }
+    ;
+    if (truth_((() => {
+      const and__23442__auto__10 = scrub5;
+      if (truth_(and__23442__auto__10)) {
+        return d3 > 0;
+      } else {
+        return and__23442__auto__10;
+      }
+      ;
+    })())) {
+      if (truth_(p.dragging)) {
+      } else {
+        scrub5.style.setProperty("--vp-played", t4 / d3);
+      }
+      ;
+      scrub5.setAttribute("aria-valuemax", Math.round(d3));
+      scrub5.setAttribute("aria-valuenow", Math.round(t4));
+      scrub5.setAttribute("aria-valuetext", `${fmt(t4) ?? ""}${" of "}${fmt(d3) ?? ""}`);
+      const b11 = v2.buffered;
+      const n3712 = b11.length;
+      let i13 = 0;
+      for (; i13 < n3712; i13++) {
+        b11.start(i13) <= t4 + 0.5 ? scrub5.style.setProperty("--vp-buffered", b11.end(i13) / d3) : null;
+      }
+      ;
+    }
+    ;
+    return upnext_BANG_(p);
+  };
+  var toggle_play_BANG_ = function(p) {
+    const v1 = p.video;
+    if (truth_(v1.paused)) {
+      const r2 = v1.play();
+      if (truth_((() => {
+        const and__23442__auto__3 = r2;
+        if (truth_(and__23442__auto__3)) {
+          return r2.catch;
+        } else {
+          return and__23442__auto__3;
+        }
+        ;
+      })())) {
+        return r2.catch((function(_) {
+          return null;
+        }));
+      }
+      ;
+    } else {
+      return v1.pause();
+    }
+    ;
+  };
+  var seek_by_BANG_ = function(p, s) {
+    const v1 = p.video;
+    return v1.currentTime = clamp6(v1.currentTime + s, 0, (() => {
+      const or__23426__auto__2 = v1.duration;
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        return 0;
+      }
+      ;
+    })());
+  };
+  var set_volume_BANG_ = function(p, x) {
+    const v1 = p.video;
+    const x2 = clamp6(x, 0, 1);
+    v1.volume = x2;
+    v1.muted = x2 === 0;
+    return (() => {
+      try {
+        return localStorage.setItem(volume_key, `${x2 ?? ""}`);
+      } catch (_3) {
+        return null;
+      }
+    })();
+  };
+  var fullscreen_BANG_ = function(p) {
+    const root1 = p.root;
+    const v2 = p.video;
+    if (truth_(document.fullscreenElement)) {
+      return document.exitFullscreen();
+    } else {
+      if (truth_(root1.requestFullscreen)) {
+        return root1.requestFullscreen();
+      } else {
+        if (truth_(v2.webkitEnterFullscreen)) {
+          return v2.webkitEnterFullscreen();
+        } else {
+          return null;
+        }
+      }
+    }
+    ;
+  };
+  var act_BANG_ = function(p, a) {
+    const v1 = p.video;
+    const G__382 = a;
+    switch (G__382) {
+      case "play":
+        toggle_play_BANG_(p);
+        break;
+      case "back":
+        seek_by_BANG_(p, -10);
+        toast_BANG_(p, "\u221210 s");
+        break;
+      case "forward":
+        seek_by_BANG_(p, 10);
+        toast_BANG_(p, "+10 s");
+        break;
+      case "mute":
+        if (truth_((() => {
+          const or__23426__auto__4 = v1.muted;
+          if (truth_(or__23426__auto__4)) {
+            return or__23426__auto__4;
+          } else {
+            return v1.volume === 0;
+          }
+          ;
+        })())) {
+          v1.muted = false;
+          if (v1.volume === 0) {
+            v1.volume = 1;
+          }
+        } else {
+          v1.muted = true;
+        }
+        ;
+        break;
+      case "next":
+        go_next_BANG_(p);
+        break;
+      case "upnext-cancel":
+        p.dismissed = true;
+        upnext_BANG_(p);
+        break;
+      case "pip":
+        if (truth_(document.pictureInPictureElement)) {
+          document.exitPictureInPicture();
+        } else {
+          if (truth_(v1.requestPictureInPicture)) {
+            v1.requestPictureInPicture();
+          }
+        }
+        ;
+        break;
+      case "fullscreen":
+        fullscreen_BANG_(p);
+        break;
+    }
+    ;
+    return sync_BANG_3(p);
+  };
+  var toggle_BANG_2 = function(p, btn, id) {
+    const on_QMARK_1 = !("true" === btn.getAttribute("aria-pressed"));
+    if (id === "autonext") {
+      p.auto = on_QMARK_1;
+      p.dismissed = false;
+      toast_BANG_(p, on_QMARK_1 ? "Autoplay is on" : "Autoplay is off");
+    } else {
+      btn.setAttribute("aria-pressed", `${on_QMARK_1}`);
+    }
+    ;
+    emit_BANG_3(p, { "kind": "toggle", "id": id, "on": on_QMARK_1 });
+    return sync_BANG_3(p);
+  };
+  var frac = function(el, e) {
+    const r1 = el.getBoundingClientRect();
+    return clamp6((e.clientX - r1.left) / r1.width, 0, 1);
+  };
+  var wire_scrub_BANG_ = function(p, scrub) {
+    const v1 = p.video;
+    const tip2 = q2(scrub, "[data-vp=tip]");
+    scrub.addEventListener("pointermove", (function(e) {
+      const f3 = frac(scrub, e);
+      scrub.style.setProperty("--vp-pointer", f3);
+      if (truth_(tip2)) {
+        tip2.textContent = fmt(f3 * (() => {
+          const or__23426__auto__4 = v1.duration;
+          if (truth_(or__23426__auto__4)) {
+            return or__23426__auto__4;
+          } else {
+            return 0;
+          }
+          ;
+        })());
+      }
+      ;
+      if (truth_(p.dragging)) {
+        return scrub.style.setProperty("--vp-played", f3);
+      }
+      ;
+    }));
+    scrub.addEventListener("pointerdown", (function(e) {
+      p.dragging = true;
+      scrub.setPointerCapture(e.pointerId);
+      scrub.classList.add("is-dragging");
+      return scrub.style.setProperty("--vp-played", frac(scrub, e));
+    }));
+    const end5 = (function(e) {
+      if (truth_(p.dragging)) {
+        p.dragging = false;
+        scrub.classList.remove("is-dragging");
+        return v1.currentTime = frac(scrub, e) * (() => {
+          const or__23426__auto__6 = v1.duration;
+          if (truth_(or__23426__auto__6)) {
+            return or__23426__auto__6;
+          } else {
+            return 0;
+          }
+          ;
+        })();
+      }
+      ;
+    });
+    scrub.addEventListener("pointerup", end5);
+    scrub.addEventListener("pointercancel", end5);
+    return scrub.addEventListener("keydown", (function(e) {
+      const G__397 = e.key;
+      switch (G__397) {
+        case "ArrowLeft":
+          e.preventDefault();
+          e.stopPropagation();
+          return seek_by_BANG_(p, -5);
+          break;
+        case "ArrowRight":
+          e.preventDefault();
+          e.stopPropagation();
+          return seek_by_BANG_(p, 5);
+          break;
+        case "Home":
+          e.preventDefault();
+          return v1.currentTime = 0;
+          break;
+        case "End":
+          e.preventDefault();
+          return v1.currentTime = (() => {
+            const or__23426__auto__9 = v1.duration;
+            if (truth_(or__23426__auto__9)) {
+              return or__23426__auto__9;
+            } else {
+              return 0;
+            }
+            ;
+          })();
+          break;
+      }
+      ;
+    }));
+  };
+  var wire_volume_BANG_ = function(p, vol) {
+    const drag1 = (function(e) {
+      return set_volume_BANG_(p, frac(vol, e));
+    });
+    vol.addEventListener("pointerdown", (function(e) {
+      p.volDrag = true;
+      vol.setPointerCapture(e.pointerId);
+      return drag1(e);
+    }));
+    vol.addEventListener("pointermove", (function(e) {
+      if (truth_(p.volDrag)) {
+        return drag1(e);
+      }
+      ;
+    }));
+    vol.addEventListener("pointerup", (function(_) {
+      return p.volDrag = false;
+    }));
+    return vol.addEventListener("keydown", (function(e) {
+      const x2 = p.video.volume;
+      const k3 = e.key;
+      const step4 = truth_((() => {
+        const or__23426__auto__5 = k3 === "ArrowLeft";
+        if (or__23426__auto__5) {
+          return or__23426__auto__5;
+        } else {
+          return k3 === "ArrowDown";
+        }
+        ;
+      })()) ? -0.1 : truth_((() => {
+        const or__23426__auto__6 = k3 === "ArrowRight";
+        if (or__23426__auto__6) {
+          return or__23426__auto__6;
+        } else {
+          return k3 === "ArrowUp";
+        }
+        ;
+      })()) ? 0.1 : null;
+      if (truth_(step4)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return set_volume_BANG_(p, x2 + step4);
+      }
+      ;
+    }));
+  };
+  var on_key_BANG_ = function(p, e) {
+    const k1 = e.key;
+    const handled2 = truth_(k1 === "Escape" && p.open) ? (() => {
+      close_panel_BANG_(p);
+      return true;
+    })() : truth_(p.open) ? false : truth_((() => {
+      const or__23426__auto__3 = k1 === " ";
+      if (or__23426__auto__3) {
+        return or__23426__auto__3;
+      } else {
+        return k1 === "k";
+      }
+      ;
+    })()) ? (() => {
+      toggle_play_BANG_(p);
+      return true;
+    })() : k1 === "f" ? (() => {
+      fullscreen_BANG_(p);
+      return true;
+    })() : k1 === "m" ? (() => {
+      act_BANG_(p, "mute");
+      return true;
+    })() : k1 === "c" ? (() => {
+      if (text_tracks(p).length > 0) {
+        set_sub_BANG_(p, p.sub < 0 ? p.lastSub : -1, true);
+        sync_BANG_3(p);
+      }
+      ;
+      return true;
+    })() : truth_(k1 === "n" && has_next_QMARK_(p)) ? (() => {
+      go_next_BANG_(p);
+      return true;
+    })() : k1 === "ArrowRight" ? (() => {
+      seek_by_BANG_(p, 5);
+      toast_BANG_(p, "+5 s");
+      return true;
+    })() : k1 === "ArrowLeft" ? (() => {
+      seek_by_BANG_(p, -5);
+      toast_BANG_(p, "\u22125 s");
+      return true;
+    })() : k1 === "ArrowUp" ? (() => {
+      set_volume_BANG_(p, p.video.volume + 0.1);
+      return true;
+    })() : k1 === "ArrowDown" ? (() => {
+      set_volume_BANG_(p, p.video.volume - 0.1);
+      return true;
+    })() : "else" ? false : null;
+    if (truth_(handled2)) {
+      e.preventDefault();
+      return show_ui_BANG_(p);
+    }
+    ;
+  };
+  var on_document_key = function(e) {
+    const t1 = e.target;
+    if (truth_((() => {
+      const or__23426__auto__2 = e.defaultPrevented;
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        const or__23426__auto__3 = e.ctrlKey;
+        if (truth_(or__23426__auto__3)) {
+          return or__23426__auto__3;
+        } else {
+          const or__23426__auto__4 = e.metaKey;
+          if (truth_(or__23426__auto__4)) {
+            return or__23426__auto__4;
+          } else {
+            const or__23426__auto__5 = e.altKey;
+            if (truth_(or__23426__auto__5)) {
+              return or__23426__auto__5;
+            } else {
+              const and__23442__auto__6 = t1.closest;
+              if (truth_(and__23442__auto__6)) {
+                return t1.closest("input,textarea,select,[contenteditable]");
+              } else {
+                return and__23442__auto__6;
+              }
+              ;
+            }
+            ;
+          }
+          ;
+        }
+        ;
+      }
+      ;
+    })())) {
+      return null;
+    } else {
+      const root7 = (() => {
+        const or__23426__auto__8 = (() => {
+          const and__23442__auto__9 = t1.closest;
+          if (truth_(and__23442__auto__9)) {
+            return t1.closest("[data-video-player]");
+          } else {
+            return and__23442__auto__9;
+          }
+          ;
+        })();
+        if (truth_(or__23426__auto__8)) {
+          return or__23426__auto__8;
+        } else {
+          if (truth_((() => {
+            const and__23442__auto__11 = (() => {
+              const or__23426__auto__10 = t1 === document.body;
+              if (or__23426__auto__10) {
+                return or__23426__auto__10;
+              } else {
+                return t1 === document.documentElement;
+              }
+              ;
+            })();
+            if (truth_(and__23442__auto__11)) {
+              return 1 === players.size;
+            } else {
+              return and__23442__auto__11;
+            }
+            ;
+          })())) {
+            return players.values().next().value.root;
+          }
+        }
+        ;
+      })();
+      const temp__23062__auto__12 = (() => {
+        const and__23442__auto__13 = root7;
+        if (truth_(and__23442__auto__13)) {
+          return players.get(root7);
+        } else {
+          return and__23442__auto__13;
+        }
+        ;
+      })();
+      if (truth_(temp__23062__auto__12)) {
+        const p14 = temp__23062__auto__12;
+        if (truth_(e.key === " " && t1.closest("button,a"))) {
+          return null;
+        } else {
+          return on_key_BANG_(p14, e);
+        }
+        ;
+      }
+      ;
+    }
+    ;
+  };
+  var destroy_hls_BANG_ = function(p) {
+    const temp__23062__auto__1 = p.hls;
+    if (truth_(temp__23062__auto__1)) {
+      const h2 = temp__23062__auto__1;
+      h2.destroy();
+      return p.hls = null;
+    }
+    ;
+  };
+  var load_BANG_ = function(p) {
+    destroy_hls_BANG_(p);
+    const root1 = p.root;
+    const v2 = p.video;
+    const src3 = (() => {
+      const or__23426__auto__4 = root1.dataset.src;
+      if (truth_(or__23426__auto__4)) {
+        return or__23426__auto__4;
+      } else {
+        return "";
+      }
+      ;
+    })();
+    const start5 = parseFloat((() => {
+      const or__23426__auto__6 = root1.dataset.startAt;
+      if (truth_(or__23426__auto__6)) {
+        return or__23426__auto__6;
+      } else {
+        return "0";
+      }
+      ;
+    })());
+    const start7 = truth_(isNaN(start5)) ? 0 : start5;
+    const hls_QMARK_8 = (() => {
+      const or__23426__auto__9 = "true" === root1.dataset.hls;
+      if (or__23426__auto__9) {
+        return or__23426__auto__9;
+      } else {
+        return new RegExp("\\.m3u8($|[?#])", "i").test(src3);
+      }
+      ;
+    })();
+    const Hls10 = window.Hls;
+    const autoplay_QMARK_11 = "true" === root1.dataset.autoplay;
+    const play_BANG_12 = (function() {
+      if (autoplay_QMARK_11) {
+        const r13 = v2.play();
+        if (truth_((() => {
+          const and__23442__auto__14 = r13;
+          if (truth_(and__23442__auto__14)) {
+            return r13.catch;
+          } else {
+            return and__23442__auto__14;
+          }
+          ;
+        })())) {
+          return r13.catch((function(_) {
+            return null;
+          }));
+        }
+        ;
+      }
+      ;
+    });
+    p.src = src3;
+    p.dismissed = false;
+    p.sub = -1;
+    flag_BANG_(root1, "data-error", false);
+    if (truth_((() => {
+      const and__23442__auto__15 = hls_QMARK_8;
+      if (truth_(and__23442__auto__15)) {
+        const and__23442__auto__16 = Hls10;
+        if (truth_(and__23442__auto__16)) {
+          return Hls10.isSupported();
+        } else {
+          return and__23442__auto__16;
+        }
+        ;
+      } else {
+        return and__23442__auto__15;
+      }
+      ;
+    })())) {
+      const h17 = new Hls10({ "startPosition": start7 > 0 ? start7 : -1, "maxBufferLength": 30 });
+      p.hls = h17;
+      p.fails = 0;
+      h17.loadSource(src3);
+      h17.attachMedia(v2);
+      h17.on(Hls10.Events.MANIFEST_PARSED, (function() {
+        const temp__23062__auto__18 = q2(root1, "[data-vp-builtin=quality]");
+        if (truth_(temp__23062__auto__18)) {
+          const b19 = temp__23062__auto__18;
+          b19.hidden = levels(p).length < 2;
+        }
+        ;
+        sync_BANG_3(p);
+        return play_BANG_12();
+      }));
+      h17.on(Hls10.Events.LEVEL_SWITCHED, (function() {
+        return sync_BANG_3(p);
+      }));
+      h17.on(Hls10.Events.FRAG_LOADED, (function() {
+        return p.fails = 0;
+      }));
+      return h17.on(Hls10.Events.ERROR, (function(_, d) {
+        if (truth_(d.fatal)) {
+          p.fails = p.fails + 1;
+          if (p.fails > 8) {
+            flag_BANG_(root1, "data-error", true);
+            return toast_BANG_(p, `${"Playback error: "}${d.details ?? ""}`);
+          } else {
+            if (_EQ_(d.type, Hls10.ErrorTypes.MEDIA_ERROR)) {
+              return h17.recoverMediaError();
+            } else {
+              if ("else") {
+                toast_BANG_(p, "Reconnecting\u2026");
+                return setTimeout((function() {
+                  if (p.hls === h17) {
+                    return h17.startLoad(v2.currentTime);
+                  }
+                  ;
+                }), Math.min(8e3, 500 * p.fails));
+              } else {
+                return null;
+              }
+            }
+          }
+          ;
+        }
+        ;
+      }));
+    } else {
+      if ("else") {
+        const temp__23062__auto__20 = q2(root1, "[data-vp-builtin=quality]");
+        if (truth_(temp__23062__auto__20)) {
+          const b21 = temp__23062__auto__20;
+          b21.hidden = true;
+        }
+        ;
+        if (truth_((() => {
+          const and__23442__auto__22 = hls_QMARK_8;
+          if (truth_(and__23442__auto__22)) {
+            return _EQ_("", v2.canPlayType("application/vnd.apple.mpegurl"));
+          } else {
+            return and__23442__auto__22;
+          }
+          ;
+        })())) {
+          flag_BANG_(root1, "data-error", true);
+          return toast_BANG_(p, "This browser can't play HLS");
+        } else {
+          v2.src = src3;
+          if (start7 > 0) {
+            v2.addEventListener("loadedmetadata", (function() {
+              return v2.currentTime = start7;
+            }), { "once": true });
+          }
+          ;
+          return play_BANG_12();
+        }
+        ;
+      } else {
+        return null;
+      }
+    }
+    ;
+  };
+  var init_BANG_9 = function(root) {
+    const v1 = q2(root, "video");
+    const p2 = { "open": null, "video": v1, "hls": null, "dismissed": false, "sub": -1, "volDrag": false, "dragging": false, "root": root, "lastSub": 0, "auto": "true" === root.dataset.autonext };
+    players.set(root, p2);
+    try {
+      const temp__23062__auto__3 = localStorage.getItem(volume_key);
+      if (truth_(temp__23062__auto__3)) {
+        const x4 = temp__23062__auto__3;
+        const x5 = parseFloat(x4);
+        if (truth_(isNaN(x5))) {
+        } else {
+          v1.volume = x5;
+          v1.muted = x5 === 0;
+        }
+      }
+    } catch (_6) {
+    }
+    ;
+    root.addEventListener("click", (function(e) {
+      const t7 = e.target.closest("[data-vp-open],[data-vp-toggle],[data-vp-action],[data-vp-act],.video-player-option");
+      if (not(t7)) {
+        if (truth_(p2.open)) {
+          return close_panel_BANG_(p2);
+        } else {
+          if (truth_(e.target.closest("[data-vp=surface]"))) {
+            return toggle_play_BANG_(p2);
+          } else {
+            return null;
+          }
+        }
+      } else {
+        if (truth_(t7.hasAttribute("data-vp-open"))) {
+          return open_panel_BANG_(p2, t7.getAttribute("data-vp-open"), t7);
+        } else {
+          if (truth_(t7.classList.contains("video-player-option"))) {
+            return pick_BANG_(p2, t7.closest("[data-vp-panel]"), t7);
+          } else {
+            if (truth_(t7.hasAttribute("data-vp-toggle"))) {
+              return toggle_BANG_2(p2, t7, t7.getAttribute("data-vp-toggle"));
+            } else {
+              if (truth_(t7.hasAttribute("data-vp-action"))) {
+                return emit_BANG_3(p2, { "kind": "action", "id": t7.getAttribute("data-vp-action") });
+              } else {
+                if ("else") {
+                  return act_BANG_(p2, t7.getAttribute("data-vp-act"));
+                } else {
+                  return null;
+                }
+              }
+            }
+          }
+        }
+      }
+      ;
+    }));
+    root.addEventListener("dblclick", (function(e) {
+      if (truth_(e.target.closest("[data-vp=surface]"))) {
+        return fullscreen_BANG_(p2);
+      }
+      ;
+    }));
+    document.addEventListener("pointerdown", (function(e) {
+      const temp__23062__auto__8 = p2.open;
+      if (truth_(temp__23062__auto__8)) {
+        const o9 = temp__23062__auto__8;
+        if (truth_((() => {
+          const or__23426__auto__10 = o9.panel.contains(e.target);
+          if (truth_(or__23426__auto__10)) {
+            return or__23426__auto__10;
+          } else {
+            return o9.trigger.contains(e.target);
+          }
+          ;
+        })())) {
+          return null;
+        } else {
+          return close_panel_BANG_(p2);
+        }
+        ;
+      }
+      ;
+    }));
+    ["pointermove", "pointerdown", "keydown", "focusin"].forEach((function(t) {
+      return root.addEventListener(t, (function() {
+        return show_ui_BANG_(p2);
+      }), { "passive": true });
+    }));
+    root.addEventListener("pointerleave", (function(e) {
+      if (truth_(e.pointerType === "mouse" && (not(v1.paused) && not(p2.open)))) {
+        return flag_BANG_(root, "data-idle", true);
+      }
+      ;
+    }));
+    const temp__23062__auto__11 = q2(root, "[data-vp=scrub]");
+    if (truth_(temp__23062__auto__11)) {
+      const s12 = temp__23062__auto__11;
+      wire_scrub_BANG_(p2, s12);
+    }
+    ;
+    const temp__23062__auto__13 = q2(root, "[data-vp=volume]");
+    if (truth_(temp__23062__auto__13)) {
+      const s14 = temp__23062__auto__13;
+      wire_volume_BANG_(p2, s14);
+    }
+    ;
+    ["play", "pause", "volumechange", "ratechange"].forEach((function(t) {
+      return v1.addEventListener(t, (function() {
+        sync_BANG_3(p2);
+        return arm_hide_BANG_(p2);
+      }));
+    }));
+    ["timeupdate", "progress", "durationchange", "seeked"].forEach((function(t) {
+      return v1.addEventListener(t, (function() {
+        return tick_BANG_(p2);
+      }));
+    }));
+    v1.addEventListener("waiting", (function() {
+      return flag_BANG_(root, "data-loading", true);
+    }));
+    ["playing", "canplay", "pause"].forEach((function(t) {
+      return v1.addEventListener(t, (function() {
+        return flag_BANG_(root, "data-loading", false);
+      }));
+    }));
+    v1.addEventListener("loadedmetadata", (function() {
+      init_tracks_BANG_(p2);
+      sync_BANG_3(p2);
+      return tick_BANG_(p2);
+    }));
+    v1.textTracks.addEventListener("addtrack", (function() {
+      init_tracks_BANG_(p2);
+      return sync_BANG_3(p2);
+    }));
+    v1.addEventListener("ended", (function() {
+      if (truth_((() => {
+        const and__23442__auto__15 = has_next_QMARK_(p2);
+        if (truth_(and__23442__auto__15)) {
+          const and__23442__auto__16 = p2.auto;
+          if (truth_(and__23442__auto__16)) {
+            return not(p2.dismissed);
+          } else {
+            return and__23442__auto__16;
+          }
+          ;
+        } else {
+          return and__23442__auto__15;
+        }
+        ;
+      })())) {
+        return go_next_BANG_(p2);
+      }
+      ;
+    }));
+    const temp__23062__auto__17 = q2(root, "[data-vp-act=pip]");
+    if (truth_(temp__23062__auto__17)) {
+      const b18 = temp__23062__auto__17;
+      b18.hidden = not(document.pictureInPictureEnabled);
+    }
+    ;
+    init_tracks_BANG_(p2);
+    load_BANG_(p2);
+    sync_BANG_3(p2);
+    return tick_BANG_(p2);
+  };
+  var teardown_BANG_ = function(root) {
+    const temp__23062__auto__1 = players.get(root);
+    if (truth_(temp__23062__auto__1)) {
+      const p2 = temp__23062__auto__1;
+      destroy_hls_BANG_(p2);
+      return players.delete(root);
+    }
+    ;
+  };
+  var scan_BANG_4 = function() {
+    qa(document, "[data-video-player]").forEach((function(root) {
+      const temp__23007__auto__1 = players.get(root);
+      if (truth_(temp__23007__auto__1)) {
+        const p2 = temp__23007__auto__1;
+        if (!_EQ_(p2.src, (() => {
+          const or__23426__auto__3 = root.dataset.src;
+          if (truth_(or__23426__auto__3)) {
+            return or__23426__auto__3;
+          } else {
+            return "";
+          }
+          ;
+        })())) {
+          load_BANG_(p2);
+          return sync_BANG_3(p2);
+        }
+        ;
+      } else {
+        return init_BANG_9(root);
+      }
+      ;
+    }));
+    return Array.from(players.keys()).forEach((function(root) {
+      if (truth_(root.isConnected)) {
+        return null;
+      } else {
+        return teardown_BANG_(root);
+      }
+      ;
+    }));
+  };
+  var boot_BANG_ = function() {
+    scan_BANG_4();
+    document.addEventListener("keydown", on_document_key);
+    document.addEventListener("fullscreenchange", (function() {
+      return players.forEach((function(p) {
+        close_panel_BANG_(p);
+        return sync_BANG_3(p);
+      }));
+    }));
+    const raf1 = atom(null);
+    const obs2 = new MutationObserver((function(_) {
+      if (truth_(deref(raf1))) {
+        return null;
+      } else {
+        return reset_BANG_(raf1, requestAnimationFrame((function() {
+          reset_BANG_(raf1, null);
+          return scan_BANG_4();
+        })));
+      }
+      ;
+    }));
+    return obs2.observe(document.body, { "childList": true, "subtree": true, "attributes": true, "attributeFilter": ["data-src"] });
+  };
+  window["__uiVideoPlayer"] = (function(root) {
+    let temp__23062__auto__40 = players.get(root);
+    if (truth_(temp__23062__auto__40)) {
+      const p1 = temp__23062__auto__40;
+      return { "video": p1.video, "play": (function() {
+        return p1.video.play();
+      }), "pause": (function() {
+        return p1.video.pause();
+      }), "seek": (function(t) {
+        return p1.video.currentTime = t;
+      }), "toast": (function(msg) {
+        return toast_BANG_(p1, msg);
+      }), "load": (function() {
+        load_BANG_(p1);
+        return sync_BANG_3(p1);
+      }) };
+    }
+    ;
+  });
+  if ("loading" === document.readyState) {
+    document.addEventListener("DOMContentLoaded", boot_BANG_);
+  } else {
+    boot_BANG_();
+  }
 })();
