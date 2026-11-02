@@ -5641,6 +5641,9 @@ code a:hover,
   pointer-events: none;
 }
 .ws-bar::-webkit-scrollbar { display: none; }
+/* Narrow: the bar tops the sidebar drawer (views/recent-sidebar*) and takes
+   the notch inset, so the drawer's content below it doesn't. */
+.sidebar--ws { --safe-top: 0px; }
 /* A workspace switch swaps the sidebar at once (xi.web.core/render!). */
 [data-ws-switching] .sidebar,
 [data-ws-switching] .sidebar * { transition: none !important; }

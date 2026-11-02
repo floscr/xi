@@ -3,7 +3,8 @@
 A workspace is a set of projects. Pick one in the tab bar across the top of
 the web client and the chat lists, the project list and the home page show
 only chats and projects in it. The first tab, **All**, is always there and
-shows everything. The bar appears once a tab besides All is open.
+shows everything. The bar appears once a tab besides All is open. On a
+phone or a narrow window it sits atop the sidebar instead.
 
 A chat belongs to a workspace when it runs in one of the workspace's
 directories or below one. A chat with no directory, such as a terminal or

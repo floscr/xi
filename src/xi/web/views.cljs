@@ -6903,8 +6903,9 @@
 
 (defn- workspace-bar*
   "The workspace tab bar across the top of the app, above the sidebar and the
-   chat (xi.workspace): All first, then the open tabs of config.edn's and the
-   user's own workspaces, a + for a new one. Shown once a tab besides All is
+   chat, or atop the sidebar drawer on a narrow screen (xi.workspace): All
+   first, then the open tabs of config.edn's and the user's own workspaces,
+   a + for a new one. Shown once a tab besides All is
    open, never for a personal agent (New workspace stays in the palette and
    the sidebar footer menu). Every tab but All has an × that closes it and
    a context menu (`workspace-tab-menu`)."
@@ -7033,9 +7034,12 @@
         drafts   (:web/draft-chats state)
         collapsed (workspace/collapsed-groups state)
         section  (partial sidebar-section dispatch! collapsed)
-        {route-page :page route-dir :dir} (:web/route state)]
+        {route-page :page route-dir :dir} (:web/route state)
+        ;; narrow: the workspace tabs ride atop the drawer, not the app
+        ws-bar   (when-not wide? (workspace-bar state dispatch!))]
     (sidebar/sidebar
-     {}
+     {:class (when ws-bar "sidebar--ws")}
+     ws-bar
      ;; Keyed by render? so the closed drawer holds no card list and a fresh
      ;; one is built on open (a hidden list accumulated stale spinner nodes).
      (sidebar/sidebar-content
@@ -9656,12 +9660,13 @@
             "Done")))))))
 
 (defn root-view
-  "The app shell: the workspace bar (when there are workspaces) across the
-   top, the sidebar layout below it."
+  "The app shell: on a wide screen the workspace bar (when there are
+   workspaces) across the top, the sidebar layout below it; narrow, the bar
+   sits atop the sidebar drawer (recent-sidebar*)."
   [state dispatch! pages]
   (let [open? (boolean (:web/sidebar-open? state))
         page  (get-in state [:web/route :page])
-        bar   (workspace-bar state dispatch!)]
+        bar   (when (:web/wide? state) (workspace-bar state dispatch!))]
     [:div {:class ["app-shell" (when bar "app-shell--ws")]}
      bar
      (apply sidebar/sidebar-layout
