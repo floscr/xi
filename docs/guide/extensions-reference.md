@@ -317,8 +317,9 @@ the reason.
 
 ### `xi.api.time`
 
-`(now)` → milliseconds since the epoch. The sandbox has no `js/Date`; this is
-the clock, on the server and in a web half alike. Not a rules request.
+`(now)` → milliseconds since the epoch, `(today)` → the local date as
+`"YYYY-MM-DD"`. The sandbox has no `js/Date`; this is the clock, on the
+server and in a web half alike. Not a rules request.
 
 ### `xi.api.usage`
 

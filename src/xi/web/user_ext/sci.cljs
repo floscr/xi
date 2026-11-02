@@ -43,7 +43,7 @@
                      'user-avatar    views/user-avatar
                      'avatar-stack   views/avatar-stack}
    ;; the clock (a sandbox has no js/Date)
-   'xi.api.time     {'now time/now}
+   'xi.api.time     {'now time/now 'today time/today}
    ;; unified diff text → rows for views/diff-rows-view
    'xi.diff         {'parse-diff-text diff/parse-diff-text
                      'diff-rows       diff/diff-rows}
