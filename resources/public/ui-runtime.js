@@ -3523,7 +3523,7 @@
       return paint14(v20);
     });
     txt_BANG_(lab11, label4);
-    attr_BANG_(lab11, "title", label4);
+    attr_BANG_(lab11, "data-tooltip", label4);
     num12.type = "text";
     attr_BANG_(num12, "inputmode", "decimal");
     attr_BANG_(num12, "spellcheck", "false");
@@ -3880,7 +3880,8 @@
         const b20 = mk2("button", "dial-image-opt");
         attr_BANG_(b20, "type", "button");
         attr_BANG_(b20, "data-value", o19["value"]);
-        attr_BANG_(b20, "title", o19["label"]);
+        attr_BANG_(b20, "data-tooltip", o19["label"]);
+        attr_BANG_(b20, "aria-label", o19["label"]);
         b20.style.backgroundImage = `${"url("}${JSON.stringify(o19["value"]) ?? ""}${")"}`;
         on_BANG_(b20, "click", (function(_) {
           const v21 = o19["value"];
@@ -4642,13 +4643,15 @@
     panel["versionSel"] = vsel11;
     panel["cardEl"] = card7;
     attr_BANG_(iconb16, "type", "button");
-    attr_BANG_(iconb16, "title", `${"Expand "}${get(panel, "name") ?? ""}`);
+    attr_BANG_(iconb16, "data-tooltip", `${"Expand "}${get(panel, "name") ?? ""}`);
+    attr_BANG_(iconb16, "aria-label", `${"Expand "}${get(panel, "name") ?? ""}`);
     txt_BANG_(iconb16, get(panel, "icon"));
     for (let G__18 of iterable([[addb12, "+", "Save version"], [copyb13, "\u29C9", "Copy values"], [resetb14, "\u21BA", "Reset"], [collb15, "\u2013", "Minimize"]])) {
       const spec19 = G__18;
       const b20 = spec19[0];
       attr_BANG_(b20, "type", "button");
-      attr_BANG_(b20, "title", spec19[2]);
+      attr_BANG_(b20, "data-tooltip", spec19[2]);
+      attr_BANG_(b20, "aria-label", spec19[2]);
       txt_BANG_(b20, spec19[1]);
     }
     ;
@@ -7844,11 +7847,29 @@
     ;
     return s1.observer.observe(trigger, { "childList": true, "subtree": true, "characterData": true, "attributes": true });
   };
+  var host_BANG_ = function(layer) {
+    const host1 = (() => {
+      const or__23426__auto__2 = document.fullscreenElement;
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        return document.body;
+      }
+      ;
+    })();
+    if (layer.parentNode === host1) {
+      return null;
+    } else {
+      return host1.appendChild(layer);
+    }
+    ;
+  };
   var show_BANG_2 = function(trigger, instant_QMARK_) {
     const s1 = get_state3();
     const layer2 = layer_BANG_();
     const cl3 = layer2.classList;
     const prev4 = s1.open;
+    host_BANG_(layer2);
     clear_pending_BANG_();
     clearTimeout(s1.hideTimer);
     unwatch_BANG_();
@@ -8811,7 +8832,7 @@
     qa(root1, "[data-vp-act=play]").forEach((function(b) {
       const l5 = truth_(v2.paused) ? "Play" : "Pause";
       b.setAttribute("aria-label", l5);
-      return b.setAttribute("title", `${l5 ?? ""}${" (space)"}`);
+      return b.setAttribute("data-tooltip", `${l5 ?? ""}${" (space)"}`);
     }));
     const temp__23062__auto__6 = q2(root1, "[data-vp-toggle=autonext]");
     if (truth_(temp__23062__auto__6)) {

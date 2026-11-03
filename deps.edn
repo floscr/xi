@@ -4,5 +4,5 @@
         org.babashka/sci {:mvn/version "0.15.58"}
         io.github.floscr/clj-ui-framework
         {:git/url "https://github.com/floscr/clj-ui-framework.git"
-         :git/sha "7d3a1bfe66bf71510a8c24a7a0a8a3ca66013c70"}}
+         :git/sha "bb57b1e5d6d925dc1d31dc3c90201801c7c48445"}}
  :paths ["src" "test"]}
