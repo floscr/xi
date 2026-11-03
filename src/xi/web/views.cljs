@@ -5994,7 +5994,7 @@
      [:div {:class ["topbar" "topbar--chat"]}
       (menu-button dispatch!)
       [:div {:class ["topbar-title"]}
-       ;; Positioned against the topbar: a hairline along its bottom edge.
+       ;; Positioned against the topbar: a hairline along its top edge.
        (when (and resuming? (seq history))
          [:span {:class ["topbar-sync-bar"] :role "progressbar" :aria-label "Updating"}])]
       (offline-badge state)

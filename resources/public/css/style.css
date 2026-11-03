@@ -124,13 +124,15 @@ body {
 }
 
 /* Quiet "cache shown, fetching newer" hint (views/chat-view): an
-   indeterminate hairline along the chat topbar's bottom edge, so it stays in
-   view wherever the timeline is scrolled and moves no content. */
+   indeterminate hairline along the chat topbar's top edge (below the safe
+   area), so it stays in view wherever the timeline is scrolled and moves no
+   content. Not the bottom edge: the chat topbar is transparent and floats
+   over the timeline, so a line there hangs loose across the messages. */
 .topbar-sync-bar {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
+  top: var(--safe-top);
   height: 2px;
   overflow: hidden;
   pointer-events: none;
