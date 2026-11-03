@@ -9,7 +9,7 @@
      - dispatch:  events (handler effects, fx/tool dispatch!, keybindings) are
                   limited to the extension's own :ext.<id>/* plus a tiny
                   allowlist (:ui/status, :theme/set, and :prompt/submit / :subagent/spawn
-                  from commands/keys).
+                  / :subagent/abort / :subagent/reply from commands/keys).
      - effects:   only the extension's own :fx types and the filtered
                   :app/dispatch pass; anything else is dropped.
      - errors:    every user fn is wrapped so a throw is logged, not fatal.
@@ -38,9 +38,13 @@
    :terminal/open {:room-id :argv :cwd :title :tag :client-id :user} runs a
    program in a terminal buffer (xi.ext.terminal, rules-gated as :terminal).
    :diff/show {:room-id :client-id :args} opens the diff viewer as /diff
-   <args> does (xi.ext.diff.core)."
-  #{:prompt/submit :subagent/spawn :chat/start :session/resume :terminal/open
-    :diff/show})
+   <args> does (xi.ext.diff.core). :subagent/abort {:room-id :sub-id} stops
+   a sub-agent and :subagent/reply {:room-id :sub-id :text} writes to one
+   (steers it while it runs, a follow-up turn once it's done), as the
+   panel's Stop and reply field do: design mode's iPad app drives its
+   agents through them."
+  #{:prompt/submit :subagent/spawn :subagent/abort :subagent/reply
+    :chat/start :session/resume :terminal/open :diff/show})
 
 (defn- own-event? [id ev-type]
   (= (some-> ev-type namespace) (str "ext." (name id))))

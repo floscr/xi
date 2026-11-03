@@ -53,7 +53,10 @@ and `:remove-tools` are not available: whether a tool call runs is the
 - An extension's own events and effects are named `:ext.<id>/…`. A handler
   may dispatch those, plus `:ui/status` (text in the status line) and
   `:theme/set` (`:light`, `:dark` or nil for the terminal's code blocks).
-- `:prompt/submit`, `:chat/start`, `:subagent/spawn`, `:session/resume`
+- `:prompt/submit`, `:chat/start`, `:subagent/spawn`, `:subagent/abort`
+  (`{:room-id :sub-id}`: stop a sub-agent), `:subagent/reply` (`{:room-id
+  :sub-id :text}`: steer a running sub-agent, or run another turn on a
+  finished one), `:session/resume`
   (`{:room-id … :session-id …}`: load a saved session into the chat, as
   `/resume id:<id>` does) and `:diff/show` (`{:room-id :client-id :args}`:
   open the diff viewer as `/diff <args>` does, on the client that sent the

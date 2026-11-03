@@ -302,6 +302,17 @@
     ((get-in ext [:tool-registry "t"]) {} {:dispatch! (fn [ev] (swap! seen conj (:type ev)))})
     (is (= [] @seen) "a tool fn can't spawn a sub-agent (that would skip the confirmation)")))
 
+(deftest a-tool-fn-may-not-drive-sub-agents
+  (let [seen (atom [])
+        ext  (guard/wrap
+              {:id :ext-r
+               :tool-registry {"t" (fn [_ {:keys [dispatch!]}]
+                                     (dispatch! {:type :subagent/reply :sub-id "s" :text "x"})
+                                     (dispatch! {:type :subagent/abort :sub-id "s"})
+                                     {:content []})}})]
+    ((get-in ext [:tool-registry "t"]) {} {:dispatch! (fn [ev] (swap! seen conj (:type ev)))})
+    (is (= [] @seen) "reply / abort stay command-only")))
+
 (deftest an-fx-started-by-a-command-stays-user-initiated
   ;; A command can't do I/O itself, so it defers to an fx; that fx may then
   ;; submit a prompt / spawn a sub-agent. The same fx started from a handler
@@ -316,7 +327,9 @@
                :fx {:ext.ext-f/run (fn [{:keys [dispatch!]} payload]
                                      (swap! seen conj payload)
                                      (dispatch! {:type :prompt/submit :text "hi"})
-                                     (dispatch! {:type :subagent/spawn :task "t"}))}})
+                                     (dispatch! {:type :subagent/spawn :task "t"})
+                                     (dispatch! {:type :subagent/reply :sub-id "s" :text "more"})
+                                     (dispatch! {:type :subagent/abort :sub-id "s"}))}})
         run   (get-in ext [:fx :ext.ext-f/run])
         raw   (fn [ev] (swap! seen conj (:type ev)))
         [cmd-fx] (:effects ((-> ext :commands first :handler) {} {}))
@@ -324,8 +337,8 @@
     (is (true? (::guard/user-initiated (second cmd-fx))) "a command's own-fx effect is marked")
     (is (nil? (::guard/user-initiated (second h-fx))) "a handler can't forge the mark")
     (run {:dispatch! raw} (second cmd-fx))
-    (is (= [{:a 1} :prompt/submit :subagent/spawn] @seen)
-        "the fx sees a clean payload and may submit / spawn")
+    (is (= [{:a 1} :prompt/submit :subagent/spawn :subagent/reply :subagent/abort] @seen)
+        "the fx sees a clean payload and may submit / spawn / reply to / stop")
     (reset! seen [])
     (run {:dispatch! raw} (second h-fx))
     (is (= [{:a 1}] @seen) "started from a handler, the same fx is blocked")))
