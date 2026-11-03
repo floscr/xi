@@ -182,6 +182,27 @@
     (tap {:type :workspace/select} (assoc loaded :workspace/selected "all"))
     (is (= [] @seen) "All records nothing")))
 
+(deftest a-workspace-switch-records-only-the-chat-that-stays
+  (let [seen (atom [])
+        tap  (w/visit-tap #(swap! seen conj %))
+        st   (-> with-chats
+                 (assoc :web/user-state-loaded? true :workspace/selected "penpot")
+                 (on-chat "hh"))]
+    (tap {:type :route/navigate} (assoc st :workspace/sessions {"penpot" ["hh"]}))
+    (testing "the switch leaves a chat outside the workspace: it is not recorded"
+      (tap {:type :workspace/select} (assoc st :workspace/selected "all"))
+      (tap {:type :workspace/select} st)
+      (is (= [] @seen) "the tap runs before the switch navigates away"))
+    (testing "opening it again, after the dashboard, does record it"
+      (tap {:type :route/navigate} (assoc st :web/route {:page :home}))
+      (tap {:type :route/navigate} st)
+      (is (= [{:type :workspace/visit :id "penpot" :session-id "hh"}] @seen)))
+    (reset! seen [])
+    (testing "a chat that belongs stays through the switch and is recorded"
+      (tap {:type :route/navigate} (-> st (assoc :workspace/selected "all") (on-chat "pp")))
+      (tap {:type :workspace/select} (on-chat st "pp"))
+      (is (= [{:type :workspace/visit :id "penpot" :session-id "pp"}] @seen)))))
+
 (deftest the-dialog-creates-and-selects-a-workspace
   (let [st (:state (run state {:type :workspace/edit-open :mode :create :dir "/c/new"}))
         st (:state (run st {:type :workspace/edit-set :label "New one"}))

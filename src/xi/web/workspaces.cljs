@@ -158,24 +158,35 @@
   (when (seq (workspace/opened st id))
     (save-sessions st (dissoc (:workspace/sessions st) id))))
 
+(defn- stays-on-switch?
+  "Does the chat on screen stay when this window has just switched to `ws`?
+   Taps run before the switch's :route/navigate, so a chat the switch leaves
+   is still on screen here (`focus-nav` on the switched state decides)."
+  [st ws]
+  (nil? (focus-nav st ws (get-in st [:workspace/chats (:id ws)]))))
+
 (defn visit-tap
   "Record the chat on screen in the selected workspace (not All) when this
-   window arrives at it: a new chat, or a workspace switch. Only then, so a
-   pruned or removed chat stays out while it is on screen. Waits for the
-   user's stored lists (:web/user-state-loaded?), so a write never replaces
-   them with this window's partial copy."
+   window arrives at it: a chat opened, or a workspace switch the chat stays
+   through. Only then, so a pruned or removed chat stays out while it is on
+   screen. Waits for the user's stored lists (:web/user-state-loaded?), so a
+   write never replaces them with this window's partial copy."
   [dispatch!]
   (let [last-seen (atom nil)]
     (fn [_event st]
-      (when (and (:web/user-state-loaded? st)
-                 (= :chat (get-in st [:web/route :page])))
-        (let [sid (get-in st [:web/route :session-id])
-              ws  (workspace/selected st)
-              at  [(:id ws) sid]]
-          (when (and sid ws (not= at @last-seen))
-            (reset! last-seen at)
-            (when-not (some #{sid} (workspace/opened st (:id ws)))
-              (dispatch! {:type :workspace/visit :id (:id ws) :session-id sid}))))))))
+      (when (:web/user-state-loaded? st)
+        (if (not= :chat (get-in st [:web/route :page]))
+          (reset! last-seen nil)
+          (let [sid  (get-in st [:web/route :session-id])
+                ws   (workspace/selected st)
+                at   [(:id ws) sid]
+                prev @last-seen]
+            (when (not= at prev)
+              (reset! last-seen at)
+              (when (and sid ws
+                         (not (some #{sid} (workspace/opened st (:id ws))))
+                         (or (not= sid (second prev)) (stays-on-switch? st ws)))
+                (dispatch! {:type :workspace/visit :id (:id ws) :session-id sid})))))))))
 
 (defn- toggle-dir
   "`dir` in or out of workspace `id`; `:close-palette?` when picked from the
