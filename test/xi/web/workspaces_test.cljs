@@ -20,7 +20,7 @@
     (is (= "penpot" (get-in r [:state :workspace/selected])))
     (is (= "all" (get-in r [:state :workspace/previous])))
     (is (= {} (sent r)) "never sent to the server: other windows keep their tab")
-    (is (= {:selected "penpot" :chats {}} (window r)) "kept in this window's storage")
+    (is (= {:selected "penpot" :pages {}} (window r)) "kept in this window's storage")
     (testing "other goes back and forth"
       (let [r2 (run (:state r) {:type :workspace/other})]
         (is (= "all" (get-in r2 [:state :workspace/selected])))
@@ -61,32 +61,49 @@
 (defn- nav [result]
   (some (fn [[fx ev]] (when (= :app/dispatch fx) ev)) (:effects result)))
 
-(deftest each-workspace-keeps-its-focused-chat
-  (testing "leaving a tab records its chat, entering one opens its own"
+(defn- chat [sid] {:page :chat :session-id sid})
+
+(deftest each-workspace-keeps-its-page
+  (testing "leaving a tab records its page, entering one opens its own"
     (let [st (-> with-chats
-                 (assoc :workspace/selected "penpot" :workspace/chats {"w-1" "hh"})
+                 (assoc :workspace/selected "penpot" :workspace/pages {"w-1" (chat "hh")})
                  (on-chat "pp"))
           r  (run st {:type :workspace/select :id "w-1"})]
-      (is (= {"w-1" "hh" "penpot" "pp"} (get-in r [:state :workspace/chats])))
+      (is (= {"w-1" (chat "hh") "penpot" (chat "pp")} (get-in r [:state :workspace/pages])))
       (is (= {:type :route/navigate :page :chat :session-id "hh"} (nav r)))
-      (is (= {"w-1" "hh" "penpot" "pp"} (:chats (window r))) "kept per window")
+      (is (= {"w-1" (chat "hh") "penpot" (chat "pp")} (:pages (window r))) "kept per window")
       (is (= {} (sent r)) "not synced")))
+  (testing "an extension's page is kept and opened again"
+    (let [page {:page :reader :session-id nil :params {:book "b"}}
+          r    (run (assoc with-chats :workspace/selected "w-1" :web/route page
+                           :workspace/pages {"penpot" (chat "pp")})
+                    {:type :workspace/select :id "penpot"})
+          back (run (-> (:state r) (on-chat "pp")) {:type :workspace/select :id "w-1"})]
+      (is (= page (get-in r [:state :workspace/pages "w-1"])))
+      (is (= (assoc page :type :route/navigate) (nav back)))
+      (is (nil? (nav (run (assoc (:state back) :web/route page :workspace/selected "penpot")
+                          {:type :workspace/select :id "w-1"})))
+          "already on it: nothing moves")))
   (testing "a remembered chat the lobby no longer lists is not opened"
-    (let [r (run (-> with-chats (assoc :workspace/chats {"w-1" "gone"}) (on-chat "pp"))
+    (let [r (run (-> with-chats (assoc :workspace/pages {"w-1" (chat "gone")}) (on-chat "pp"))
                  {:type :workspace/select :id "w-1"})]
       (is (= {:type :route/navigate :page :home} (nav r)) "pp is not in w-1: to the dashboard")))
-  (testing "without a remembered chat, a chat that belongs stays"
+  (testing "without a remembered page, a chat that belongs stays"
     (is (nil? (nav (run (on-chat with-chats "live") {:type :workspace/select :id "penpot"}))) "a live room counts")
     (is (nil? (nav (run (-> with-chats (assoc :workspace/selected "penpot") (on-chat "pp"))
                         {:type :workspace/select :id "all"})))
         "All takes every chat"))
-  (testing "off the chat page nothing moves"
+  (testing "off the chat page without a remembered page nothing moves"
     (is (nil? (nav (run (assoc with-chats :web/route {:page :home}) {:type :workspace/select :id "w-1"})))))
-  (testing "leaving from a non-chat page forgets the tab's chat; gone tabs are pruned"
+  (testing "a remembered chat on screen in another view does not navigate"
+    (is (nil? (nav (run (-> with-chats (assoc :workspace/pages {"w-1" (chat "hh")})
+                            (assoc :web/route {:page :chat :session-id "hh" :buffer-id :prompt}))
+                        {:type :workspace/select :id "w-1"})))))
+  (testing "gone tabs are pruned"
     (let [r (run (assoc with-chats :workspace/selected "w-1" :web/route {:page :home}
-                        :workspace/chats {"w-1" "hh" "deleted-ws" "x"})
+                        :workspace/pages {"w-1" (chat "hh") "deleted-ws" (chat "x")})
                  {:type :workspace/select :id "all"})]
-      (is (= {} (get-in r [:state :workspace/chats])))))
+      (is (= {"w-1" {:page :home}} (get-in r [:state :workspace/pages])))))
   (testing "reselecting the same tab does not navigate"
     (is (nil? (nav (run (-> with-chats (assoc :workspace/selected "w-1") (on-chat "pp"))
                         {:type :workspace/select :id "w-1"}))))))

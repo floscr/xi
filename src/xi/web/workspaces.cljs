@@ -7,10 +7,11 @@
 
    The selected tab (:workspace/selected) belongs to the browser window, never
    synced: two windows can show two workspaces. Each workspace remembers the
-   chat focused in it (:workspace/chats, {workspace-id session-id}): leaving a
-   tab records the chat on screen, entering one opens its chat again
-   (`focus-nav`). Both live in the window's sessionStorage
-   (:cache/window-workspace, xi.web.cache), so a reload keeps them.
+   page it showed (:workspace/pages, {workspace-id route}): leaving a tab
+   records the route on screen (a chat, the home page, an extension's page),
+   entering one opens it again (`focus-nav`). Both live in the window's
+   sessionStorage (:cache/window-workspace, xi.web.cache), so a reload keeps
+   them.
 
    Closing a tab (the ×, its context menu) only hides it: the closed ids are
    per-user state (:workspaces-closed), and selecting a closed workspace (the
@@ -29,6 +30,13 @@
   (when (= :chat (get-in st [:web/route :page]))
     (get-in st [:web/route :session-id])))
 
+(defn- on-screen?
+  "Is `route` the page on screen? A chat counts whatever view it shows."
+  [st route]
+  (if (= :chat (:page route))
+    (= (:session-id route) (current-chat st))
+    (= route (:web/route st))))
+
 (defn- session-cwd
   "The cwd of `sid` in the lobby, and whether the lobby knows it at all."
   [st sid]
@@ -37,26 +45,30 @@
 
 (defn focus-nav
   "Where entering workspace `ws` (nil = All) goes, as a :route/navigate event
-   or nil to stay: its remembered chat `target` while the lobby still lists
-   it; else stay on the chat on screen when it belongs to `ws`, and leave a
-   chat that does not for the dashboard. Off the chat page without a
-   remembered chat nothing moves (the lists are filtered anyway)."
+   or nil to stay: its remembered page `target` (a route), a chat only while
+   the lobby still lists it; else stay on the chat on screen when it belongs
+   to `ws`, and leave a chat that does not for the dashboard. Off the chat
+   page without a remembered page nothing moves (the lists are filtered
+   anyway)."
   [st ws target]
-  (let [cur (current-chat st)]
+  (let [cur  (current-chat st)
+        chat (when (= :chat (:page target)) (:session-id target))]
     (cond
-      (and target (= target cur))   nil
-      (and target (session-cwd st target))
-      {:type :route/navigate :page :chat :session-id target}
+      (and target (on-screen? st target)) nil
+      (and chat (session-cwd st chat))
+      {:type :route/navigate :page :chat :session-id chat}
+      (and target (not= :chat (:page target)))
+      (assoc target :type :route/navigate)
       (nil? cur)                    nil
       (or (nil? ws) (workspace/member? ws (:cwd (session-cwd st cur)))) nil
       :else                         {:type :route/navigate :page :home})))
 
-(defn- remember-chat
-  "`chats` with workspace `id`'s focused chat set to `sid` (nil drops it),
-   pruned to the workspaces that still exist."
-  [st chats id sid]
+(defn- remember-page
+  "`pages` with workspace `id`'s page set to `route` (nil drops it), pruned
+   to the workspaces that still exist."
+  [st pages id route]
   (let [ids (into #{workspace/all-id} (map :id) (workspace/workspaces st))]
-    (-> (if sid (assoc chats id sid) (dissoc chats id))
+    (-> (if route (assoc pages id route) (dissoc pages id))
         (select-keys ids))))
 
 (defn- select* [st id]
@@ -67,13 +79,13 @@
       (cond-> {:state (assoc st :workspace/selected id)}
         (not= id (:workspace/selected st))
         (assoc :effects [[:cache/window-workspace {:selected id
-                                                   :chats (or (:workspace/chats st) {})}]]))
-      (let [chats (remember-chat st (or (:workspace/chats st) {}) prev (current-chat st))
-            nav   (focus-nav st (workspace/find-workspace st id) (get chats id))]
+                                                   :pages (or (:workspace/pages st) {})}]]))
+      (let [pages (remember-page st (or (:workspace/pages st) {}) prev (:web/route st))
+            nav   (focus-nav st (workspace/find-workspace st id) (get pages id))]
         {:state   (assoc st :workspace/selected id
                          :workspace/previous prev
-                         :workspace/chats chats)
-         :effects (cond-> [[:cache/window-workspace {:selected id :chats chats}]]
+                         :workspace/pages pages)
+         :effects (cond-> [[:cache/window-workspace {:selected id :pages pages}]]
                     nav (conj [:app/dispatch nav]))}))))
 
 (defn- save-user
@@ -163,7 +175,7 @@
    Taps run before the switch's :route/navigate, so a chat the switch leaves
    is still on screen here (`focus-nav` on the switched state decides)."
   [st ws]
-  (nil? (focus-nav st ws (get-in st [:workspace/chats (:id ws)]))))
+  (nil? (focus-nav st ws (get-in st [:workspace/pages (:id ws)]))))
 
 (defn visit-tap
   "Record the chat on screen in the selected workspace (not All) when this

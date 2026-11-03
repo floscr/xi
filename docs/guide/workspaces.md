@@ -10,9 +10,10 @@ A chat belongs to a workspace when it runs in one of the workspace's
 directories or below one. A chat with no directory, such as a terminal or
 a personal agent's, is in All only.
 
-Each tab keeps its own open chat. Leaving a tab remembers the chat on
-screen, and coming back opens it again. A tab with no chat of its own keeps
-the one on screen if it belongs there, and otherwise shows the home page.
+Each tab keeps its own page. Leaving a tab remembers what was on screen (a
+chat, the home page, an extension's page), and coming back opens it again.
+A tab you haven't left yet keeps the chat on screen if it belongs there,
+and otherwise shows the home page.
 
 ## The Workspace section
 
