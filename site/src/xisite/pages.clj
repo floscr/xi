@@ -10,6 +10,7 @@
             [ui.card :as card]
             [ui.chip :as chip]
             [ui.form :as form]
+            [ui.icon :as icon]
             [xisite.core :as core]
             [xisite.markdown :as md]
             [xisite.theme :as theme]
@@ -137,66 +138,170 @@ xi server
     [:iframe.phone-frame {:data-src (str "/tour/?tape=" tour "&variant=" variant)
                           :title title}]]])
 
-;; --- Architecture diagram (inline SVG; colours come from .arch-* in main.css) ---
+;; --- Architecture diagram ---
+;; Inline SVG in the style of a router illustration: cards on hairline wires,
+;; accent beams carrying events from a client into the server and out to a
+;; provider and a tool. Colours and the beam/flash keyframes are .arch-* in
+;; main.css; one cycle is 6s, an event starts every 1.5s.
 
-(defn- arch-group [x y w h label]
-  [:g
-   [:rect.arch-group {:x x :y y :width w :height h :rx 14}]
-   [:text.arch-label {:x (+ x 16) :y (+ y 24)} label]])
+(defn- arch-icon [k x y size]
+  (into [:svg.arch-icon {:x x :y y :width size :height size :viewBox "0 0 24 24"
+                         :fill "none" :stroke "currentColor" :stroke-width 2
+                         :stroke-linecap "round" :stroke-linejoin "round"}]
+        (get icon/icon-paths k)))
 
-(defn- arch-box
-  ([x y w h title] (arch-box x y w h title nil))
-  ([x y w h title sub]
-   [:g
-    [:rect.arch-box {:x x :y y :width w :height h :rx 8}]
-    (if sub
-      [:g
-       [:text.arch-title {:x (+ x 14) :y (+ y 22)} title]
-       [:text.arch-sub {:x (+ x 14) :y (+ y 40)} sub]]
-      [:text.arch-title {:x (+ x 14) :y (+ y (/ h 2) 5)} title])]))
+(defn- arch-port [x y & [on?]]
+  [:rect {:class (cond-> "arch-port" on? (str " on"))
+          :x (- x 3.5) :y (- y 3.5) :width 7 :height 7 :rx 1.5}])
 
-(defn- arch-arrow [x1 y1 x2 y2 & {:keys [both?]}]
-  [:line.arch-line.arch-arrow
-   (cond-> {:x1 x1 :y1 y1 :x2 x2 :y2 y2 :marker-end "url(#arch-head)"}
-     both? (assoc :marker-start "url(#arch-head)"))])
+(defn- arch-elbow
+  "Wire from x1,y1 to x2,y2 turning at xm with rounded corners."
+  [x1 y1 x2 y2 xm]
+  (let [dy (- y2 y1)
+        r (min 12 (/ (abs dy) 2))
+        s (if (neg? dy) -1 1)]
+    (if (zero? dy)
+      (str "M " x1 " " y1 " L " x2 " " y2)
+      (str "M " x1 " " y1 " L " (- xm r) " " y1
+           " Q " xm " " y1 " " xm " " (+ y1 (* s r))
+           " L " xm " " (- y2 (* s r))
+           " Q " xm " " y2 " " (+ xm r) " " y2
+           " L " x2 " " y2))))
+
+(defn- arch-curve [x1 y1 x2 y2]
+  (let [k (* 0.6 (- x2 x1))]
+    (str "M " x1 " " y1 " C " (+ x1 k) " " y1 " " (- x2 k) " " y2 " " x2 " " y2)))
+
+(defn- arch-beam
+  "A comet along `d`, leaving `delay` seconds into the cycle."
+  [d delay]
+  [:g.arch-beam {:style (str "--delay:" delay "s")}
+   (for [part ["tail" "mid" "head"]]
+     [:path {:class (str "arch-beam-" part) :d d :pathLength 100}])])
+
+(defn- arch-flash
+  "Lights a list row up when an event passes it: every 1.5s, or once per
+   cycle with `slow?`."
+  [x y w h delay slow?]
+  [:g {:class (cond-> "arch-flash" slow? (str " slow"))
+       :style (str "--delay:" delay "s")}
+   [:rect.arch-flash-bg {:x (inc x) :y y :width (- w 2) :height h}]
+   [:rect.arch-flash-bar {:x x :y (+ y 6) :width 2 :height (- h 12) :rx 1}]])
+
+(defn- arch-node [{:keys [x y w h icon title sub]}]
+  (let [cy (+ y (/ h 2))]
+    [:g
+     [:rect.arch-card {:x x :y y :width w :height h :rx 10}]
+     [:rect.arch-tile {:x (+ x 12) :y (- cy 16) :width 32 :height 32 :rx 8}]
+     (arch-icon icon (+ x 20) (- cy 8) 16)
+     [:text.arch-title {:x (+ x 56) :y (- cy 3)} title]
+     [:text.arch-sub {:x (+ x 56) :y (+ cy 13)} sub]]))
+
+(defn- arch-list
+  "A card with a header and rows; a row's :flashes are [delay slow?] pairs."
+  [{:keys [x y w head-h row-h mark title meta rows]}]
+  (let [right (+ x w -14)
+        hy (+ y (/ head-h 2))]
+    [:g
+     [:rect.arch-card {:x x :y y :width w :height (+ head-h (* row-h (count rows))) :rx 10}]
+     [:rect.arch-tile.solid {:x (+ x 12) :y (- hy 11) :width 22 :height 22 :rx 6}]
+     (if (keyword? mark)
+       (arch-icon mark (+ x 17) (- hy 6) 12)
+       [:text.arch-mark {:x (+ x 23) :y (+ hy 3.5) :text-anchor "middle"} mark])
+     [:text.arch-title {:x (+ x 44) :y (+ hy 4.5)} title]
+     [:text.arch-meta {:x right :y (+ hy 4) :text-anchor "end"} meta]
+     (map-indexed
+      (fn [i {:keys [icon label meta flashes]}]
+        (let [ry (+ y head-h (* i row-h))
+              cy (+ ry (/ row-h 2))]
+          [:g
+           [:line.arch-sep {:x1 x :y1 ry :x2 (+ x w) :y2 ry}]
+           (for [[delay slow?] flashes]
+             (arch-flash x ry w row-h delay slow?))
+           (when icon (arch-icon icon (+ x 16) (- cy 7) 14))
+           [:text.arch-row {:x (+ x (if icon 40 16)) :y (+ cy 4.5)} label]
+           (when meta [:text.arch-meta {:x right :y (+ cy 4)  :text-anchor "end"} meta])]))
+      rows)]))
+
+(def ^:private arch-clients
+  [{:icon :terminal :title "Terminal" :sub "full-screen TUI"}
+   {:icon :globe :title "Web client" :sub "browser and phone"}
+   {:icon :play :title "xi prompt" :sub "one-shot, no TUI"}
+   {:icon :code :title "Babashka client" :sub "scripted sessions"}])
 
 (defn- architecture-diagram []
-  [:svg.arch-svg {:viewBox "0 0 960 364" :role "img"
-                  :aria-label "Xi architecture: terminal, web, one-shot and Babashka clients connect over WebSocket to the Xi server, which holds rooms, the event queue, rules and extensions, and talks to model providers, the clj tool and MCP servers."}
-   [:defs
-    [:marker {:id "arch-head" :viewBox "0 0 10 10" :refX 8 :refY 5 :markerWidth 7 :markerHeight 7
-              :orient "auto-start-reverse"}
-     [:path.arch-head {:d "M 0 0 L 10 5 L 0 10 z"}]]]
-   ;; clients
-   (arch-group 10 20 230 334 "CLIENTS")
-   (arch-box 26 54 198 56 "Terminal" "TUI, standalone or connected")
-   (arch-box 26 122 198 56 "Web client" "browser, phone, installable")
-   (arch-box 26 190 198 56 "xi prompt" "one-shot, no TUI")
-   (arch-box 26 258 198 56 "Babashka client" "drive a session from a script")
-   ;; server
-   (arch-group 330 20 300 334 "XI SERVER")
-   (arch-box 346 54 268 56 "Rooms" "one state per session")
-   (arch-box 346 122 268 56 "Event queue" "every action is an event, handled purely")
-   (arch-box 346 190 268 56 "Rules" "allow, ask, deny or nudge each tool call")
-   (arch-box 346 258 268 56 "Extensions" "tools, commands, keys, pages")
-   ;; models and tools
-   (arch-group 720 20 230 170 "PROVIDERS")
-   (arch-box 736 50 198 28 "Claude · Agent SDK")
-   (arch-box 736 84 198 28 "OpenAI Codex · OpenCode")
-   (arch-box 736 118 198 28 "Ollama")
-   (arch-box 736 152 198 28 "Your own")
-   (arch-group 720 204 230 150 "TOOLS")
-   (arch-box 736 234 198 28 "clj REPL")
-   (arch-box 736 268 198 28 "MCP servers")
-   (arch-box 736 302 198 28 "Files and shell, gated")
-   ;; connections
-   (arch-arrow 240 187 330 187 :both? true)
-   [:text.arch-sub.arch-edge {:x 285 :y 172 :text-anchor "middle"} "WebSocket"]
-   [:text.arch-sub.arch-edge {:x 285 :y 207 :text-anchor "middle"} "events"]
-   (arch-arrow 630 105 720 105)
-   [:text.arch-sub.arch-edge {:x 675 :y 92 :text-anchor "middle"} "stdio"]
-   (arch-arrow 630 279 720 279 :both? true)
-   [:text.arch-sub.arch-edge {:x 675 :y 266 :text-anchor "middle"} "tool calls"]])
+  (let [;; clients: four cards on the left
+        client-y (fn [i] (+ 20 (* i 80)))
+        client-cy (fn [i] (+ (client-y i) 30))
+        ;; the server: header + Rooms, Event queue, Rules, Extensions
+        hub {:x 316 :y 64 :w 260 :head-h 44 :row-h 44}
+        hub-row-cy (fn [i] (+ (:y hub) (:head-h hub) (* i (:row-h hub)) 22))
+        hub-right (+ (:x hub) (:w hub))
+        [rooms-y queue-y rules-y] (map hub-row-cy [0 1 2])
+        ;; providers and tools: two lists on the right
+        providers {:x 700 :y 16 :w 180 :head-h 36 :row-h 30}
+        tools {:x 700 :y 192 :w 180 :head-h 36 :row-h 30}
+        row-cy (fn [{:keys [y head-h row-h]} i] (+ y head-h (* i row-h) (/ row-h 2)))
+        client-wire (fn [i] (arch-elbow 196 (client-cy i) (:x hub) rooms-y 256))
+        provider-wire (fn [i] (arch-curve hub-right queue-y (:x providers) (row-cy providers i)))
+        tool-wire (fn [i] (arch-curve hub-right rules-y (:x tools) (row-cy tools i)))
+        ;; event k: client k → Rooms → Event queue → provider k → Rules → a tool
+        tool-of [0 1 2 0]
+        travel 0.9
+        start (fn [k] (* 1.5 k))
+        out-at (fn [k] (+ (start k) 1.0))
+        tool-at (fn [k] (+ (start k) 1.9))
+        landed (fn [t] (mod (+ t travel) 6))]
+    [:svg.arch-svg {:viewBox "0 0 880 336" :role "img"
+                    :aria-label "Xi architecture: terminal, web, one-shot and Babashka clients connect over WebSocket to the Xi server, which holds rooms, the event queue, rules and extensions, and talks to model providers over stdio and to the clj tool and MCP servers through rules."}
+     ;; wires, then the beams riding them
+     [:g
+      (for [i (range 4)] [:path.arch-wire {:d (client-wire i)}])
+      (for [i (range 4)] [:path.arch-wire {:d (provider-wire i)}])
+      (for [i (range 3)] [:path.arch-wire {:d (tool-wire i)}])]
+     [:g
+      (for [k (range 4)] (arch-beam (client-wire k) (start k)))
+      (for [k (range 4)] (arch-beam (provider-wire k) (out-at k)))
+      (for [k (range 4)] (arch-beam (tool-wire (tool-of k)) (tool-at k)))]
+     ;; the WebSocket tag on the clients' bus
+     [:g
+      [:rect.arch-pill {:x 222 :y 240 :width 68 :height 20 :rx 10}]
+      [:text.arch-meta {:x 256 :y 254 :text-anchor "middle"} "WebSocket"]]
+     (for [[i c] (map-indexed vector arch-clients)]
+       (arch-node (assoc c :x 0 :y (client-y i) :w 196 :h 60)))
+     (arch-list (assoc hub
+                       :mark "Xi" :title "Xi server" :meta "one state per room"
+                       :rows [{:icon :users :label "Rooms" :meta "one per session"
+                               :flashes [[(- travel 0.15)]]}
+                              {:icon :list :label "Event queue" :meta "pure handlers"
+                               :flashes [[(- travel 0.05)]]}
+                              {:icon :shield :label "Rules" :meta "allow · ask · deny"
+                               :flashes [[1.8]]}
+                              {:icon :package :label "Extensions" :meta "tools · keys · pages"}]))
+     (arch-list (assoc providers
+                       :mark :zap :title "Providers" :meta "stdio"
+                       :rows (map-indexed
+                              (fn [k row] (assoc row :flashes [[(landed (out-at k)) true]]))
+                              [{:label "Claude" :meta "Agent SDK"}
+                               {:label "Codex · OpenCode"}
+                               {:label "Ollama" :meta "local"}
+                               {:label "Your own" :meta "any language"}])))
+     (arch-list (assoc tools
+                       :mark :terminal :title "Tools" :meta "via rules"
+                       :rows (map-indexed
+                              (fn [i row]
+                                (assoc row :flashes (for [k (range 4) :when (= i (tool-of k))]
+                                                      [(landed (tool-at k)) true])))
+                              [{:label "clj REPL" :meta "Babashka"}
+                               {:label "MCP servers"}
+                               {:label "Files and shell" :meta "gated"}])))
+     ;; ports on top of wire ends
+     (for [i (range 4)] (arch-port 196 (client-cy i)))
+     (arch-port (:x hub) rooms-y true)
+     (arch-port hub-right queue-y true)
+     (arch-port hub-right rules-y true)
+     (for [i (range 4)] (arch-port (:x providers) (row-cy providers i)))
+     (for [i (range 3)] (arch-port (:x tools) (row-cy tools i)))]))
 
 ;; --- Tour stage (a recorded session replayed in the real web client) ---
 

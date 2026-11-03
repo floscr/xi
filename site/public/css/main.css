@@ -798,16 +798,76 @@ a.btn:hover { text-decoration: none; }
 .arch-intro { max-width: 640px; margin-bottom: 40px; }
 .arch-intro h2 { max-width: none; }
 .arch-intro p:last-child { margin-bottom: 0; color: var(--fg-1); font-size: 1.05rem; }
-.arch { overflow-x: auto; }
-.arch-svg { display: block; width: 100%; min-width: 720px; height: auto; font-family: var(--sans); }
-.arch-group { fill: var(--bg-0); stroke: color-mix(in srgb, var(--fg-0) 20%, transparent); stroke-width: 1; }
-.arch-box { fill: var(--bg-1); stroke: color-mix(in srgb, var(--fg-0) 20%, transparent); stroke-width: 1; }
-.arch-label { fill: var(--fg-2); font-size: 11px; font-weight: 600; letter-spacing: 0.09em; }
-.arch-title { fill: var(--fg-0); font-size: 13.5px; font-weight: 600; }
-.arch-sub { fill: var(--fg-2); font-size: 11.5px; }
-.arch-edge { font-size: 11px; }
-.arch-line { stroke: var(--accent); stroke-width: 1.6; fill: none; }
-.arch-head { fill: var(--accent); }
+/* The diagram (xisite.pages/architecture-diagram): cards on hairline wires,
+   accent beams riding them. One cycle is 6s; a beam travels in its first 15%. */
+.architecture {
+  --arch-card: #fff;
+  --arch-shadow: drop-shadow(0 1px 1px rgb(15 23 42 / 0.05)) drop-shadow(0 10px 14px rgb(15 23 42 / 0.08));
+}
+[data-theme="dark"] .architecture {
+  --arch-card: color-mix(in oklab, var(--bg-1) 92%, white);
+  --arch-shadow: drop-shadow(0 12px 16px rgb(0 0 0 / 0.5));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .architecture {
+    --arch-card: color-mix(in oklab, var(--bg-1) 92%, white);
+    --arch-shadow: drop-shadow(0 12px 16px rgb(0 0 0 / 0.5));
+  }
+}
+/* the padding is room for the card shadows inside the scroll container;
+   sideways no more than .wrap's padding, or the page scrolls */
+.arch { overflow-x: auto; padding: 32px 24px; margin: -32px -24px; }
+.arch-svg { display: block; width: 100%; min-width: 720px; height: auto; overflow: visible; font-family: var(--sans); }
+.arch-card { fill: var(--arch-card); stroke: color-mix(in srgb, var(--fg-0) 10%, transparent); filter: var(--arch-shadow); }
+.arch-tile { fill: color-mix(in oklab, var(--accent) 11%, var(--arch-card)); stroke: color-mix(in srgb, var(--fg-0) 7%, transparent); }
+.arch-tile.solid { fill: var(--accent); stroke: none; }
+.arch-tile.solid + .arch-icon, .arch-mark { color: #fff; fill: #fff; }
+.arch-mark { font-size: 11px; font-weight: 700; }
+.arch-icon { color: var(--accent); }
+.arch-title { fill: var(--fg-0); font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+.arch-sub { fill: color-mix(in srgb, var(--fg-0) 52%, transparent); font-size: 12px; }
+.arch-row { fill: color-mix(in srgb, var(--fg-0) 78%, transparent); font-size: 12.5px; }
+.arch-meta { fill: color-mix(in srgb, var(--fg-0) 45%, transparent); font-size: 11.5px; }
+.arch-sep { stroke: color-mix(in srgb, var(--fg-0) 7%, transparent); }
+.arch-wire { fill: none; stroke: color-mix(in srgb, var(--fg-0) 20%, transparent); stroke-width: 1; }
+.arch-pill { fill: var(--arch-card); stroke: color-mix(in srgb, var(--fg-0) 12%, transparent); }
+.arch-port { fill: var(--arch-card); stroke: color-mix(in srgb, var(--fg-0) 35%, transparent); }
+.arch-port.on { fill: var(--accent); stroke: var(--accent); }
+
+.arch-beam path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  animation: 6s linear var(--delay) infinite backwards;
+}
+.arch-beam .arch-beam-head { stroke-width: 2.5; stroke-dasharray: 5 200; animation-name: arch-beam-head; }
+.arch-beam .arch-beam-mid { stroke-width: 2.25; stroke-opacity: 0.45; stroke-dasharray: 12 200; animation-name: arch-beam-mid; }
+.arch-beam .arch-beam-tail { stroke-width: 2; stroke-opacity: 0.15; stroke-dasharray: 24 200; animation-name: arch-beam-tail; }
+/* dashoffset = dash length − leading edge; the edge runs from −3 to 127 so
+   the round caps hide under the ports at either end */
+@keyframes arch-beam-head {
+  0% { stroke-dashoffset: 8; animation-timing-function: cubic-bezier(0.45, 0, 0.25, 1); }
+  15%, 100% { stroke-dashoffset: -122; }
+}
+@keyframes arch-beam-mid {
+  0% { stroke-dashoffset: 15; animation-timing-function: cubic-bezier(0.45, 0, 0.25, 1); }
+  15%, 100% { stroke-dashoffset: -115; }
+}
+@keyframes arch-beam-tail {
+  0% { stroke-dashoffset: 27; animation-timing-function: cubic-bezier(0.45, 0, 0.25, 1); }
+  15%, 100% { stroke-dashoffset: -103; }
+}
+
+.arch-flash { opacity: 0; animation: arch-flash 1.5s ease-out var(--delay) infinite backwards; }
+.arch-flash.slow { animation-name: arch-flash-slow; animation-duration: 6s; }
+.arch-flash-bg { fill: color-mix(in srgb, var(--accent) 9%, transparent); }
+.arch-flash-bar { fill: var(--accent); }
+@keyframes arch-flash { 0% { opacity: 0; } 10% { opacity: 1; } 55%, 100% { opacity: 0; } }
+@keyframes arch-flash-slow { 0% { opacity: 0; } 3% { opacity: 1; } 15%, 100% { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .arch-beam, .arch-flash { display: none; }
+}
 
 .under-the-hood { padding: 80px 0; border-top: var(--border-0); }
 .trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; }
