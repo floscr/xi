@@ -48,8 +48,8 @@
   [:div {:class ["file-tab" "process-log"]}
    [:div {:class ["file-tab-header"]}
     (status-badge buf)
-    [:span {:class ["process-log-command"] :title command} (str "$ " command)]
-    [:span {:class ["process-log-meta"] :title logfile} (str "PID " pid)]]
+    [:span {:class ["process-log-command"] :data-tooltip command} (str "$ " command)]
+    [:span {:class ["process-log-meta"] :data-tooltip logfile} (str "PID " pid)]]
    [:pre {:class ["file-tab-code" "process-log-body"]
           :replicant/on-render follow-tail
           :on {:scroll (fn [^js e]

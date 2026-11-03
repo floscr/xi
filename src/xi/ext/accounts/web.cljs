@@ -94,7 +94,7 @@
 (defn- avatar [{:keys [id email alias active?]}]
   [:span {:class ["accounts-avatar"]}
    (str/upper-case (str (first (or alias email id "?"))))
-   (when active? [:span {:class ["accounts-avatar-dot"] :title "In use"}])])
+   (when active? [:span {:class ["accounts-avatar-dot"] :data-tooltip "In use"}])])
 
 (defn- notes [{:keys [alias plan active? token-valid?]}]
   (str/join " · " (remove nil? [alias plan
@@ -126,7 +126,7 @@
 
 (defn- row-menu [dispatch! busy? pname {:keys [id alias active?]} open?]
   [:div {:class ["overflow-menu-wrap"]}
-   [:button {:class ["icon-btn" "icon-btn--sm"] :title "More"
+   [:button {:class ["icon-btn" "icon-btn--sm"] :data-tooltip "More" :aria-label "More"
              :on {:click (fn [^js e]
                            (.stopPropagation e)
                            (dispatch! {:type :accounts/menu :provider pname :id id}))}}
@@ -265,7 +265,7 @@
      [:div {:class ["topbar"]}
       (views/menu-button dispatch!)
       [:div {:class ["topbar-title"]} "Accounts"]
-      [:button {:class ["icon-btn"] :title "Refresh"
+      [:button {:class ["icon-btn"] :data-tooltip "Refresh" :aria-label "Refresh"
                 :disabled (when loading? true)
                 :on {:click (fn [_] (dispatch! {:type :accounts/fetch}))}}
        (icon/icon {:icon-name :refresh :size :md})]

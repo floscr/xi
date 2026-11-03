@@ -348,7 +348,7 @@
           :class    "image-edit-btn"
           :disabled disabled?
           :on-click on-click
-          :attrs    (cond-> {:replicant/key label :type "button" :title label :aria-label label}
+          :attrs    (cond-> {:replicant/key label :type "button" :data-tooltip label :aria-label label}
                       (some? pressed?) (assoc :aria-pressed (str pressed?)))}
          children))
 

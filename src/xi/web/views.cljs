@@ -264,7 +264,7 @@
   [{:keys [id name] url :avatar}]
   [:span {:class ["avatar"]
           :replicant/key (str "avatar-" id)
-          :title (or name id)
+          :data-tooltip (or name id)
           :style {:background-color (str "hsl(" (avatar/hue id) " 55% 42%)")}}
    (avatar/initials id name)
    (when url
@@ -279,7 +279,7 @@
     (let [shown (take 3 people)
           more  (- (count people) (count shown))]
       [:span {:class ["avatar-stack"]
-              :title (str/join ", " (map #(or (:name %) (:id %)) people))}
+              :data-tooltip (str/join ", " (map #(or (:name %) (:id %)) people))}
        (for [p shown] (user-avatar p))
        (when (pos? more)
          [:span {:class ["avatar" "avatar--more"]} (str "+" more)])])))
@@ -604,11 +604,11 @@
     (button-group/button-group
      {:variant :boxed :class "md-diff-toggle"}
      (button-group/button-group-item {:icon :file-text :active (not code?)
-                                      :attrs {:type "button" :title "Rendered markdown diff"}
+                                      :attrs {:type "button" :data-tooltip "Rendered markdown diff"}
                                       :on-click (select false)}
                                      "Rendered")
      (button-group/button-group-item {:icon :code :active code?
-                                      :attrs {:type "button" :title "Source diff"}
+                                      :attrs {:type "button" :data-tooltip "Source diff"}
                                       :on-click (select true)}
                                      "Code"))))
 
@@ -710,7 +710,7 @@
   [{:keys [label desc]} {:keys [class data-key-action title on-click key]}]
   [:button {:class (into ["confirm-menu-item"] class)
             :data-key-action data-key-action
-            :title title
+            :data-tooltip title
             :replicant/key key
             :on {:click on-click}}
    [:span {:class ["confirm-menu-label"]} label]
@@ -731,7 +731,7 @@
        (list
         [:button (merge {:class (conj btn-class "confirm-btn--caret")
                          :aria-label caret-label
-                         :title caret-label
+                         :data-tooltip caret-label
                          :replicant/key (str id "-caret")}
                         (popover/trigger-attrs id))
          (icon/icon {:icon-name :chevron-down :size :sm})]
@@ -801,7 +801,7 @@
              :let [block? (= :block value)]]
          [:button {:class (cond-> ["confirm-btn" "confirm-btn--extra"] block? (conj "confirm-btn--block"))
                    :data-key-action (confirm-key-action value)
-                   :title (when block? block-title)
+                   :data-tooltip (when block? block-title)
                    :on {:click (fn [_] (answer! value))}}
           (extra-label opt)])))))
 
@@ -816,7 +816,7 @@
     [:button {:class (cond-> ["confirm-btn" "confirm-btn--explain"]
                        running? (conj "confirm-btn--explain-running"))
               :disabled (or running? done?)
-              :title "Ask a sub-agent what this call does and why"
+              :data-tooltip "Ask a sub-agent what this call does and why"
               :on {:click (fn [_] (dispatch! {:type :subagent/explain-call
                                               :room-id room-id :call-id call-id}))}}
      (if running?
@@ -1122,22 +1122,22 @@
        ;; cut off mid-stream; xi.partial-writes kept what it got
        (when (and saved (not running?))
          [:span {:class ["tool-call-progress" "tool-call-progress--saved"]
-                 :title (str "Saved to " (:file saved))}
+                 :data-tooltip (str "Saved to " (:file saved))}
           (str "cut off · " (:lines saved) " lines saved")])
        ;; Outcome badge: denied > error > allowed.
        (cond
          denied?
          (let [{:keys [label reason]} resolved-permission]
            [:span {:class ["tool-call-status" "tool-call-status--deny"]
-                   :title (str (or label "Denied") (when reason (str ": " reason)))}
+                   :data-tooltip (str (or label "Denied") (when reason (str ": " reason)))}
             (icon/icon {:icon-name :x :size :sm})])
          is-error
-         [:span {:class ["tool-call-status" "tool-call-status--error"] :title "Error"}
+         [:span {:class ["tool-call-status" "tool-call-status--error"] :data-tooltip "Error"}
           (icon/icon {:icon-name :x :size :sm})]
          (some? resolved-permission)
          (let [{:keys [label reason]} resolved-permission]
            [:span {:class ["tool-call-status" "tool-call-status--allow"]
-                   :title (str (or label "Allowed") (when reason (str ": " reason)))}
+                   :data-tooltip (str (or label "Allowed") (when reason (str ": " reason)))}
             (icon/icon {:icon-name :check :size :sm})]))]
       (when clj-code
         ;; A pending ask's :target mutes the code outside it; its :block marks
@@ -1582,7 +1582,7 @@
                  (or (str/starts-with? (or media-type "") "text/")
                      (viewable-file? (or name ""))))
             (-> (update :class conj "user-attachment-card--viewable")
-                (assoc :title "View file"
+                (assoc :data-tooltip "View file"
                        :on {:click (fn [^js e]
                                      (.stopPropagation e)
                                      (dispatch! {:type :attachment/open
@@ -2093,7 +2093,7 @@
         prev!   (fn [_] (dispatch! (assoc nav-ctx :type :prompt-nav/prev)))
         bottom! (fn [_] (dispatch! {:type :timeline/scroll-to-bottom}))
         up-btn  [:button {:class ["quick-cmd" "prompt-nav-btn"]
-                          :title (if nav-idx "Previous prompt" "Jump to previous prompt")
+                          :data-tooltip (if nav-idx "Previous prompt" "Jump to previous prompt") :aria-label (if nav-idx "Previous prompt" "Jump to previous prompt")
                           :disabled (boolean (and nav-idx (<= nav-idx 0)))
                           :on {:click prev!}}
                  (icon/icon {:icon-name :arrow-up :size :sm})]]
@@ -2102,7 +2102,7 @@
         [:div {:class ["prompt-nav-group"]}
          up-btn
          [:button {:class ["quick-cmd" "prompt-nav-btn"]
-                   :title "Scroll to bottom"
+                   :data-tooltip "Scroll to bottom" :aria-label "Scroll to bottom"
                    :on {:click bottom!}}
           (icon/icon {:icon-name :arrow-down :size :sm})]]
         up-btn)
@@ -2114,11 +2114,11 @@
         [:div {:class ["prompt-nav-group"]}
          up-btn
          [:button {:class ["quick-cmd" "prompt-nav-count"]
-                   :title "Close prompt navigation"
+                   :data-tooltip "Close prompt navigation"
                    :on {:click (fn [_] (dispatch! {:type :prompt-nav/close}))}}
           (str (inc nav-idx) "/" total)]
          [:button {:class ["quick-cmd" "prompt-nav-btn"]
-                   :title (if last? "Scroll to bottom" "Next prompt")
+                   :data-tooltip (if last? "Scroll to bottom" "Next prompt") :aria-label (if last? "Scroll to bottom" "Next prompt")
                    :on {:click next!}}
           (icon/icon {:icon-name :arrow-down :size :sm})]]))))
 
@@ -2150,19 +2150,19 @@
             (str (count images) " image" (when (not= 1 (count images)) "s"))))]
        (when steerable?
          [:button {:class ["icon-btn" "icon-btn--sm" "queue-item-action" "queue-item-steer"]
-                   :title "Send into the running turn now" :aria-label "Send into the running turn now"
+                   :data-tooltip "Send into the running turn now" :aria-label "Send into the running turn now"
                    :on {:click (fn [_]
                                  (dispatch! {:type :prompt/queue-steer
                                              :room-id room-id :index idx}))}}
           (steer-icon :sm)])
        [:button {:class ["icon-btn" "icon-btn--sm" "queue-item-action"]
-                 :title "Run in a sub-agent now" :aria-label "Run in a sub-agent now"
+                 :data-tooltip "Run in a sub-agent now" :aria-label "Run in a sub-agent now"
                  :on {:click (fn [_]
                                (dispatch! {:type :subagent/run-queued
                                            :room-id room-id :index idx}))}}
         (icon/icon {:icon-name :play :size :sm})]
        [:button {:class ["icon-btn" "icon-btn--sm" "queue-item-action"]
-                 :title "Remove from queue" :aria-label "Remove from queue"
+                 :data-tooltip "Remove from queue" :aria-label "Remove from queue"
                  :on {:click (fn [_]
                                (dispatch! {:type :prompt/queue-remove
                                            :room-id room-id :index idx}))}}
@@ -2241,15 +2241,15 @@
        [:div {:class ["fgroup"]}
         (when (pos? (or (:count nav-ctx) 0))
           (prompt-nav-controls dispatch! prompt-nav nav-ctx scrolled-up?))
-        [:button {:class ["quick-cmd"] :title "Projects" :aria-label "Projects"
+        [:button {:class ["quick-cmd"] :data-tooltip "Projects" :aria-label "Projects"
                   :on {:click (fn [_] (dispatch! {:type :palette/open-projects :action :insert}))}}
          (icon/icon {:icon-name :folder :size :sm})
          [:span {:class ["qc-label"]} "Projects"]]
-        [:button {:class ["quick-cmd"] :title "Snippets" :aria-label "Snippets"
+        [:button {:class ["quick-cmd"] :data-tooltip "Snippets" :aria-label "Snippets"
                   :on {:click (fn [_] (dispatch! {:type :palette/open-snippets}))}}
          (icon/icon {:icon-name :file-text :size :sm})
          [:span {:class ["qc-label"]} "Snippets"]]
-        [:button {:class ["quick-cmd"] :title "Commands" :aria-label "Commands"
+        [:button {:class ["quick-cmd"] :data-tooltip "Commands" :aria-label "Commands"
                   :on {:click (fn [_] (dispatch! {:type :palette/open-commands}))}}
          (icon/icon {:icon-name :terminal :size :sm})
          [:span {:class ["qc-label"]} "Commands"]]])
@@ -2259,7 +2259,7 @@
          agents
          (when (pos? qcount)
            [:button {:class ["quick-cmd" "queue-num"]
-                     :title "Queued messages" :aria-label "Queued messages"
+                     :data-tooltip "Queued messages" :aria-label "Queued messages"
                      :replicant/key "queue-num"
                      :on {:click (fn [_] (dispatch! {:type :queue/toggle-popover}))}}
             (str qcount)])]])])))
@@ -2268,7 +2268,7 @@
   "Wifi-off glyph beside the send button while disconnected (inline SVG; the
    framework icon set has none)."
   []
-  [:span {:class ["compose-offline-indicator"] :title "Offline"}
+  [:span {:class ["compose-offline-indicator"] :data-tooltip "Offline"}
    [:svg {:class ["icon"] :xmlns "http://www.w3.org/2000/svg"
           :viewBox "0 0 24 24" :fill "none" :stroke "currentColor"
           :stroke-width "2" :stroke-linecap "round" :stroke-linejoin "round"
@@ -2369,18 +2369,18 @@
     [:div {:class ["compose-status"]}
      (when model
        [:button {:class ["compose-status-item"]
-                 :title (str model " — change model")
+                 :data-tooltip (str model " — change model")
                  :on {:click (fn [_] (dispatch! {:type :palette/open-models}))}}
         (str/lower-case (rename/model-label model))])
      (when-not (yolo-disabled? room)
        [:button {:class ["compose-status-item" "compose-status-yolo"]
-                 :title title
+                 :data-tooltip title
                  :aria-label title
                  :on {:click (fn [e] (yolo-pick! dispatch! e next))}}
         flame])
      (when claude-usage
        [:button {:class ["compose-status-item" "compose-status-usage"]
-                 :title "Claude usage — all usage"
+                 :data-tooltip "Claude usage — all usage"
                  :on {:click (fn [_] (dispatch! {:type :route/navigate :page :usage}))}}
         (if session (compose-status-pct session) "?")
         [:span {:class ["compose-status-dim"]} " session"]
@@ -2541,7 +2541,7 @@
            (when (or has-input? (seq images) steerable?)
              [:button {:class ["icon-btn" (when steerable? "compose-send--steer")
                                (when-not (or has-input? (seq images)) "compose-send--alt-only")]
-                       :title (when steerable? "Send · Alt: into the running turn")
+                       :data-tooltip (when steerable? "Send · Alt: into the running turn")
                        :on (send-button-on
                             steerable?
                             (fn [opts]
@@ -2577,7 +2577,7 @@
        [:span {:class ["skill-compose-name"]} "Deny with reason"]
        [:span {:class ["skill-compose-desc"]} (or dmsg dtext)]
        [:button {:class ["icon-btn" "skill-compose-close"] :type "button"
-                 :title "Back to the composer (the request stays pending)"
+                 :data-tooltip "Back to the composer (the request stays pending)" :aria-label "Back to the composer (the request stays pending)"
                  :on {:click (fn [_] (dispatch! {:type :deny-reason/cancel}))}}
         (icon/icon {:icon-name :x :size :sm})]]
       [:div {:class ["compose-input-row"]}
@@ -2620,7 +2620,7 @@
                            (do (.preventDefault e) (submit!))))}}})]
        [:div {:class ["compose-actions"]}
         [:button {:class ["icon-btn" "deny-compose-send"] :type "button"
-                  :title "Deny with this reason"
+                  :data-tooltip "Deny with this reason" :aria-label "Deny with this reason"
                   :on {:click (fn [_] (submit!))}}
          (icon/icon {:icon-name :arrow-up :size :md})]]]
       [:div {:class ["skill-compose-footer"]}
@@ -3398,12 +3398,12 @@
     [:div {:class ["thread-changes"] :replicant/key "changes"}
      [:div {:class ["thread-changes-bar"]}
       (button/button {:variant :ghost :size :sm :disabled (zero? i)
-                      :attrs {:aria-label "Earlier change" :title "Earlier change"}
+                      :attrs {:aria-label "Earlier change" :data-tooltip "Earlier change"}
                       :on-click (step -1)}
                      (icon/icon {:icon-name :chevron-left :size :sm}))
       [:span {:class ["thread-changes-count"]} (str "Change " (inc i) " of " n)]
       (button/button {:variant :ghost :size :sm :disabled (= i (dec n))
-                      :attrs {:aria-label "Later change" :title "Later change"}
+                      :attrs {:aria-label "Later change" :data-tooltip "Later change"}
                       :on-click (step 1)}
                      (icon/icon {:icon-name :chevron-right :size :sm}))
       (when path [:span {:class ["thread-changes-path"]} (str path)])]
@@ -3569,7 +3569,7 @@
         (for [{l :layout :keys [label title]} diff-layouts]
           (button-group/button-group-item
            {:active (= l layout)
-            :attrs {:aria-pressed (str (= l layout)) :title title}
+            :attrs {:aria-pressed (str (= l layout)) :data-tooltip title}
             :on-click (fn [_] (dispatch! {:type :diff/layout :layout l}))}
            label))))
 
@@ -3613,7 +3613,7 @@
           {:variant :ghost :size :sm
            :class "diff-collapse-all"
            :icon (if all-collapsed? :chevron-right :chevron-down)
-           :attrs {:aria-label label :title label}
+           :attrs {:aria-label label :data-tooltip label}
            :on-click (fn [_] (dispatch! {:type :diff/toggle-all
                                          :filenames filenames}))})))]))
 
@@ -3910,7 +3910,7 @@
                                (yolo-flame level (yolo-sticky? state level))))]
     (let [title (str title " Click to turn it off." alt-default-hint)]
       (chip/chip {:attrs    {:class      ["yolo-chip"]
-                             :title      title
+                             :data-tooltip title
                              :aria-label title}
                   :on-click (fn [e] (yolo-pick! dispatch! e :off))}
         flame))))
@@ -3931,7 +3931,7 @@
         (let [{:keys [pid command]} (first procs)
               title                 (str "View the log of $ " command)]
           (chip/chip {:class    "process-chip"
-                      :attrs    {:title title :aria-label title
+                      :attrs    {:data-tooltip title :aria-label title
                                  :replicant/key "process-chip"}
                       :on-click (fn [_] (open-log pid))}
             (icon/icon {:icon-name :terminal :size :sm})
@@ -3939,7 +3939,7 @@
         (let [title (str n " background processes — view a log")]
           (list
            (chip/chip {:class "process-chip"
-                       :attrs (merge {:title title :aria-label title
+                       :attrs (merge {:data-tooltip title :aria-label title
                                       :replicant/key "process-chip"}
                                      (popover/trigger-attrs menu-id))}
              (icon/icon {:icon-name :terminal :size :sm})
@@ -3953,7 +3953,7 @@
             (for [{:keys [pid command]} procs]
               [:button {:class ["sidebar-more-item" "buffer-menu-item"]
                         :replicant/key (str "proc-" pid)
-                        :title command
+                        :data-tooltip command
                         :on {:click (fn [^js e]
                                       (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover))
                                       (open-log pid))}}
@@ -4065,7 +4065,7 @@
                   [:button {:class ["sidebar-more-item" "buffer-menu-item"
                                     (when active? "buffer-menu-item--active")]
                             :replicant/key (or key id)
-                            :title title
+                            :data-tooltip title
                             :on {:click (fn [e] (hide! e) (on-click))}}
                    (if (keyword? icon) (icon/icon {:icon-name icon :size :sm}) icon)
                    [:span {:class ["buffer-menu-title"]} title]
@@ -4073,14 +4073,14 @@
                      [:span {:class ["buffer-menu-people"]} (avatar-stack people)])
                    (when on-close
                      [:span {:class ["buffer-menu-close"]
-                             :role "button" :title "Close buffer"
+                             :role "button" :data-tooltip "Close buffer"
                              :on {:click (fn [^js e]
                                            (.stopPropagation e)
                                            (on-close))}}
                       (icon/icon {:icon-name :x :size :sm})])])]
     (list
      [:button (merge {:class ["tab-pill" "buffer-menu-trigger" (:class opts)]
-                      :title "Switch view"
+                      :data-tooltip "Switch view"
                       :replicant/key (str menu-id "-trigger")}
                      (popover/trigger-attrs menu-id))
       (when kind (buffer-kind-icon kind))
@@ -4129,7 +4129,7 @@
                            (nav-items-for state :overflow))]
     [:div {:class ["overflow-menu-wrap"]}
      [:button {:class ["icon-btn" "icon-btn--sm"]
-               :title "More"
+               :data-tooltip "More" :aria-label "More"
                :on {:click (fn [e]
                              (.stopPropagation e)
                              (dispatch! {:type :overflow/toggle}))}}
@@ -4354,7 +4354,7 @@
          (list
           [:dt {:replicant/key "cwd-k"} "cwd"]
           [:dd {:replicant/key "cwd-v"}
-           [:span (file-row-attrs {:class ["launch-value" "launch-value--menu"] :title cwd}
+           [:span (file-row-attrs {:class ["launch-value" "launch-value--menu"] :data-tooltip cwd}
                                   cwd {:dir? true})
             cwd]]))
        (when-let [files (seq agents-files)]
@@ -4363,7 +4363,7 @@
           (into [:dd {:replicant/key "agents-v"}]
                 (map (fn [path]
                        [:span (file-row-attrs {:class ["launch-value" "launch-value--menu" "launch-file"]
-                                               :title path :replicant/key path}
+                                               :data-tooltip path :replicant/key path}
                                               path)
                         (agents-file-label cwd path)]))
                 files)))]])
@@ -4459,7 +4459,7 @@
          (fn [i line]
            [:button {:replicant/key i
                      :class ["bubble-menu-item" "code-lines-menu-item"]
-                     :title line
+                     :data-tooltip line
                      :on {:click (fn [e]
                                    (.stopPropagation e)
                                    (close!)
@@ -4636,7 +4636,7 @@
   ([dispatch! room-id {:keys [id status session-id upgraded?]}
     {:keys [text? window? stop?] :or {window? true stop? true}}]
   (let [btn (fn [cls title ev icon]
-              [:button {:class [cls] :title title :replicant/key cls
+              [:button {:class [cls] :data-tooltip title :aria-label title :replicant/key cls
                         :on {:click (fn [e]
                                       (.stopPropagation e)
                                       (dispatch! ev))}}
@@ -4694,7 +4694,7 @@
                 :on-close   #(dispatch! {:type :subagent/thread-close :room-id room-id :thread id})
                 :actions    (when-let [sid (some :session-id (rseq turns))]
                               (button/button {:variant :ghost :size :sm
-                                              :attrs {:aria-label "Open as chat" :title "Open as chat"}
+                                              :attrs {:aria-label "Open as chat" :data-tooltip "Open as chat"}
                                               :on-click (fn [_] (dispatch! {:type :route/navigate :page :chat
                                                                             :session-id sid}))}
                                              (message-circle-icon)))}))
@@ -4817,7 +4817,7 @@
           ;; mousedown would collapse the selection the button may be on
           :on {:mousedown (fn [^js e] (.preventDefault e))}}
     [:button {:class ["ask-hover-btn"] :type "button"
-              :title "Ask a sub-agent about this block" :aria-label "Ask about this block"
+              :data-tooltip "Ask a sub-agent about this block" :aria-label "Ask about this block"
               :on {:click (fn [^js e]
                             (let [ds (.-dataset (.closest (.-currentTarget e) ".ask-hover"))]
                               (dispatch! (cond-> {:type    :thread/compose-open
@@ -4915,7 +4915,7 @@
           ask-sub (assoc :data-ask-sub ask-sub))
    [:div {:class ["tool-call-block" (when ask? "subagent-row--ask")]}
     [:button {:class ["tool-call-toggle" "subagent-row"] :type "button"
-              :title "Open in the sidebar"
+              :data-tooltip "Open in the sidebar" :aria-label "Open in the sidebar"
               :on {:click (fn [_] (dispatch! (subagent-open-event view)))}}
      [:span {:class (cond-> ["tool-call-toggle-icon"]
                       running? (conj "tool-call-toggle-icon--running"))}
@@ -4928,7 +4928,7 @@
      (when meta
        [:span {:class ["subagent-row-dur"]} meta])
      (when error?
-       [:span {:class ["tool-call-status" "tool-call-status--error"] :title "Failed"}
+       [:span {:class ["tool-call-status" "tool-call-status--error"] :data-tooltip "Failed"}
         (icon/icon {:icon-name :x :size :sm})])]]])
 
 (defn- subagent-row
@@ -5076,14 +5076,14 @@
           open! (fn [e view] (close-popover! e) (dispatch! (subagent-open-event view)))]
       (list
        [:button (merge {:class ["quick-cmd" "agents-btn"]
-                        :title "Sub-agents" :aria-label "Sub-agents"
+                        :data-tooltip "Sub-agents" :aria-label "Sub-agents"
                         :replicant/key "agents-btn"}
                        (popover/trigger-attrs "agents-popover"))
         (messages-icon)
         [:span {:class ["qc-label"]} "Agents"]
         [:span {:class ["agents-btn-count"]} total]
         (when (pos? ask)
-          [:span {:class ["agents-btn-ask"] :title (need-you ask)} ask])]
+          [:span {:class ["agents-btn-ask"] :data-tooltip (need-you ask)} ask])]
        (popover/popover-content
         {:id    "agents-popover"
          :side  :top
@@ -5098,7 +5098,7 @@
          (when (pos? running)
            [:span {:class ["agents-pop-running"]} (spinner) (str running " running")])
          (when (pos? ask)
-           [:span {:class ["agents-btn-ask"] :title (need-you ask)} ask])]
+           [:span {:class ["agents-btn-ask"] :data-tooltip (need-you ask)} ask])]
         [:div {:class ["agents-pop-list"]}
          (for [{:keys [index prompt batches]} (sav/by-turn history children)]
            (list
@@ -5170,7 +5170,7 @@
         [:span {:class ["tool-call-running"]} (spinner)])
       (when (pos? error-count)
         [:span {:class ["tool-call-status" "tool-call-status--error"]
-                :title (str error-count (if (= 1 error-count) " error" " errors"))}
+                :data-tooltip (str error-count (if (= 1 error-count) " error" " errors"))}
          (icon/icon {:icon-name :x :size :sm})])]
      [:div {:class ["viewer-group-rows"]} (map :node run)]]))
 
@@ -5236,7 +5236,7 @@
   [dispatch! pane-id batch]
   (let [prefix (sav/shared-label (map sav/label batch))]
     [:button {:class ["subagent-back"]
-              :title "Back to the batch"
+              :data-tooltip "Back to the batch"
               :on {:click (fn [_] (show-in-pane! dispatch! pane-id
                                                  (sav/group-view (:id (first batch)))))}}
      (icon/icon {:icon-name :chevron-left :size :sm})
@@ -5763,7 +5763,7 @@
 
 (defn- pane-button [title on-click child]
   [:button {:class ["icon-btn" "icon-btn--sm" "pane-btn"]
-            :title title
+            :data-tooltip title :aria-label title
             :on {:click (fn [^js e] (.stopPropagation e) (on-click))}}
    child])
 
@@ -6105,9 +6105,9 @@
                          (when (= id active) "session-buffer-row--active")]
                  :replicant/key (str id)
                  :data-nav (str "b:" session-id ":" id)
-                 :title (if sub?
-                          (str title " · " (get subagent-status-label status (name (or status :running))))
-                          title)
+                 :data-tooltip (if sub?
+                                 (str title " · " (get subagent-status-label status (name (or status :running))))
+                                 title)
                  :on {:click (fn [^js e]
                                (.stopPropagation e)
                                (dispatch! {:type :route/navigate :page :chat
@@ -6123,9 +6123,9 @@
           [:span {:class ["session-buffer-people"]} (avatar-stack people)])
         [:span {:class ["session-buffer-close"]
                 :role "button"
-                :title (cond running? "Stop sub-agent"
-                             sub?     "Dismiss sub-agent"
-                             :else    "Close buffer")
+                :data-tooltip (cond running? "Stop sub-agent"
+                                    sub?     "Dismiss sub-agent"
+                                    :else    "Close buffer")
                 :on {:click (fn [^js e]
                               (.stopPropagation e)
                               (dispatch! (cond running? {:type :session/subagent-stop
@@ -6169,11 +6169,11 @@
                                           current? (assoc :buffer-id :chat))))}}
    [:div {:class ["project-card-icon" "project-card-icon--badged"
                   (when-not (or active? has-dialog?) "project-card-icon--idle")]
-          :title (cond busy?   "Working…"
-                       error?  "Last turn failed"
-                       unread? "Unread responses"
-                       active? "Live on the server"
-                       :else   nil)}
+          :data-tooltip (cond busy?   "Working…"
+                              error?  "Last turn failed"
+                              unread? "Unread responses"
+                              active? "Live on the server"
+                              :else   nil)}
     (cond
       has-dialog? (icon/icon {:icon-name :alert-circle :size :sm})
       :else       (message-circle-icon))
@@ -6181,7 +6181,7 @@
    [:div {:class ["project-card-info"]}
     [:span {:class ["project-card-name"]}
      (when pinned?
-       (icon/icon {:icon-name :bookmark :class "project-card-pin" :attrs {:title "Pinned"}}))
+       (icon/icon {:icon-name :bookmark :class "project-card-pin" :attrs {:data-tooltip "Pinned"}}))
      (or name "New session")]
     [:span {:class ["project-card-path"]}
      (->> [(when (and show-project? cwd) (shorten-path cwd))
@@ -6195,7 +6195,7 @@
         " · "
         [:span {:class ["project-card-buffers" (when buffers-open? "project-card-buffers--open")]
                 :role "button"
-                :title (if buffers-open? "Hide the buffers" "Show the buffers")
+                :data-tooltip (if buffers-open? "Hide the buffers" "Show the buffers")
                 :on {:click (fn [^js e]
                               (.stopPropagation e)
                               (dispatch! {:type :sidebar/buffers-toggle :session-id session-id}))}}
@@ -6204,7 +6204,7 @@
     (avatar-stack people)
     (when session-id
       [:button {:class ["project-card-action" "session-more-btn"]
-                :title "More actions"
+                :data-tooltip "More actions" :aria-label "More actions"
                 :on {:click open-card-menu!}}
        (more-vertical-icon)])]]]
     ;; No nil slot for closed buffers: Replicant (2025.12.1) misplaces keyed
@@ -6237,7 +6237,7 @@
            :replicant/key (str "draft-" id)
            :data-flip (str "draft:" id)
            :data-nav (str "draft:" id)
-           :title text
+           :data-tooltip text
            :on {:click (fn [_] (dispatch! {:type :draft-chat/open :id id}))}}
      [:div {:class ["project-card-icon" "project-card-icon--idle"]}
       (icon/icon {:icon-name :edit :size :sm})]
@@ -6246,7 +6246,7 @@
       (when cwd
         [:span {:class ["project-card-path"]} (shorten-path cwd)])]
      [:button {:class ["project-card-action"]
-               :title "Discard draft"
+               :data-tooltip "Discard draft" :aria-label "Discard draft"
                :on {:click (fn [^js e]
                              (.stopPropagation e)
                              (dispatch! {:type :draft-chat/discard :id id}))}}
@@ -6315,7 +6315,7 @@
      [:span {:class ["project-card-name"]} (shorten-path path)]
      [:span {:class ["project-card-path"]} path]]
     [:button {:class ["project-card-action"]
-              :title "New chat"
+              :data-tooltip "New chat" :aria-label "New chat"
               :on {:click (fn [^js e]
                             (.stopPropagation e)
                             (dispatch! {:type :projects/new-session :cwd path}))}}
@@ -6353,9 +6353,10 @@
     (when (some? content?)
       [:button {:class ["search-toggle" (when content? "search-toggle--active")]
                 :type "button"
-                :title (if content?
-                         "Searching message content — click to search names only"
-                         "Searching names — click to search message content")
+                :aria-label (if content? "Search names only" "Search message content")
+                :data-tooltip (if content?
+                                "Searching message content — click to search names only"
+                                "Searching names — click to search message content")
                 :on {:click (fn [_] (dispatch! {:type :web/toggle-content-search
                                                 :key search-key}))}}
        (icon/icon {:icon-name :file-text :size :md})])]))
@@ -6377,7 +6378,7 @@
       (menu-button dispatch!)
       [:div {:class ["topbar-title"]} (shorten-path cwd)]
       [:button {:class ["icon-btn"]
-                :title "New session"
+                :data-tooltip "New session" :aria-label "New session"
                 :on {:click (fn [_] (dispatch! {:type :projects/new-session :cwd cwd}))}}
        (icon/icon {:icon-name :plus :size :md})]
       (overflow-menu dispatch! state {:mode :project :cwd cwd})]
@@ -6516,7 +6517,7 @@
     (list
      (for [item (nav-items-for state :home-topbar)]
        [:button {:class ["icon-btn"]
-                 :title (:label item)
+                 :data-tooltip (:label item) :aria-label (:label item)
                  :replicant/key (str "nav-" (:label item))
                  :on {:click (fn [_] (dispatch! (:event item)))}}
         (icon/icon {:icon-name (:icon item) :size :md})])
@@ -6675,7 +6676,7 @@
         :attrs     {:aria-label "Project"}
         :on-change (fn [v] (dispatch! {:type :home/set-cwd :cwd v}))})
       [:button {:class ["icon-btn" "dash-composer-send"]
-                :title "Start chat"
+                :data-tooltip "Start chat" :aria-label "Start chat"
                 :disabled (str/blank? draft)
                 :on {:click (fn [_] (submit! draft))}}
        (icon/icon {:icon-name :arrow-up :size :md})]]]))
@@ -6777,10 +6778,10 @@
                                   :else "normal")]
         (list
          [:button (merge {:class ["sidebar-usage-trigger" (str "claude-usage--" severity)]
-                          :title (if outdated?
-                                   "Claude usage: unavailable"
-                                   (str "Claude usage: session " session "%"
-                                        (when weekly (str " · week " weekly "%"))))
+                          :data-tooltip (if outdated?
+                                          "Claude usage: unavailable"
+                                          (str "Claude usage: session " session "%"
+                                               (when weekly (str " · week " weekly "%"))))
                           :replicant/key "sidebar-usage-trigger"}
                          (popover/trigger-attrs "sidebar-usage"))
           (claude-usage-ring (when-not outdated? session))
@@ -6830,7 +6831,7 @@
                        (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover)))]
         (list
          [:button (merge {:class ["sidebar-footer-btn" "sidebar-user-trigger"]
-                          :title (str "Signed in as " (label (person me)))
+                          :data-tooltip (str "Signed in as " (label (person me))) :aria-label (str "Signed in as " (label (person me)))
                           :replicant/key "sidebar-user-trigger"}
                          (popover/trigger-attrs "sidebar-user-menu"))
           (user-avatar (person me))]
@@ -6860,7 +6861,7 @@
                  (some-> (.-currentTarget e) (.closest "[popover]") (.hidePopover)))]
     (list
      [:button (merge {:class ["sidebar-footer-btn"]
-                      :title "More actions"
+                      :data-tooltip "More actions" :aria-label "More actions"
                       :replicant/key "sidebar-more-trigger"}
                      (popover/trigger-attrs "sidebar-more-menu"))
       (md/more-horizontal-icon)]
@@ -6876,7 +6877,7 @@
           (let [{:keys [label icon on-click badge danger? title]} item]
             [:button {:class         (cond-> ["sidebar-more-item"]
                                        danger? (conj "sidebar-more-item--danger"))
-                      :title         title
+                      :data-tooltip  title
                       :replicant/key label
                       :on            {:click (fn [e] (close! e) (on-click))}}
              (icon/icon {:icon-name icon :size :sm})
@@ -6952,10 +6953,10 @@
                             :role "tab"
                             :tabindex "0"
                             :aria-selected (str active?)
-                            :title (case source
-                                     :config (str label " · defined in config.edn")
-                                     :user   (str label " · right-click to rename, close or delete")
-                                     label)
+                            :data-tooltip (case source
+                                            :config (str label " · defined in config.edn")
+                                            :user   (str label " · right-click to rename, close or delete")
+                                            label)
                             :on {:click   (fn [_] (select id))
                                  :keydown (fn [^js e]
                                             (when (#{"Enter" " "} (.-key e))
@@ -6965,7 +6966,7 @@
                       (when-not root?
                         [:button {:class ["ws-tab-close"]
                                   :type "button"
-                                  :title (str "Close " label)
+                                  :data-tooltip (str "Close " label)
                                   :aria-label (str "Close " label)
                                   :on {:click (fn [^js e]
                                                 (.stopPropagation e)
@@ -6982,7 +6983,7 @@
           (tab ws)))
        [:button {:class ["ws-tab" "ws-tab--add"]
                  :type "button"
-                 :title "New workspace"
+                 :data-tooltip "New workspace"
                  :aria-label "New workspace"
                  :on {:click (fn [_] (dispatch! {:type :workspace/edit-open :mode :create}))}}
         (icon/icon {:icon-name :plus :size :sm})]])))
@@ -7179,7 +7180,7 @@
             :on-change (fn [mode] (dispatch! {:type :theme/set-mode :mode mode}))})
           [:div {:class ["sidebar-footer-actions"]}
            [:button {:class ["sidebar-footer-btn"]
-                     :title "Appearance settings"
+                     :data-tooltip "Appearance settings" :aria-label "Appearance settings"
                      :on {:click (fn [_] (dispatch! {:type :appearance/open}))}}
             (icon/icon {:icon-name :settings :size :sm})]
            (when (seq items)
@@ -7232,7 +7233,7 @@
       (menu-button dispatch!)
       [:div {:class ["topbar-title"]} "Git status · " (shorten-path cwd)]
       [:button {:class ["icon-btn"]
-                :title "Refresh"
+                :data-tooltip "Refresh" :aria-label "Refresh"
                 :on {:click (fn [_] (dispatch! {:type :git-status/refresh}))}}
        (icon/icon {:icon-name :refresh :size :md})]
       (overflow-menu dispatch! state)]
@@ -8174,9 +8175,9 @@
   (let [names-only? (boolean (get-in state [:web/palette-search :names-only?]))]
     [:button {:class ["command-search-toggle"]
               :type "button" :tabindex "-1"
-              :title (if names-only?
-                       "Searching names only — click or Tab to search session text too"
-                       "Searching names + session text — click or Tab for names only")
+              :data-tooltip (if names-only?
+                              "Searching names only — click or Tab to search session text too"
+                              "Searching names + session text — click or Tab for names only")
               :on {:mousedown (fn [^js e] (.preventDefault e))
                    :click (fn [_] (dispatch! {:type :palette/toggle-content-search}))}}
      (icon/icon {:icon-name :file-text :size :sm})
@@ -8657,7 +8658,7 @@
        (when (not-empty description)
          [:span {:class ["skill-compose-desc"]} description])
        [:button {:class ["icon-btn" "skill-compose-close"] :type "button"
-                 :title "Cancel skill"
+                 :data-tooltip "Cancel skill" :aria-label "Cancel skill"
                  :on {:click (fn [_] (dispatch! {:type :skill-form/cancel}))}}
         (icon/icon {:icon-name :x :size :sm})]]
       (for [{in-name :name in-type :type} inputs]
@@ -8688,7 +8689,7 @@
           "Enter to start · Shift+Enter for newline · Esc Esc to cancel")]
        [:button {:class ["icon-btn" "skill-compose-send"] :type "button"
                  :disabled (nil? body)
-                 :title "Start skill"
+                 :data-tooltip "Start skill" :aria-label "Start skill"
                  :on {:click (fn [_] (dispatch! {:type :skill-form/submit}))}}
         (if body
           (icon/icon {:icon-name :arrow-up :size :md})
@@ -8783,7 +8784,7 @@
                              :replicant/key id
                              :role "switch"
                              :aria-checked (str on?)
-                             :title key
+                             :data-tooltip key
                              :on {:click (fn [_]
                                            (dispatch! {:type :appearance/set
                                                        :key :tool-blocks-except
@@ -8831,7 +8832,7 @@
   [:div {:class (cond-> ["theme-color"] derived? (conj "theme-color--derived"))
          :replicant/key id}
    [:button (merge {:type "button" :class ["theme-color-chip"]
-                    :title (if derived? (str value " · derived") value)
+                    :data-tooltip (if derived? (str value " · derived") value)
                     :replicant/key (str id "-trigger")}
                    (popover/trigger-attrs id))
     [:span {:class ["theme-color-swatch"] :style {:background value}}]
@@ -8839,7 +8840,7 @@
    (when on-clear
      (button/button {:variant :ghost :size :sm :icon :x
                      :class "theme-color-clear"
-                     :attrs {:aria-label (str "Reset " label) :title "Back to derived"}
+                     :attrs {:aria-label (str "Reset " label) :data-tooltip "Back to derived"}
                      :on-click on-clear}))
    (popover/popover-content
     {:id id :side :bottom :align :start :class "theme-color-popover"
@@ -9178,7 +9179,7 @@
                             editing?       (conj "theme-row--editing")
                             edit-on-click? (conj "theme-row--editable"))
                    :replicant/key key}
-            edit-on-click? (assoc :title "Edit this theme"
+            edit-on-click? (assoc :data-tooltip "Edit this theme"
                                   :on {:click (fn [_] (dispatch! {:type :themes/edit :name name}))}))
      [:label {:class ["theme-row-main"]}
       (if selectable?
@@ -9214,7 +9215,7 @@
                          :selectable? true :checked? (= id active)
                          :aside (button/button
                                  {:variant :ghost :size :sm :disabled full?
-                                  :attrs {:title "A copy of it to edit"}
+                                  :attrs {:data-tooltip "A copy of it to edit"}
                                   :on-click (fn [_] (dispatch! {:type :themes/edit :name id}))}
                                  "Duplicate")}))
            [[:div {:class ["theme-list-heading"] :replicant/key "custom-heading"} "Yours"]]
@@ -9324,7 +9325,7 @@
      [:span {:class ["appearance-bar-title"]} (appearance-tab-label tab)]
      [:span {:class ["appearance-bar-side" "appearance-bar-side--end"]}
       [:button {:class ["icon-btn" "icon-btn--sm"]
-                :title "Close"
+                :data-tooltip "Close" :aria-label "Close"
                 :on {:click (fn [_] (close!))}}
        (icon/icon {:icon-name :x :size :md})]]]))
 
@@ -9415,7 +9416,7 @@
          (dialog/dialog-header {}
            [:h3 (if (= mode :rename) "Rename workspace" "New workspace")]
            [:button {:class ["icon-btn" "icon-btn--sm"]
-                     :title "Close"
+                     :data-tooltip "Close" :aria-label "Close"
                      :on {:click (fn [_] (close!))}}
             (icon/icon {:icon-name :x :size :md})])
          (dialog/dialog-body {:class "workspace-body"}
@@ -9467,7 +9468,7 @@
          (dialog/dialog-header {}
            [:h3 "Rename session"]
            [:button {:class ["icon-btn" "icon-btn--sm"]
-                     :title "Close"
+                     :data-tooltip "Close" :aria-label "Close"
                      :on {:click (fn [_] (close!))}}
             (icon/icon {:icon-name :x :size :md})])
          (dialog/dialog-body {:class "rename-body"}
@@ -9526,7 +9527,7 @@
   [{:keys [label kbds class title key]}]
   [:li {:class (into ["keys-row"] class)
         :replicant/key key
-        :title title}
+        :data-tooltip title}
    [:span {:class ["keys-row-label"]} label]
    [:span {:class ["keys-row-dots"]}]
    (into [:span {:class ["keys-row-keys"]}]
@@ -9563,7 +9564,7 @@
      (when path
        [:span {:class ["keys-row-path"]} path])]
     (when source
-      [:span {:class ["keys-row-source"] :title source} source])]])
+      [:span {:class ["keys-row-source"] :data-tooltip source} source])]])
 
 (defn- keys-commands-tab
   "Every command the web lists (`web-commands`), subcommands below their
@@ -9666,7 +9667,7 @@
          (dialog/dialog-header {}
            [:h3 "Shortcuts"]
            [:button {:class ["icon-btn" "icon-btn--sm"]
-                     :title "Close"
+                     :data-tooltip "Close" :aria-label "Close"
                      :on {:click (fn [_] (close!))}}
             (icon/icon {:icon-name :x :size :md})])
          (dialog/dialog-body {:class "keys-body"}

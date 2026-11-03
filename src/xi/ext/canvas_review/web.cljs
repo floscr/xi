@@ -690,7 +690,7 @@
              (when (seq comment)
                [:span {:class ["cr-tray-comment"]} comment])]
             [:button {:class ["cr-tray-remove"]
-                      :title "Remove"
+                      :data-tooltip "Remove" :aria-label "Remove"
                       :on {:click (fn [_] (dispatch! {:type :canvas-review/remove-item
                                                       :idx i}))}}
              (icon/icon {:icon-name :x :size :sm})]])

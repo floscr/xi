@@ -228,12 +228,12 @@
              (not= page-id (get-in state [:web/route :page])))
     [:div {:class ["camera-pip"]}
      [:button {:class ["camera-pip-video-btn"]
-               :title "Camera: open the page"
+               :data-tooltip "Camera: open the page"
                :aria-label "Camera shared: open the Camera page"
                :on {:click (fn [_] (dispatch! {:type :route/navigate :page page-id}))}}
       (live-video "camera-pip-video")]
      [:button {:class ["icon-btn" "camera-pip-stop"]
-               :title "Stop sharing the camera"
+               :data-tooltip "Stop sharing the camera"
                :aria-label "Stop sharing the camera"
                :on {:click (fn [_] (dispatch! {:type :device/camera-stop}))}}
       (icon/icon {:icon-name :x :size :sm})]]))

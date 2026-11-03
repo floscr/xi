@@ -423,7 +423,7 @@
                    [:span label]])]
     (list
      [:button (merge {:class ["icon-btn" "icon-btn--sm" "agent-block-menu"]
-                      :title "Block menu" :replicant/key "trigger"}
+                      :data-tooltip "Block menu" :aria-label "Block menu" :replicant/key "trigger"}
                      (popover/trigger-attrs menu-id))
       (icon/icon {:icon-name :menu :size :sm})]
      (popover/popover-content
@@ -454,9 +454,9 @@
      [:span {:class ["agent-block-spacer"]}]
      (when (pos? (or unread 0))
        [:span {:class ["agent-block-unread"]
-               :title (str unread " action" (when (not= 1 unread) "s") " the agent hasn't read yet")}
+               :data-tooltip (str unread " action" (when (not= 1 unread) "s") " the agent hasn't read yet")}
         (str unread " new")])
-     [:span {:class ["agent-block-source"] :title (str "Block " id)} (source-label source)]
+     [:span {:class ["agent-block-source"] :data-tooltip (str "Block " id)} (source-label source)]
      (when (:fullscreen? ui)
        (button/button {:variant :ghost :size :sm
                        :on-click (fn [_]

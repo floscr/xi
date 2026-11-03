@@ -535,7 +535,7 @@
      [:div {:class ["fgroup"]}
       (for [[i {:keys [label icon title send event]}] (map-indexed vector items)]
         [:button {:class ["quick-cmd"] :replicant/key (str "tb-" i)
-                  :title (or title label) :aria-label (or title label)
+                  :data-tooltip (or title label) :aria-label (or title label)
                   ;; keep the terminal focused (no soft-keyboard flicker)
                   :on {:mousedown (fn [^js e] (.preventDefault e))
                        :click (fn [_]

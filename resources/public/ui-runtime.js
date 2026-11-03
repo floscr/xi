@@ -228,6 +228,47 @@
     }
     return o;
   }
+  function conj_BANG_(...xs) {
+    if (xs.length === 0) {
+      return vector();
+    }
+    const [_o, ...rest] = xs;
+    let o = _o;
+    if (o === null || o === void 0) {
+      o = [];
+    }
+    switch (typeConst(o)) {
+      case SET_TYPE:
+        conj_BANG_set(o, rest);
+        break;
+      case LIST_TYPE:
+        o.unshift(...rest.reverse());
+        break;
+      case ARRAY_TYPE:
+        o.push(...rest);
+        break;
+      case MAP_TYPE:
+        for (const x of rest) {
+          if (!Array.isArray(x))
+            iterable(x).forEach((kv) => {
+              o.set(kv[0], kv[1]);
+            });
+          else o.set(x[0], x[1]);
+        }
+        break;
+      case OBJECT_TYPE:
+        for (const x of rest) {
+          if (!Array.isArray(x)) Object.assign(o, x);
+          else o[x[0]] = x[1];
+        }
+        break;
+      default:
+        throw new Error(
+          "Illegal argument: conj! expects a Set, Array, List, Map, or Object as the first argument."
+        );
+    }
+    return o;
+  }
   function conj(...xs) {
     if (xs.length === 0) {
       return vector();
@@ -384,6 +425,43 @@
   function second(coll) {
     const [_, v] = iterable(coll);
     return v;
+  }
+  var Reduced = class {
+    value;
+    constructor(x) {
+      this.value = x;
+    }
+    _deref() {
+      return this.value;
+    }
+  };
+  function reduce(f, arg1, arg2) {
+    f = toFn(f);
+    let coll, val;
+    if (arguments.length === 2) {
+      const iter = iterable(arg1)[Symbol.iterator]();
+      const vd = iter.next();
+      if (vd.done) {
+        val = f();
+      } else {
+        val = vd.value;
+      }
+      coll = iter;
+    } else {
+      val = arg1;
+      coll = iterable(arg2);
+    }
+    if (val instanceof Reduced) {
+      return val.value;
+    }
+    for (const x of coll) {
+      val = f(val, x);
+      if (val instanceof Reduced) {
+        val = val.value;
+        break;
+      }
+    }
+    return val;
   }
   var tolr = false;
   var LazyIterable = class {
@@ -606,6 +684,31 @@
       throw new Error(`Can't create empty of ${typeof coll}`);
     }
   }
+  function into(...args) {
+    let to, xform, from, c, rf;
+    switch (args.length) {
+      case 0:
+        return [];
+      case 1:
+        return args[0];
+      case 2:
+        return conj(args[0] ?? [], ...iterable(args[1]));
+      case 3:
+        to = args[0];
+        xform = args[1];
+        from = args[2];
+        c = copy(to);
+        rf = (coll, v) => {
+          if (v === void 0) {
+            return coll;
+          }
+          return conj_BANG_(coll, v);
+        };
+        return transduce(xform, rf, c, from);
+      default:
+        throw TypeError(`Invalid arity call of into: ${args.length}`);
+    }
+  }
   function get_in(coll, path, orElse) {
     let entry = coll;
     for (const item of path) {
@@ -623,6 +726,14 @@
     coll = iterable(coll);
     const clone = [...coll];
     return clone.sort(f || compare);
+  }
+  function some(pred, coll) {
+    pred = toFn(pred);
+    for (const o of iterable(coll)) {
+      const res = pred(o);
+      if (truth_(res)) return res;
+    }
+    return void 0;
   }
   function empty_QMARK_(coll) {
     return seq(coll) ? false : true;
@@ -707,6 +818,23 @@
   var _metaSym = Symbol("meta");
   function mod(x, y) {
     return (x % y + y) % y;
+  }
+  function transduce(xform, ...args) {
+    switch (args.length) {
+      case 2: {
+        const f = args[0];
+        const coll = args[1];
+        return transduce(xform, f, f(), coll);
+      }
+      default: {
+        let f = args[0];
+        const init = args[1];
+        const coll = args[2];
+        f = xform(f);
+        const ret = reduce(f, init, coll);
+        return f(ret);
+      }
+    }
   }
   function not_empty(x) {
     const isSeq = seq(x);
@@ -980,15 +1108,15 @@
     }
     ;
   };
-  var q = function(el, sel) {
-    return el.querySelector(sel);
+  var q = function(el2, sel) {
+    return el2.querySelector(sel);
   };
-  var state = function(el) {
-    return el["__uiColor"];
+  var state = function(el2) {
+    return el2["__uiColor"];
   };
-  var formats = function(el) {
+  var formats = function(el2) {
     return (() => {
-      const or__23426__auto__1 = el.getAttribute("data-formats");
+      const or__23426__auto__1 = el2.getAttribute("data-formats");
       if (truth_(or__23426__auto__1)) {
         return or__23426__auto__1;
       } else {
@@ -997,19 +1125,19 @@
       ;
     })().split(" ");
   };
-  var adopt_BANG_ = function(el, value) {
+  var adopt_BANG_ = function(el2, value) {
     const st1 = (() => {
-      const or__23426__auto__2 = state(el);
+      const or__23426__auto__2 = state(el2);
       if (truth_(or__23426__auto__2)) {
         return or__23426__auto__2;
       } else {
         const o3 = { "h": 0, "s": 0, "v": 0, "a": 1, "fmt": null, "value": null };
-        el["__uiColor"] = o3;
+        el2["__uiColor"] = o3;
         return o3;
       }
       ;
     })();
-    const fs4 = formats(el);
+    const fs4 = formats(el2);
     const f5 = detect_fmt(value);
     const cur6 = st1["fmt"];
     const temp__23062__auto__7 = parse_rgba(value);
@@ -1047,14 +1175,14 @@
     })()) ? cur6 : "else" ? fs4[0] : null;
     return st1;
   };
-  var paint_BANG_ = function(el) {
-    const st1 = state(el);
+  var paint_BANG_ = function(el2) {
+    const st1 = state(el2);
     const h2 = st1["h"];
     const s3 = st1["s"];
     const v4 = st1["v"];
     const rgb5 = hsv__GT_rgb(h2, s3, v4);
     const solid6 = `${"rgb("}${rgb5[0] ?? ""}${", "}${rgb5[1] ?? ""}${", "}${rgb5[2] ?? ""}${")"}`;
-    const temp__23062__auto__7 = q(el, ".color-picker-plane");
+    const temp__23062__auto__7 = q(el2, ".color-picker-plane");
     if (truth_(temp__23062__auto__7)) {
       const plane8 = temp__23062__auto__7;
       plane8.style.background = `${"linear-gradient(to top, #000, rgba(0,0,0,0)),"}${"linear-gradient(to right, #fff, hsl("}${Math.round(h2) ?? ""}${", 100%, 50%))"}`;
@@ -1069,7 +1197,7 @@
       })());
     }
     ;
-    const temp__23062__auto__10 = q(el, ".color-picker-marker");
+    const temp__23062__auto__10 = q(el2, ".color-picker-marker");
     if (truth_(temp__23062__auto__10)) {
       const marker11 = temp__23062__auto__10;
       marker11.style.left = `${100 * s3}${"%"}`;
@@ -1077,35 +1205,35 @@
       marker11.style.background = solid6;
     }
     ;
-    const temp__23062__auto__12 = q(el, "[data-ui-color-hue]");
+    const temp__23062__auto__12 = q(el2, "[data-ui-color-hue]");
     if (truth_(temp__23062__auto__12)) {
       const hue13 = temp__23062__auto__12;
       hue13.value = `${h2 ?? ""}`;
     }
     ;
-    const temp__23062__auto__14 = q(el, "[data-ui-color-alpha]");
+    const temp__23062__auto__14 = q(el2, "[data-ui-color-alpha]");
     if (truth_(temp__23062__auto__14)) {
       const op15 = temp__23062__auto__14;
       op15.value = `${st1["a"] ?? ""}`;
       op15.style.setProperty("--color-picker-solid", solid6);
     }
     ;
-    return el.querySelectorAll("[data-ui-color-format]").forEach((function(b) {
+    return el2.querySelectorAll("[data-ui-color-format]").forEach((function(b) {
       return b.setAttribute("data-active", _EQ_(b.getAttribute("data-ui-color-format"), st1["fmt"]) ? "true" : "false");
     }));
   };
-  var show_value_BANG_ = function(el, value) {
-    state(el)["value"] = value;
-    const temp__23062__auto__1 = q(el, "[data-ui-color-text]");
+  var show_value_BANG_ = function(el2, value) {
+    state(el2)["value"] = value;
+    const temp__23062__auto__1 = q(el2, "[data-ui-color-text]");
     if (truth_(temp__23062__auto__1)) {
       const t2 = temp__23062__auto__1;
       return t2.value = value;
     }
     ;
   };
-  var sync_BANG_ = function(el) {
+  var sync_BANG_ = function(el2) {
     const v1 = (() => {
-      const or__23426__auto__2 = el.getAttribute("data-value");
+      const or__23426__auto__2 = el2.getAttribute("data-value");
       if (truth_(or__23426__auto__2)) {
         return or__23426__auto__2;
       } else {
@@ -1113,7 +1241,7 @@
       }
       ;
     })();
-    const st3 = state(el);
+    const st3 = state(el2);
     if (truth_((() => {
       const or__23426__auto__4 = st3 == null;
       if (or__23426__auto__4) {
@@ -1123,22 +1251,22 @@
       }
       ;
     })())) {
-      adopt_BANG_(el, v1);
-      show_value_BANG_(el, v1);
-      return paint_BANG_(el);
+      adopt_BANG_(el2, v1);
+      show_value_BANG_(el2, v1);
+      return paint_BANG_(el2);
     }
     ;
   };
   var fire_BANG_ = function(input, type) {
     return input.dispatchEvent(new Event(type, { "bubbles": true }));
   };
-  var emit_BANG_ = function(el, commit_QMARK_) {
-    const st1 = state(el);
+  var emit_BANG_ = function(el2, commit_QMARK_) {
+    const st1 = state(el2);
     const v2 = compose(st1["h"], st1["s"], st1["v"], st1["a"], st1["fmt"]);
-    show_value_BANG_(el, v2);
-    el.setAttribute("data-value", v2);
-    paint_BANG_(el);
-    const temp__23062__auto__3 = q(el, "[data-ui-color-value]");
+    show_value_BANG_(el2, v2);
+    el2.setAttribute("data-value", v2);
+    paint_BANG_(el2);
+    const temp__23062__auto__3 = q(el2, "[data-ui-color-value]");
     if (truth_(temp__23062__auto__3)) {
       const input4 = temp__23062__auto__3;
       input4.value = v2;
@@ -1150,8 +1278,8 @@
     }
     ;
   };
-  var commit_BANG_ = function(el) {
-    const temp__23062__auto__1 = q(el, "[data-ui-color-value]");
+  var commit_BANG_ = function(el2) {
+    const temp__23062__auto__1 = q(el2, "[data-ui-color-value]");
     if (truth_(temp__23062__auto__1)) {
       const input2 = temp__23062__auto__1;
       return fire_BANG_(input2, "change");
@@ -1187,12 +1315,12 @@
     ;
   };
   var drag = atom(null);
-  var plane_at_BANG_ = function(el, plane, e) {
+  var plane_at_BANG_ = function(el2, plane, e) {
     const rect1 = plane.getBoundingClientRect();
-    const st2 = state(el);
+    const st2 = state(el2);
     st2["s"] = clamp((e.clientX - rect1.left) / rect1.width, 0, 1);
     st2["v"] = 1 - clamp((e.clientY - rect1.top) / rect1.height, 0, 1);
-    return emit_BANG_(el, false);
+    return emit_BANG_(el2, false);
   };
   var on_pointerdown = function(e) {
     const temp__23062__auto__1 = closest(e.target, ".color-picker-plane");
@@ -1267,12 +1395,12 @@
     }
     ;
   };
-  var commit_text_BANG_ = function(el, t) {
+  var commit_text_BANG_ = function(el2, t) {
     if (truth_(parse_rgba(t.value))) {
-      adopt_BANG_(el, t.value.trim());
-      return emit_BANG_(el, true);
+      adopt_BANG_(el2, t.value.trim());
+      return emit_BANG_(el2, true);
     } else {
-      return t.value = state(el)["value"];
+      return t.value = state(el2)["value"];
     }
     ;
   };
@@ -1456,8 +1584,8 @@
     sync_BANG_(el6);
     return el6;
   };
-  var set_value_BANG_ = function(el, value) {
-    el.setAttribute("data-value", (() => {
+  var set_value_BANG_ = function(el2, value) {
+    el2.setAttribute("data-value", (() => {
       const or__23426__auto__1 = value;
       if (truth_(or__23426__auto__1)) {
         return or__23426__auto__1;
@@ -1466,7 +1594,7 @@
       }
       ;
     })());
-    const temp__23062__auto__2 = q(el, "[data-ui-color-value]");
+    const temp__23062__auto__2 = q(el2, "[data-ui-color-value]");
     if (truth_(temp__23062__auto__2)) {
       const input3 = temp__23062__auto__2;
       input3.value = (() => {
@@ -1480,11 +1608,11 @@
       })();
     }
     ;
-    return sync_BANG_(el);
+    return sync_BANG_(el2);
   };
   var scan_BANG_ = function() {
-    return document.querySelectorAll("[data-ui-color-picker]").forEach((function(el) {
-      return sync_BANG_(el);
+    return document.querySelectorAll("[data-ui-color-picker]").forEach((function(el2) {
+      return sync_BANG_(el2);
     }));
   };
   var on_mutations = function(records) {
@@ -1528,9 +1656,9 @@
   var items = function(dialog) {
     return Array.from(dialog.querySelectorAll(".command-item"));
   };
-  var item_order = function(el) {
+  var item_order = function(el2) {
     return Number((() => {
-      const or__23426__auto__1 = el.style.order;
+      const or__23426__auto__1 = el2.style.order;
       if (truth_(or__23426__auto__1)) {
         return or__23426__auto__1;
       } else {
@@ -1540,11 +1668,11 @@
     })());
   };
   var visible_items = function(dialog) {
-    const vis1 = items(dialog).filter((function(el) {
-      return not(el.hidden) && not(el.disabled);
+    const vis1 = items(dialog).filter((function(el2) {
+      return not(el2.hidden) && not(el2.disabled);
     }));
-    const container2 = (function(el) {
-      const or__23426__auto__3 = el.closest(".command-group");
+    const container2 = (function(el2) {
+      const or__23426__auto__3 = el2.closest(".command-group");
       if (truth_(or__23426__auto__3)) {
         return or__23426__auto__3;
       } else {
@@ -1553,8 +1681,8 @@
       ;
     });
     const containers4 = [];
-    vis1.forEach((function(el) {
-      const c5 = container2(el);
+    vis1.forEach((function(el2) {
+      const c5 = container2(el2);
       if (truth_(containers4.includes(c5))) {
         return null;
       } else {
@@ -1566,17 +1694,17 @@
       return item_order(a) - item_order(b);
     }));
     return containers4.flatMap((function(c) {
-      return vis1.filter((function(el) {
-        return c === container2(el);
+      return vis1.filter((function(el2) {
+        return c === container2(el2);
       })).sort((function(a, b) {
         return item_order(a) - item_order(b);
       }));
     }));
   };
-  var item_text = function(el) {
-    const v1 = el.dataset.commandValue;
+  var item_text = function(el2) {
+    const v1 = el2.dataset.commandValue;
     return (!(v1 == null) ? v1 : (() => {
-      const or__23426__auto__2 = el.textContent;
+      const or__23426__auto__2 = el2.textContent;
       if (truth_(or__23426__auto__2)) {
         return or__23426__auto__2;
       } else {
@@ -1585,8 +1713,8 @@
       ;
     })()).toLowerCase();
   };
-  var item_label = function(el) {
-    const lbl1 = el.querySelector(".command-item-label");
+  var item_label = function(el2) {
+    const lbl1 = el2.querySelector(".command-item-label");
     return (() => {
       const or__23426__auto__2 = (() => {
         const and__23442__auto__3 = lbl1;
@@ -1600,7 +1728,7 @@
       if (truth_(or__23426__auto__2)) {
         return or__23426__auto__2;
       } else {
-        const or__23426__auto__4 = el.textContent;
+        const or__23426__auto__4 = el2.textContent;
         if (truth_(or__23426__auto__4)) {
           return or__23426__auto__4;
         } else {
@@ -1611,8 +1739,8 @@
       ;
     })().toLowerCase();
   };
-  var match_score = function(el, q3) {
-    const label1 = item_label(el);
+  var match_score = function(el2, q3) {
+    const label1 = item_label(el2);
     if (_EQ_(label1, q3)) {
       return 0;
     } else {
@@ -1656,27 +1784,27 @@
       }
       ;
     });
-    f2.cljs$core$IFn$_invoke$arity$2 = (function(dialog, el) {
-      return set_active_BANG_(dialog, el, true);
+    f2.cljs$core$IFn$_invoke$arity$2 = (function(dialog, el2) {
+      return set_active_BANG_(dialog, el2, true);
     });
-    f2.cljs$core$IFn$_invoke$arity$3 = (function(dialog, el, scroll_QMARK_) {
+    f2.cljs$core$IFn$_invoke$arity$3 = (function(dialog, el2, scroll_QMARK_) {
       const prev3 = active_item(dialog);
       if (truth_(prev3)) {
         prev3.classList.remove("command-item--active");
       }
       ;
-      if (truth_(el)) {
-        el.classList.add("command-item--active");
+      if (truth_(el2)) {
+        el2.classList.add("command-item--active");
         if (truth_((() => {
           const and__23442__auto__4 = scroll_QMARK_;
           if (truth_(and__23442__auto__4)) {
-            return el.scrollIntoView;
+            return el2.scrollIntoView;
           } else {
             return and__23442__auto__4;
           }
           ;
         })())) {
-          return el.scrollIntoView({ "block": "nearest" });
+          return el2.scrollIntoView({ "block": "nearest" });
         }
         ;
       }
@@ -1700,11 +1828,11 @@
     const vis1 = visible_items(dialog);
     const len2 = vis1.length;
     if (len2 > 0) {
-      const group_of3 = (function(el) {
+      const group_of3 = (function(el2) {
         const or__23426__auto__4 = (() => {
-          const and__23442__auto__5 = el;
+          const and__23442__auto__5 = el2;
           if (truth_(and__23442__auto__5)) {
-            return el.closest(".command-group");
+            return el2.closest(".command-group");
           } else {
             return and__23442__auto__5;
           }
@@ -1718,8 +1846,8 @@
         ;
       });
       const groups6 = [];
-      vis1.forEach((function(el) {
-        const g7 = group_of3(el);
+      vis1.forEach((function(el2) {
+        const g7 = group_of3(el2);
         if (truth_(groups6.includes(g7))) {
           return null;
         } else {
@@ -1732,8 +1860,8 @@
       const gidx10 = groups6.indexOf(group_of3(cur9));
       const next_g11 = dir === "down" ? gidx10 < glen8 - 1 ? gidx10 + 1 : 0 : gidx10 > 0 ? gidx10 - 1 : glen8 - 1;
       const target12 = groups6[next_g11];
-      return set_active_BANG_(dialog, vis1.find((function(el) {
-        return group_of3(el) === target12;
+      return set_active_BANG_(dialog, vis1.find((function(el2) {
+        return group_of3(el2) === target12;
       })));
     }
     ;
@@ -1784,8 +1912,8 @@
   var hide_hints_BANG_ = function(dialog) {
     if (truth_(dialog.hasAttribute("data-command-hints"))) {
       dialog.removeAttribute("data-command-hints");
-      return dialog.querySelectorAll("[data-command-hint]").forEach((function(el) {
-        return el.removeAttribute("data-command-hint");
+      return dialog.querySelectorAll("[data-command-hint]").forEach((function(el2) {
+        return el2.removeAttribute("data-command-hint");
       }));
     }
     ;
@@ -1795,9 +1923,9 @@
     if (truth_(temp__23062__auto__1)) {
       const ks2 = temp__23062__auto__1;
       hide_hints_BANG_(dialog);
-      visible_items(dialog).forEach((function(el, i) {
+      visible_items(dialog).forEach((function(el2, i) {
         if (i < ks2.length) {
-          return el.setAttribute("data-command-hint", ks2[i].toUpperCase());
+          return el2.setAttribute("data-command-hint", ks2[i].toUpperCase());
         }
         ;
       }));
@@ -1830,9 +1958,9 @@
     })().trim().toLowerCase();
     const list3 = dialog.querySelector(".command-list");
     const searching_QMARK_4 = !_EQ_(q1, "");
-    items(dialog).forEach((function(el) {
-      const match5 = searching_QMARK_4 ? item_text(el).includes(q1) : not(el.dataset.commandSearchOnly);
-      el.hidden = not(match5);
+    items(dialog).forEach((function(el2) {
+      const match5 = searching_QMARK_4 ? item_text(el2).includes(q1) : not(el2.dataset.commandSearchOnly);
+      el2.hidden = not(match5);
       if (truth_((() => {
         const or__23426__auto__6 = !searching_QMARK_4;
         if (or__23426__auto__6) {
@@ -1842,9 +1970,9 @@
         }
         ;
       })())) {
-        return el.style.removeProperty("order");
+        return el2.style.removeProperty("order");
       } else {
-        return el.style.order = match_score(el, q1);
+        return el2.style.order = match_score(el2, q1);
       }
       ;
     }));
@@ -1855,13 +1983,13 @@
     }
     ;
     Array.from(dialog.querySelectorAll(".command-group")).forEach((function(grp) {
-      const visible7 = Array.from(grp.querySelectorAll(".command-item")).filter((function(el) {
-        return not(el.hidden);
+      const visible7 = Array.from(grp.querySelectorAll(".command-item")).filter((function(el2) {
+        return not(el2.hidden);
       }));
       grp.hidden = visible7.length === 0;
       if (truth_(searching_QMARK_4 && visible7.length > 0)) {
-        return grp.style.order = visible7.reduce((function(best, el) {
-          return Math.min(best, item_order(el));
+        return grp.style.order = visible7.reduce((function(best, el2) {
+          return Math.min(best, item_order(el2));
         }), Infinity);
       } else {
         return grp.style.removeProperty("order");
@@ -2000,23 +2128,23 @@
     }
     ;
   };
-  var select_BANG_ = function(dialog, el) {
+  var select_BANG_ = function(dialog, el2) {
     if (truth_((() => {
-      const and__23442__auto__1 = el;
+      const and__23442__auto__1 = el2;
       if (truth_(and__23442__auto__1)) {
-        return not(el.disabled);
+        return not(el2.disabled);
       } else {
         return and__23442__auto__1;
       }
       ;
     })())) {
       dialog.close();
-      if (not(el.href)) {
-        el.click();
+      if (not(el2.href)) {
+        el2.click();
       }
       ;
-      if (truth_(el.href)) {
-        return window.location = el.href;
+      if (truth_(el2.href)) {
+        return window.location = el2.href;
       }
       ;
     }
@@ -2369,9 +2497,9 @@
     svg2.setAttribute("stroke-linecap", "round");
     svg2.setAttribute("stroke-linejoin", "round");
     svg2.setAttribute("style", "flex-shrink:0");
-    elements.forEach((function(el) {
-      const tag3 = el[0];
-      const attrs4 = el[1];
+    elements.forEach((function(el2) {
+      const tag3 = el2[0];
+      const attrs4 = el2[1];
       const node5 = document.createElementNS(ns_uri1, tag3);
       attrs4.forEach((function(pair) {
         return node5.setAttribute(pair[0], pair[1]);
@@ -2398,14 +2526,14 @@
     const verb1 = truth_(document.documentElement.classList.contains("clj-ui-touch")) ? "Tap" : "Click";
     return `${verb1 ?? ""}${" again to "}${label.charAt(0).toLowerCase() ?? ""}${label.slice(1) ?? ""}`;
   };
-  var arm_BANG_ = function(menu, el, label_el, item) {
+  var arm_BANG_ = function(menu, el2, label_el, item) {
     disarm_BANG_();
     const label1 = item["label"];
-    el.style.setProperty("--context-menu-arm-duration", `${arm_ms ?? ""}ms`);
-    el.classList.add("context-menu-item--armed");
+    el2.style.setProperty("--context-menu-arm-duration", `${arm_ms ?? ""}ms`);
+    el2.classList.add("context-menu-item--armed");
     menu.classList.add("context-menu--armed");
     label_el.textContent = again_label(label1);
-    return get_state().armed = { "el": el, "menu": menu, "labelEl": label_el, "label": label1, "timer": setTimeout(disarm_BANG_, arm_ms) };
+    return get_state().armed = { "el": el2, "menu": menu, "labelEl": label_el, "label": label1, "timer": setTimeout(disarm_BANG_, arm_ms) };
   };
   var dismiss_BANG_ = function() {
     disarm_BANG_();
@@ -2465,7 +2593,7 @@
     el1.className = class_name;
     return el1;
   };
-  var make_button = function(class_name, text, on_click4) {
+  var make_button = function(class_name, text, on_click5) {
     const btn1 = make_el("button", class_name);
     btn1.setAttribute("type", "button");
     btn1.setAttribute("tabindex", "-1");
@@ -2476,7 +2604,7 @@
     btn1.addEventListener("click", (function(e) {
       e.preventDefault();
       e.stopPropagation();
-      return on_click4();
+      return on_click5();
     }));
     return btn1;
   };
@@ -4274,8 +4402,8 @@
   var root_el = atom(null);
   var panels = atom({});
   var drag_state = { "on": false, "x": 0, "y": 0, "sx": 0, "sy": 0 };
-  var apply_root_position_BANG_ = function(el, pos) {
-    const s1 = el.style;
+  var apply_root_position_BANG_ = function(el2, pos) {
+    const s1 = el2.style;
     const bottom_QMARK_2 = (() => {
       const or__23426__auto__3 = pos === "bottom-right";
       if (or__23426__auto__3) {
@@ -4737,17 +4865,17 @@
   window["DialStore"] = dial_store;
 
   // .compiled/drop_zone.mjs
-  var closest_zone = function(el) {
+  var closest_zone = function(el2) {
     if (truth_((() => {
-      const and__23442__auto__1 = el;
+      const and__23442__auto__1 = el2;
       if (truth_(and__23442__auto__1)) {
-        return el.closest;
+        return el2.closest;
       } else {
         return and__23442__auto__1;
       }
       ;
     })())) {
-      return el.closest("[data-ui-drop-zone]");
+      return el2.closest("[data-ui-drop-zone]");
     }
     ;
   };
@@ -4868,9 +4996,9 @@
     return { "target": target, "rects": rects1 };
   };
   var play_moves_BANG_ = function(rects, timing, scale_QMARK_, lift_QMARK_) {
-    return rects.forEach((function(rect, el) {
-      if (truth_(el.isConnected)) {
-        const now1 = el.getBoundingClientRect();
+    return rects.forEach((function(rect, el2) {
+      if (truth_(el2.isConnected)) {
+        const now1 = el2.getBoundingClientRect();
         const dx2 = rect.x - now1.x;
         const dy3 = rect.y - now1.y;
         const sx4 = truth_((() => {
@@ -4914,15 +5042,15 @@
         })();
         if (truth_(moved_QMARK_8)) {
           if (truth_(lift_QMARK_)) {
-            el.style.zIndex = "1";
+            el2.style.zIndex = "1";
           }
           ;
           const from12 = `${"translate("}${dx2 ?? ""}${"px, "}${dy3 ?? ""}${"px)"}${(truth_(scale_QMARK_) ? `${" scale("}${sx4 ?? ""}${", "}${sy6 ?? ""}${")"}` : "") ?? ""}`;
           const kf13 = { "transform": [from12, "none"] };
           const _14 = truth_(scale_QMARK_) ? kf13["transformOrigin"] = ["0 0", "0 0"] : null;
-          const anim15 = el.animate(kf13, timing);
+          const anim15 = el2.animate(kf13, timing);
           const unlift16 = (function() {
-            return el.style.zIndex = "";
+            return el2.style.zIndex = "";
           });
           if (truth_(lift_QMARK_)) {
             anim15.onfinish = unlift16;
@@ -5041,9 +5169,9 @@
   var press = atom(null);
   var suppress_click_QMARK_ = atom(false);
   var held = atom(null);
-  var clear_press_visual_BANG_ = function(el) {
-    if (truth_(el)) {
-      return el.classList.remove(press_class);
+  var clear_press_visual_BANG_ = function(el2) {
+    if (truth_(el2)) {
+      return el2.classList.remove(press_class);
     }
     ;
   };
@@ -5067,8 +5195,8 @@
     }
     ;
   };
-  var dispatch_contextmenu_BANG_ = function(el, x, y) {
-    return el.dispatchEvent(new MouseEvent("contextmenu", { "bubbles": true, "cancelable": true, "view": window, "clientX": x, "clientY": y }));
+  var dispatch_contextmenu_BANG_ = function(el2, x, y) {
+    return el2.dispatchEvent(new MouseEvent("contextmenu", { "bubbles": true, "cancelable": true, "view": window, "clientX": x, "clientY": y }));
   };
   var on_pointerdown2 = function(e) {
     reset_BANG_(suppress_click_QMARK_, false);
@@ -5596,17 +5724,17 @@
     }
     ;
   };
-  var closest_field = function(el) {
+  var closest_field = function(el2) {
     if (truth_((() => {
-      const and__23442__auto__1 = el;
+      const and__23442__auto__1 = el2;
       if (truth_(and__23442__auto__1)) {
-        return el.closest;
+        return el2.closest;
       } else {
         return and__23442__auto__1;
       }
       ;
     })())) {
-      return el.closest("[data-ui-number-field]");
+      return el2.closest("[data-ui-number-field]");
     }
     ;
   };
@@ -5724,17 +5852,17 @@
   var reduced_motion_QMARK_3 = function() {
     return matchMedia("(prefers-reduced-motion: reduce)").matches;
   };
-  var has_attr_QMARK_ = function(el, attr) {
-    return !(el == null) && (!(el.hasAttribute == null) && el.hasAttribute(attr));
+  var has_attr_QMARK_ = function(el2, attr) {
+    return !(el2 == null) && (!(el2.hasAttribute == null) && el2.hasAttribute(attr));
   };
-  var fill_node_QMARK_ = function(el) {
-    return has_attr_QMARK_(el, "data-ui-panels-fill");
+  var fill_node_QMARK_ = function(el2) {
+    return has_attr_QMARK_(el2, "data-ui-panels-fill");
   };
-  var separator_node_QMARK_ = function(el) {
-    return has_attr_QMARK_(el, "data-ui-panels-separator");
+  var separator_node_QMARK_ = function(el2) {
+    return has_attr_QMARK_(el2, "data-ui-panels-separator");
   };
-  var fill_after_QMARK_ = function(el) {
-    let n1 = el.nextElementSibling;
+  var fill_after_QMARK_ = function(el2) {
+    let n1 = el2.nextElementSibling;
     while (true) {
       if (n1 == null) {
         return false;
@@ -6115,11 +6243,11 @@
     ;
   };
   var set_resizing_attrs_BANG_ = function(panel, on) {
-    const f1 = (function(el) {
+    const f1 = (function(el2) {
       if (truth_(on)) {
-        return el.setAttribute("data-resizing", "true");
+        return el2.setAttribute("data-resizing", "true");
       } else {
-        return el.removeAttribute("data-resizing");
+        return el2.removeAttribute("data-resizing");
       }
       ;
     });
@@ -6456,17 +6584,17 @@
     mo2.observe(el1, { "attributes": true, "attributeFilter": ["data-collapsed", "data-size"] });
     return panel["attrObserver"] = mo2;
   };
-  var create_panel_BANG_ = function(group, el) {
-    const content1 = el.querySelector(":scope > .ui-panels-content");
-    const edge2 = el.querySelector(":scope > .ui-panels-edge");
-    const parsed3 = parse_size(el.getAttribute("data-size"));
-    const persist_key4 = el.getAttribute("data-persist-key");
+  var create_panel_BANG_ = function(group, el2) {
+    const content1 = el2.querySelector(":scope > .ui-panels-content");
+    const edge22 = el2.querySelector(":scope > .ui-panels-edge");
+    const parsed3 = parse_size(el2.getAttribute("data-size"));
+    const persist_key4 = el2.getAttribute("data-persist-key");
     const saved5 = !(persist_key4 == null) ? restore_persisted(persist_key4) : null;
     const saved_size6 = !(saved5 == null) ? parse_size(`${saved5.size ?? ""}`) : null;
     const active7 = !(saved_size6 == null) ? saved_size6 : parsed3;
-    const collapsed8 = !(saved5 == null) ? truth_(saved5.collapsed) ? true : false : el.hasAttribute("data-collapsed");
-    const panel9 = { "folding": false, "edge": edge2, "el": el, "group": group, "collapsed": collapsed8, "content": content1, "collapsible": el.hasAttribute("data-collapsible"), "value": !(active7 == null) ? active7.value : 0, "grips": [], "persist": persist_key4, "dragging": false, "minSize": parse_size(el.getAttribute("data-min-size")), "pct": !(active7 == null) ? active7.pct : false, "anim": null, "initial": parsed3, "unlock": null, "defaultSize": parse_size(el.getAttribute("data-default-size")), "target": 0, "end": false, "maxSize": parse_size(el.getAttribute("data-max-size")), "session": {} };
-    el["__uiPanel"] = panel9;
+    const collapsed8 = !(saved5 == null) ? truth_(saved5.collapsed) ? true : false : el2.hasAttribute("data-collapsed");
+    const panel9 = { "folding": false, "edge": edge22, "el": el2, "group": group, "collapsed": collapsed8, "content": content1, "collapsible": el2.hasAttribute("data-collapsible"), "value": !(active7 == null) ? active7.value : 0, "grips": [], "persist": persist_key4, "dragging": false, "minSize": parse_size(el2.getAttribute("data-min-size")), "pct": !(active7 == null) ? active7.pct : false, "anim": null, "initial": parsed3, "unlock": null, "defaultSize": parse_size(el2.getAttribute("data-default-size")), "target": 0, "end": false, "maxSize": parse_size(el2.getAttribute("data-max-size")), "session": {} };
+    el2["__uiPanel"] = panel9;
     group.panels.push(panel9);
     const m10 = measure(panel9);
     const t11 = truth_(collapsed8) ? 0 : m10;
@@ -6474,9 +6602,9 @@
     reflect_collapsed_BANG_(panel9);
     jump_size_BANG_(panel9, t11);
     jump_content_BANG_(panel9, m10);
-    if (!(edge2 == null)) {
-      edge2.setAttribute("aria-orientation", group.axes["sepOrient"]);
-      attach_grip_BANG_(edge2, (function() {
+    if (!(edge22 == null)) {
+      edge22.setAttribute("aria-orientation", group.axes["sepOrient"]);
+      attach_grip_BANG_(edge22, (function() {
         return panel9;
       }));
     }
@@ -7068,21 +7196,56 @@
       return f({ "mode": mode, "effective": effective });
     }));
   };
+  var url_mode = function() {
+    const m1 = new URLSearchParams(location.search).get("theme");
+    if (truth_((() => {
+      const or__23426__auto__2 = m1 === "light";
+      if (or__23426__auto__2) {
+        return or__23426__auto__2;
+      } else {
+        return m1 === "dark";
+      }
+      ;
+    })())) {
+      return m1;
+    }
+    ;
+  };
   var get_mode = function() {
-    const or__23426__auto__1 = get_stored();
+    const or__23426__auto__1 = url_mode();
     if (truth_(or__23426__auto__1)) {
       return or__23426__auto__1;
     } else {
-      return "auto";
+      const or__23426__auto__2 = get_stored();
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        return "auto";
+      }
+      ;
     }
     ;
   };
   var get_effective = function() {
     return resolve_effective(get_mode());
   };
+  var sync_url_mode_BANG_ = function(mode) {
+    if (truth_(url_mode())) {
+      const url1 = new URL(location.href);
+      if (mode === "auto") {
+        url1.searchParams.delete("theme");
+      } else {
+        url1.searchParams.set("theme", mode);
+      }
+      ;
+      return history.replaceState(null, "", url1);
+    }
+    ;
+  };
   var set_mode_BANG_ = function(mode) {
     const m1 = truth_(get(/* @__PURE__ */ new Set(["auto", "light", "dark"]), mode)) ? mode : "auto";
     store_BANG_(m1);
+    sync_url_mode_BANG_(m1);
     apply_theme_BANG_(m1);
     return notify_BANG_2(m1, resolve_effective(m1));
   };
@@ -7149,14 +7312,14 @@
     }
     ;
   };
-  var dismiss_BANG_3 = function(el) {
-    if (truth_(el["__uiToastDismissed"])) {
+  var dismiss_BANG_3 = function(el2) {
+    if (truth_(el2["__uiToastDismissed"])) {
       return null;
     } else {
-      el["__uiToastDismissed"] = true;
-      el.classList.add("toast-leaving");
+      el2["__uiToastDismissed"] = true;
+      el2.classList.add("toast-leaving");
       return setTimeout((function() {
-        return el.remove();
+        return el2.remove();
       }), 300);
     }
     ;
@@ -7199,12 +7362,12 @@
     ;
     return el8;
   };
-  var consume_BANG_ = function(el) {
-    const msg1 = el.getAttribute("data-ui-toast");
-    const dur2 = el.getAttribute("data-duration");
-    el.remove();
+  var consume_BANG_ = function(el2) {
+    const msg1 = el2.getAttribute("data-ui-toast");
+    const dur2 = el2.getAttribute("data-duration");
+    el2.remove();
     return show_BANG_(msg1, { "variant": (() => {
-      const or__23426__auto__3 = el.getAttribute("data-variant");
+      const or__23426__auto__3 = el2.getAttribute("data-variant");
       if (truth_(or__23426__auto__3)) {
         return or__23426__auto__3;
       } else {
@@ -7234,6 +7397,750 @@
     init_BANG_8();
   }
 
+  // .compiled/tooltip.mjs
+  var default_delay = 500;
+  var skip_ms = 400;
+  var close_ms = 80;
+  var card_close_ms = 160;
+  var gap2 = 6;
+  var edge2 = 8;
+  var focusable2 = "a[href],button,input,select,textarea,summary,[tabindex]";
+  var interactive = "a[href],button,input,select,textarea,summary,label";
+  var get_state3 = function() {
+    const or__23426__auto__1 = window["__uiTooltipState"];
+    if (truth_(or__23426__auto__1)) {
+      return or__23426__auto__1;
+    } else {
+      const s2 = { "open": null, "lastClose": -1e5, "pending": null, "bubble": null, "layer": null, "pointer": "mouse", "hideTimer": null, "showTimer": null, "suppressed": null, "observer": null };
+      window["__uiTooltipState"] = s2;
+      return s2;
+    }
+    ;
+  };
+  var now = function() {
+    return performance.now();
+  };
+  var trigger_of = function(node) {
+    if (truth_((() => {
+      const and__23442__auto__1 = node;
+      if (truth_(and__23442__auto__1)) {
+        return node.closest;
+      } else {
+        return and__23442__auto__1;
+      }
+      ;
+    })())) {
+      const t2 = node.closest(".tooltip, [data-tooltip]");
+      if (t2 == null) {
+        return null;
+      } else {
+        if (truth_(t2.matches(".tooltip"))) {
+          return t2;
+        } else {
+          if (_EQ_("", (() => {
+            const or__23426__auto__3 = t2.getAttribute("data-tooltip");
+            if (truth_(or__23426__auto__3)) {
+              return or__23426__auto__3;
+            } else {
+              return "";
+            }
+            ;
+          })().trim())) {
+            return trigger_of(t2.parentElement);
+          } else {
+            if ("else") {
+              return t2;
+            } else {
+              return null;
+            }
+          }
+        }
+      }
+      ;
+    }
+    ;
+  };
+  var el = function(tag, cls, text) {
+    const e1 = document.createElement(tag);
+    if (truth_(cls)) {
+      e1.className = cls;
+    }
+    ;
+    if (truth_(text)) {
+      e1.textContent = text;
+    }
+    ;
+    return e1;
+  };
+  var attr_label = function(trigger) {
+    const label1 = el("span", "tooltip-label", null);
+    const caps2 = (() => {
+      const or__23426__auto__3 = trigger.getAttribute("data-tooltip-shortcut");
+      if (truth_(or__23426__auto__3)) {
+        return or__23426__auto__3;
+      } else {
+        return "";
+      }
+      ;
+    })().split(" ").filter((function(k) {
+      return !_EQ_(k, "");
+    }));
+    label1.appendChild(el("span", null, trigger.getAttribute("data-tooltip")));
+    if (caps2.length > 0) {
+      const row4 = el("span", "tooltip-keys", null);
+      caps2.forEach((function(k) {
+        return row4.appendChild(el("kbd", "tooltip-key", k));
+      }));
+      label1.appendChild(row4);
+    }
+    ;
+    return label1;
+  };
+  var content_of = function(trigger) {
+    const frag1 = document.createDocumentFragment();
+    const tpl2 = trigger.querySelector(":scope > template.tooltip-content");
+    if (truth_(tpl2)) {
+      const src3 = truth_((() => {
+        const and__23442__auto__4 = tpl2.content;
+        if (truth_(and__23442__auto__4)) {
+          return tpl2.content.firstChild;
+        } else {
+          return and__23442__auto__4;
+        }
+        ;
+      })()) ? tpl2.content : tpl2;
+      src3.childNodes.forEach((function(n) {
+        return frag1.appendChild(n.cloneNode(true));
+      }));
+    } else {
+      frag1.appendChild(attr_label(trigger));
+    }
+    ;
+    return frag1;
+  };
+  var page_dark_QMARK_ = function(trigger) {
+    const host1 = trigger.closest("[data-theme]");
+    const theme2 = truth_(host1) ? host1.getAttribute("data-theme") : null;
+    if (theme2 === "dark") {
+      return true;
+    } else {
+      if (theme2 === "light") {
+        return false;
+      } else {
+        if ("else") {
+          return matchMedia("(prefers-color-scheme: dark)").matches;
+        } else {
+          return null;
+        }
+      }
+    }
+    ;
+  };
+  var bubble_theme = function(trigger) {
+    const host1 = trigger.closest("[data-tooltip-theme]");
+    const explicit2 = truth_(host1) ? host1.dataset.tooltipTheme : null;
+    const dark_QMARK_3 = page_dark_QMARK_(trigger);
+    if (truth_((() => {
+      const or__23426__auto__4 = explicit2 === "light";
+      if (or__23426__auto__4) {
+        return or__23426__auto__4;
+      } else {
+        return explicit2 === "dark";
+      }
+      ;
+    })())) {
+      return explicit2;
+    } else {
+      if (truth_(trigger.dataset.tooltipTone)) {
+        if (truth_(dark_QMARK_3)) {
+          return "dark";
+        } else {
+          return "light";
+        }
+      } else {
+        if ("else") {
+          if (truth_(dark_QMARK_3)) {
+            return "light";
+          } else {
+            return "dark";
+          }
+        } else {
+          return null;
+        }
+      }
+    }
+    ;
+  };
+  var opposite = function(side) {
+    const G__311 = side;
+    switch (G__311) {
+      case "top":
+        return "bottom";
+        break;
+      case "bottom":
+        return "top";
+        break;
+      case "left":
+        return "right";
+        break;
+      case "right":
+        return "left";
+        break;
+      default:
+        return "top";
+    }
+    ;
+  };
+  var perpendicular = function(side) {
+    if (truth_((() => {
+      const or__23426__auto__1 = side === "top";
+      if (or__23426__auto__1) {
+        return or__23426__auto__1;
+      } else {
+        return side === "bottom";
+      }
+      ;
+    })())) {
+      return ["right", "left"];
+    } else {
+      return ["top", "bottom"];
+    }
+    ;
+  };
+  var room = function(side, tr, vw, vh) {
+    const G__321 = side;
+    switch (G__321) {
+      case "bottom":
+        return vh - tr.bottom - gap2 - edge2;
+        break;
+      case "left":
+        return tr.left - gap2 - edge2;
+        break;
+      case "right":
+        return vw - tr.right - gap2 - edge2;
+        break;
+      default:
+        return tr.top - gap2 - edge2;
+    }
+    ;
+  };
+  var need = function(side, w, h) {
+    if (truth_((() => {
+      const or__23426__auto__1 = side === "top";
+      if (or__23426__auto__1) {
+        return or__23426__auto__1;
+      } else {
+        return side === "bottom";
+      }
+      ;
+    })())) {
+      return h;
+    } else {
+      return w;
+    }
+    ;
+  };
+  var pick_side = function(pref, tr, w, h, vw, vh) {
+    const order1 = into([pref, opposite(pref)], perpendicular(pref));
+    const spare2 = (function(side) {
+      return room(side, tr, vw, vh) - need(side, w, h);
+    });
+    const or__23426__auto__3 = some((function(side) {
+      if (spare2(side) >= 0) {
+        return side;
+      }
+      ;
+    }), order1);
+    if (truth_(or__23426__auto__3)) {
+      return or__23426__auto__3;
+    } else {
+      return reduce((function(best, side) {
+        if (spare2(side) > spare2(best)) {
+          return side;
+        } else {
+          return best;
+        }
+        ;
+      }), order1);
+    }
+    ;
+  };
+  var clamp6 = function(v, lo, hi) {
+    return Math.max(lo, Math.min(v, hi));
+  };
+  var position_BANG_2 = function(layer, trigger) {
+    const vw1 = document.documentElement.clientWidth;
+    const vh2 = document.documentElement.clientHeight;
+    layer.style.left = "0px";
+    layer.style.top = "0px";
+    layer.style.setProperty("--tooltip-max-width", `${vw1 - 2 * edge2}px`);
+    const tr3 = trigger.getBoundingClientRect();
+    const w4 = layer.offsetWidth;
+    const h5 = layer.offsetHeight;
+    const side6 = pick_side((() => {
+      const or__23426__auto__7 = trigger.dataset.tooltipSide;
+      if (truth_(or__23426__auto__7)) {
+        return or__23426__auto__7;
+      } else {
+        return "top";
+      }
+      ;
+    })(), tr3, w4, h5, vw1, vh2);
+    const cx8 = tr3.left + tr3.width / 2;
+    const cy9 = tr3.top + tr3.height / 2;
+    const left10 = clamp6((() => {
+      const G__3311 = side6;
+      switch (G__3311) {
+        case "left":
+          return tr3.left - gap2 - w4;
+          break;
+        case "right":
+          return tr3.right + gap2;
+          break;
+        default:
+          return cx8 - w4 / 2;
+      }
+      ;
+    })(), edge2, vw1 - w4 - edge2);
+    const top13 = clamp6((() => {
+      const G__3414 = side6;
+      switch (G__3414) {
+        case "top":
+          return tr3.top - gap2 - h5;
+          break;
+        case "bottom":
+          return tr3.bottom + gap2;
+          break;
+        default:
+          return cy9 - h5 / 2;
+      }
+      ;
+    })(), edge2, vh2 - h5 - edge2);
+    layer.style.left = `${left10 ?? ""}px`;
+    layer.style.top = `${top13 ?? ""}px`;
+    layer.setAttribute("data-side", side6);
+    layer.style.setProperty("--tooltip-origin-x", `${clamp6(cx8 - left10, 0, w4) ?? ""}px`);
+    return layer.style.setProperty("--tooltip-origin-y", `${clamp6(cy9 - top13, 0, h5) ?? ""}px`);
+  };
+  var describe_BANG_ = function(trigger, on_QMARK_) {
+    const target1 = (() => {
+      const or__23426__auto__2 = trigger.querySelector(focusable2);
+      if (truth_(or__23426__auto__2)) {
+        return or__23426__auto__2;
+      } else {
+        return trigger;
+      }
+      ;
+    })();
+    if (truth_(on_QMARK_)) {
+      return target1.setAttribute("aria-describedby", "ui-tooltip");
+    } else {
+      if (target1.getAttribute("aria-describedby") === "ui-tooltip") {
+        return target1.removeAttribute("aria-describedby");
+      }
+    }
+    ;
+  };
+  var clear_pending_BANG_ = function() {
+    const s1 = get_state3();
+    clearTimeout(s1.showTimer);
+    return s1.pending = null;
+  };
+  var unwatch_BANG_ = function() {
+    const G__351 = get_state3().observer;
+    if (G__351 == null) {
+      return null;
+    } else {
+      return G__351.disconnect();
+    }
+    ;
+  };
+  var hide_BANG_ = function() {
+    const s1 = get_state3();
+    clear_pending_BANG_();
+    clearTimeout(s1.hideTimer);
+    const temp__23062__auto__2 = s1.open;
+    if (truth_(temp__23062__auto__2)) {
+      const t3 = temp__23062__auto__2;
+      unwatch_BANG_();
+      describe_BANG_(t3, false);
+      s1.open = null;
+      s1.lastClose = now();
+      return s1.layer.classList.remove("tooltip-layer--open", "tooltip-layer--instant");
+    }
+    ;
+  };
+  var schedule_hide_BANG_ = function() {
+    const s1 = get_state3();
+    clearTimeout(s1.hideTimer);
+    if (truth_(s1.open)) {
+      return s1.hideTimer = setTimeout(hide_BANG_, s1.layer.getAttribute("data-kind") === "card" ? card_close_ms : close_ms);
+    }
+    ;
+  };
+  var layer_BANG_ = function() {
+    const s1 = get_state3();
+    const or__23426__auto__2 = s1.layer;
+    if (truth_(or__23426__auto__2)) {
+      return or__23426__auto__2;
+    } else {
+      const layer3 = document.createElement("div");
+      const bubble4 = document.createElement("div");
+      layer3.id = "ui-tooltip";
+      layer3.className = "tooltip-layer";
+      layer3.setAttribute("role", "tooltip");
+      bubble4.className = "tooltip-bubble";
+      layer3.appendChild(bubble4);
+      document.body.appendChild(layer3);
+      layer3.addEventListener("pointerenter", (function(_) {
+        return clearTimeout(get_state3().hideTimer);
+      }));
+      layer3.addEventListener("pointerleave", (function(e) {
+        if (!(e.pointerType === "touch")) {
+          return schedule_hide_BANG_();
+        }
+        ;
+      }));
+      s1.layer = layer3;
+      s1.bubble = bubble4;
+      return layer3;
+    }
+    ;
+  };
+  var render_BANG_ = function(layer, trigger) {
+    const tone1 = trigger.dataset.tooltipTone;
+    get_state3().bubble.replaceChildren(content_of(trigger));
+    layer.setAttribute("data-kind", trigger.dataset.tooltipKind === "card" ? "card" : "label");
+    layer.setAttribute("data-theme", bubble_theme(trigger));
+    if (truth_(tone1)) {
+      return layer.setAttribute("data-tone", tone1);
+    } else {
+      return layer.removeAttribute("data-tone");
+    }
+    ;
+  };
+  var refresh_BANG_ = function() {
+    const s1 = get_state3();
+    const t2 = s1.open;
+    if (truth_(t2)) {
+      if (truth_(t2.isConnected)) {
+        render_BANG_(s1.layer, t2);
+        return position_BANG_2(s1.layer, t2);
+      } else {
+        return hide_BANG_();
+      }
+      ;
+    }
+    ;
+  };
+  var watch_BANG_ = function(trigger) {
+    const s1 = get_state3();
+    if (truth_(s1.observer)) {
+    } else {
+      s1.observer = new MutationObserver((function(_) {
+        return refresh_BANG_();
+      }));
+    }
+    ;
+    return s1.observer.observe(trigger, { "childList": true, "subtree": true, "characterData": true, "attributes": true });
+  };
+  var show_BANG_2 = function(trigger, instant_QMARK_) {
+    const s1 = get_state3();
+    const layer2 = layer_BANG_();
+    const cl3 = layer2.classList;
+    const prev4 = s1.open;
+    clear_pending_BANG_();
+    clearTimeout(s1.hideTimer);
+    unwatch_BANG_();
+    if (truth_((() => {
+      const and__23442__auto__5 = prev4;
+      if (truth_(and__23442__auto__5)) {
+        return !(prev4 === trigger);
+      } else {
+        return and__23442__auto__5;
+      }
+      ;
+    })())) {
+      describe_BANG_(prev4, false);
+    }
+    ;
+    s1.open = trigger;
+    describe_BANG_(trigger, true);
+    render_BANG_(layer2, trigger);
+    watch_BANG_(trigger);
+    cl3.toggle("tooltip-layer--instant", instant_QMARK_);
+    position_BANG_2(layer2, trigger);
+    if (truth_(instant_QMARK_)) {
+    } else {
+      cl3.remove("tooltip-layer--open");
+      layer2.getBoundingClientRect();
+    }
+    ;
+    cl3.add("tooltip-layer--open");
+    if (truth_(instant_QMARK_)) {
+      return requestAnimationFrame((function() {
+        return requestAnimationFrame((function() {
+          return cl3.remove("tooltip-layer--instant");
+        }));
+      }));
+    }
+    ;
+  };
+  var delay_of = function(trigger) {
+    const host1 = trigger.closest("[data-tooltip-delay]");
+    const v2 = truth_(host1) ? parseFloat(host1.dataset.tooltipDelay) : null;
+    if (truth_(!(v2 == null) && not(isNaN(v2)))) {
+      return v2;
+    } else {
+      return default_delay;
+    }
+    ;
+  };
+  var warm_QMARK_ = function(s) {
+    const or__23426__auto__1 = s.open;
+    if (truth_(or__23426__auto__1)) {
+      return or__23426__auto__1;
+    } else {
+      return now() - s.lastClose < skip_ms;
+    }
+    ;
+  };
+  var enter_BANG_ = function(trigger, immediate_QMARK_) {
+    const s1 = get_state3();
+    clearTimeout(s1.hideTimer);
+    if (truth_((() => {
+      const or__23426__auto__2 = s1.open === trigger;
+      if (or__23426__auto__2) {
+        return or__23426__auto__2;
+      } else {
+        const or__23426__auto__3 = s1.pending === trigger;
+        if (or__23426__auto__3) {
+          return or__23426__auto__3;
+        } else {
+          return s1.suppressed === trigger;
+        }
+        ;
+      }
+      ;
+    })())) {
+      return null;
+    } else {
+      clear_pending_BANG_();
+      const d4 = delay_of(trigger);
+      if (truth_(warm_QMARK_(s1))) {
+        return show_BANG_2(trigger, true);
+      } else {
+        if (truth_((() => {
+          const or__23426__auto__5 = immediate_QMARK_;
+          if (truth_(or__23426__auto__5)) {
+            return or__23426__auto__5;
+          } else {
+            return d4 <= 0;
+          }
+          ;
+        })())) {
+          return show_BANG_2(trigger, false);
+        } else {
+          if ("else") {
+            s1.pending = trigger;
+            return s1.showTimer = setTimeout((function() {
+              return show_BANG_2(trigger, false);
+            }), d4);
+          } else {
+            return null;
+          }
+        }
+      }
+      ;
+    }
+    ;
+  };
+  var leave_BANG_ = function(trigger) {
+    const s1 = get_state3();
+    if (s1.suppressed === trigger) {
+      s1.suppressed = null;
+    }
+    ;
+    if (s1.pending === trigger) {
+      clear_pending_BANG_();
+    }
+    ;
+    if (s1.open === trigger) {
+      return schedule_hide_BANG_();
+    }
+    ;
+  };
+  var reposition_BANG_2 = function() {
+    const s1 = get_state3();
+    const t2 = s1.open;
+    if (truth_(t2)) {
+      if (truth_(t2.isConnected)) {
+        return position_BANG_2(s1.layer, t2);
+      } else {
+        return hide_BANG_();
+      }
+      ;
+    }
+    ;
+  };
+  var left_trigger_QMARK_ = function(trigger, e) {
+    const to1 = e.relatedTarget;
+    return not((() => {
+      const and__23442__auto__2 = to1;
+      if (truth_(and__23442__auto__2)) {
+        return trigger.contains(to1);
+      } else {
+        return and__23442__auto__2;
+      }
+      ;
+    })());
+  };
+  var on_pointer_over = function(e) {
+    if (!(e.pointerType === "touch")) {
+      const temp__23062__auto__1 = trigger_of(e.target);
+      if (truth_(temp__23062__auto__1)) {
+        const t2 = temp__23062__auto__1;
+        return enter_BANG_(t2, false);
+      }
+      ;
+    }
+    ;
+  };
+  var on_pointer_out = function(e) {
+    if (!(e.pointerType === "touch")) {
+      const temp__23062__auto__1 = trigger_of(e.target);
+      if (truth_(temp__23062__auto__1)) {
+        const t2 = temp__23062__auto__1;
+        if (truth_(left_trigger_QMARK_(t2, e))) {
+          return leave_BANG_(t2);
+        }
+        ;
+      }
+      ;
+    }
+    ;
+  };
+  var on_pointer_down = function(e) {
+    const s1 = get_state3();
+    const t2 = trigger_of(e.target);
+    s1.pointer = e.pointerType;
+    if (truth_((() => {
+      const and__23442__auto__3 = t2;
+      if (truth_(and__23442__auto__3)) {
+        return !(e.pointerType === "touch") && (() => {
+          const or__23426__auto__4 = t2 === s1.open;
+          if (or__23426__auto__4) {
+            return or__23426__auto__4;
+          } else {
+            return t2 === s1.pending;
+          }
+          ;
+        })();
+      } else {
+        return and__23442__auto__3;
+      }
+      ;
+    })())) {
+      hide_BANG_();
+      return s1.suppressed = t2;
+    } else {
+      if (truth_(e.pointerType === "touch" && (not(t2) && not((() => {
+        const and__23442__auto__5 = s1.layer;
+        if (truth_(and__23442__auto__5)) {
+          return s1.layer.contains(e.target);
+        } else {
+          return and__23442__auto__5;
+        }
+        ;
+      })())))) {
+        return hide_BANG_();
+      } else {
+        return null;
+      }
+    }
+    ;
+  };
+  var on_click4 = function(e) {
+    const s1 = get_state3();
+    if (s1.pointer === "touch") {
+      const temp__23062__auto__2 = trigger_of(e.target);
+      if (truth_(temp__23062__auto__2)) {
+        const t3 = temp__23062__auto__2;
+        if (truth_((() => {
+          const or__23426__auto__4 = t3.matches(interactive);
+          if (truth_(or__23426__auto__4)) {
+            return or__23426__auto__4;
+          } else {
+            return t3.querySelector(interactive);
+          }
+          ;
+        })())) {
+          return null;
+        } else {
+          if (s1.open === t3) {
+            return hide_BANG_();
+          } else {
+            return enter_BANG_(t3, true);
+          }
+          ;
+        }
+        ;
+      }
+      ;
+    }
+    ;
+  };
+  var on_focus_in = function(e) {
+    const temp__23062__auto__1 = trigger_of(e.target);
+    if (truth_(temp__23062__auto__1)) {
+      const t2 = temp__23062__auto__1;
+      if (truth_(!(get_state3().pointer === "touch") && e.target.matches(":focus-visible"))) {
+        return enter_BANG_(t2, true);
+      }
+      ;
+    }
+    ;
+  };
+  var on_focus_out = function(e) {
+    const temp__23062__auto__1 = trigger_of(e.target);
+    if (truth_(temp__23062__auto__1)) {
+      const t2 = temp__23062__auto__1;
+      if (truth_(left_trigger_QMARK_(t2, e))) {
+        return leave_BANG_(t2);
+      }
+      ;
+    }
+    ;
+  };
+  var on_key_down = function(e) {
+    const s1 = get_state3();
+    if (truth_(e.key === "Escape" && s1.open)) {
+      const t2 = s1.open;
+      hide_BANG_();
+      return s1.suppressed = t2;
+    }
+    ;
+  };
+  var init_BANG_9 = function() {
+    if (truth_(window["__uiTooltipInit"])) {
+      return null;
+    } else {
+      window["__uiTooltipInit"] = true;
+      document.addEventListener("pointerover", on_pointer_over);
+      document.addEventListener("pointerout", on_pointer_out);
+      document.addEventListener("pointerdown", on_pointer_down, true);
+      document.addEventListener("click", on_click4);
+      document.addEventListener("focusin", on_focus_in);
+      document.addEventListener("focusout", on_focus_out);
+      document.addEventListener("keydown", on_key_down);
+      window.addEventListener("scroll", reposition_BANG_2, { "capture": true, "passive": true });
+      return window.addEventListener("resize", reposition_BANG_2);
+    }
+    ;
+  };
+  init_BANG_9();
+  window["__uiTooltip"] = { "hide": hide_BANG_, "reposition": reposition_BANG_2 };
+
   // .compiled/touch.mjs
   var mq = window.matchMedia("(hover: none)");
   var viewport_overrides = [["width", "device-width"], ["initial-scale", "1.0"], ["maximum-scale", "1.0"], ["user-scalable", "no"]];
@@ -7260,14 +8167,14 @@
       ;
     })().split(","))));
     const override_keys4 = set(map(first, viewport_overrides));
-    const kept5 = remove((function(p__31) {
-      const vec__69 = p__31;
+    const kept5 = remove((function(p__36) {
+      const vec__69 = p__36;
       const k10 = nth(vec__69, 0, null);
       const _11 = nth(vec__69, 1, null);
       return contains_QMARK_(override_keys4, k10);
     }), entries1);
-    return join(", ", map((function(p__32) {
-      const vec__1215 = p__32;
+    return join(", ", map((function(p__37) {
+      const vec__1215 = p__37;
       const k16 = nth(vec__1215, 0, null);
       const v17 = nth(vec__1215, 1, null);
       if (v17 == null) {
@@ -7317,17 +8224,17 @@
   var upnext_secs = 10;
   var check_svg = '<svg class="icon video-player-icon video-player-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
   var volume_key = "ui-video-player:volume";
-  var q2 = function(el, sel) {
-    return el.querySelector(sel);
+  var q2 = function(el2, sel) {
+    return el2.querySelector(sel);
   };
-  var qa = function(el, sel) {
-    return Array.from(el.querySelectorAll(sel));
+  var qa = function(el2, sel) {
+    return Array.from(el2.querySelectorAll(sel));
   };
-  var flag_BANG_ = function(el, k, on_QMARK_) {
+  var flag_BANG_ = function(el2, k, on_QMARK_) {
     if (truth_(on_QMARK_)) {
-      return el.setAttribute(k, "");
+      return el2.setAttribute(k, "");
     } else {
-      return el.removeAttribute(k);
+      return el2.removeAttribute(k);
     }
     ;
   };
@@ -7359,7 +8266,7 @@
     }
     ;
   };
-  var clamp6 = function(v, lo, hi) {
+  var clamp7 = function(v, lo, hi) {
     return Math.max(lo, Math.min(hi, v));
   };
   var emit_BANG_3 = function(p, detail) {
@@ -7417,8 +8324,8 @@
     ;
   };
   var builtin_options = function(p, id) {
-    const G__331 = id;
-    switch (G__331) {
+    const G__381 = id;
+    switch (G__381) {
       case "quality":
         const lv3 = levels(p);
         const h4 = p.hls;
@@ -7479,8 +8386,8 @@
     ;
   };
   var builtin_value = function(p, id) {
-    const G__341 = id;
-    switch (G__341) {
+    const G__391 = id;
+    switch (G__391) {
       case "quality":
         const h3 = p.hls;
         if (truth_((() => {
@@ -7508,8 +8415,8 @@
     ;
   };
   var builtin_summary = function(p, id) {
-    const G__351 = id;
-    switch (G__351) {
+    const G__401 = id;
+    switch (G__401) {
       case "quality":
         const h3 = p.hls;
         const cur4 = truth_(h3) ? levels(p)[h3.currentLevel] : null;
@@ -7548,8 +8455,8 @@
     ;
   };
   var builtin_select_BANG_ = function(p, id, v) {
-    const G__361 = id;
-    switch (G__361) {
+    const G__411 = id;
+    switch (G__411) {
       case "quality":
         const temp__23062__auto__3 = p.hls;
         if (truth_(temp__23062__auto__3)) {
@@ -7588,7 +8495,7 @@
     const w3 = panel.offsetWidth;
     const left4 = b2.left + b2.width / 2 - w3 / 2 - r1.left;
     panel.style.bottom = `${r1.bottom - b2.top + 12}px`;
-    return panel.style.left = `${clamp6(left4, 8, r1.width - w3 - 8) ?? ""}px`;
+    return panel.style.left = `${clamp7(left4, 8, r1.width - w3 - 8) ?? ""}px`;
   };
   var arm_hide_BANG_ = function(p) {
     clearTimeout(p.hideT);
@@ -7969,9 +8876,9 @@
       scrub5.setAttribute("aria-valuenow", Math.round(t4));
       scrub5.setAttribute("aria-valuetext", `${fmt(t4) ?? ""}${" of "}${fmt(d3) ?? ""}`);
       const b11 = v2.buffered;
-      const n3712 = b11.length;
+      const n4212 = b11.length;
       let i13 = 0;
-      for (; i13 < n3712; i13++) {
+      for (; i13 < n4212; i13++) {
         b11.start(i13) <= t4 + 0.5 ? scrub5.style.setProperty("--vp-buffered", b11.end(i13) / d3) : null;
       }
       ;
@@ -8053,7 +8960,7 @@
   };
   var seek_by_BANG_ = function(p, s) {
     const v1 = p.video;
-    return v1.currentTime = clamp6(v1.currentTime + s, 0, (() => {
+    return v1.currentTime = clamp7(v1.currentTime + s, 0, (() => {
       const or__23426__auto__2 = v1.duration;
       if (truth_(or__23426__auto__2)) {
         return or__23426__auto__2;
@@ -8065,7 +8972,7 @@
   };
   var set_volume_BANG_ = function(p, x) {
     const v1 = p.video;
-    const x2 = clamp6(x, 0, 1);
+    const x2 = clamp7(x, 0, 1);
     v1.volume = x2;
     v1.muted = x2 === 0;
     return (() => {
@@ -8096,8 +9003,8 @@
   };
   var act_BANG_ = function(p, a) {
     const v1 = p.video;
-    const G__382 = a;
-    switch (G__382) {
+    const G__432 = a;
+    switch (G__432) {
       case "play":
         toggle_play_BANG_(p);
         break;
@@ -8165,9 +9072,9 @@
     emit_BANG_3(p, { "kind": "toggle", "id": id, "on": on_QMARK_1 });
     return sync_BANG_3(p);
   };
-  var frac = function(el, e) {
-    const r1 = el.getBoundingClientRect();
-    return clamp6((e.clientX - r1.left) / r1.width, 0, 1);
+  var frac = function(el2, e) {
+    const r1 = el2.getBoundingClientRect();
+    return clamp7((e.clientX - r1.left) / r1.width, 0, 1);
   };
   var wire_scrub_BANG_ = function(p, scrub) {
     const v1 = p.video;
@@ -8217,8 +9124,8 @@
     scrub.addEventListener("pointerup", end5);
     scrub.addEventListener("pointercancel", end5);
     return scrub.addEventListener("keydown", (function(e) {
-      const G__397 = e.key;
-      switch (G__397) {
+      const G__447 = e.key;
+      switch (G__447) {
         case "ArrowLeft":
           e.preventDefault();
           e.stopPropagation();
@@ -8606,7 +9513,7 @@
     }
     ;
   };
-  var init_BANG_9 = function(root) {
+  var init_BANG_10 = function(root) {
     const v1 = q2(root, "video");
     const p2 = { "open": null, "video": v1, "hls": null, "dismissed": false, "sub": -1, "volDrag": false, "dragging": false, "root": root, "lastSub": 0, "auto": "true" === root.dataset.autonext };
     players.set(root, p2);
@@ -8806,7 +9713,7 @@
         }
         ;
       } else {
-        return init_BANG_9(root);
+        return init_BANG_10(root);
       }
       ;
     }));
@@ -8843,9 +9750,9 @@
     return obs2.observe(document.body, { "childList": true, "subtree": true, "attributes": true, "attributeFilter": ["data-src"] });
   };
   window["__uiVideoPlayer"] = (function(root) {
-    let temp__23062__auto__40 = players.get(root);
-    if (truth_(temp__23062__auto__40)) {
-      const p1 = temp__23062__auto__40;
+    let temp__23062__auto__45 = players.get(root);
+    if (truth_(temp__23062__auto__45)) {
+      const p1 = temp__23062__auto__45;
       return { "video": p1.video, "play": (function() {
         return autoplay_BANG_(p1);
       }), "pause": (function() {

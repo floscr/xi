@@ -164,7 +164,7 @@
        [:div {:class ["usage-strip-bars"]}
         (for [{:keys [start end peak]} bars]
           [:div {:class ["usage-strip-bar" (str "claude-usage--" (usage/severity peak))]
-                 :title (str (fmt-date-time start) " – " (fmt-time end) ": " peak "%")}
+                 :data-tooltip (str (fmt-date-time start) " – " (fmt-time end) ": " peak "%")}
            [:div {:class ["usage-strip-fill"] :style {:height (str peak "%")}}]])]
        [:div {:class ["usage-chart-legend"]}
         (str "Last " (count bars) " windows · peak use")]])))
@@ -237,7 +237,7 @@
       (when (and fetched-at (pos? fetched-at))
         [:span {:class ["usage-updated"]} (str "Updated " (ago fetched-at now))])
       [:button {:class ["icon-btn"]
-                :title "Refresh"
+                :data-tooltip "Refresh" :aria-label "Refresh"
                 :disabled (when loading? true)
                 :on {:click (fn [_] (dispatch! {:type :usage/refresh-page}))}}
        (icon/icon {:icon-name :refresh :size :md})]
