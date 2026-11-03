@@ -559,7 +559,7 @@
              (if (fs/sym-link? "providers") (fs/delete "providers") (fs/delete-tree "providers")))
            (fs/create-sym-link "providers" target)
            (when-not (fs/exists? (fs/path target "node_modules"))
-             (shell {:dir (str target)} "bun" "install"))
+             (shell {:dir (str target)} "bun" "install" "--frozen-lockfile"))
            (println (str "providers → " target)))}
 
   providers:fetch
@@ -579,7 +579,7 @@
                    (shell "git" "clone" "--quiet" repo "providers"))
                  (shell {:dir "providers"} "git" "fetch" "--quiet" "origin")
                  (shell {:dir "providers"} "git" "checkout" "--quiet" sha)
-                 (shell {:dir "providers"} "bun" "install")
+                 (shell {:dir "providers"} "bun" "install" "--frozen-lockfile")
                  (println (str "providers/ at " sha)))))}
 
   providers:pin
