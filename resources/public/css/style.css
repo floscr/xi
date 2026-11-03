@@ -2842,6 +2842,13 @@ body {
   width: 13px;
   height: 13px;
 }
+.compose-status-sticky {
+  margin-left: 4px;
+  color: var(--orange);
+}
+.compose-status-sticky--relentless {
+  color: var(--danger);
+}
 .compose-status-dim {
   opacity: 0.7;
 }

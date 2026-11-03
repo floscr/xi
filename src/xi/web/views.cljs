@@ -1311,9 +1311,12 @@
    banner of :text; entries with a :title (shape in the xi.commands ns doc) show
    :tone, :icon, :detail and :rows, :text being the TUI's rendering. An
    :action adds a button running its slash command, or opening its :url; a
-   :goto one opening a session's chat."
-  [dispatch! {:keys [text title detail rows tone icon action goto room-id]}]
-  (let [rows   (when (seq rows)
+   :goto one opening a session's chat. :yolo-sticky? (the chat's latest yolo
+   banner while its level is also the default for new chats) adds a row."
+  [dispatch! {:keys [text title detail rows tone icon action goto room-id yolo-sticky?]}]
+  (let [rows   (cond-> rows
+                 yolo-sticky? (conj {:label "Sticky" :text "also on in new chats"}))
+        rows   (when (seq rows)
                  (into [:span {:class ["status-alert-rows"]}]
                        (mapcat (fn [{:keys [label text tone]}]
                                  (let [cls #(cond-> [%] tone (conj (str "status-alert-row--" (name tone))))]
@@ -2356,14 +2359,16 @@
   "The plain-text line under the composer's input row (CSS hides it on touch
    screens while typing): the chat's model, opening the model picker, the yolo
    flame, colored while yolo mode is on and turning it off, grey while off
-   and turning it on, absent where it is disabled, and the Claude
+   and turning it on, absent where it is disabled, followed by `sticky` in
+   text (no ember dot) while it is also the default for new chats, and the Claude
    subscription usage from the lobby broadcast, opening /usage."
   [dispatch! room model claude-usage yolo sticky?]
   (let [{:keys [session weekly session-resets-at weekly-resets-at]} claude-usage
         session (when-not (usage-window-outdated? session-resets-at) session)
         weekly  (when-not (usage-window-outdated? weekly-resets-at) weekly)
-        [flame title next] (if-let [[flame title] (yolo-flame yolo sticky?)]
-                             [flame (str title " Click to turn it off." alt-default-hint) :off]
+        [flame title next] (if-let [[_ title] (yolo-flame yolo sticky?)]
+                             [(first (yolo-flame yolo false))
+                              (str title " Click to turn it off." alt-default-hint) :off]
                              [(flame-icon false [])
                               (str "Yolo mode is off. Click to turn it on." alt-default-hint) :sane])]
     [:div {:class ["compose-status"]}
@@ -2377,7 +2382,11 @@
                  :data-tooltip title
                  :aria-label title
                  :on {:click (fn [e] (yolo-pick! dispatch! e next))}}
-        flame])
+        flame
+        (when sticky?
+          [:span {:class ["compose-status-sticky"
+                          (when (= :relentless yolo) "compose-status-sticky--relentless")]}
+           "sticky"])])
      (when claude-usage
        [:button {:class ["compose-status-item" "compose-status-usage"]
                  :data-tooltip "Claude usage — all usage"
@@ -5596,6 +5605,14 @@
                                       (get by-xpost p)))
                      ;; The user's open/closed blocks, kept per session across
                      ;; switches (core's :timeline/block-toggle).
+                     ;; The latest yolo banner, while its level is also the
+                     ;; default for new chats (yolo-sticky?), says so.
+                     yolo-sticky-p (let [level (yolo-level state room)]
+                                     (when (yolo-sticky? state level)
+                                       (let [p (some #(when (:yolo (nth entries %)) %)
+                                                     (range (dec total) -1 -1))]
+                                         (when (and p (= level (:yolo (nth entries p))))
+                                           p))))
                      session-key (or sid (:id room))
                      block-open  (get-in state [:web/block-open session-key])
                      toggle-fn   (fn [k] (remember-open dispatch! session-key k))]
@@ -5657,7 +5674,7 @@
                                  (tool-views/inputs (util/strip-mcp-prefix (:tool entry)) (:ext room)))
                                (when tool? (:tool-args app))
                                md-code? (when editing? [(:text editing) (:images editing)]) resolved
-                               explanation retry])
+                               explanation retry (= p yolo-sticky-p)])
                             (fn []
                               (when-let [post (entry->post
                                                dispatch!
@@ -5692,7 +5709,9 @@
                                                  explanation
                                                  (assoc :explanation explanation)
                                                  retry
-                                                 (assoc :retry retry)))]
+                                                 (assoc :retry retry)
+                                                 (= p yolo-sticky-p)
+                                                 (assoc :yolo-sticky? true)))]
                                 [{:key (str "h-" p)
                                   :group? groupable?
                                   :collapsed? collapsed?

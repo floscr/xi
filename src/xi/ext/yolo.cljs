@@ -66,9 +66,10 @@
 
 (defn status-entry
   "The history line for a level change; :text for the TUI, the rest for the
-   web client's banner (xi.commands ns doc)."
+   web client's banner (xi.commands ns doc). :yolo names the level, so the web
+   can mark the latest banner while it is also the default for new chats."
   [level]
-  (merge {:kind :status :text (status-text level) :icon :zap}
+  (merge {:kind :status :text (status-text level) :icon :zap :yolo (or level :off)}
          (case level
            :sane       {:title "Yolo mode on" :tone :warning
                         :detail "Tool calls run without asking."
