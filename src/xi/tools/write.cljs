@@ -9,23 +9,27 @@
   "Unified diff of the file's current content (empty when new) against the
    content about to be written, without writing — shown in the permission
    dialog before the call runs. nil when nothing would change."
-  [{:keys [path content]} {:keys [cwd]}]
+  [{:keys [path content append]} {:keys [cwd]}]
   (try
     (let [resolved (tfs/resolve-path path cwd)
           original (if (tfs/file-exists? resolved)
                      (fs/readFileSync resolved "utf8")
-                     "")]
-      (when (and (string? content) (not= content original))
-        (util/unified-diff original content)))
+                     "")
+          new-text (if append (str original content) content)]
+      (when (and (string? content) (not= new-text original))
+        (util/unified-diff original new-text)))
     (catch :default _ nil)))
 
 (defn execute
-  "Write content to a file. Creates parent directories if needed."
-  [{:keys [path content]} {:keys [cwd]}]
+  "Write content to a file, or append it with `append`. Creates parent
+   directories if needed."
+  [{:keys [path content append]} {:keys [cwd]}]
   (try
     (let [resolved (tfs/resolve-path path cwd)]
       (tfs/ensure-parent-dirs resolved)
-      (fs/writeFileSync resolved content "utf8")
+      (if append
+        (fs/appendFileSync resolved content "utf8")
+        (fs/writeFileSync resolved content "utf8"))
       (let [display-path (util/display-path resolved path cwd)
             lines (str/split-lines content)
             max-preview 4
@@ -33,7 +37,10 @@
             preview (str/join "\n" preview-lines)
             remaining (- (count lines) max-preview)]
         {:content [{:type "text"
-                    :text (str display-path "\n"
+                    :text (str display-path
+                               (when append
+                                 (str " (appended " (count lines) " lines)"))
+                               "\n"
                                preview
                                (when (pos? remaining)
                                  (str "\n... (" remaining " more lines)")))}]}))
@@ -43,8 +50,9 @@
 
 (def definition
   {:name "write"
-   :description "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories."
+   :description "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories. With append, adds the content to the end of the file instead."
    :input_schema {:type "object"
                   :properties {:path {:type "string" :description "Path to file"}
-                               :content {:type "string" :description "Content to write"}}
+                               :content {:type "string" :description "Content to write"}
+                               :append {:type "boolean" :description "Append to the end of the file instead of overwriting it"}}
                   :required ["path" "content"]}})
