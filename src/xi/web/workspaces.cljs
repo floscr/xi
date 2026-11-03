@@ -223,11 +223,12 @@
 
 (defn- open-page
   "The palette's workspace page (xi.web.views/palette-workspace-page), or with
-   a single other workspace a plain switch to it."
-  [st _]
-  (let [targets (switch-targets st)]
-    (if (= 1 (count targets))
-      (select st (first targets))
+   exactly two tabs in the bar (closed ones don't count) a plain switch to the
+   other one; `:list?` always opens the page."
+  [st {:keys [list?]}]
+  (let [tabs (workspace/tab-ids st)]
+    (if (and (not list?) (= 2 (count tabs)))
+      (select st (first (remove #{(workspace/selected-id st)} tabs)))
       {:state   (assoc st :web/palette-page {:kind :workspaces}
                        :web/palette-open? true
                        :web/palette-drilling? true)

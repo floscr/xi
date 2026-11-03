@@ -93,8 +93,8 @@ No key is bound by default. The actions, to bind under `:keys` in
 
 | Action | Does |
 | --- | --- |
-| `:workspace/switch` | Opens the palette's workspace list. |
-| `:workspace/new` | Asks for a name and creates a workspace. |
+| `:workspace/switch` | Opens the palette's workspace list. With exactly two tabs in the bar it switches to the other one instead. |
+| `:workspace/new` | Opens the palette's workspace list, to reopen a closed workspace or pick **New workspace…**. |
 | `:workspace/close` | Closes the selected tab; the tab to its left takes over. |
 | `:workspace/prune` | Empties the selected workspace's Workspace section. |
 | `:workspace/rename` | Renames the selected workspace, when it is one of yours. |

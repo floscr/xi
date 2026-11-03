@@ -155,7 +155,9 @@
 (defn selected-id [state]
   (or (:id (selected state)) all-id))
 
-(defn- tab-ids [state]
+(defn tab-ids
+  "The ids of the tabs in the bar: All, then the open workspaces."
+  [state]
   (into [all-id] (map :id) (open-workspaces state)))
 
 (defn neighbor-id

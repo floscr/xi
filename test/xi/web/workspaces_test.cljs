@@ -126,7 +126,18 @@
       (is (nil? (get-in r [:state :web/palette-page])))
       (is (= "all" (get-in (run (:state r) {:type :palette/open-workspaces})
                            [:state :workspace/selected]))
-          "and back again"))))
+          "and back again")))
+  (testing "closed tabs don't count: two open tabs still toggle"
+    (let [st (assoc state :workspace/selected "penpot" :workspace/closed ["w-1"])]
+      (is (= "all" (get-in (run st {:type :palette/open-workspaces}) [:state :workspace/selected])))))
+  (testing "All alone: the page, to reopen a closed one"
+    (let [r (run (assoc state :workspace/closed ["penpot" "w-1"]) {:type :palette/open-workspaces})]
+      (is (= {:kind :workspaces} (get-in r [:state :web/palette-page])))))
+  (testing ":list? opens the page even with two tabs"
+    (let [r (run {:workspace/user [{:id "w-1" :label "Home" :dirs []}]}
+                 {:type :palette/open-workspaces :list? true})]
+      (is (= {:kind :workspaces} (get-in r [:state :web/palette-page])))
+      (is (nil? (get-in r [:state :workspace/selected]))))))
 
 (deftest the-workspace-section-keeps-what-was-opened-until-pruned
   (testing "visiting a chat in a workspace adds it, per user"

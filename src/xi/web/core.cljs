@@ -3439,7 +3439,8 @@
   ;; and only when it is one of the user's own
   (let [own-selected? (fn [st] (some #(= (:workspace/selected st) (:id %)) (:workspace/user st)))]
     (keymap/register-action! {:id :workspace/switch :event {:type :palette/open-workspaces}})
-    (keymap/register-action! {:id :workspace/new :event {:type :workspace/edit-open :mode :create}})
+    ;; the workspace page: the existing ones to switch to or reopen, then New workspace…
+    (keymap/register-action! {:id :workspace/new :event {:type :palette/open-workspaces :list? true}})
     (keymap/register-action! {:id :workspace/close
                               :when (fn [st] (some? (workspace/selected st)))
                               :event {:type :workspace/close-current}})

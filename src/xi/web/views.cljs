@@ -7511,10 +7511,9 @@
        (map (comp item by-id) (workspaces/switch-targets state)))
      (cmd/command-group {}
        (cmd/command-item
-        (with-shortcut {:icon :plus
-                        :value "new workspace create"
-                        :on-click (fn [_] (dispatch! {:type :workspace/edit-open :mode :create}))}
-          state {:action :workspace/new})
+        {:icon :plus
+         :value "new workspace create"
+         :on-click (fn [_] (dispatch! {:type :workspace/edit-open :mode :create}))}
         "New workspace…"))]))
 
 (defn- palette-workspace-items
