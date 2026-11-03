@@ -496,7 +496,9 @@
 (deftest bundle-aliases-expand
   (testing "the built-in tier is the expansion of the default aliases"
     (is (= defaults/default-rules (defaults/expand defaults/default-aliases)))
-    (is (= 46 (count defaults/default-rules))))
+    (is (= (+ 50 (count (defaults/expand defaults/os-persistence)))
+           (count defaults/default-rules))
+        "plus the persistence bundle of the OS the tests run on"))
   (testing "composites expand to their parts, in order"
     (is (= (defaults/expand [:xi.rules.defaults/sensitive-writes
                              :xi.rules.defaults/protected-writes
@@ -527,7 +529,7 @@
   (testing "unknown aliases and non-rule entries throw"
     (is (thrown-with-msg? js/Error #"unknown default-rules alias"
           (defaults/expand [:xi.rules.defaults/nope])))
-    (is (thrown-with-msg? js/Error #"invalid :defaults entry"
+    (is (thrown-with-msg? js/Error #"invalid rules entry"
           (defaults/expand ["env"])))))
 
 (deftest not-installed-deny
@@ -615,3 +617,53 @@
       (is (nil? (guard {:tool :bash :command "rm -rf build"})))
       (is (nil? (guard {:tool :sh :cli "cargo" :command "cargo build"})))
       (is (nil? (guard {:tool-name "spawn_subagent"}))))))
+
+(defn- home-write [tool p]
+  {:tool tool :path (str "/home/x/" (subs p 2)) :resolved-home-path p :outside-cwd? true})
+
+(defn- sh-cmd [cmd]
+  {:tool :sh :cli (first (str/split cmd #" ")) :command cmd})
+
+(deftest persistence-footholds
+  (let [rule   (fn [rs req] (rules/first-match rs req))
+        guard  (fn [rs req] (get-in (rule rs req) [:action :guard]))
+        bundle #(defaults/expand [(keyword "xi.rules.defaults" %)])
+        tier   defaults/default-rules]
+    (testing "the generic bundle is in the default tier: ~/.ssh, ~/.profile, crontab, ssh -R"
+      (doseq [p ["~/.ssh/authorized_keys" "~/.ssh/config" "~/.profile"]]
+        (is (= :always (guard tier (home-write :write p))) p)
+        (is (= [:yes :no] (get-in (rule tier (home-write :edit p)) [:action :options])) p))
+      (doseq [cmd ["crontab -l" "crontab /tmp/cron" "ssh -N -R *:0:localhost:22 tunnel@1.2.3.4"
+                   "ssh -NR 0:localhost:22 h" "autossh -M 0 -R 1:localhost:22 h"
+                   "ssh -o RemoteForward=1 h"]]
+        (is (= :always (guard tier (sh-cmd cmd))) cmd))
+      (is (= :always (guard tier {:tool :bash :command "crontab -e"}))))
+    (testing "everyday ssh calls and other files under ~ are not caught"
+      (doseq [cmd ["ssh home-server uptime" "ssh -L 8080:localhost:80 h"]]
+        (is (not= :always (guard tier (sh-cmd cmd))) cmd))
+      (doseq [p ["~/.config/.smt" "~/.npmrc" "~/notes.txt"]]
+        (is (nil? (guard tier (home-write :write p))) p)))
+    (testing "bash still denies remote shells outright"
+      (is (= :deny (get-in (rule tier {:tool :bash :command "ssh -R 0:localhost:22 h"})
+                           [:action :type]))))
+    (testing "the OS bundles"
+      (doseq [p ["~/.config/systemd/user/x.service" "~/.config/autostart/x.desktop"]]
+        (is (= :always (guard (bundle "persistence-linux") (home-write :write p))) p))
+      (is (= :always (guard (bundle "persistence-linux") (sh-cmd "systemctl --user enable x"))))
+      (is (nil? (guard (bundle "persistence-linux") (sh-cmd "systemctl --user restart x"))))
+      (is (= :always (guard (bundle "persistence-macos")
+                            (home-write :write "~/Library/LaunchAgents/com.apple.sysmond.plist"))))
+      (is (= :always (guard (bundle "persistence-macos") (sh-cmd "launchctl load x.plist")))))
+    (testing "the shell bundles are opt-in"
+      (doseq [[b ps] {"persistence-bash" ["~/.bashrc" "~/.bash_profile"]
+                      "persistence-zsh"  ["~/.zshrc" "~/.zshenv" "~/.zprofile"
+                                          "~/.config/zsh/.zshrc"]
+                      "persistence-fish" ["~/.config/fish/config.fish"]}
+              p ps]
+        (is (= :always (guard (bundle b) (home-write :write p))) p)
+        (is (nil? (guard tier (home-write :write p))) p)))
+    (testing "an allow above gives way"
+      (is (= {:type :ask :guard :always}
+             (select-keys (:action (rule (into [{:match {:tool :write} :action {:type :allow}}] tier)
+                                         (home-write :write "~/.ssh/authorized_keys")))
+                          [:type :guard]))))))

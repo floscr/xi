@@ -61,8 +61,8 @@ runs instead. It has two levels:
 
 | Command | Level | Still asks |
 | --- | --- | --- |
-| `/yolo` | Sane | Writes into `.env`, `.git/` or key directories; secret leaks (environment dumps, credential files, secret CLIs); `git push`, `mkfs`, `dd`; deleting a directory outside the project; server restarts. Removing a system directory (`/`, the home directory, `/usr`, `/etc`, `/nix`, …) is denied. |
-| `/yolo relentless` | Relentless | Server restarts (`bb serve:restart`, `serve:stop`). |
+| `/yolo` | Sane | Writes into `.env`, `.git/` or key directories; secret leaks (environment dumps, credential files, secret CLIs); `git push`, `mkfs`, `dd`; deleting a directory outside the project; persistence (below); server restarts. Removing a system directory (`/`, the home directory, `/usr`, `/etc`, `/nix`, …) is denied. |
+| `/yolo relentless` | Relentless | Server restarts (`bb serve:restart`, `serve:stop`); persistence: writes to `~/.ssh` and `~/.profile`, systemd user units and autostart entries (Linux), LaunchAgents (macOS), and `crontab`, `systemctl --user enable`, `launchctl load`, `ssh -R`. Your shell's rc files too once you add its [bundle](rules-reference.md#opt-in-bundles). |
 
 `/yolo` again, or `/yolo off`, turns it off; `/yolo sane` switches back
 from relentless. It works while the agent is busy, and raising the level
@@ -252,6 +252,16 @@ one out to switch it off:
 ```
 
 `/rules` shows the full default list with its bundle names.
+
+Some bundles aren't in the default list because they only fit some systems,
+like the one guarding your shell's rc files. Name them in `:rules` to turn
+them on:
+
+```clojure
+:rules [:xi.rules.defaults/persistence-zsh]
+```
+
+The list: [Opt-in bundles](rules-reference.md#opt-in-bundles).
 
 ## Reference
 

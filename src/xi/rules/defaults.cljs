@@ -52,6 +52,42 @@
 (def ^:private yolo-guarded-command-re
   (alt-re yolo-guarded-patterns))
 
+;; ── Persistence footholds ──
+;;
+;; What a backdoor plants to keep access: a login key, something that runs at
+;; login or boot, a reverse tunnel. Each ask is yes/no, kept in both yolo
+;; levels and over any allow above it (:guard :always).
+
+(defn- persistence-writes
+  "One write ask per glob (`:path` takes a single glob)."
+  [globs]
+  (mapv (fn [glob]
+          {:match  {:tool #{:write :edit} :path glob}
+           :action {:type :ask
+                    :message "Write to a login/startup path (runs or grants access on login)?"
+                    :options [:yes :no]
+                    :guard   :always}})
+        globs))
+
+(defn- persistence-command [tools re]
+  {:match  {:tool tools :command re}
+   :action {:type :ask
+            :message "Set up something that persists or opens a reverse tunnel?"
+            :options [:yes :no]
+            :guard   :always}})
+
+(def ^:private crontab-re #"\bcrontab\b")
+
+(def ^:private reverse-tunnel-re
+  "`ssh -R` / `autossh -R` (flags may be glued: `-NR`) or `-o RemoteForward`."
+  #"\b(?:auto)?ssh\b.*\s-[A-Za-z]*R|RemoteForward")
+
+(def ^:private systemd-enable-re
+  #"\bsystemctl\s+--user\s+(?:enable|link|edit|add-wants)\b")
+
+(def ^:private launchctl-load-re
+  #"\blaunchctl\s+(?:load|bootstrap|enable|submit)\b")
+
 (def ^:private chained-bash-msg
   (str "bash: chained/piped shell commands are disabled — rewrite "
        "this with the clj tool (sandboxed Clojure REPL): (cat f) "
@@ -561,6 +597,35 @@
    ::env
    [::env-dump ::secret-reads ::secret-clis]
 
+   ;; Persistence footholds, so a prompt injection can't plant one unseen.
+   ;; The generic bundle and the one for this OS (`os-persistence`) are in the
+   ;; default tier, before write-gates so their ask names the reason; the
+   ;; shell bundles are opt-in, listed in a rules file's :rules. A bash `ssh`
+   ;; is left to bash-guards' remote-shell deny.
+   ::persistence
+   (conj (persistence-writes ["~/.ssh/**" "~/.profile"])
+         (persistence-command #{:bash :sh :task} crontab-re)
+         (persistence-command #{:sh :task} reverse-tunnel-re))
+
+   ::persistence-linux
+   (conj (persistence-writes ["~/.config/systemd/user/**" "~/.config/autostart/**"])
+         (persistence-command #{:bash :sh :task} systemd-enable-re))
+
+   ::persistence-macos
+   (conj (persistence-writes ["~/Library/LaunchAgents/**"])
+         (persistence-command #{:bash :sh :task} launchctl-load-re))
+
+   ::persistence-bash
+   (persistence-writes ["~/.bashrc" "~/.bash_profile" "~/.bash_login" "~/.bash_logout"])
+
+   ;; ~/.config/zsh: the usual $ZDOTDIR, where zsh then reads its rc files.
+   ::persistence-zsh
+   (persistence-writes ["~/.zshrc" "~/.zshenv" "~/.zprofile" "~/.zlogin" "~/.zlogout"
+                        "~/.config/zsh/**"])
+
+   ::persistence-fish
+   (persistence-writes ["~/.config/fish/**"])
+
    ;; Write gates: sensitive → protected → outside the working tree.
    ::sensitive-writes
    [{:match  {:tool #{:write :edit} :path sensitive-write-re}
@@ -749,48 +814,62 @@
    ::clj-sh
    [::repository-scripts ::localhost-curl ::sh-read-only ::sh-confirm]})
 
-(defn expand
-  "Expand a `:defaults` vector — bundle aliases (recursively, so composites
-   work) and inline rule maps, in order — into a flat rule vector tagged
-   :scope :default. Throws ex-info on an unknown alias or a non-rule entry."
+(defn expand-bundles
+  "Expand a rules file's `:rules` or `:defaults` vector — bundle aliases
+   (recursively, so composites work) and inline rule maps, in order — into a
+   flat rule vector. Throws ex-info on an unknown alias or a non-rule entry."
   [entries]
   (letfn [(step [e]
             (cond
-              (map? e)     [(assoc e :scope :default)]
+              (map? e)     [e]
               (keyword? e) (if-let [b (get bundles e)]
                              (mapcat step b)
                              (throw (ex-info (str "unknown default-rules alias " e)
                                              {:alias e})))
-              :else        (throw (ex-info (str "invalid :defaults entry " (pr-str e)
+              :else        (throw (ex-info (str "invalid rules entry " (pr-str e)
                                                 " (expected an alias keyword or a rule map)")
                                            {:entry e}))))]
     (vec (mapcat step entries))))
 
+(defn expand
+  "`expand-bundles` for the default tier: each rule tagged :scope :default."
+  [entries]
+  (mapv #(assoc % :scope :default) (expand-bundles entries)))
+
+(def os-persistence
+  "The persistence bundle of the OS xi runs on, in the default tier."
+  (case (.-platform js/process)
+    "linux"  [::persistence-linux]
+    "darwin" [::persistence-macos]
+    []))
+
 (def default-aliases
   "The built-in default tier, as bundle aliases in precedence order. A rules
    file's `:defaults` replaces this vector."
-  [::not-installed
-   ::yolo-sane
-   ::tmp-cleanup
-   ::no-auto-memory
-   ::extension-credentials
-   ::extension-data
-   ::xi-sessions
-   ::claude-sessions
-   ::env
-   ::write-gates
-   ::bash-chained
-   ::task-trust
-   ::bash-guards
-   ::server-control
-   ::mcp-confirm
-   ::subagent-confirm
-   ::extension-sh
-   ::net-confirm
-   ::device-confirm
-   ::script-exec
-   ::trusted-tasks
-   ::clj-sh])
+  (vec (concat [::not-installed
+                ::yolo-sane
+                ::tmp-cleanup
+                ::no-auto-memory
+                ::extension-credentials
+                ::extension-data
+                ::xi-sessions
+                ::claude-sessions
+                ::env
+                ::persistence]
+               os-persistence
+               [::write-gates
+                ::bash-chained
+                ::task-trust
+                ::bash-guards
+                ::server-control
+                ::mcp-confirm
+                ::subagent-confirm
+                ::extension-sh
+                ::net-confirm
+                ::device-confirm
+                ::script-exec
+                ::trusted-tasks
+                ::clj-sh])))
 
 (def default-rules
   "The built-in rule set (`default-aliases` expanded), in precedence order, each

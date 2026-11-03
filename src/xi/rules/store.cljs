@@ -112,8 +112,8 @@
       rule)))
 
 (defn parse-rules-config
-  "Validate parsed rules-file `data` → {:rules :defaults} (defaults expanded
-   via defaults/expand) or {:error msg}."
+  "Validate parsed rules-file `data` → {:rules :defaults} (bundle aliases
+   expanded, defaults/expand-bundles) or {:error msg}."
   [data]
   (let [v       rules-file-version
         shape   (str "{:type " rules-file-type " :version " v
@@ -149,11 +149,7 @@
                    " — expected " shape)}
 
       (not (sequential? (:rules data [])))
-      {:error ":rules must be a vector of rule maps"}
-
-      (not-every? map? (:rules data))
-      {:error (str ":rules entries must be rule maps (put "
-                   ":xi.rules.defaults/… aliases under :defaults)")}
+      {:error ":rules must be a vector of rule maps / bundle aliases"}
 
       (not (sequential? (:defaults data [])))
       {:error ":defaults must be a vector of aliases / rule maps"}
@@ -166,7 +162,9 @@
 
       :else
       (try
-        {:rules    (mapv expand-match-dir (:rules data))
+        ;; :rules may name default bundles too (an opt-in one such as
+        ;; persistence-zsh); config-rules tags them with the file's :scope.
+        {:rules    (mapv expand-match-dir (defaults/expand-bundles (:rules data)))
          :defaults (when (contains? data :defaults)
                      (mapv expand-match-dir (defaults/expand (:defaults data))))}
         (catch :default e

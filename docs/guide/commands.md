@@ -34,7 +34,7 @@ message. `/help` lists everything that is available in the current setup.
 | `/allow block` | Allow this request and the rest of the tool call's requests (offered when one call asks several times) |
 | `/deny` (`/d`) | Deny it (also `Alt+d`). `/deny <reason>` tells the agent why |
 | `/rules` | Show the rules in effect, in order; `/rules reload` re-reads the files; `/rules save` moves this chat's rules into `<repo>/.xi/rules.edn` |
-| `/yolo [sane\|relentless\|off]` | Toggle yolo mode: calls that would ask run instead, for this chat; sane keeps the risky asks, relentless all but server restarts; see [Yolo mode](rules.md#yolo-mode) |
+| `/yolo [sane\|relentless\|off]` | Toggle yolo mode: calls that would ask run instead, for this chat; sane keeps the risky asks, relentless all but server restarts and persistence (`~/.ssh`, startup entries, crontab, `ssh -R`); see [Yolo mode](rules.md#yolo-mode) |
 
 ## Reviewing work
 

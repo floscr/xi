@@ -8,16 +8,18 @@ Every match field, action, and built-in bundle of the rules engine. The
 ```clojure
 {:type     :xi/rules      ; required
  :version  1              ; required
- :rules    [ … ]          ; your rules, first match wins
+ :rules    [ … ]          ; your rules and bundles, first match wins
  :defaults [ … ]}         ; optional: which built-in bundles to keep
 ```
 
 `~/.config/xi/rules.edn` applies everywhere; `<repo>/.xi/rules.edn` applies
 inside that repository and wins over the global file. `:on-block` / `:do`
-are accepted aliases for `:match` / `:action`.
+are accepted aliases for `:match` / `:action`. A bundle name in `:rules`
+(`:xi.rules.defaults/persistence-zsh`) stands for that bundle's rules, at
+that position; see [Opt-in bundles](#opt-in-bundles).
 
 An invalid file (wrong `:type`, missing or unsupported `:version`, unknown
-top-level key, a bare vector, an unknown `:defaults` alias, unreadable EDN)
+top-level key, a bare vector, an unknown bundle name, unreadable EDN)
 is replaced by one rule that denies everything, with a message naming the
 file and the problem. `/rules` shows it.
 
@@ -164,6 +166,9 @@ list; inline rule maps may be mixed in.
 | `xi-sessions` | Allow: reads under `~/.config/xi/sessions`. |
 | `claude-sessions` | Allow: reads under `~/.claude/projects`. |
 | `env` | Ask, yes or no only, refused when nobody can answer, kept in sane yolo mode, with a warning that the output goes to the LLM provider: a dump of the whole environment — `env`, `printenv`, `export -p`, a bare `set`, `declare -x`, or `/proc/<pid>/environ` read with any tool (`env-dump`); a read of a credential file — the hidden credential directories (`.aws`, `.kube`, `.gnupg`, `.password-store`, `.config/gh`, `.config/xi`, `.netrc`, `.npmrc`), `.env` and `.env.*` (not `.example`, `.sample`, `.template`, `.dist`), `*credentials.json`, `.git-credentials`, `.docker/config.json`, `.pgpass`, `.pypirc` — through the read and grep tools or a command line that names one (`secret-reads`); a command that prints a secret — `pass <name>`, `gopass show`, `op read`, `op item get`, `bw get`, `secret-tool lookup`, `gh auth token`, `vault kv get`, `agenix`/`age`/`sops --decrypt` (`secret-clis`). One variable (`printenv NAME`, `(env "NAME")`) is free. |
+| `persistence` | Ask, yes or no only, in both yolo levels and over any allow above it: writes under `~/.ssh` and to `~/.profile`; `crontab` through `bash`, run_task or a clj `(sh …)` call; reverse tunnels (`ssh -R`, `autossh -R`, `-o RemoteForward`) through run_task or clj `(sh …)` (`bash` denies `ssh` in `bash-guards`). |
+| `persistence-linux` | On Linux only. Like `persistence`: writes under `~/.config/systemd/user` and `~/.config/autostart`; `systemctl --user enable` / `link` / `edit` / `add-wants`. |
+| `persistence-macos` | On macOS only. Like `persistence`: writes under `~/Library/LaunchAgents`; `launchctl load` / `bootstrap` / `enable` / `submit`. |
 | `write-gates` | Ask: writes into mail or key directories (`sensitive-writes`) and into `.env`, `.git/`, `node_modules/` (`protected-writes`), both kept in sane yolo mode; writes outside the working directory, with the `r` option (`outside-writes`). Reads and writes under `~/.local/share/xi/skills`, where skills keep their output, are allowed (`skill-data`). |
 | `bash-chained` | Deny: composed `bash` commands; use the clj tool. |
 | `task-trust` | Ask before a task runs from an untrusted `bb.edn`, `package.json` or `deno.json`; `a` trusts the file. |
@@ -189,6 +194,23 @@ Names are written `:xi.rules.defaults/<bundle>` in `:defaults`:
 ```
 
 Keep `not-installed` and the nudges first, as the built-in order does. `:defaults []` turns the tier off.
+
+### Opt-in bundles
+
+Not in the default tier; list the ones that fit your system in `:rules`.
+Each asks like `persistence`: yes or no only, in both yolo levels and over
+any allow above it.
+
+| Bundle | Asks before writing |
+| --- | --- |
+| `persistence-bash` | `~/.bashrc`, `~/.bash_profile`, `~/.bash_login`, `~/.bash_logout` |
+| `persistence-zsh` | `~/.zshrc`, `~/.zshenv`, `~/.zprofile`, `~/.zlogin`, `~/.zlogout`, and anything under `~/.config/zsh` (the usual `$ZDOTDIR`) |
+| `persistence-fish` | anything under `~/.config/fish` |
+
+```clojure
+:rules [:xi.rules.defaults/persistence-zsh
+        { … }]
+```
 
 ## Managing rules while Xi runs
 

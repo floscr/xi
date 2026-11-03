@@ -431,10 +431,10 @@
       (is (re-find #"wrong :type :xi/config" (err {:type :xi/config :version 1 :rules []})))
       (is (re-find #"unknown key\(s\) :default" (err {:type :xi/rules :version 1 :default []})))
       (is (re-find #":rules must be a vector" (err {:type :xi/rules :version 1 :rules {:a 1}})))
-      (is (re-find #"aliases under :defaults"
-                   (err {:type :xi/rules :version 1 :rules [:xi.rules.defaults/env]})))
       (is (re-find #"unknown default-rules alias"
-                   (err {:type :xi/rules :version 1 :defaults [:xi.rules.defaults/nope]}))))
+                   (err {:type :xi/rules :version 1 :defaults [:xi.rules.defaults/nope]})))
+      (is (re-find #"unknown default-rules alias"
+                   (err {:type :xi/rules :version 1 :rules [:xi.rules.defaults/nope]}))))
     (testing "a valid file parses; :defaults nil unless set"
       (is (= {:rules [] :defaults nil} (store/parse-rules-config {:type :xi/rules :version 1})))
       (is (= {:rules [{:match {:tool :read}}] :defaults nil}
@@ -442,7 +442,16 @@
       (is (= [] (:defaults (store/parse-rules-config {:type :xi/rules :version 1 :defaults []}))))
       (is (= (defaults/expand [:xi.rules.defaults/env])
              (:defaults (store/parse-rules-config
-                         {:type :xi/rules :version 1 :defaults [:xi.rules.defaults/env]})))))))
+                         {:type :xi/rules :version 1 :defaults [:xi.rules.defaults/env]})))))
+    (testing "a bundle alias under :rules expands in place, untagged"
+      (is (= (into [{:match {:tool :read}}]
+                   (defaults/expand-bundles [:xi.rules.defaults/persistence-zsh]))
+             (:rules (store/parse-rules-config
+                      {:type :xi/rules :version 1
+                       :rules [{:match {:tool :read}} :xi.rules.defaults/persistence-zsh]}))))
+      (is (not-any? :scope (:rules (store/parse-rules-config
+                                    {:type :xi/rules :version 1
+                                     :rules [:xi.rules.defaults/persistence-zsh]})))))))
 
 (deftest parse-rules-config-expands-dir
   ;; :dir is a prefix of the absolute cwd, so a `~/…` spec only matches once
