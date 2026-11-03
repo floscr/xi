@@ -2,6 +2,91 @@
 
 What changed in each Xi release, newest first.
 
+## 0.6.0 - 2026-11-03
+
+### Added
+
+- Chat settings
+  - Model and yolo mode for this chat, for new chats, or for all open chats
+  - An agent profile's `:yolo false` turns yolo mode off in its chats
+  - The yolo flame shows when yolo is off too, and says when yolo is also on for new chats
+
+- Workspaces
+  - `:workspace/switch` switches to the other tab when only two are open
+  - `:workspace/new` opens the workspace list, so you can reopen a closed workspace
+  - Workspace tabs in the sidebar drawer on narrow screens
+
+- Agent blocks
+  - Dial blocks: a panel of live controls for tuning values
+  - A sub-agent's blocks show in its own view
+
+- Chat
+  - Run a shell code block in the terminal from its menu
+  - Crop and highlight attached images in the lightbox
+  - Tools that run code show it with syntax highlighting
+  - Tool headers show their arguments like a command line
+  - The Ask button shows when the block under the pointer was written
+  - Model and usage under the message box on phones too
+
+- Palette
+  - <kbd>Tab</kbd> on a session opens its actions
+  - `/` completes every skill, recently used ones first
+
+- Agent tools
+  - `write` with `append: true` adds to the end of a file
+  - A write that was cut off keeps what it had written, and the next turn finishes it with append
+
+- clj tool
+  - Evals running past 60 s continue in the background, and the agent waits for them or aborts them
+  - `fs/read-link`, `fs/last-modified-time` and helpers for file times
+
+- Permissions
+  - Asks before adding login keys, startup entries, crontabs or reverse tunnels, also in yolo mode
+  - Shell rc file bundles you can turn on in `:rules`
+
+- Extensions
+  - Stop sub-agents and reply to them
+  - Name a new chat up front with `:chat/start :name`
+  - `(today)` in `xi.api.time` gives the local date
+  - `:available?` hides a tool from chats it doesn't apply to
+  - Pages from browser halves copy text and have their own context menus
+
+### Changed
+
+- On touch, tap send to queue and hold to steer
+
+### Removed
+
+- Plan mode. Use rules to make a chat read-only
+
+### Fixed
+
+- Permissions: `:command` rules no longer match commit messages and PR bodies
+
+- Steering works while a permission question is open
+
+- Models picking up a Claude session can call Xi's tools
+
+- Workspaces
+  - A tab keeps the extension page or home page it showed
+  - Switching workspaces no longer adds the current chat to the new one
+
+- Sub-agents
+  - Their cards stay at the point where they were started
+  - Deleting a message also removes the blocks from the turns it cuts
+
+- Web client
+  - Image files open as images, not as raw bytes
+  - An error in the UI keeps the last screen instead of a blank page
+  - <kbd>Tab</kbd> in `/` suggestions completes the command instead of running it
+  - An expired sign-in shows the signed-out card, not a raw error
+  - An edge swipe doesn't open a drawer while the palette is open
+  - Moving the mouse no longer highlights a second menu row while you use the keyboard
+
+- Python strings, `def`/`class` and imports get syntax highlighting
+
+- clj tool: `Long/parseLong`, `Integer/parseInt` and `Double/parseDouble` reject input the JVM rejects
+
 ## 0.5.0 - 2026-10-26
 
 ### Added
