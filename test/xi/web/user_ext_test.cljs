@@ -216,6 +216,29 @@
             {:type :user-ext/forward :event {:type :ext.notes/open}}]
            @seen))))
 
+(deftest page-data-handlers-open-a-menu-in-place
+  (let [seen      (atom [])
+        prevented (atom 0)
+        ext       (guard/wrap {:id :notes
+                               :pages {:notes/p
+                                       (fn [_ _]
+                                         [:div
+                                          [:div {:data-long-press "true"
+                                                 :on {:contextmenu {:type :ext-ui/set :path [:menu] :value "a"}}}]
+                                          [:button {:on {:click {:type :ext.notes/open}}}]
+                                          [:button {:on {:click {:type :ext-ui/set :path [:menu] :value {:evil 1}}}}]])}})
+        [_ [_ {row :on}] [_ {own :on}] [_ {bad :on}]]
+        ((get-in ext [:pages :notes/p]) {} #(swap! seen conj %))
+        e         #js {:stopPropagation (fn []) :preventDefault #(swap! prevented inc)}]
+    ((:contextmenu row) e)
+    ((:click own) e)
+    (is (= 1 @prevented) "the contextmenu keeps the browser's menu shut")
+    (is (= [{:type :user-ext/ui-set :ext-id :notes :path [:menu] :value "a"}
+            {:type :user-ext/forward :event {:type :ext.notes/open}}]
+           @seen)
+        "an :ext-ui/set map writes the page's UI state, an own event is forwarded")
+    (is (empty? bad) "a non-scalar value is dropped")))
+
 ;; ── dispatch filtering + forwarding ──────────────────────────────────────────
 
 (deftest guarded-dispatch
@@ -223,10 +246,12 @@
         d    (guard/guard-dispatch :notes #(swap! seen conj %))]
     (d {:type :ext.notes/save :text "x"})
     (d {:type :route/navigate :page :notes/list})
+    (d {:type :copy/text :text "https://example.com"})
     (d {:type :ui/dialog-response :value true})
     (d {:type :ext.other/steal})
     (is (= [{:type :user-ext/forward :event {:type :ext.notes/save :text "x"}}
-            {:type :route/navigate :page :notes/list}]
+            {:type :route/navigate :page :notes/list}
+            {:type :copy/text :text "https://example.com"}]
            @seen))))
 
 (deftest ext-ui-set-writes-the-extensions-own-ui-state

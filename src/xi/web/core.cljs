@@ -1348,6 +1348,9 @@
           :lightbox/close        lightbox-close
           :attachment/open       attachment-open
           :web/file-drag         file-drag
+          ;; Copy `text` like a copy button does (also from a user web half's page).
+          :copy/text             (fn [st {:keys [text]}]
+                                   (when (string? text) {:state st :effects [[:copy/write {:text text}]]}))
           :copy/open             (fn [st {:keys [text]}] {:state (assoc st :web/copy-text text)})
           :copy/close            (fn [st _] {:state (dissoc st :web/copy-text)})
           :copy/flash            (fn [st _] {:state   (assoc st :web/copy-flash true)
@@ -2219,6 +2222,9 @@
               (js/setTimeout
                (fn [] (dispatch! (assoc payload :type :session/web-search)))
                180))))
+   :copy/write
+   (fn [{:keys [dispatch!]} {:keys [text]}]
+     (views/copy! dispatch! text))
    :copy/flash-clear
   (let [timer (atom nil)]
     (fn [{:keys [dispatch!]} _]

@@ -296,12 +296,14 @@
                                   (send! e)))))))))))))
 
 (defn event-binder
-  "The `bind` fn for a tool view's `sanitize`. A view gets no dispatch!, so it
-   writes a handler as data: `:on {:click {:type :ext.<id>/… …}}` sends that
-   own event to the server (as `:user-ext/forward`, like a page's). A
-   `:contextmenu` one (right-click, or a long-press on a `data-long-press`
-   element) also keeps the browser's own menu shut. Any other non-fn handler
-   is dropped."
+  "The `bind` fn for a tool view's or page's `sanitize`: a handler written as
+   data. `:on {:click {:type :ext.<id>/… …}}` sends that own event to the
+   server (as `:user-ext/forward`, like a page's dispatch!), `{:type
+   :ext-ui/set :path [..] :value v}` writes the extension's browser UI state
+   (a page's menu opening in place). A `:contextmenu` one (right-click, or a
+   long-press on a `data-long-press` element) also keeps the browser's own
+   menu shut, which a page's fn handler can't: the sandbox can't touch the
+   DOM event. Any other non-fn handler is dropped."
   [id dispatch!]
   (fn [attrs]
     (if-not (map? (:on attrs))
@@ -310,21 +312,29 @@
               (fn [on]
                 (into {}
                       (keep (fn [[k h]]
-                              (cond
-                                (fn? h) [k h]
-                                (and (map? h) (own-event-type? id (:type h)))
-                                [k (fn [e]
-                                     (some-> e .stopPropagation)
-                                     (when (= :contextmenu k) (some-> e .preventDefault))
-                                     (dispatch! {:type :user-ext/forward :event h}))]
-                                :else nil)))
+                              (let [ev (cond
+                                         (not (map? h)) nil
+                                         (own-event-type? id (:type h))
+                                         {:type :user-ext/forward :event h}
+                                         (and (= :ext-ui/set (:type h))
+                                              (ui-path? (:path h)) (ui-value? (:value h)))
+                                         {:type :user-ext/ui-set :ext-id id
+                                          :path (:path h) :value (:value h)})]
+                                (cond
+                                  (fn? h) [k h]
+                                  ev      [k (fn [e]
+                                               (some-> e .stopPropagation)
+                                               (when (= :contextmenu k) (some-> e .preventDefault))
+                                               (dispatch! ev))]
+                                  :else   nil))))
                       on))))))
 
 ;; ── Wrapping ─────────────────────────────────────────────────────────────────
 
 (def ^:private passthrough-events
-  "Built-in web events a user web half may dispatch directly."
-  #{:route/navigate :nav/back})
+  "Built-in web events a user web half may dispatch directly. :copy/text puts
+   its :text on the clipboard (or opens the manual-copy dialog on iOS)."
+  #{:route/navigate :nav/back :copy/text})
 
 (defn- own-event? [id ev-type]
   (= (some-> ev-type namespace) (str "ext." (name id))))
@@ -428,7 +438,8 @@
               (fn [f]
                 (fn [state dispatch!]
                   (try (sanitize (f state (guard-dispatch id dispatch!))
-                                 (ui-binder id state dispatch!))
+                                 (comp (event-binder id dispatch!)
+                                       (ui-binder id state dispatch!)))
                        (catch :default e (error-box id (.-message e)))))))
 
       (map? (:tool-views ext))

@@ -411,8 +411,15 @@ ones that touch `js/window`), `xi.web.views` helpers (`menu-button`,
 `xi.markdown.hiccup/render` and `xi.api.time/now`.
 
 `dispatch!` sends `:ext.<id>/*` events to the server (tagged with the active
-chat and the client), passes `:route/navigate` and `:nav/back`, and drops
-everything else. The events of `:nav-items`, `:sidebar-groups`,
+chat and the client), passes `:route/navigate`, `:nav/back` and `:copy/text`
+(`{:type :copy/text :text "…"}` puts the text on the clipboard like a copy
+button, with the manual-copy dialog where the browser has no clipboard API),
+and drops everything else. A page may also write a handler as data, like a
+tool view: `:on {:click {:type :ext.<id>/open …}}` sends that own event, and
+`{:type :ext-ui/set :path [:menu] :value "x"}` writes its browser UI state.
+A `:contextmenu` handler written that way (right-click, or a long-press on an
+element with `:data-long-press "true"`) also keeps the browser's own menu
+shut, which a fn handler can't, so a page can open its own menu in place. The events of `:nav-items`, `:sidebar-groups`,
 `:session-menu-items` and a card's `:load` and `:more` follow the same rule: an own event is sent to the
 server, navigation passes, anything else is dropped. Browser-only state lives at `[:user-ext/ui <id> …]`: an
 input with `:bind [:k]` (in `:attrs` for `ui.form` inputs) keeps its value
