@@ -1124,11 +1124,18 @@
         "(socket/read s) blocks for the next chunk, {:n k} exactly k bytes, "
         "{:until \"\\n\"} through a delimiter (consumed, not returned), "
         "{:bytes? true} → byte vector, {:timeout-ms 30000}; (socket/close s). "
-        "Sockets persist across calls like the rest of the REPL.")
+        "Sockets persist across calls like the rest of the REPL. "
+        "An eval still running after 60s (by default) returns early and goes on in the "
+        "background, holding the REPL: then call with {\"wait\": true} for its "
+        "result or {\"abort\": true} to stop it.")
    :input_schema {:type "object"
-                  :properties {:code {:type "string"
-                                      :description "Clojure code; multiple forms ok, last value is returned"}}
-                  :required ["code"]}})
+                  :properties {:code  {:type "string"
+                                       :description "Clojure code; multiple forms ok, last value is returned"}
+                               :wait  {:type "boolean"
+                                       :description "Instead of code: wait for the eval still running in the background"}
+                               :abort {:type "boolean"
+                                       :description "Instead of code: stop the eval still running in the background"}}
+                  :required []}})
 
 ;; ── Worker client (main thread) ──────────────────────────────────────────────
 ;; The clj/run_task tools post a request to the room's long-lived worker thread
@@ -1144,6 +1151,10 @@
 (defonce ^:private workers (atom {}))       ;; room-key str → Worker
 (defonce ^:private pending (atom {}))       ;; id → {:resolve fn :room-key str :abort Int32Array|nil}
 (defonce ^:private next-id (atom 0))
+;; id → {:room-key :sub-id :code :started ms :reply Promise :result JS reply}:
+;; the evals that outlived the stall limit (see Stalled evals); :result arrives
+;; once one ends.
+(defonce ^:private detached (atom {}))
 
 ;; Captured by `approve` on each call so worker messages (process events,
 ;; runtime gates) can reach app state and the right call's ctx.
@@ -1343,31 +1354,69 @@
 
 (defn- terminate-worker!
   "Kill a room's worker (room closed, /clj reset, extension disabled): settle
-   its evals, drop the mapping, terminate. REPL state dies with it."
+   its evals, drop the mapping, terminate. REPL state and detached evals die
+   with it."
   [room-id reason]
   (let [rk (room-key room-id)]
+    (swap! detached #(into {} (remove (fn [[_ e]] (= rk (:room-key e)))) %))
     (when-let [^js w (get @workers rk)]
       (settle-worker-death! rk reason)
       (.terminate w))))
 
-(defn- run-in-worker
-  "Post a request to its room's worker; Promise of the JS reply. clj evals get
-   a per-eval abort flag (shared Int32Array) so a turn-end can wake their
-   blocking sleeps."
+(defn- post-to-worker!
+  "Post a request to its room's worker → [id Promise-of-the-JS-reply]. clj
+   evals get a per-eval abort flag (shared Int32Array) so a turn-end can wake
+   their blocking sleeps."
   [^js msg]
-  (js/Promise.
-   (fn [resolve _]
-     (let [id  (swap! next-id inc)
-           rk  (or (.-roomId msg) "default")
-           w   (ensure-worker! rk)
-           sab (when (= "clj" (.-kind msg)) (js/SharedArrayBuffer. 4))]
-       (aset msg "id" id)
-       (when sab (aset msg "abortSab" sab))
-       (swap! pending assoc id {:resolve  resolve
-                                :room-key rk
-                                :sub-id   (.-subId msg)
-                                :abort    (when sab (js/Int32Array. sab))})
-       (.postMessage w msg)))))
+  (let [id    (swap! next-id inc)
+        rk    (or (.-roomId msg) "default")
+        w     (ensure-worker! rk)
+        sab   (when (= "clj" (.-kind msg)) (js/SharedArrayBuffer. 4))
+        reply (js/Promise.
+               (fn [resolve _]
+                 (swap! pending assoc id {:resolve  resolve
+                                          :room-key rk
+                                          :sub-id   (.-subId msg)
+                                          :abort    (when sab (js/Int32Array. sab))})))]
+    (aset msg "id" id)
+    (when sab (aset msg "abortSab" sab))
+    (.postMessage w msg)
+    [id reply]))
+
+(defn- run-in-worker [^js msg]
+  (second (post-to-worker! msg)))
+
+(def ^:private abort-grace-ms
+  "How long an aborted eval may take to notice its flag (the blocking waits
+   poll it every 250 ms) before its worker is killed."
+  2000)
+
+(defn- kill-if-still-pending!
+  "An eval that outlived its abort is stuck where it never checks the flag (a
+   busy loop): terminate the room's worker. Its REPL state goes with it.
+   Truthy when it killed."
+  [rk ^js w ids]
+  (when (and (identical? w (get @workers rk))
+             (some #(contains? @pending %) ids))
+    (settle-worker-death! rk "an aborted eval did not stop, so the REPL was reset (its defs are gone)")
+    (.terminate w)
+    true))
+
+(defn- abort-evals!
+  "Flip the abort flag of the pending evals `ids` in room `rk`'s worker; one
+   still running after `abort-grace-ms` kills the worker. Promise of :stopped
+   or :killed."
+  [rk ids]
+  (doseq [id ids
+          :let [^js abort (get-in @pending [id :abort])]
+          :when abort]
+    (js/Atomics.store abort 0 1)
+    (js/Atomics.notify abort 0))
+  (let [w (get @workers rk)]
+    (js/Promise.
+     (fn [resolve _]
+       (js/setTimeout #(resolve (if (kill-if-still-pending! rk w ids) :killed :stopped))
+                      abort-grace-ms)))))
 
 (defn reply->result
   "Worker reply → tool result map, with the gate's helper hint appended. Public for tests."
@@ -1378,28 +1427,156 @@
       (update-in res [:content 0 :text] str "\n\n" hint)
       res)))
 
+;; ── Stalled evals ────────────────────────────────────────────────────────────
+;; An eval still running after the stall limit hands its call back with a
+;; "still running" result and goes on detached, so the agent can decide: wait
+;; for it or abort it (clj {"wait": true} / {"abort": true}, clj-tool). A
+;; detached eval's result reaches its agent's next clj call; while one runs, the
+;; room's other calls answer "busy" instead of queueing behind it.
+
+(defn- stall-ms []
+  (* 1000 (or (:stall-after-s @global-config) 60)))
+
+(defn running-detached
+  "The detached evals of room `rk` still running, as [id entry]. Public for tests."
+  [detached rk]
+  (filter (fn [[_ e]] (and (= rk (:room-key e)) (not (contains? e :result))))
+          detached))
+
+(defn finished-detached
+  "The ended detached evals of one agent (room `rk`, sub-agent `sub-id` or nil
+   for the main agent), as [id entry]. Public for tests."
+  [detached rk sub-id]
+  (filter (fn [[_ e]] (and (= rk (:room-key e)) (= sub-id (:sub-id e))
+                           (contains? e :result)))
+          detached))
+
+(defn- detach! [id {:keys [^js reply] :as entry}]
+  (swap! detached assoc id entry)
+  (.then reply (fn [m] (swap! detached #(cond-> % (contains? % id) (assoc-in [id :result] m))))))
+
+(defn- take-finished!
+  "Remove and return one agent's ended detached evals."
+  [rk sub-id]
+  (let [done (finished-detached @detached rk sub-id)]
+    (swap! detached #(apply dissoc % (map first done)))
+    (map second done)))
+
+(defn- within-stall-limit
+  "Promise of `p`'s value, or ::stalled when it takes longer than the stall limit."
+  [p]
+  (js/Promise.
+   (fn [resolve _]
+     (let [t (js/setTimeout #(resolve ::stalled) (stall-ms))]
+       (.then p (fn [v] (js/clearTimeout t) (resolve v)))))))
+
+(defn- code-preview [code]
+  (let [line (str/trim (str (first (str/split-lines (str code)))))]
+    (if (> (count line) 80) (str (subs line 0 80) "…") line)))
+
+(defn- secs [ms] (js/Math.round (/ ms 1000)))
+
+(def ^:private wait-or-abort
+  "Call clj with {\"wait\": true} for its result, or {\"abort\": true} to stop it")
+
+(defn stalled-text
+  "Public for tests."
+  [limit-s]
+  (str "clj: still running after " limit-s "s. It goes on in the background and "
+       "this chat's REPL is busy until it ends. " wait-or-abort " (an eval that "
+       "ignores the abort takes the REPL and its defs down with it). The end of "
+       "the turn stops it too."))
+
+(defn busy-text
+  "The answer to a call made while `running` detached evals hold the REPL.
+   Public for tests."
+  [now running]
+  (str "clj: not run, the REPL is busy with "
+       (str/join ", " (map (fn [[_ e]]
+                             (str "`" (code-preview (:code e)) "` (running "
+                                  (secs (- now (:started e))) "s)"))
+                           running))
+       ". " wait-or-abort "."))
+
+(defn earlier-text
+  "A detached eval's result, handed to its agent's next clj call. Public for tests."
+  [{:keys [code ^js result]}]
+  (str "The earlier eval `" (code-preview code) "` finished"
+       (when (.-isError result) " with an error") ":\n" (.-text result)))
+
+(defn- text-result [text & [error?]]
+  {:content [{:type "text" :text text}] :is-error (boolean error?)})
+
+(defn- with-earlier-results [res entries]
+  (if (seq entries)
+    (update-in res [:content 0 :text]
+               #(str (str/join "\n\n" (map earlier-text entries)) "\n\n" %))
+    res))
+
+(defn- wait-detached
+  "clj {\"wait\": true}: wait up to the stall limit for room `rk`'s detached
+   evals, then hand back the calling agent's ended ones."
+  [rk sub-id]
+  (let [running (running-detached @detached rk)]
+    (-> (if (seq running)
+          (within-stall-limit (js/Promise.all (into-array (map (comp :reply second) running))))
+          (js/Promise.resolve nil))
+        (.then (fn [_]
+                 (let [done  (take-finished! rk sub-id)
+                       still (running-detached @detached rk)]
+                   (text-result
+                    (str/join "\n\n"
+                              (cond-> (mapv earlier-text done)
+                                (seq still)  (conj (str "clj: still running after another "
+                                                        (secs (stall-ms)) "s. " wait-or-abort "."))
+                                (and (empty? done) (empty? still)) (conj "clj: no eval is running."))))))))))
+
+(defn- abort-detached
+  "clj {\"abort\": true}: stop room `rk`'s detached evals (abort-evals!)."
+  [rk]
+  (let [ids (mapv first (running-detached @detached rk))]
+    (if (empty? ids)
+      (js/Promise.resolve (text-result "clj: no eval is running."))
+      (-> (abort-evals! rk ids)
+          (.then (fn [how]
+                   (swap! detached #(apply dissoc % ids))
+                   (text-result (if (= :killed how)
+                                  "clj: the eval ignored the abort, so the REPL was reset: its defs are gone."
+                                  "clj: the eval stopped. The REPL keeps its defs."))))))))
+
 (defn- run-clj [args {:keys [cwd sub-id get-state]}]
-  (-> (run-in-worker #js {:kind    "clj"
-                          :code    (str (:code args))
-                          :roomId  (room-key (:_room-id args))
-                          ;; the chat's session, XI_SESSION_ID for what the
-                          ;; eval spawns (eval-message)
-                          :sessionId (when get-state
-                                       (some-> (get-in (get-state) [:rooms (:_room-id args) :session :id])
-                                               str))
-                          ;; a sub-agent's evals run in its parent room's
-                          ;; worker; its own stop wakes them (on-subagent-end)
-                          :subId   (some-> sub-id str)
-                          :gateId  (some-> (:_gate-id args) str)
-                          :allowed (clj->js (vec (:_allowed args)))
-                          :allowedCommands (clj->js (vec (:_allowed-commands args)))
-                          :approved (clj->js (vec (:_approved args)))
-                          :allowedWrites (clj->js (vec (:_allowed-writes args)))
-                          :allowedReads  (clj->js (vec (:_allowed-reads args)))
-                          :allowedBg     (clj->js (vec (:_allowed-bg args)))
-                          :compute (boolean (:_compute? args))
-                          :cwd     (or cwd (.cwd js/process))})
-      (.then (fn [^js m] (reply->result m (:_hint args))))))
+  (let [rk         (room-key (:_room-id args))
+        sub-id     (some-> sub-id str)
+        started    (js/Date.now)
+        [id reply] (post-to-worker!
+                    #js {:kind    "clj"
+                         :code    (str (:code args))
+                         :roomId  rk
+                         ;; the chat's session, XI_SESSION_ID for what the
+                         ;; eval spawns (eval-message)
+                         :sessionId (when get-state
+                                      (some-> (get-in (get-state) [:rooms (:_room-id args) :session :id])
+                                              str))
+                         ;; a sub-agent's evals run in its parent room's
+                         ;; worker; its own stop wakes them (on-subagent-end)
+                         :subId   sub-id
+                         :gateId  (some-> (:_gate-id args) str)
+                         :allowed (clj->js (vec (:_allowed args)))
+                         :allowedCommands (clj->js (vec (:_allowed-commands args)))
+                         :approved (clj->js (vec (:_approved args)))
+                         :allowedWrites (clj->js (vec (:_allowed-writes args)))
+                         :allowedReads  (clj->js (vec (:_allowed-reads args)))
+                         :allowedBg     (clj->js (vec (:_allowed-bg args)))
+                         :compute (boolean (:_compute? args))
+                         :cwd     (or cwd (.cwd js/process))})]
+    (-> (within-stall-limit reply)
+        (.then (fn [m]
+                 (if (= ::stalled m)
+                   (do (detach! id {:room-key rk :sub-id sub-id :code (:code args)
+                                    :started started :reply reply})
+                       (text-result (stalled-text (secs (stall-ms)))))
+                   (reply->result m (:_hint args)))))
+        (.then #(with-earlier-results % (take-finished! rk sub-id))))))
 
 ;; ── run_task tool ──────────────────────────────────────────────────────────
 
@@ -2394,19 +2571,32 @@
 (defn- clj-tool
   "The clj tool: `approve` the call, then evaluate it in the room's worker with
    its grants. The call's gate ctx lives until the eval settles. A
-   compute-only room skips `approve`: it has no helper that could ask."
+   compute-only room skips `approve`: it has no helper that could ask.
+   {\"wait\": true} / {\"abort\": true} run no code: they act on the room's
+   detached evals (Stalled evals), which also make any other call answer busy."
   [args ctx]
-  (if (compute-only? ctx)
-    (run-clj {:code (:code args) :_room-id (:room-id ctx) :_compute? true} ctx)
-    (let [gate-id (str "g" (swap! gate-seq inc))
-          done!   #(swap! call-ctxs dissoc gate-id)]
-      (-> (js/Promise.resolve (approve {:name "clj" :arguments (public-args args)}
-                                       (assoc ctx :gate-id gate-id)))
-          (.then (fn [v]
-                   (if (:intercepted v)
-                     (:result v)
-                     (run-clj (:arguments v) ctx))))
-          (.finally done!)))))
+  (let [rk      (room-key (:room-id ctx))
+        running (running-detached @detached rk)]
+    (cond
+      (:abort args) (abort-detached rk)
+      (:wait args)  (wait-detached rk (some-> (:sub-id ctx) str))
+
+      (seq running)
+      (js/Promise.resolve (text-result (busy-text (js/Date.now) running) true))
+
+      (compute-only? ctx)
+      (run-clj {:code (:code args) :_room-id (:room-id ctx) :_compute? true} ctx)
+
+      :else
+      (let [gate-id (str "g" (swap! gate-seq inc))
+            done!   #(swap! call-ctxs dissoc gate-id)]
+        (-> (js/Promise.resolve (approve {:name "clj" :arguments (public-args args)}
+                                         (assoc ctx :gate-id gate-id)))
+            (.then (fn [v]
+                     (if (:intercepted v)
+                       (:result v)
+                       (run-clj (:arguments v) ctx))))
+            (.finally done!))))))
 
 ;; ── Command + state ──────────────────────────────────────────────────────────
 
@@ -2508,17 +2698,18 @@
     {:effects [[:ext.clj/abort-evals {:room-id room-id :sub-id sub-id}]]}))
 
 (defn- abort-evals-fx
-  "Flip the abort flag of `room-id`'s pending evals: the main agent's
-   (no `sub-id`) or sub-agent `sub-id`'s."
+  "Abort `room-id`'s pending evals (abort-evals!): the main agent's (no
+   `sub-id`) or sub-agent `sub-id`'s."
   [_ {:keys [room-id sub-id]}]
-  (let [rk (room-key room-id)]
-    (doseq [[_ entry] @pending
-            :let [^js abort (:abort entry)]
-            :when (and abort
-                       (= rk (:room-key entry))
-                       (= (some-> sub-id str) (:sub-id entry)))]
-      (js/Atomics.store abort 0 1)
-      (js/Atomics.notify abort 0))))
+  (let [rk  (room-key room-id)
+        ids (vec (keep (fn [[id entry]]
+                         (when (and (:abort entry)
+                                    (= rk (:room-key entry))
+                                    (= (some-> sub-id str) (:sub-id entry)))
+                           id))
+                       @pending))]
+    (when (seq ids)
+      (abort-evals! rk ids))))
 
 (defn- ext-status [st {:keys [room-id text]}]
   {:state (status-line st room-id text)})

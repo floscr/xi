@@ -24,6 +24,15 @@ profile sets `:clj :full`: of the helpers below only `curl`, `now`, `sleep`,
 `process`, `socket` or `fs`.
 
 The REPL persists per chat: `def` once, use later. `/clj reset` drops it.
+Stopping the turn (ESC) stops a running eval; one still busy 2 seconds
+later, such as an endless loop, takes the REPL down with it.
+
+An eval still running after `:stall-after-s` (default 60) hands the call back
+to the agent and goes on in the background. Until it ends, other calls in the
+chat answer that the REPL is busy. The agent then calls `clj` with
+`{"wait": true}` to wait for its result, or `{"abort": true}` to stop it.
+An eval that ends unasked hands its result to the agent's next call.
+
 A result longer than 30k characters is saved to a file under the temp
 directory and the result names the file. Values inside the REPL are never
 truncated: `(sh …)`, `(curl …)` and `(jq …)` return complete output (up to
@@ -211,5 +220,5 @@ other files, npm `pre`/`post` scripts and `node_modules` binaries.
 | `/clj trust-tasks` | Trust the nearest `bb.edn`, `package.json` and `deno.json` |
 | `/clj reset` | Drop the chat's REPL |
 | `/ext disable clj` / `enable clj` | Turn the tool off (the agent gets `bash`) or on |
-| `~/.config/xi/ext/clj.edn` | `{:allow-clis ["ffmpeg" "jq"] :helper-hints true}` |
+| `~/.config/xi/ext/clj.edn` | `{:allow-clis ["ffmpeg" "jq"] :helper-hints true :stall-after-s 60}` |
 | `~/.config/xi/ext/task-trust.edn` | Trusted project file hashes; written by Xi. Hashes in `bb-trust.edn` from earlier versions still count |
