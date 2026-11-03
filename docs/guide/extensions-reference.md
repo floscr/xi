@@ -235,7 +235,9 @@ replaced whole. To keep data per chat, put the session id in the key
 `(sh ctx "program" "arg" …)` → stdout on exit 0, rejects otherwise. An
 options map before the program: `(sh ctx {:dir "sub"} "bb" "test")`.
 Request: `{:tool :sh :cli "program" :command "…"}`. Processes still running
-when the extension unloads are stopped.
+when the extension unloads are stopped. stdout and stderr are each cut at
+20 000 characters, ending in `… [truncated]`: keep a JSON answer below that
+(narrow the query) and check for the marker before parsing.
 
 ### `xi.api.http`
 
