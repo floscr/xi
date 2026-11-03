@@ -1,6 +1,6 @@
 {:paths ["scripts"]
  :deps {tmux-dev/tmux-dev {:git/url "https://github.com/floscr/tmux-dev"
-                            :git/sha "47d240275fe1c4a7def458c8e3e9b1ecd86784f5"}}
+                            :git/sha "755b179940feac8ba3fee3f52c01103cefa42ad4"}}
  :tasks
  {:requires ([tmux-dev.core :as td]
              [clojure.edn :as edn]
@@ -32,6 +32,7 @@
                          (catch Exception _ nil)))
                   "localhost")))
           (def config {:session "xi"
+                       :attach "bb dev:attach"
                        :windows [["watch" "bb watch:all"]]
                        :print   ["Web: http://localhost:1414"]})
           ;; Persist the headless server's stdout+stderr to a logfile so a
@@ -50,6 +51,7 @@
             (str "printf '\\n=== xi-serve start %s ===\\n' \"$(date -Is)\" >> " log "; "
                  cmd " 2>&1 | tee -a " log))
           (def serve-config {:session "xi-serve"
+                             :attach "bb serve:attach"
                              ;; The server window waits for the new watch's first
                              ;; build (serve:await-build): both windows start
                              ;; together, and bun would otherwise boot the
@@ -87,6 +89,7 @@
           ;; site/tours/README.md.
           ;; Docs site dev server (port 4322, live reload) — site/bb.edn's `dev`.
           (def site-config {:session "xi-site"
+                            :attach "bb site:attach"
                             :windows [["server" "bb dev"]]
                             :dir (str (System/getProperty "user.dir") "/site")
                             :print ["Site: http://localhost:4322"]})
