@@ -1990,9 +1990,10 @@
 
 (defn slash-ctx
   "match-commands' options from state: the commands, usage, counts and the
-   recently used skills (described once the skill list is loaded, gone ones
-   dropped); :skill-names are all skills a typed \"/<skill> args\" may run
-   (a command of the same name wins)."
+   skills: the recently used ones first, then every other listed skill
+   (once the skill list is loaded, gone recents dropped; before it, the
+   recent names alone); :skill-names are all skills a typed \"/<skill> args\"
+   may run (a command of the same name wins)."
   [state]
   (let [listed  (:web/skill-list state)
         by-name (into {} (map (juxt :name identity)) listed)
@@ -2002,7 +2003,9 @@
      :usage       (:web/command-usage state)
      :counts      (:web/command-counts state)
      :skills      (if listed
-                    (vec (keep by-name recents))
+                    (into (vec (keep by-name recents))
+                          (remove (comp (set recents) :name))
+                          listed)
                     (mapv (fn [n] {:name n}) recents))
      :skill-names (into #{} (remove (command-names cmds))
                         (concat recents (map :name listed)))}))

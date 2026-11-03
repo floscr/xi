@@ -326,11 +326,11 @@
   (let [state {:web/recent-skills ["alpha" "gone"]}]
     (testing "before the skill list arrives: recent names only"
       (is (= [{:name "alpha"} {:name "gone"}] (:skills (views/slash-ctx state)))))
-    (testing "with it: described, deleted ones dropped, every skill runnable"
+    (testing "with it: every skill, recents first and described, deleted ones dropped"
       (let [ctx (views/slash-ctx (assoc state :web/skill-list
-                                        [{:name "alpha" :description "A"} {:name "beta"}]))]
-        (is (= [{:name "alpha" :description "A"}] (:skills ctx)))
-        (is (= #{"alpha" "beta" "gone"} (:skill-names ctx)))))
+                                        [{:name "aaa"} {:name "alpha" :description "A"} {:name "beta"}]))]
+        (is (= [{:name "alpha" :description "A"} {:name "aaa"} {:name "beta"}] (:skills ctx)))
+        (is (= #{"aaa" "alpha" "beta" "gone"} (:skill-names ctx)))))
     (testing "a command (or alias) of the same name wins over a skill"
       (let [names (:skill-names (views/slash-ctx {:web/recent-skills ["help" "a"]}))]
         (is (not (contains? names "help")))
