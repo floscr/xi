@@ -417,9 +417,18 @@
     (assoc (:action rule) :hints (:hints rule) :scope (:scope rule) :guard :always)
     {:type :ask :options [:yes :no] :guard :always}))
 
+(defn- match-rule
+  "[state enriched-req rule]: the first rule matching `req` in the room's
+   ordered ruleset (rule nil when none does)."
+  [req {:keys [get-state room-id]}]
+  (let [state   (when get-state (get-state))
+        ruleset (store/ordered-rules state room-id (:effective-cwd req))
+        req     (store/enrich-request req ruleset)]
+    [state req (rules/first-match ruleset req)]))
+
 (defn- decide*
   "`decide!`, but synchronous unless it has to ask (value or Promise)."
-  [req {:keys [get-state room-id] :as ctx}]
+  [req {:keys [room-id] :as ctx}]
   (if-let [msg (store/hard-block-request req)]
     {:decision :deny :message msg}
     (if-let [msg (store/repo-rules-ask-request req)]
@@ -428,10 +437,7 @@
       (apply-action {:type :ask :message msg :options [:yes :no]
                      :unanswered :deny :scope :hardened}
                     req ctx)
-      (let [state   (when get-state (get-state))
-            ruleset (store/ordered-rules state room-id (:effective-cwd req))
-            req     (store/enrich-request req ruleset)
-            rule    (rules/first-match ruleset req)]
+      (let [[state req rule] (match-rule req ctx)]
         (cond
           (and (confirmed-edit? req ctx)
                (not (#{:deny :nudge} (get-in rule [:action :type]))))
@@ -444,6 +450,20 @@
                                      :scope (:scope rule)
                                      :grant (grant-key rule))
                               req ctx))))))
+
+(defn allows-without-ask?
+  "True when `tool-call` would run as is: no rule asks about it or denies it
+   (a yolo level answering an ask doesn't count). Never raises a dialog.
+   xi.ext.partial-writes saves a streaming write in place only then."
+  [tool-call {:keys [room-id] :as ctx}]
+  (let [req (store/decision-request tool-call ctx)]
+    (and (not (store/hard-block-request req))
+         (not (store/repo-rules-ask-request req))
+         (not (confirmed-edit? req ctx))
+         (let [[state _ rule] (match-rule req ctx)]
+           (or (nil? rule)
+               (= :allow (get-in rule [:action :type]))
+               (granted? state room-id rule))))))
 
 (defn decide!
   "Decide a decision request (store/decision-request for tool calls,

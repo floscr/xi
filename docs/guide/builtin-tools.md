@@ -14,12 +14,23 @@ describes the built-in defaults; your own rules can change any of it.
 | --- | --- | --- |
 | `read` | A file's contents. `offset` and `limit` read a line range (`offset` counts from 0). A large source file comes back as an outline instead; see [How the agent reads code](reading-code.md). The result ends in a `[file-hash: …]` token. | Never. Private SSH keys are always refused. |
 | `read_source` | The code behind an outline entry: one definition by name, a 1-based line range, or the whole file. | Never |
-| `write` | Create or overwrite a file with the given content. Parent directories are created. | Outside the project, or in `.env`, `.git/`, `node_modules/`, mail and key directories |
+| `write` | Create or overwrite a file with the given content; `append` adds it to the end instead. Parent directories are created. | Outside the project, or in `.env`, `.git/`, `node_modules/`, mail and key directories |
 | `edit` | Replace exact text in a file, one or more replacements per call, each applied against the original file. With `expectedHash` set to the token from the last read, the edit is rejected if the file changed in between, so two chats editing the same file cannot overwrite each other. | As `write`; the dialog shows the diff |
 | `ls` | Entries of a directory with their type: `d` directory, `f` file, `l` symlink. | Never |
 | `find` | File paths matching a name glob, via `fd`. | Never |
 | `grep` | Lines matching a regular expression, via ripgrep, with path and line number. `glob` restricts the files. | Never |
 | `view_image` | Shows the agent a PNG, JPEG, WebP or GIF so it can see it. Large images are scaled down. | Never |
+
+### Cut-off writes
+
+The content of a `write` streams in before the call runs, which takes minutes
+for a long file. While it streams, its card shows the lines so far. From 100
+lines on, Xi saves the content every second: a new file the rules let the
+call write without asking goes to its path, anything else to
+`/tmp/xi-partial-writes/<session-id>/`. When the call is cut off by an
+interrupt, the output limit or a server restart, the content stays there, the
+card shows "cut off · N lines saved", and the next prompt tells the agent
+where it is, so it continues with `append` instead of writing the file again.
 
 ## Running things
 

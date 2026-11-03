@@ -4050,6 +4050,16 @@ html:not([data-alt-held]) .compose-send--alt-only {
 }
 .tool-call-running + .tool-call-status { margin-left: 0; }
 
+/* Lines a running write has streamed so far; on a cut-off one, what was
+   saved (xi.partial-writes). */
+.tool-call-progress {
+  color: var(--fg-3);
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.tool-call-progress--saved { margin-left: auto; }
+
 .tool-call-content {
   padding: 0;
 }

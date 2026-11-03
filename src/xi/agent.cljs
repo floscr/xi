@@ -20,7 +20,8 @@
      {:kind :text      :text :done?}          ;; assistant text, folded deltas
      {:kind :thinking  :text :done?}
      {:kind :tool-call :id :tool :arguments :result :is-error :status
-      :started-at}          ;; epoch ms the call began (drives the web run timer)
+      :started-at           ;; epoch ms the call began (drives the web run timer)
+      :partial}             ;; what a cut-off call left on disk (:agent/tool-partial)
      {:kind :error     :error}
 
    Providers are maps {:id kw :start-turn! (fn [opts] {:promise :abort! :exited
@@ -162,6 +163,15 @@
     (if (seq refs)
       (str/join "\n" (concat (some-> prompt str/trim not-empty vector) refs))
       prompt)))
+
+(defn with-turn-notes
+  "`prompt` with `notes` (create-fx's :turn-notes) appended as a
+   <system-reminder>: the provider sees them, the history doesn't."
+  [prompt notes]
+  (if (seq notes)
+    (str (when-not (str/blank? prompt) (str prompt "\n\n"))
+         "<system-reminder>\n" (str/join "\n\n" notes) "\n</system-reminder>")
+    prompt))
 
 (defn- build-turn-effect
   "The :provider/start-turn effect payload. Without :resume-id,
@@ -317,17 +327,59 @@
                          at (assoc :started-at at)
                          ts (assoc :at ts)))}))
 
+;; ── Partial writes ──
+;; A `write` call's content streams in for minutes before the tool runs; the
+;; :partial-write/* effects (xi.partial-writes, node-only) keep it on disk
+;; meanwhile, so a cut-off call leaves its content behind.
+
+(defn- find-tool-call [history id]
+  (some #(when (and (= :tool-call (:kind %)) (= id (:id %))) %)
+        (when (seq history) (rseq history))))
+
+(defn whole-file-write?
+  "A tool call that writes a whole file (`write` without append): the kind
+   whose streaming content is saved."
+  [{:keys [tool arguments]}]
+  (and (= "write" (util/strip-xi-tools-prefix tool))
+       (string? (:path arguments))
+       (string? (:content arguments))
+       (not (:append arguments))))
+
+(defn- partial-write-save [room call]
+  [:partial-write/save {:room-id    (:id room)
+                        :session-id (get-in room [:session :id])
+                        :cwd        (:cwd room)
+                        :id         (:id call)
+                        :path       (get-in call [:arguments :path])
+                        :content    (get-in call [:arguments :content])}])
+
 (defn- tool-args [st {:keys [room-id id arguments]}]
   (when (state/get-room st room-id)
-    {:state (update-in st [:rooms room-id :history] update-tool-call id
-                       #(assoc % :arguments arguments))}))
+    (let [st'  (update-in st [:rooms room-id :history] update-tool-call id
+                          #(assoc % :arguments arguments))
+          room (state/get-room st' room-id)
+          call (find-tool-call (:history room) id)]
+      (cond-> {:state st'}
+        (whole-file-write? call)
+        (assoc :effects [(partial-write-save room call)])))))
 
 (defn- tool-result [st {:keys [room-id id content is-error]}]
+  (when-let [room (state/get-room st room-id)]
+    (cond-> {:state (update-in st [:rooms room-id :history] update-tool-call id
+                               #(assoc % :result content
+                                       :is-error (boolean is-error)
+                                       :status (if is-error :error :done)))}
+      ;; it ran: what was saved while it streamed is moot
+      (whole-file-write? (find-tool-call (:history room) id))
+      (assoc :effects [[:partial-write/drop {:id id}]]))))
+
+(defn- tool-partial
+  "A cut-off call's streamed arguments were saved (xi.partial-writes):
+   `partial` {:path :lines :in-place?} shows on its card."
+  [st {:keys [room-id id partial]}]
   (when (state/get-room st room-id)
     {:state (update-in st [:rooms room-id :history] update-tool-call id
-                       #(assoc % :result content
-                               :is-error (boolean is-error)
-                               :status (if is-error :error :done)))}))
+                       #(assoc % :partial partial))}))
 
 (defn- agent-error [st {:keys [room-id error] at :event/ts}]
   (when (state/get-room st room-id)
@@ -337,6 +389,8 @@
 (defn- turn-end [st {:keys [room-id usage cost provider-session-id aborted?]}]
   (when-let [room (state/get-room st room-id)]
     (let [queued (get-in room [:agent :queued])
+          cut-writes? (some #(and (= :running (:status %)) (whole-file-write? %))
+                            (:history room))
           ;; Asks still open for this turn's tool calls are moot once the turn is
           ;; over: drop them and settle their promises as denied.
           stale  (filterv :call (get-in room [:ui :dialogs]))
@@ -360,6 +414,9 @@
           effects (cond-> (mapv (fn [{:keys [id]}]
                                   [:dialog/resolve {:dialog-id id :value false}])
                                 stale)
+                    ;; a write cut off mid-stream: save what it got
+                    cut-writes?
+                    (conj [:partial-write/flush {:room-id room-id}])
                     ;; Drain the whole queue as one combined prompt by
                     ;; re-dispatching — keeps a single submission code path.
                     (seq queued)
@@ -467,6 +524,7 @@
    :agent/tool-start     tool-start
    :agent/tool-args      tool-args
    :agent/tool-result    tool-result
+   :agent/tool-partial   tool-partial
    :agent/error          agent-error
    :agent/session-init   session-init
    :agent/turn-end       turn-end
@@ -564,11 +622,13 @@
    live here. The second arity threads extension tooling into every turn:
    :tool-policy (the rules engine, wrapped with the per-turn ctx),
    :extra-tool-definitions, :extra-tool-registry, :remove-tools, :ask! (as the
-   tool ctx's :confirm!), :turn-finished! (holds settle) and :fx. All from
-   node-only xi.cli; this ns is shared with the browser build."
+   tool ctx's :confirm!), :turn-finished! (holds settle), :turn-notes
+   ((fn [{:keys [room-id session-id cwd]}]) → strings for the starting turn's
+   prompt, `with-turn-notes`) and :fx. All from node-only xi.cli; this ns is
+   shared with the browser build."
   ([providers] (create-fx providers nil))
   ([providers {:keys [tool-policy extra-tool-definitions extra-tool-registry remove-tools ask!
-                      turn-finished! fx]}]
+                      turn-finished! turn-notes fx]}]
   (let [inflight (js/Map.)]
    (merge
     fx
@@ -586,6 +646,11 @@
            (dispatch! {:type :agent/turn-end :room-id room-id})
            (when turn-finished! (turn-finished! room-id cwd)))
        (let [provider (resolve-provider providers payload)
+             payload  (cond-> payload
+                        turn-notes (update :prompt with-turn-notes
+                                           (try (turn-notes {:room-id room-id :cwd cwd
+                                                             :session-id (get-in (get-state) [:rooms room-id :session :id])})
+                                                (catch :default _ nil))))
              ;; Per-turn context for the tool policy and tool exec-fns (as :tool-ctx):
              ;; live state, dispatch, and confirm dialogs.
              tool-ctx {:dispatch! dispatch!

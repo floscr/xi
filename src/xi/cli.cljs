@@ -73,6 +73,7 @@
             [xi.ext.core :as ext]
             [xi.ext.rules :as rules-ext]
             [xi.holds :as holds]
+            [xi.partial-writes :as partial-writes]
             [xi.ext.clj-worker :as clj-worker]
             [xi.ext.clj-socket :as clj-socket]
             [xi.ext.manager :as manager]
@@ -175,6 +176,9 @@
   []
   (ext/instantiate config/client {}))
 
+(def ^:private partial-write-fx
+  (partial-writes/create-fx))
+
 (defn- tooling-opts
   "Provider-effect tooling for agent/create-fx. Reads the extension manager
    live, so runtime enable/disable applies on the next turn
@@ -191,7 +195,8 @@
    :ask!                   ask!
    ;; Wired here, not in xi.agent, which the browser build shares.
    :turn-finished!         holds/settle-room!
-   :fx                     holds/fx})
+   :turn-notes             partial-writes/turn-notes
+   :fx                     (merge holds/fx partial-write-fx)})
 
 (defn- subagent-opts
   "tooling-opts plus the sub-agent-only tools (parent_history, xi.ext.subagent)

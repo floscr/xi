@@ -155,6 +155,15 @@
       n)
     n))
 
+(defn line-count
+  "Lines in `s`; a trailing newline doesn't start another."
+  [s]
+  (loop [from 0 n 0]
+    (let [i (.indexOf s "\n" from)]
+      (if (neg? i)
+        (if (< from (count s)) (inc n) n)
+        (recur (inc i) (inc n))))))
+
 (defn strip-xi-tools-prefix
   "A tool name without the Claude provider's `mcp__xi-tools__` prefix, the
    bare name every other provider advertises. Unlike strip-mcp-prefix an MCP

@@ -1047,10 +1047,15 @@
   [dispatch! {:keys [id tool arguments result is-error status started-at diff
                      permission resolved-permission explanation room-id
                      grouped? collapsed? open-choice toggle! cwd room-ext
-                     md-diff-code? tool-args]}]
+                     md-diff-code? tool-args]
+              saved :partial}]
   (let [name      (util/strip-mcp-prefix tool)
         summary   (tool-detail tool-args name arguments cwd)
         running?  (= :running status)
+        ;; a write's content streams in for minutes before it runs
+        streamed  (when (and running? (= "write" name))
+                    (let [c (get-arg arguments :content)]
+                      (when (string? c) (util/line-count c))))
         text      (util/strip-file-hash (util/extract-text-content result))
         grammar   (when (and text (not is-error)) (tool-grammar name arguments))
         bash?     (contains? #{"Bash" "bash"} name)
@@ -1111,7 +1116,14 @@
        ;; No clock while the call waits on its ask; the allow restamps :started-at.
        (when running?
          [:span {:class ["tool-call-running"]}
+          (when streamed
+            [:span {:class ["tool-call-progress"]} (str streamed " lines")])
           (when-not permission (run-timer started-at))])
+       ;; cut off mid-stream; xi.partial-writes kept what it got
+       (when (and saved (not running?))
+         [:span {:class ["tool-call-progress" "tool-call-progress--saved"]
+                 :title (str "Saved to " (:file saved))}
+          (str "cut off · " (:lines saved) " lines saved")])
        ;; Outcome badge: denied > error > allowed.
        (cond
          denied?

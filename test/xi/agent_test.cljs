@@ -125,6 +125,70 @@
     (is (= :aborted (:status tool))
         "a tool still running when the turn is interrupted is settled (spinner stops)")))
 
+;; ── Partial writes ──
+
+(defn- streaming [tool arguments]
+  (apply-events (with-room)
+                {:type :prompt/submit :room-id "r" :text "go"}
+                {:type :agent/tool-start :room-id "r" :id "t1" :tool tool
+                 :arguments {}}
+                {:type :agent/tool-args :room-id "r" :id "t1"
+                 :arguments arguments}))
+
+(defn- effects-of [st ev]
+  (:effects (events/handle-event all-handlers st ev)))
+
+(deftest streaming-write-is-saved
+  (let [st (with-room)
+        fx (effects-of (apply-events st {:type :agent/tool-start :room-id "r" :id "t1"
+                                         :tool "mcp__xi-tools__write" :arguments {}})
+                       {:type :agent/tool-args :room-id "r" :id "t1"
+                        :arguments {:path "a.html" :content "<p>"}})
+        [[fx-type payload]] fx]
+    (is (= :partial-write/save fx-type))
+    (is (= {:room-id "r" :id "t1" :path "a.html" :content "<p>"}
+           (select-keys payload [:room-id :id :path :content])))
+    (is (contains? payload :session-id))
+    (is (contains? payload :cwd)))
+  (testing "not before the path and content stream in, not for an append or another tool"
+    (is (empty? (effects-of (streaming "write" {}) {:type :agent/tool-args :room-id "r" :id "t1"
+                                                  :arguments {:path "a.html"}})))
+    (is (empty? (effects-of (streaming "write" {}) {:type :agent/tool-args :room-id "r" :id "t1"
+                                                  :arguments {:path "a" :content "x" :append true}})))
+    (is (empty? (effects-of (streaming "edit" {}) {:type :agent/tool-args :room-id "r" :id "t1"
+                                                 :arguments {:path "a" :content "x"}})))))
+
+(deftest finished-write-drops-its-partial
+  (is (= [[:partial-write/drop {:id "t1"}]]
+         (effects-of (streaming "write" {:path "a" :content "x"})
+                     {:type :agent/tool-result :room-id "r" :id "t1" :content "ok"})))
+  (is (empty? (effects-of (streaming "bash" {:command "ls"})
+                        {:type :agent/tool-result :room-id "r" :id "t1" :content "ok"}))))
+
+(deftest cut-off-write-is-flushed-at-turn-end
+  (is (= [[:partial-write/flush {:room-id "r"}]]
+         (effects-of (streaming "write" {:path "a" :content "x"})
+                     {:type :agent/turn-end :room-id "r" :aborted? true})))
+  (testing "a write that ran isn't"
+    (is (empty? (effects-of (apply-events (streaming "write" {:path "a" :content "x"})
+                                        {:type :agent/tool-result :room-id "r" :id "t1"
+                                         :content "ok"})
+                          {:type :agent/turn-end :room-id "r"})))))
+
+(deftest tool-partial-marks-the-call
+  (let [saved {:path "/p/a.html" :file "/p/a.html" :lines 640 :in-place? true}
+        st    (apply-events (streaming "write" {:path "a" :content "x"})
+                            {:type :agent/turn-end :room-id "r" :aborted? true}
+                            {:type :agent/tool-partial :room-id "r" :id "t1" :partial saved})]
+    (is (= saved (:partial (first (filter #(= :tool-call (:kind %)) (history st))))))))
+
+(deftest turn-notes-join-the-prompt-as-a-reminder
+  (is (= "hi" (agent/with-turn-notes "hi" [])))
+  (is (= "hi\n\n<system-reminder>\na\n\nb\n</system-reminder>"
+         (agent/with-turn-notes "hi" ["a" "b"])))
+  (is (= "<system-reminder>\na\n</system-reminder>"
+         (agent/with-turn-notes "" ["a"]))))
+
 (deftest turn-end-joins-multiple-queued-prompts
   (let [st (apply-events (with-room)
                          {:type :prompt/submit :room-id "r" :text "go"}
